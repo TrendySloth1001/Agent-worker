@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=6, user-scalable=yes">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  #root { width: 100%; display: flex; justify-content: center; }
+  svg { display: block; }
+</style>
+<script>
+  window.onerror = function (msg, src, line) {
+    console.error('onerror: ' + msg + ' @' + src + ':' + line);
+  };
+</script>
+<script src="mermaid.min.js"></script>
+<script>console.log('mermaid loaded: ' + (typeof mermaid));</script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  function post(o) { Mermaid.postMessage(JSON.stringify(o)); }
+
+  function cleanup() {
+    document.querySelectorAll('[id^="dmermaid"], [id^="mermaid-"]').forEach(function (n) {
+      if (n.id !== 'root' && n.parentNode === document.body) n.remove();
+    });
+  }
+
+  // mode: 'inline' fits the width and caps the height; 'full' fills the screen.
+  async function renderDiagram(src, vars, mode, maxH) {
+    console.log('render start, width ' + document.getElementById('root').clientWidth);
+    try {
+      var theme = Object.assign({}, vars);
+      theme.fontFamily = (vars.fontFamily || 'sans-serif') + ', sans-serif';
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: 'base',
+        themeVariables: theme
+      });
+      document.body.style.overflow = mode === 'full' ? 'auto' : 'hidden';
+      await mermaid.parse(src);
+      var out = await mermaid.render('mermaid-' + Date.now(), src);
+      var root = document.getElementById('root');
+      root.innerHTML = out.svg;
+      var el = root.querySelector('svg');
+      var vb = el.viewBox && el.viewBox.baseVal;
+      var natW = vb && vb.width ? vb.width : el.getBoundingClientRect().width;
+      var natH = vb && vb.height ? vb.height : el.getBoundingClientRect().height;
+      var avail = root.clientWidth;
+      el.removeAttribute('height');
+      el.removeAttribute('width');
+      if (mode === 'full') {
+        var w = Math.min(avail, natW * 2);
+        el.style.maxWidth = 'none';
+        el.style.width = w + 'px';
+        el.style.height = (w * natH / natW) + 'px';
+        post({ type: 'size', height: Math.ceil(w * natH / natW) });
+      } else {
+        var rw = Math.min(avail, natW);
+        var h = Math.min(rw * natH / natW, maxH);
+        el.style.maxWidth = natW + 'px';
+        el.style.width = '100%';
+        el.style.height = h + 'px';
+        post({ type: 'size', height: Math.ceil(h) });
+      }
+    } catch (e) {
+      cleanup();
+      post({ type: 'error', message: String((e && e.message) || e).slice(0, 300) });
+    }
+  }
+</script>
+</body>
+</html>
