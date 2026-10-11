@@ -4,16 +4,19 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 
-/// Long-press menu for a user message: FORK FROM HERE (when [onForkHere]
-/// is set) and COPY.
+/// Long-press menu for a user message: EDIT (greyed out while [onEdit] is
+/// null, i.e. a reply is streaming), FORK FROM HERE (when [onForkHere] is
+/// set) and COPY.
 Future<void> showUserMessageActions(
   BuildContext context, {
   required String text,
   VoidCallback? onForkHere,
+  VoidCallback? onEdit,
 }) async {
   Haptics.tap();
   final p = context.palette;
@@ -30,6 +33,16 @@ Future<void> showUserMessageActions(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _Row(
+            label: EditStrings.edit,
+            icon: AppIcons.edit,
+            subtitle: onEdit == null
+                ? EditStrings.busyHint
+                : EditStrings.editHint,
+            onTap: onEdit == null
+                ? null
+                : () => Navigator.pop(sheet, EditStrings.edit),
+          ),
           if (onForkHere != null)
             _Row(
               label: LineageStrings.forkFromHere,
@@ -45,6 +58,7 @@ Future<void> showUserMessageActions(
       ),
     ),
   );
+  if (action == EditStrings.edit) onEdit?.call();
   if (action == LineageStrings.forkFromHere) onForkHere?.call();
   if (action == AppStrings.copy) {
     await Clipboard.setData(ClipboardData(text: text));
@@ -53,19 +67,33 @@ Future<void> showUserMessageActions(
 }
 
 class _Row extends StatelessWidget {
-  const _Row({required this.label, required this.icon, required this.onTap});
+  const _Row({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.subtitle,
+  });
 
   final String label;
   final AppIconData icon;
-  final VoidCallback onTap;
+
+  /// Null shows the row greyed out.
+  final VoidCallback? onTap;
+
+  /// Small caption under the label.
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
+    final enabled = onTap != null;
     return InkWell(
-      onTap: () {
-        Haptics.tap();
-        onTap();
-      },
+      onTap: enabled
+          ? () {
+              Haptics.tap();
+              onTap!();
+            }
+          : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.screenPadding,
@@ -77,10 +105,25 @@ class _Row extends StatelessWidget {
               AppIcon(
                 icon,
                 size: AppIconSize.md,
-                color: context.palette.textSecondary,
+                color: enabled ? p.textSecondary : p.textTertiary,
               ),
               const SizedBox(width: AppSpacing.md),
-              Text(label, style: context.text.label),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: context.text.label.copyWith(
+                        color: enabled ? null : p.textTertiary,
+                      ),
+                    ),
+                    if (subtitle != null)
+                      Text(subtitle!, style: context.text.caption),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
