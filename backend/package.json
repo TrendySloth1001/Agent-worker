@@ -4,9 +4,15 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "build": "prisma generate && tsc",
+    "start": "prisma migrate deploy && node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:migrate:create": "prisma migrate dev --create-only",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "devEngines": {
     "packageManager": {
@@ -21,6 +27,8 @@
     "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@mozilla/readability": "^0.6.0",
     "@node-rs/argon2": "^2.2.2",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.7",
     "exceljs": "^4.4.0",
@@ -31,6 +39,7 @@
     "p-limit": "^7.3.3",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
+    "prisma": "7.10.0",
     "sharp": "^0.35.5",
     "turndown": "^7.2.4",
     "zod": "^4.6.5"

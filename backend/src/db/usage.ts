@@ -1,4 +1,4 @@
-import { isDbUp, query } from "./pool.js";
+import { db, isDbUp, Prisma } from "./prisma.js";
 
 export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe";
 type Event = {
@@ -20,12 +20,31 @@ export function recordUsage(e: Event): void {
   mem.push({ ...e, ts: Date.now() });
   if (mem.length > 5000) mem.splice(0, mem.length - 5000);
   if (!isDbUp()) return;
-  query(
-    `INSERT INTO usage_events (provider, model, kind, ok, status, latency_ms, count, prompt_tokens, completion_tokens)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [e.provider, e.model ?? null, e.kind, e.ok, e.status ?? null, e.latencyMs ?? null, e.count ?? 1, e.promptTokens ?? null, e.completionTokens ?? null],
-  ).catch(() => {});
+  try {
+    db()
+      .usageEvent.create({
+        data: {
+          provider: e.provider,
+          model: e.model ?? null,
+          kind: e.kind,
+          ok: e.ok,
+          status: e.status ?? null,
+          latencyMs: e.latencyMs ?? null,
+          count: e.count ?? 1,
+          promptTokens: e.promptTokens ?? null,
+          completionTokens: e.completionTokens ?? null,
+        },
+        select: { id: true },
+      })
+      .catch(() => {});
+  } catch {
+    /* database just went down */
+  }
 }
+
+// Start of the current UTC day / month, as SQL fragments (no user input).
+const DAY_START = Prisma.sql`date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+const MONTH_START = Prisma.sql`date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 
 type Summary = {
   ollama: { todayRequests: number; todayTokens: number; monthRequests: number; monthTokens: number; lastLimitHitAt: string | null };
@@ -64,26 +83,22 @@ function fromMemory(): Summary {
 export async function getUsageSummary(): Promise<Summary> {
   if (!isDbUp()) return fromMemory();
   try {
-    const day = "date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
-    const month = "date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
+    // Raw: single-pass FILTER aggregates over the UTC day/month.
     const [o, e, s] = await Promise.all([
-      query(
-        `SELECT
-           count(*) FILTER (WHERE ts >= ${day})::int AS tr,
-           coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)) FILTER (WHERE ts >= ${day}),0)::bigint AS tt,
+      db().$queryRaw<Array<{ tr: number; tt: bigint; mr: number; mt: bigint; hit: Date | null }>>`
+        SELECT
+           count(*) FILTER (WHERE ts >= ${DAY_START})::int AS tr,
+           coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)) FILTER (WHERE ts >= ${DAY_START}),0)::bigint AS tt,
            count(*)::int AS mr,
            coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)),0)::bigint AS mt,
            max(ts) FILTER (WHERE status IN (402,429)) AS hit
-         FROM usage_events WHERE provider='ollama' AND kind='chat' AND ts >= ${month}`,
-      ),
-      query(
-        `SELECT count(*)::int AS r, coalesce(sum(count),0)::int AS t FROM usage_events WHERE kind='embed' AND ts >= ${day}`,
-      ),
-      query(
-        `SELECT count(*) FILTER (WHERE ts >= ${day})::int AS d, count(*)::int AS m FROM usage_events WHERE kind IN ('search','fetch') AND ts >= ${month}`,
-      ),
+         FROM usage_events WHERE provider='ollama' AND kind='chat' AND ts >= ${MONTH_START}`,
+      db().$queryRaw<Array<{ r: number; t: number }>>`
+        SELECT count(*)::int AS r, coalesce(sum(count),0)::int AS t FROM usage_events WHERE kind='embed' AND ts >= ${DAY_START}`,
+      db().$queryRaw<Array<{ d: number; m: number }>>`
+        SELECT count(*) FILTER (WHERE ts >= ${DAY_START})::int AS d, count(*)::int AS m FROM usage_events WHERE kind IN ('search','fetch') AND ts >= ${MONTH_START}`,
     ]);
-    const o0 = o.rows[0];
+    const o0 = o[0];
     return {
       ollama: {
         todayRequests: o0.tr,
@@ -92,8 +107,8 @@ export async function getUsageSummary(): Promise<Summary> {
         monthTokens: Number(o0.mt),
         lastLimitHitAt: o0.hit ? new Date(o0.hit).toISOString() : null,
       },
-      embeddings: { todayRequests: e.rows[0].r, todayTexts: e.rows[0].t },
-      search: { today: s.rows[0].d, month: s.rows[0].m },
+      embeddings: { todayRequests: e[0].r, todayTexts: e[0].t },
+      search: { today: s[0].d, month: s[0].m },
     };
   } catch {
     return fromMemory();
@@ -140,18 +155,15 @@ export async function getProviderUsage(): Promise<Record<string, ProviderUsage>>
     }
     return out;
   }
-  const dayExpr = "date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
-  const monthExpr = "date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
-  const { rows } = await query(
-    `SELECT provider,
-       count(*) FILTER (WHERE ts >= ${dayExpr})::int AS tr,
-       coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)) FILTER (WHERE ts >= ${dayExpr}),0)::bigint AS tt,
+  const rows = await db().$queryRaw<Array<{ provider: string; tr: number; tt: bigint; mr: number; mt: bigint; tf: number; hit: Date | null }>>`
+    SELECT provider,
+       count(*) FILTER (WHERE ts >= ${DAY_START})::int AS tr,
+       coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)) FILTER (WHERE ts >= ${DAY_START}),0)::bigint AS tt,
        count(*)::int AS mr,
        coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)),0)::bigint AS mt,
-       count(*) FILTER (WHERE ts >= ${dayExpr} AND NOT ok)::int AS tf,
+       count(*) FILTER (WHERE ts >= ${DAY_START} AND NOT ok)::int AS tf,
        max(ts) FILTER (WHERE status IN (402,429)) AS hit
-     FROM usage_events WHERE kind='chat' AND ts >= ${monthExpr} GROUP BY provider`,
-  );
+     FROM usage_events WHERE kind='chat' AND ts >= ${MONTH_START} GROUP BY provider`;
   for (const r of rows) {
     out[r.provider] = {
       todayRequests: r.tr,

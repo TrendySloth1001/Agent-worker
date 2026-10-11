@@ -1,4 +1,5 @@
-import { query } from "../db/pool.js";
+import { db } from "../db/prisma.js";
+import { toVector } from "../db/vector.js";
 import { ownerFilter } from "../auth/context.js";
 import { embedTexts } from "../embeddings/index.js";
 import { getObject } from "../storage/s3.js";
@@ -7,7 +8,7 @@ import type { Message } from "../providers.js";
 import { AppError } from "../util/errors.js";
 import { CHUNK_THRESHOLD } from "./process.js";
 import { toJpeg } from "./media.js";
-import { INFO_COLS, type FileRow } from "./store.js";
+import { INFO_SELECT, toFileRow, type FileRow } from "./store.js";
 
 export const ATTACH_PLACEHOLDER = "(no message text, only attachments)";
 const MAX_TRANSCRIPT_CHARS = 20_000;
@@ -19,11 +20,11 @@ export async function loadRows(ids: string[]): Promise<Map<string, FileRow>> {
   if (ids.length === 0) return new Map();
   // Another user's file id reads as not found.
   const [unscoped, uid] = ownerFilter();
-  const { rows } = await query<FileRow>(
-    `SELECT ${INFO_COLS} FROM files WHERE id = ANY($1::uuid[]) AND ($2::boolean OR user_id IS NOT DISTINCT FROM $3::uuid)`,
-    [ids, unscoped, uid],
-  );
-  const map = new Map(rows.map((r) => [r.id, r]));
+  const rows = await db().storedFile.findMany({
+    where: { id: { in: ids }, ...(unscoped ? {} : { userId: uid }) },
+    select: INFO_SELECT,
+  });
+  const map = new Map(rows.map((r) => [r.id, toFileRow(r)]));
   const missing = ids.find((id) => !map.has(id));
   if (missing) throw new AppError(404, "not_found", `Attachment not found: ${missing}`);
   return map;
@@ -56,7 +57,7 @@ async function pixels(row: FileRow): Promise<string[]> {
   if (hit) return hit;
   let out: string[];
   if (row.kind === "image") {
-    out = [(await toJpeg(await getObject(row.s3_key), 1280, 80)).data.toString("base64")];
+    out = [(await toJpeg(await getObject(row.s3Key), 1280, 80)).data.toString("base64")];
   } else {
     const keys = (row.meta?.frameKeys as string[] | undefined) ?? [];
     out = await Promise.all(keys.map(async (k) => (await getObject(k)).toString("base64")));
@@ -66,27 +67,25 @@ async function pixels(row: FileRow): Promise<string[]> {
 }
 
 async function docText(id: string): Promise<string> {
-  const { rows } = await query<{ text: string | null }>("SELECT text FROM files WHERE id = $1", [id]);
-  return rows[0]?.text ?? "";
+  const row = await db().storedFile.findUnique({ where: { id }, select: { text: true } });
+  return row?.text ?? "";
 }
 
 async function excerpt(row: FileRow, text: string, question: string, perDocChunks: number): Promise<string> {
   if (text.length <= CHUNK_THRESHOLD) return text;
   const head = () => text.slice(0, CHUNK_THRESHOLD);
   try {
-    const { rows: has } = await query("SELECT 1 FROM file_chunks WHERE file_id = $1 LIMIT 1", [row.id]);
-    if (has.length === 0) return head();
+    const has = await db().fileChunk.findFirst({ where: { fileId: row.id }, select: { id: true } });
+    if (!has) return head();
     let chunks: Array<{ ord: number; content: string }>;
     if (question.trim()) {
       const [qv] = await embedTexts([question.slice(0, 2000)], "query");
-      chunks = (
-        await query<{ ord: number; content: string }>(
-          "SELECT ord, content FROM file_chunks WHERE file_id = $1 ORDER BY embedding <=> $2::vector LIMIT $3",
-          [row.id, `[${qv.join(",")}]`, perDocChunks],
-        )
-      ).rows;
+      // Vector similarity stays raw SQL (pgvector operator).
+      chunks = await db().$queryRaw<Array<{ ord: number; content: string }>>`
+        SELECT ord, content FROM file_chunks WHERE file_id = ${row.id}::uuid
+        ORDER BY embedding <=> ${toVector(qv)}::vector LIMIT ${perDocChunks}`;
     } else {
-      chunks = (await query<{ ord: number; content: string }>("SELECT ord, content FROM file_chunks WHERE file_id = $1 ORDER BY ord LIMIT $2", [row.id, perDocChunks])).rows;
+      chunks = await db().fileChunk.findMany({ where: { fileId: row.id }, orderBy: { ord: "asc" }, take: perDocChunks, select: { ord: true, content: true } });
     }
     chunks.sort((a, b) => a.ord - b.ord);
     return chunks.map((c) => c.content).join("\n[...]\n");

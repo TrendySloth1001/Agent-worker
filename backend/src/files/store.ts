@@ -1,22 +1,22 @@
-import { query } from "../db/pool.js";
+import { db, type Prisma } from "../db/prisma.js";
 import { ownerFilter } from "../auth/context.js";
 import { deleteObject, presign } from "../storage/s3.js";
 import type { FileKind } from "./kinds.js";
 
 export type FileRow = {
   id: string;
-  conversation_id: string | null;
+  conversationId: string | null;
   name: string;
   mime: string;
-  size: string | number;
+  size: number;
   kind: FileKind;
   status: "processing" | "ready" | "failed";
   error: string | null;
-  s3_key: string;
-  thumb_key: string | null;
+  s3Key: string;
+  thumbKey: string | null;
   meta: Record<string, any>;
   text?: string | null;
-  created_at: Date;
+  createdAt: Date;
 };
 
 export type FileInfo = {
@@ -35,7 +35,35 @@ export type FileInfo = {
 
 const META_PUBLIC = ["width", "height", "pages", "chars", "durationS", "frames", "hasTranscript"];
 
-export const INFO_COLS = "id, conversation_id, name, mime, size, kind, status, error, s3_key, thumb_key, meta, created_at";
+/** Columns of a FileRow (everything but the extracted text and the owner). */
+export const INFO_SELECT = {
+  id: true,
+  conversationId: true,
+  name: true,
+  mime: true,
+  size: true,
+  kind: true,
+  status: true,
+  error: true,
+  s3Key: true,
+  thumbKey: true,
+  meta: true,
+  createdAt: true,
+} satisfies Prisma.StoredFileSelect;
+
+type Selected = Prisma.StoredFileGetPayload<{ select: typeof INFO_SELECT }> & { text?: string | null };
+
+/** A selected files row as FileRow (bigint size as number, JSON meta as an object). */
+export function toFileRow(r: Selected): FileRow {
+  const meta = r.meta && typeof r.meta === "object" && !Array.isArray(r.meta) ? (r.meta as Record<string, any>) : {};
+  return {
+    ...r,
+    size: Number(r.size),
+    kind: r.kind as FileKind,
+    status: r.status as FileRow["status"],
+    meta,
+  };
+}
 
 /** FileInfo without signed URLs (what conversations persist). */
 export function plainInfo(r: FileRow): FileInfo {
@@ -50,30 +78,30 @@ export function plainInfo(r: FileRow): FileInfo {
     status: r.status,
     error: r.error,
     meta,
-    createdAt: r.created_at.toISOString(),
+    createdAt: r.createdAt.toISOString(),
   };
 }
 
 export async function signedInfo(r: FileRow): Promise<FileInfo> {
-  const [url, thumbUrl] = await Promise.all([presign(r.s3_key), r.thumb_key ? presign(r.thumb_key) : Promise.resolve(null)]);
+  const [url, thumbUrl] = await Promise.all([presign(r.s3Key), r.thumbKey ? presign(r.thumbKey) : Promise.resolve(null)]);
   return { ...plainInfo(r), url, thumbUrl };
 }
 
 /** A file of the current request's user (any file outside a request). */
 export async function getFileRow(id: string, withText = false): Promise<FileRow | null> {
   const [unscoped, uid] = ownerFilter();
-  const { rows } = await query<FileRow>(
-    `SELECT ${INFO_COLS}${withText ? ", text" : ""} FROM files WHERE id = $1 AND ($2::boolean OR user_id IS NOT DISTINCT FROM $3::uuid)`,
-    [id, unscoped, uid],
-  );
-  return rows[0] ?? null;
+  const row = await db().storedFile.findFirst({
+    where: { id, ...(unscoped ? {} : { userId: uid }) },
+    select: { ...INFO_SELECT, text: withText },
+  });
+  return row ? toFileRow(row) : null;
 }
 
 /** Removes a file's objects (original, thumbnail, video frames) and its rows. */
 export async function deleteFile(row: FileRow): Promise<void> {
-  const keys = [row.s3_key, row.thumb_key, ...((row.meta?.frameKeys as string[] | undefined) ?? [])].filter(
+  const keys = [row.s3Key, row.thumbKey, ...((row.meta?.frameKeys as string[] | undefined) ?? [])].filter(
     (k): k is string => !!k,
   );
   await Promise.allSettled(keys.map((k) => deleteObject(k)));
-  await query("DELETE FROM files WHERE id = $1", [row.id]);
+  await db().storedFile.deleteMany({ where: { id: row.id } });
 }

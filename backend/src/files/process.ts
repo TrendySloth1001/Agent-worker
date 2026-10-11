@@ -1,7 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import pLimit from "p-limit";
-import { query } from "../db/pool.js";
+import { db, Prisma } from "../db/prisma.js";
+import { toVector } from "../db/vector.js";
 import { embedTexts } from "../embeddings/index.js";
 import { chunkMarkdown } from "../ingest/chunk.js";
 import { getObject, putObject } from "../storage/s3.js";
@@ -13,13 +14,14 @@ import { extractFrames, imageSize, probe, toJpeg, transcribe, withTmp } from "./
 const limit = pLimit(2);
 export const CHUNK_THRESHOLD = 12_000;
 
-type Target = { id: string; name: string; kind: FileKind; s3_key: string };
+type Target = { id: string; name: string; kind: FileKind; s3Key: string };
 
 async function setResult(id: string, patch: { status: "ready" | "failed"; error?: string; thumbKey?: string | null; meta?: Record<string, unknown>; text?: string | null }) {
-  await query(
-    `UPDATE files SET status = $2, error = $3, thumb_key = COALESCE($4, thumb_key), meta = meta || $5::jsonb, text = COALESCE($6, text) WHERE id = $1`,
-    [id, patch.status, patch.error ?? null, patch.thumbKey ?? null, JSON.stringify(patch.meta ?? {}), patch.text ?? null],
-  );
+  // Raw: `meta || patch` merges JSON in the database (Prisma can only replace the whole value).
+  await db().$executeRaw`
+    UPDATE files SET status = ${patch.status}, error = ${patch.error ?? null}, thumb_key = COALESCE(${patch.thumbKey ?? null}, thumb_key),
+      meta = meta || ${JSON.stringify(patch.meta ?? {})}::jsonb, text = COALESCE(${patch.text ?? null}, text)
+    WHERE id = ${id}::uuid`;
 }
 
 async function processImage(t: Target, buf: Buffer) {
@@ -42,14 +44,11 @@ async function processDocument(t: Target, buf: Buffer) {
     try {
       const chunks = chunkMarkdown(text, t.name).slice(0, 400);
       const vectors = await embedTexts(chunks.map((c) => c.content), "document");
-      await query("DELETE FROM file_chunks WHERE file_id = $1", [t.id]);
+      await db().fileChunk.deleteMany({ where: { fileId: t.id } });
+      // Vectors cannot go through createMany (Unsupported column): one multi-row INSERT per 50 chunks.
       for (let i = 0; i < chunks.length; i += 50) {
-        const part = chunks.slice(i, i + 50);
-        await query(
-          `INSERT INTO file_chunks (file_id, ord, content, embedding)
-           SELECT $1, x.ord, x.content, x.embedding::vector FROM jsonb_to_recordset($2::jsonb) AS x(ord int, content text, embedding text)`,
-          [t.id, JSON.stringify(part.map((c, j) => ({ ord: c.ord, content: c.content, embedding: `[${vectors[i + j].join(",")}]` })))],
-        );
+        const rows = chunks.slice(i, i + 50).map((c, j) => Prisma.sql`(${t.id}::uuid, ${c.ord}, ${c.content}, ${toVector(vectors[i + j])}::vector)`);
+        await db().$executeRaw`INSERT INTO file_chunks (file_id, ord, content, embedding) VALUES ${Prisma.join(rows)}`;
       }
       meta.chunks = chunks.length;
     } catch (e) {
@@ -115,7 +114,7 @@ async function processMedia(t: Target, buf: Buffer) {
 export function processFile(t: Target, buf?: Buffer): Promise<void> {
   return limit(async () => {
     try {
-      const data = buf ?? (await getObject(t.s3_key));
+      const data = buf ?? (await getObject(t.s3Key));
       if (t.kind === "image") await processImage(t, data);
       else if (t.kind === "document") await processDocument(t, data);
       else await processMedia(t, data);
@@ -128,5 +127,12 @@ export function processFile(t: Target, buf?: Buffer): Promise<void> {
 
 /** Files left in `processing` by a restart can never finish. */
 export async function failInterrupted(): Promise<void> {
-  await query("UPDATE files SET status = 'failed', error = 'Processing was interrupted' WHERE status = 'processing' AND created_at < now() - interval '10 minutes'").catch(() => {});
+  try {
+    await db().storedFile.updateMany({
+      where: { status: "processing", createdAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+      data: { status: "failed", error: "Processing was interrupted" },
+    });
+  } catch {
+    /* retried on the next start */
+  }
 }

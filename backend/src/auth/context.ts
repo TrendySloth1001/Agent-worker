@@ -7,7 +7,7 @@ export type Role = "owner" | "user";
 /**
  * The caller of a request. `id` is null only for the API_TOKEN dev bypass
  * before the owner account exists; it then sees the not-yet-claimed rows
- * (user_id IS NULL). SQL compares with `user_id IS NOT DISTINCT FROM $n`.
+ * (user_id IS NULL). Queries filter `userId: id` (Prisma) or `user_id IS NOT DISTINCT FROM` (raw SQL).
  */
 export type AuthUser = { id: string | null; role: Role; sid: string | null; bypass: boolean };
 
@@ -49,7 +49,8 @@ export function requireOwner(req: Request, _res: Response, next: NextFunction): 
 
 /**
  * Ownership filter params for the current request: `[unscoped, userId]`.
- * Use as `($a::boolean OR t.user_id IS NOT DISTINCT FROM $b::uuid)`.
+ * With Prisma: `where: { ...(unscoped ? {} : { userId }) }` (null userId means `user_id IS NULL`);
+ * in raw SQL: `user_id IS NOT DISTINCT FROM ${userId}::uuid` unless unscoped.
  * Unscoped only outside any request (background jobs, health).
  */
 export function ownerFilter(): [boolean, string | null] {

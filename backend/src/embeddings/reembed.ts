@@ -1,5 +1,6 @@
-import { query, withTx } from "../db/pool.js";
-import { markEmbeddingsCurrent, needsReembed } from "../db/migrate.js";
+import { db, Prisma, tx } from "../db/prisma.js";
+import { markEmbeddingsCurrent, needsReembed } from "../db/embeddingGuard.js";
+import { toVector } from "../db/vector.js";
 import { embeddingInput } from "../ingest/chunk.js";
 import { log } from "../util/logger.js";
 import { embedTexts } from "./index.js";
@@ -13,28 +14,30 @@ export async function reembedAll(): Promise<void> {
   running = true;
   const started = Date.now();
   try {
-    let lastId = 0;
+    let lastId = 0n;
     let done = 0;
     for (;;) {
-      const { rows } = await query<{ id: string; heading_path: string | null; content: string }>(
-        "SELECT id, heading_path, content FROM chunks WHERE id > $1 ORDER BY id LIMIT $2",
-        [lastId, BATCH],
-      );
+      const rows = await db().chunk.findMany({
+        where: { id: { gt: lastId } },
+        orderBy: { id: "asc" },
+        take: BATCH,
+        select: { id: true, headingPath: true, content: true },
+      });
       if (rows.length === 0) break;
       const vectors = await embedTexts(
-        rows.map((r) => embeddingInput({ headingPath: r.heading_path, content: r.content })),
+        rows.map((r) => embeddingInput({ headingPath: r.headingPath, content: r.content })),
         "document",
         { reembed: true },
       );
-      await query(
-        `UPDATE chunks c SET embedding = v.embedding::vector
-         FROM unnest($1::bigint[], $2::text[]) AS v(id, embedding) WHERE c.id = v.id`,
-        [rows.map((r) => r.id), vectors.map((v) => `[${v.join(",")}]`)],
-      );
+      // Raw: vector column. One UPDATE ... FROM (VALUES ...) per batch.
+      const values = rows.map((r, i) => Prisma.sql`(${r.id}::bigint, ${toVector(vectors[i])})`);
+      await db().$executeRaw`
+        UPDATE chunks c SET embedding = v.embedding::vector
+        FROM (VALUES ${Prisma.join(values)}) AS v(id, embedding) WHERE c.id = v.id`;
       done += rows.length;
-      lastId = Number(rows[rows.length - 1].id);
+      lastId = rows[rows.length - 1].id;
     }
-    await withTx((c) => markEmbeddingsCurrent(c));
+    await tx((c) => markEmbeddingsCurrent(c));
     log.info("re-embedding finished", { chunks: done, ms: Date.now() - started });
   } catch (e) {
     log.error("re-embedding failed, will retry on next start", { message: (e as Error).message.slice(0, 160) });

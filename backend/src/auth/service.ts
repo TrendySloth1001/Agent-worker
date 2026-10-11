@@ -1,35 +1,24 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { hash, verify } from "@node-rs/argon2";
-import type pg from "pg";
 import { config } from "../config.js";
-import { isDbUp, query, withTx } from "../db/pool.js";
+import { db, isDbUp, tx, type Tx } from "../db/prisma.js";
+import type { User } from "../generated/prisma/client.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { runAs, type AuthUser, type Role } from "./context.js";
 import { hashToken, newRefreshToken, signAccess, verifyAccess } from "./jwt.js";
 
-export type UserRow = {
-  id: string;
-  email: string;
-  password_hash: string;
-  name: string;
-  avatar_url: string | null;
-  role: Role;
-  limits: Record<string, number>;
-  disabled: boolean;
-  created_at: Date;
-  last_login_at: Date | null;
-};
+export type UserRow = User;
 
 export const publicUser = (u: UserRow) => ({
   id: u.id,
   email: u.email,
   name: u.name,
-  avatarUrl: u.avatar_url,
-  role: u.role,
-  createdAt: u.created_at.toISOString(),
-  lastLoginAt: u.last_login_at?.toISOString() ?? null,
+  avatarUrl: u.avatarUrl,
+  role: u.role as Role,
+  createdAt: u.createdAt.toISOString(),
+  lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
 });
 
 export const normalizeEmail = (e: string) => e.trim().toLowerCase();
@@ -51,8 +40,7 @@ export async function checkPassword(stored: string | null, password: string): Pr
 }
 
 export async function getUser(id: string): Promise<UserRow | null> {
-  const { rows } = await query<UserRow>("SELECT * FROM users WHERE id = $1", [id]);
-  return rows[0] ?? null;
+  return db().user.findUnique({ where: { id } });
 }
 
 // ---- sessions ----------------------------------------------------------
@@ -65,21 +53,26 @@ export type Tokens = {
   sessionId: string;
 };
 
-type Db = Pick<pg.PoolClient, "query">;
-
 const refreshExpiry = () => new Date(Date.now() + config.auth.refreshTtlDays * 86_400_000);
 
-async function issue(c: Db, user: { id: string; role: Role }, family: { id: string; createdAt: Date } | null, device: string | null): Promise<Tokens & { rowId: string }> {
+async function issue(c: Tx, user: { id: string; role: string }, family: { id: string; createdAt: Date } | null, device: string | null): Promise<Tokens & { rowId: string }> {
   const refreshToken = newRefreshToken();
   const expires = refreshExpiry();
-  const { rows } = await c.query<{ id: string; family_id: string }>(
-    `INSERT INTO auth_sessions (family_id, user_id, token_hash, device, family_created_at, expires_at)
-     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, COALESCE($5::timestamptz, now()), $6) RETURNING id, family_id`,
-    [family?.id ?? null, user.id, hashToken(refreshToken), device, family?.createdAt ?? null, expires],
-  );
-  const sid = rows[0].family_id;
-  const access = signAccess({ sub: user.id, role: user.role, sid });
-  return { accessToken: access.token, accessExpiresAt: access.expiresAt, refreshToken, refreshExpiresAt: expires.toISOString(), sessionId: sid, rowId: rows[0].id };
+  const row = await c.authSession.create({
+    data: {
+      familyId: family?.id ?? randomUUID(),
+      userId: user.id,
+      tokenHash: hashToken(refreshToken),
+      device,
+      // A new family starts now (column default); a rotation keeps the family's start.
+      ...(family ? { familyCreatedAt: family.createdAt } : {}),
+      expiresAt: expires,
+    },
+    select: { id: true, familyId: true },
+  });
+  const sid = row.familyId;
+  const access = signAccess({ sub: user.id, role: user.role as Role, sid });
+  return { accessToken: access.token, accessExpiresAt: access.expiresAt, refreshToken, refreshExpiresAt: expires.toISOString(), sessionId: sid, rowId: row.id };
 }
 
 export const deviceLabel = (req: Request, body?: unknown): string | null => {
@@ -98,25 +91,24 @@ export async function register(input: { email: string; password: string; name: s
     throw new AppError(400, "register_failed", "Could not create an account with these details. If you already have one, sign in.");
   }
   const passwordHash = await hashPassword(input.password);
-  return withTx(async (c) => {
-    const { rows: existing } = await c.query("SELECT 1 FROM users WHERE email = $1", [email]);
-    if (existing[0]) throw new AppError(400, "register_failed", "Could not create an account with these details. If you already have one, sign in.");
+  return tx(async (c) => {
+    const existing = await c.user.findUnique({ where: { email }, select: { id: true } });
+    if (existing) throw new AppError(400, "register_failed", "Could not create an account with these details. If you already have one, sign in.");
     // The owner: OWNER_EMAIL when set, otherwise the very first account.
-    const { rows: counts } = await c.query<{ users: number; owners: number }>(
-      "SELECT count(*)::int AS users, count(*) FILTER (WHERE role = 'owner')::int AS owners FROM users",
-    );
-    const owner = counts[0].owners === 0 && (config.auth.ownerEmail ? email === config.auth.ownerEmail : counts[0].users === 0);
-    const { rows } = await c.query<UserRow>(
-      `INSERT INTO users (email, password_hash, name, role, last_login_at) VALUES ($1, $2, $3, $4, now()) RETURNING *`,
-      [email, passwordHash, input.name.trim(), owner ? "owner" : "user"],
-    );
-    const user = rows[0];
+    const users = await c.user.count();
+    const owners = await c.user.count({ where: { role: "owner" } });
+    const owner = owners === 0 && (config.auth.ownerEmail ? email === config.auth.ownerEmail : users === 0);
+    const user = await c.user.create({
+      data: { email, passwordHash, name: input.name.trim(), role: owner ? "owner" : "user", lastLoginAt: new Date() },
+    });
     if (owner) {
       // Data from before accounts existed belongs to the owner.
-      const claimed: Record<string, number> = {};
-      for (const t of ["conversations", "files", "sources"]) {
-        claimed[t] = (await c.query(`UPDATE ${t} SET user_id = $1 WHERE user_id IS NULL`, [user.id])).rowCount ?? 0;
-      }
+      const unclaimed = { where: { userId: null }, data: { userId: user.id } };
+      const claimed = {
+        conversations: (await c.conversation.updateMany(unclaimed)).count,
+        files: (await c.storedFile.updateMany(unclaimed)).count,
+        sources: (await c.source.updateMany(unclaimed)).count,
+      };
       log.info("owner account created", claimed);
     }
     forgetOwner();
@@ -125,13 +117,12 @@ export async function register(input: { email: string; password: string; name: s
 }
 
 export async function login(emailRaw: string, password: string, device: string | null) {
-  const { rows } = await query<UserRow>("SELECT * FROM users WHERE email = $1", [normalizeEmail(emailRaw)]);
-  const user = rows[0];
-  const ok = await checkPassword(user?.password_hash ?? null, password);
+  const user = await db().user.findUnique({ where: { email: normalizeEmail(emailRaw) } });
+  const ok = await checkPassword(user?.passwordHash ?? null, password);
   if (!user || !ok || user.disabled) throw new AppError(401, "invalid_credentials", BAD_LOGIN);
-  return withTx(async (c) => {
-    const { rows: updated } = await c.query<UserRow>("UPDATE users SET last_login_at = now() WHERE id = $1 RETURNING *", [user.id]);
-    return { user: updated[0], tokens: await issue(c, user, null, device) };
+  return tx(async (c) => {
+    const updated = await c.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    return { user: updated, tokens: await issue(c, user, null, device) };
   });
 }
 
@@ -141,24 +132,22 @@ const REUSE_GRACE_MS = 20_000;
 
 export async function refresh(token: string, device: string | null) {
   const h = hashToken(token);
-  const out = await withTx(async (c) => {
-    const { rows } = await c.query<{
-      id: string; family_id: string; user_id: string; family_created_at: Date; expires_at: Date; revoked_at: Date | null; replaced_by: string | null; device: string | null;
-    }>("SELECT * FROM auth_sessions WHERE token_hash = $1 FOR UPDATE", [h]);
-    const s = rows[0];
+  const out = await tx(async (c) => {
+    // Raw: Prisma has no SELECT ... FOR UPDATE; the row lock serializes concurrent refreshes.
+    await c.$queryRaw`SELECT 1 FROM auth_sessions WHERE token_hash = ${h} FOR UPDATE`;
+    const s = await c.authSession.findUnique({ where: { tokenHash: h } });
     if (!s) return { error: "invalid" as const };
-    if (s.revoked_at) {
-      if (s.replaced_by && Date.now() - s.revoked_at.getTime() < REUSE_GRACE_MS) return { error: "race" as const };
+    if (s.revokedAt) {
+      if (s.replacedBy && Date.now() - s.revokedAt.getTime() < REUSE_GRACE_MS) return { error: "race" as const };
       // Reuse of a rotated token: someone else may hold it. End the whole session.
-      await c.query("UPDATE auth_sessions SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL", [s.family_id]);
-      return { error: "reuse" as const, familyId: s.family_id, userId: s.user_id };
+      await c.authSession.updateMany({ where: { familyId: s.familyId, revokedAt: null }, data: { revokedAt: new Date() } });
+      return { error: "reuse" as const, familyId: s.familyId, userId: s.userId };
     }
-    if (s.expires_at.getTime() <= Date.now()) return { error: "invalid" as const };
-    const { rows: users } = await c.query<UserRow>("SELECT * FROM users WHERE id = $1", [s.user_id]);
-    const user = users[0];
+    if (s.expiresAt.getTime() <= Date.now()) return { error: "invalid" as const };
+    const user = await c.user.findUnique({ where: { id: s.userId } });
     if (!user || user.disabled) return { error: "invalid" as const };
-    const tokens = await issue(c, user, { id: s.family_id, createdAt: s.family_created_at }, s.device ?? device);
-    await c.query("UPDATE auth_sessions SET revoked_at = now(), replaced_by = $2 WHERE id = $1", [s.id, tokens.rowId]);
+    const tokens = await issue(c, user, { id: s.familyId, createdAt: s.familyCreatedAt }, s.device ?? device);
+    await c.authSession.update({ where: { id: s.id }, data: { revokedAt: new Date(), replacedBy: tokens.rowId } });
     return { user, tokens };
   });
   if ("error" in out) {
@@ -173,44 +162,38 @@ export async function refresh(token: string, device: string | null) {
 
 /** Ends the session (token family) a refresh token belongs to. */
 export async function revokeByRefresh(token: string): Promise<void> {
-  const { rows } = await query<{ family_id: string; user_id: string }>(
-    "SELECT family_id, user_id FROM auth_sessions WHERE token_hash = $1",
-    [hashToken(token)],
-  );
-  if (rows[0]) await revokeFamily(rows[0].user_id, rows[0].family_id);
+  const s = await db().authSession.findUnique({ where: { tokenHash: hashToken(token) }, select: { familyId: true, userId: true } });
+  if (s) await revokeFamily(s.userId, s.familyId);
 }
 
 export async function revokeFamily(userId: string, familyId: string): Promise<boolean> {
-  const r = await query(
-    "UPDATE auth_sessions SET revoked_at = now() WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL",
-    [userId, familyId],
-  );
+  const r = await db().authSession.updateMany({ where: { userId, familyId, revokedAt: null }, data: { revokedAt: new Date() } });
   forgetUser(userId);
-  return r.rowCount > 0;
+  return r.count > 0;
 }
 
 /** Ends every session of a user except [keep]. */
 export async function revokeOthers(userId: string, keep: string | null): Promise<void> {
-  await query(
-    "UPDATE auth_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND ($2::uuid IS NULL OR family_id <> $2::uuid)",
-    [userId, keep],
-  );
+  await db().authSession.updateMany({
+    where: { userId, revokedAt: null, ...(keep ? { familyId: { not: keep } } : {}) },
+    data: { revokedAt: new Date() },
+  });
   forgetUser(userId);
 }
 
 export async function listSessions(userId: string, current: string | null) {
-  const { rows } = await query<{ family_id: string; device: string | null; family_created_at: Date; created_at: Date; expires_at: Date }>(
-    `SELECT family_id, device, family_created_at, created_at, expires_at FROM auth_sessions
-      WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC`,
-    [userId],
-  );
+  const rows = await db().authSession.findMany({
+    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+    select: { familyId: true, device: true, familyCreatedAt: true, createdAt: true, expiresAt: true },
+  });
   return rows.map((r) => ({
-    id: r.family_id,
+    id: r.familyId,
     device: r.device,
-    createdAt: r.family_created_at.toISOString(),
-    lastUsedAt: r.created_at.toISOString(),
-    expiresAt: r.expires_at.toISOString(),
-    current: r.family_id === current,
+    createdAt: r.familyCreatedAt.toISOString(),
+    lastUsedAt: r.createdAt.toISOString(),
+    expiresAt: r.expiresAt.toISOString(),
+    current: r.familyId === current,
   }));
 }
 
@@ -231,14 +214,15 @@ async function sessionCheck(userId: string, sid: string, role: Role): Promise<Ch
   if (hit && Date.now() - hit.at < CHECK_TTL_MS) return hit;
   // Database down: a correctly signed, unexpired token is trusted.
   if (!isDbUp()) return { ok: true, role, at: Date.now() };
-  const { rows } = await query<{ role: Role; disabled: boolean; active: boolean }>(
-    `SELECT u.role, u.disabled, EXISTS (
-        SELECT 1 FROM auth_sessions s WHERE s.family_id = $2 AND s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > now()
-      ) AS active FROM users u WHERE u.id = $1`,
-    [userId, sid],
-  );
-  const r = rows[0];
-  const check = { ok: !!r && !r.disabled && r.active, role: r?.role ?? role, at: Date.now() };
+  const r = await db().user.findUnique({
+    where: { id: userId },
+    select: {
+      role: true,
+      disabled: true,
+      sessions: { where: { familyId: sid, revokedAt: null, expiresAt: { gt: new Date() } }, select: { id: true }, take: 1 },
+    },
+  });
+  const check = { ok: !!r && !r.disabled && r.sessions.length > 0, role: (r?.role as Role | undefined) ?? role, at: Date.now() };
   checks.set(key, check);
   if (checks.size > 5000) checks.delete(checks.keys().next().value!);
   return check;
@@ -253,8 +237,8 @@ function forgetOwner() {
 export async function ownerId(): Promise<string | null> {
   if (ownerCache && Date.now() - ownerCache.at < 30_000) return ownerCache.id;
   if (!isDbUp()) return null;
-  const { rows } = await query<{ id: string }>("SELECT id FROM users WHERE role = 'owner' LIMIT 1");
-  ownerCache = { id: rows[0]?.id ?? null, at: Date.now() };
+  const owner = await db().user.findFirst({ where: { role: "owner" }, select: { id: true } });
+  ownerCache = { id: owner?.id ?? null, at: Date.now() };
   return ownerCache.id;
 }
 

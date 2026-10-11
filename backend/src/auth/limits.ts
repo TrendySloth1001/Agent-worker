@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { config } from "../config.js";
-import { query } from "../db/pool.js";
+import { db } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
 import type { AuthUser } from "./context.js";
 
@@ -9,6 +9,8 @@ export type Usage = { chats: number; tables: number; uploads: number; bytes: num
 
 /** UTC day the counters belong to, as YYYY-MM-DD. */
 const today = () => new Date().toISOString().slice(0, 10);
+/** The same day as a DATE column value. */
+const todayDate = () => new Date(`${today()}T00:00:00.000Z`);
 
 export function resetsAt(): string {
   const d = new Date();
@@ -20,21 +22,24 @@ const resetLabel = () => `${resetsAt().slice(11, 16)} UTC`;
 /** Limits for a user (configured defaults plus per-user overrides); null = unlimited (owner). */
 export async function limitsFor(user: AuthUser): Promise<Limits | null> {
   if (user.role === "owner" || !user.id) return null;
-  const { rows } = await query<{ limits: Partial<Limits> }>("SELECT limits FROM users WHERE id = $1", [user.id]);
-  const o = rows[0]?.limits ?? {};
+  const row = await db().user.findUnique({ where: { id: user.id }, select: { limits: true } });
+  const o = (row?.limits ?? {}) as Partial<Limits>;
   const pick = (k: keyof Limits) => (typeof o[k] === "number" && o[k]! >= 0 ? o[k]! : config.limits[k]);
   return { chat: pick("chat"), table: pick("table"), uploads: pick("uploads"), storageBytes: pick("storageBytes") };
 }
 
 export async function usageFor(userId: string | null): Promise<Usage> {
-  const { rows } = await query<{ chats: number; tables: number; uploads: number; bytes: string; storage: string }>(
-    `SELECT COALESCE(u.chats, 0) AS chats, COALESCE(u.tables, 0) AS tables, COALESCE(u.uploads, 0) AS uploads, COALESCE(u.bytes, 0) AS bytes,
-            (SELECT COALESCE(sum(size), 0) FROM files WHERE user_id IS NOT DISTINCT FROM $1) AS storage
-       FROM (SELECT 1) one LEFT JOIN user_daily_usage u ON u.user_id = $1 AND u.day = $2`,
-    [userId, today()],
-  );
-  const r = rows[0];
-  return { chats: r.chats, tables: r.tables, uploads: r.uploads, bytes: Number(r.bytes), storageBytes: Number(r.storage) };
+  const [day, storage] = await Promise.all([
+    userId ? db().userDailyUsage.findUnique({ where: { userId_day: { userId, day: todayDate() } } }) : null,
+    db().storedFile.aggregate({ where: { userId }, _sum: { size: true } }),
+  ]);
+  return {
+    chats: day?.chats ?? 0,
+    tables: day?.tables ?? 0,
+    uploads: day?.uploads ?? 0,
+    bytes: Number(day?.bytes ?? 0),
+    storageBytes: Number(storage._sum.size ?? 0),
+  };
 }
 
 function limitError(what: string, limit: number): AppError {
@@ -50,23 +55,22 @@ export async function chatLimit(req: Request, _res: Response, next: NextFunction
   const limits = await limitsFor(user);
   if (!limits) {
     // Unlimited, but still counted for the profile screen.
-    await query(
-      `INSERT INTO user_daily_usage (user_id, day, chats, tables) VALUES ($1, $2, 1, $3)
-       ON CONFLICT (user_id, day) DO UPDATE SET chats = user_daily_usage.chats + 1, tables = user_daily_usage.tables + $3`,
-      [user.id, today(), table],
-    );
+    await db().userDailyUsage.upsert({
+      where: { userId_day: { userId: user.id, day: todayDate() } },
+      create: { userId: user.id, day: todayDate(), chats: 1, tables: table },
+      update: { chats: { increment: 1 }, tables: { increment: table } },
+    });
     return next();
   }
   if (limits.chat <= 0) return next(limitError("chat requests", limits.chat));
   if (table && limits.table <= 0) return next(limitError("Round Table runs", limits.table));
   // Insert-or-increment only while under both limits; no row back means over.
-  const { rows } = await query(
-    `INSERT INTO user_daily_usage (user_id, day, chats, tables) VALUES ($1, $2, 1, $3)
-     ON CONFLICT (user_id, day) DO UPDATE SET chats = user_daily_usage.chats + 1, tables = user_daily_usage.tables + $3
-       WHERE user_daily_usage.chats < $4 AND user_daily_usage.tables + $3 <= $5
-     RETURNING chats`,
-    [user.id, today(), table, limits.chat, limits.table],
-  );
+  // Raw: a conditional upsert (count only while under the limits) is one atomic statement.
+  const rows = await db().$queryRaw<Array<{ chats: number }>>`
+    INSERT INTO user_daily_usage (user_id, day, chats, tables) VALUES (${user.id}::uuid, ${today()}::date, 1, ${table}::int)
+    ON CONFLICT (user_id, day) DO UPDATE SET chats = user_daily_usage.chats + 1, tables = user_daily_usage.tables + ${table}::int
+      WHERE user_daily_usage.chats < ${limits.chat}::numeric AND user_daily_usage.tables + ${table}::int <= ${limits.table}::numeric
+    RETURNING chats`;
   if (rows[0]) return next();
   const used = await usageFor(user.id);
   next(used.chats >= limits.chat ? limitError("chat requests", limits.chat) : limitError("Round Table runs", limits.table));
@@ -86,9 +90,9 @@ export async function checkUpload(user: AuthUser, size: number): Promise<void> {
 
 export async function recordUpload(user: AuthUser, size: number): Promise<void> {
   if (!user.id) return;
-  await query(
-    `INSERT INTO user_daily_usage (user_id, day, uploads, bytes) VALUES ($1, $2, 1, $3)
-     ON CONFLICT (user_id, day) DO UPDATE SET uploads = user_daily_usage.uploads + 1, bytes = user_daily_usage.bytes + $3`,
-    [user.id, today(), size],
-  );
+  await db().userDailyUsage.upsert({
+    where: { userId_day: { userId: user.id, day: todayDate() } },
+    create: { userId: user.id, day: todayDate(), uploads: 1, bytes: size },
+    update: { uploads: { increment: 1 }, bytes: { increment: size } },
+  });
 }

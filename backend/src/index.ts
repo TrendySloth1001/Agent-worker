@@ -4,7 +4,7 @@ import { config } from "./config.js";
 import { log } from "./util/logger.js";
 import { AppError, errorMiddleware } from "./util/errors.js";
 import { rateLimit } from "./util/rateLimit.js";
-import { initDb, closeDb, onDbUp } from "./db/pool.js";
+import { initDb, closeDb, onDbUp } from "./db/prisma.js";
 import { reembedAll } from "./embeddings/reembed.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
 import { chatRouter } from "./routes/chat.js";

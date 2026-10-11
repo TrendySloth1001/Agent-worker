@@ -1,5 +1,6 @@
-import { getEmbeddingGuardError } from "../db/migrate.js";
-import { isDbUp, query, withTx } from "../db/pool.js";
+import { getEmbeddingGuardError } from "../db/embeddingGuard.js";
+import { db, isDbUp, Prisma, tx } from "../db/prisma.js";
+import { toVector } from "../db/vector.js";
 import { embedTexts } from "../embeddings/index.js";
 import { config } from "../config.js";
 import { AppError } from "../util/errors.js";
@@ -13,10 +14,12 @@ const MAX_PER_DOC = 2;
 const KW_ONLY_FLOOR = 0.2; // a keyword match below the similarity floor still needs minimal semantic relevance
 const TOKEN_BUDGET = 3000;
 
-type Row = { id: number; sim: number; doc_id: string; title: string | null; url: string; heading_path: string | null; content: string; token_count: number | null; type: string };
+type Row = { id: bigint; sim: number; doc_id: string; title: string | null; url: string; heading_path: string | null; content: string; token_count: number | null; type: string };
 
-const COLS = `c.id, c.document_id AS doc_id, c.heading_path, c.content, c.token_count, d.title, d.url, s.type`;
-const JOINS = `FROM chunks c JOIN documents d ON d.id = c.document_id JOIN sources s ON s.id = c.source_id`;
+// The similarity and keyword searches stay raw SQL: pgvector's <=> operator
+// (served by the HNSW index) and Postgres full-text search have no Prisma API.
+const COLS = Prisma.sql`c.id, c.document_id AS doc_id, c.heading_path, c.content, c.token_count, d.title, d.url, s.type`;
+const JOINS = Prisma.sql`FROM chunks c JOIN documents d ON d.id = c.document_id JOIN sources s ON s.id = c.source_id`;
 
 function keywordQuery(q: string): string {
   const words = [...new Set(q.toLowerCase().match(/[\p{L}\p{N}_#+.-]{3,}/gu) ?? [])]
@@ -45,42 +48,38 @@ export async function retrieve(queryText: string, opts: { k?: number; sourceIds?
   const filter = opts.sourceIds?.length ? opts.sourceIds : null;
   // Only the caller's own knowledge base.
   const [unscoped, uid] = ownerFilter();
-  const mine = "($4::boolean OR s.user_id IS NOT DISTINCT FROM $5::uuid)";
-  const any = await query(
-    `SELECT 1 FROM chunks c JOIN sources s ON s.id = c.source_id
-      WHERE ($1::uuid[] IS NULL OR c.source_id = ANY($1::uuid[])) AND ($2::boolean OR s.user_id IS NOT DISTINCT FROM $3::uuid) LIMIT 1`,
-    [filter, unscoped, uid],
-  );
-  if (any.rowCount === 0) return [];
+  const any = await db().chunk.findFirst({
+    where: { ...(filter ? { sourceId: { in: filter } } : {}), ...(unscoped ? {} : { source: { userId: uid } }) },
+    select: { id: true },
+  });
+  if (!any) return [];
 
   const [qv] = await embedTexts([text], "query");
-  const vec = `[${qv.join(",")}]`;
+  const vec = toVector(qv);
   const kw = keywordQuery(text);
+  // Same filters as above, as SQL: optional source list, only the caller's own knowledge base.
+  const inSources = filter ? Prisma.sql`AND c.source_id IN (${Prisma.join(filter.map((id) => Prisma.sql`${id}::uuid`))})` : Prisma.empty;
+  const mine = unscoped ? Prisma.empty : Prisma.sql`AND s.user_id IS NOT DISTINCT FROM ${uid}::uuid`;
 
-  const { vecRows, kwRows } = await withTx(async (c) => {
-    await c.query("SET LOCAL hnsw.ef_search = 40");
+  const { vecRows, kwRows } = await tx(async (c) => {
+    await c.$executeRaw`SET LOCAL hnsw.ef_search = 40`;
     // Keep scanning the index until enough rows pass the per-user filter.
-    await c.query("SET LOCAL hnsw.iterative_scan = relaxed_order");
-    const v = await c.query<Row>(
-      `SELECT ${COLS}, 1 - (c.embedding <=> $1::vector) AS sim ${JOINS}
-       WHERE ($2::uuid[] IS NULL OR c.source_id = ANY($2::uuid[])) AND ($3::boolean OR s.user_id IS NOT DISTINCT FROM $4::uuid)
-       ORDER BY c.embedding <=> $1::vector LIMIT ${CANDIDATES}`,
-      [vec, filter, unscoped, uid],
-    );
+    await c.$executeRaw`SET LOCAL hnsw.iterative_scan = relaxed_order`;
+    const v = await c.$queryRaw<Row[]>`
+      SELECT ${COLS}, 1 - (c.embedding <=> ${vec}::vector) AS sim ${JOINS}
+      WHERE true ${inSources} ${mine}
+      ORDER BY c.embedding <=> ${vec}::vector LIMIT ${CANDIDATES}`;
     let kRows: Row[] = [];
     if (kw) {
-      const r = await c.query<Row>(
-        `SELECT ${COLS}, 1 - (c.embedding <=> $1::vector) AS sim ${JOINS}
-         WHERE c.tsv @@ websearch_to_tsquery('english', $3) AND ($2::uuid[] IS NULL OR c.source_id = ANY($2::uuid[])) AND ${mine}
-         ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', $3)) DESC LIMIT ${CANDIDATES}`,
-        [vec, filter, kw, unscoped, uid],
-      );
-      kRows = r.rows;
+      kRows = await c.$queryRaw<Row[]>`
+        SELECT ${COLS}, 1 - (c.embedding <=> ${vec}::vector) AS sim ${JOINS}
+        WHERE c.tsv @@ websearch_to_tsquery('english', ${kw}) ${inSources} ${mine}
+        ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', ${kw})) DESC LIMIT ${CANDIDATES}`;
     }
-    return { vecRows: v.rows, kwRows: kRows };
+    return { vecRows: v, kwRows: kRows };
   });
 
-  const byId = new Map<number, Row & { rrf: number; kw: boolean }>();
+  const byId = new Map<bigint, Row & { rrf: number; kw: boolean }>();
   const add = (rows: Row[], isKw: boolean) =>
     rows.forEach((r, i) => {
       const e = byId.get(r.id) ?? { ...r, sim: Number(r.sim), rrf: 0, kw: false };
@@ -120,12 +119,9 @@ export async function kbStats(): Promise<{ sources: number; chunks: number } | n
   if (!isDbUp()) return null;
   try {
     const [unscoped, uid] = ownerFilter();
-    const r = await query(
-      `SELECT (SELECT count(*)::int FROM sources WHERE $1::boolean OR user_id IS NOT DISTINCT FROM $2::uuid) AS s,
-              (SELECT count(*)::int FROM chunks c JOIN sources x ON x.id = c.source_id WHERE $1::boolean OR x.user_id IS NOT DISTINCT FROM $2::uuid) AS c`,
-      [unscoped, uid],
-    );
-    return { sources: r.rows[0].s, chunks: r.rows[0].c };
+    const mine = unscoped ? {} : { userId: uid };
+    const [sources, chunks] = await db().$transaction([db().source.count({ where: mine }), db().chunk.count({ where: { source: mine } })]);
+    return { sources, chunks };
   } catch {
     return null;
   }

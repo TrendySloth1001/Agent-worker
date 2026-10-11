@@ -1,0 +1,297 @@
+// Prisma schema for the Agent Worker backend (Postgres 16+ with pgvector and citext).
+//
+// Generated with `prisma db pull` from the live database, then cleaned up:
+// PascalCase models @@map'ed to the existing snake_case tables, camelCase
+// fields @map'ed to their columns. The database stays the source of truth for
+// things Prisma cannot model; they live in the SQL migrations only:
+//   - CHECK constraints on enum-like text columns (role, status, kind, ...)
+//   - HNSW vector indexes (chunks_embedding_hnsw, file_chunks_embedding_hnsw)
+//   - the generated `chunks.tsv` column and its GIN index
+//   - the expression index conversations_list_idx
+//   - UNIQUE NULLS NOT DISTINCT on sources (user_id, type, uri)
+// Review every `prisma migrate dev --create-only` output for statements that
+// would drop or alter these (see docs/SPEC.md, "Database migrations").
+//
+// Vector columns are Unsupported(...): read and write them only with
+// $queryRaw / $executeRaw (src/db/vector.ts helpers).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  previewFeatures     = ["partialIndexes"]
+  importFileExtension = "js"
+  moduleFormat        = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---- accounts ----------------------------------------------------------------
+
+/// CHECK role IN ('owner','user'); at most one owner (partial unique index).
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String    @unique @db.Citext
+  passwordHash String    @map("password_hash")
+  name         String    @default("")
+  avatarUrl    String?   @map("avatar_url")
+  role         String    @unique(map: "users_one_owner", where: raw("(role = 'owner'::text)")) @default("user")
+  /// Per-user overrides of the configured daily limits, e.g. {"chat": 5}.
+  limits       Json      @default("{}")
+  disabled     Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+
+  sessions      AuthSession[]
+  dailyUsage    UserDailyUsage[]
+  conversations Conversation[]
+  files         StoredFile[]
+  sources       Source[]
+
+  @@map("users")
+}
+
+/// One row per refresh token; a login starts a family (= a device session).
+model AuthSession {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId        String    @map("family_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  tokenHash       String    @unique @map("token_hash")
+  device          String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  familyCreatedAt DateTime  @default(now()) @map("family_created_at") @db.Timestamptz(6)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedBy      String?   @map("replaced_by") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([familyId], map: "auth_sessions_family_idx")
+  @@index([userId], map: "auth_sessions_user_idx")
+  @@map("auth_sessions")
+}
+
+model UserDailyUsage {
+  userId  String   @map("user_id") @db.Uuid
+  day     DateTime @db.Date
+  chats   Int      @default(0)
+  tables  Int      @default(0)
+  uploads Int      @default(0)
+  bytes   BigInt   @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([userId, day])
+  @@map("user_daily_usage")
+}
+
+// ---- conversations -----------------------------------------------------------
+
+/// CHECK title_source IN ('ai','fallback','user','derived'), origin IN ('fork','merge').
+/// Expression index conversations_list_idx exists in SQL only.
+model Conversation {
+  id           String    @id @db.Uuid
+  title        String?
+  titleSource  String?   @map("title_source")
+  messageCount Int       @default(0) @map("message_count")
+  preview      String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  pinnedAt     DateTime? @map("pinned_at") @db.Timestamptz(6)
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
+  origin       String?
+  forkedFrom   String?   @map("forked_from") @db.Uuid
+  forkPoint    Int?      @map("fork_point")
+  mergedFrom   String[]  @default([]) @map("merged_from") @db.Uuid
+  /// NULL only for data from before accounts existed (claimed by the owner on registration).
+  userId       String?   @map("user_id") @db.Uuid
+
+  messages ConversationMessage[]
+  parent   Conversation?         @relation("ConversationForks", fields: [forkedFrom], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  forks    Conversation[]        @relation("ConversationForks")
+  user     User?                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([forkedFrom])
+  @@index([updatedAt(sort: Desc)], map: "conversations_updated_idx")
+  @@index([userId, updatedAt(sort: Desc)], map: "conversations_user_idx")
+  @@map("conversations")
+}
+
+/// CHECK role IN ('user','assistant','context').
+model ConversationMessage {
+  conversationId String   @map("conversation_id") @db.Uuid
+  position       Int
+  role           String
+  content        String
+  model          String?
+  citations      Json     @default("[]")
+  usedIds        String[] @default([]) @map("used_ids")
+  isError        Boolean  @default(false) @map("is_error")
+  images         Json     @default("[]")
+  evidence       Json     @default("[]")
+  attachments    Json     @default("[]")
+  meta           Json     @default("{}")
+  /// Round Table transcript (assistant messages only).
+  table          Json?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([conversationId, position])
+  @@map("conversation_messages")
+}
+
+// ---- files -------------------------------------------------------------------
+
+/// CHECK kind IN ('image','document','video','audio'), status IN ('processing','ready','failed').
+model StoredFile {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Not a foreign key: a file may be uploaded before its chat is saved.
+  conversationId String?  @map("conversation_id") @db.Uuid
+  name           String
+  mime           String
+  size           BigInt
+  kind           String
+  status         String   @default("processing")
+  error          String?
+  s3Key          String   @map("s3_key")
+  thumbKey       String?  @map("thumb_key")
+  meta           Json     @default("{}")
+  text           String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId         String?  @map("user_id") @db.Uuid
+
+  chunks FileChunk[]
+  user   User?       @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([conversationId], map: "files_conversation_idx")
+  @@index([userId], map: "files_user_idx")
+  @@map("files")
+}
+
+/// HNSW index file_chunks_embedding_hnsw (vector_cosine_ops) exists in SQL only.
+model FileChunk {
+  id        BigInt                      @id @default(autoincrement())
+  fileId    String                      @map("file_id") @db.Uuid
+  ord       Int
+  content   String
+  embedding Unsupported("vector(1024)")
+
+  file StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([fileId, ord])
+  @@index([embedding], map: "file_chunks_embedding_hnsw")
+  @@map("file_chunks")
+}
+
+// ---- knowledge base ----------------------------------------------------------
+
+/// CHECK type IN ('web','github','stackoverflow','reddit','hackernews','note'),
+/// status IN ('queued','running','ready','failed').
+/// The (user_id, type, uri) key is UNIQUE NULLS NOT DISTINCT in SQL.
+model Source {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type           String
+  uri            String
+  title          String?
+  status         String    @default("queued")
+  options        Json      @default("{}")
+  error          String?
+  progressDone   Int       @default(0) @map("progress_done")
+  progressTotal  Int?      @map("progress_total")
+  docCount       Int       @default(0) @map("doc_count")
+  chunkCount     Int       @default(0) @map("chunk_count")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lastIngestedAt DateTime? @map("last_ingested_at") @db.Timestamptz(6)
+  userId         String?   @map("user_id") @db.Uuid
+
+  chunks    Chunk[]
+  documents Document[]
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, type, uri], map: "sources_user_type_uri_key")
+  @@index([userId], map: "sources_user_idx")
+  @@map("sources")
+}
+
+model Document {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceId    String   @map("source_id") @db.Uuid
+  url         String
+  title       String?
+  contentHash String?  @map("content_hash")
+  meta        Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  chunks Chunk[]
+  source Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([sourceId, url])
+  @@index([sourceId], map: "documents_source_idx")
+  @@map("documents")
+}
+
+/// HNSW index chunks_embedding_hnsw (vector_cosine_ops) and the generated
+/// full-text column `tsv` (GIN index) exist in SQL only.
+model Chunk {
+  id          BigInt                      @id @default(autoincrement())
+  documentId  String                      @map("document_id") @db.Uuid
+  sourceId    String                      @map("source_id") @db.Uuid
+  ord         Int
+  headingPath String?                     @map("heading_path")
+  content     String
+  tokenCount  Int?                        @map("token_count")
+  contentHash String                      @map("content_hash")
+  embedding   Unsupported("vector(1024)")
+  tsv         Unsupported("tsvector")?    @default(dbgenerated("to_tsvector('english'::regconfig, content)"))
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  source   Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([documentId, ord])
+  @@index([embedding], map: "chunks_embedding_hnsw")
+  @@index([sourceId], map: "chunks_source_idx")
+  @@index([tsv], map: "chunks_tsv_gin", type: Gin)
+  @@map("chunks")
+}
+
+/// embedding_model / embedding_dimensions the stored vectors were built with.
+model KbMeta {
+  key   String @id
+  value String
+
+  @@map("kb_meta")
+}
+
+// ---- usage -------------------------------------------------------------------
+
+/// CHECK kind IN ('chat','embed','search','fetch','transcribe').
+model UsageEvent {
+  id               BigInt   @id @default(autoincrement())
+  ts               DateTime @default(now()) @db.Timestamptz(6)
+  provider         String
+  model            String?
+  kind             String
+  ok               Boolean
+  status           Int?
+  latencyMs        Int?     @map("latency_ms")
+  count            Int      @default(1)
+  promptTokens     Int?     @map("prompt_tokens")
+  completionTokens Int?     @map("completion_tokens")
+
+  @@index([provider, ts])
+  @@index([ts])
+  @@map("usage_events")
+}
+
+// ---- legacy ------------------------------------------------------------------
+
+/// Bookkeeping of the pre-Prisma SQL runner (src/db/sql/001..010). No longer
+/// written; kept so migrations never drop it.
+model LegacySchemaMigration {
+  name      String   @id
+  appliedAt DateTime @default(now()) @map("applied_at") @db.Timestamptz(6)
+
+  @@map("schema_migrations")
+}

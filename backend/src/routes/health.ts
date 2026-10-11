@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { config } from "../config.js";
-import { isDbUp } from "../db/pool.js";
+import { isDbUp } from "../db/prisma.js";
 import { embeddingsHealthy } from "../embeddings/index.js";
 import { kbStats } from "../retrieval/search.js";
 

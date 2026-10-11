@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
-import { getPool, query } from "../db/pool.js";
+import { db } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { classify, MAX_UPLOAD_BYTES, SIZE_LIMITS } from "../files/kinds.js";
-import { deleteFile, getFileRow, signedInfo, type FileRow } from "../files/store.js";
+import { deleteFile, getFileRow, INFO_SELECT, signedInfo, toFileRow } from "../files/store.js";
 import { processFile } from "../files/process.js";
 import { deleteObject, putObject } from "../storage/s3.js";
 import { userOf } from "../auth/context.js";
@@ -50,7 +50,7 @@ function receive(req: Request, res: Response): Promise<void> {
 const fmtMb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
 filesRouter.post("/", async (req, res) => {
-  getPool();
+  db();
   if (!req.is("multipart/form-data")) throw new AppError(400, "bad_request", "Expected multipart/form-data with a `file` field");
   await receive(req, res);
   const f = req.file;
@@ -71,17 +71,16 @@ filesRouter.post("/", async (req, res) => {
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) : "";
   const key = `${id}/original${ext ? "." + ext : ""}`;
   await putObject(key, f.buffer, cls.mime);
-  const { rows } = await query<FileRow>(
-    `INSERT INTO files (id, conversation_id, name, mime, size, kind, s3_key, user_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-     RETURNING id, conversation_id, name, mime, size, kind, status, error, s3_key, thumb_key, meta, created_at`,
-    [id, conversationId?.toLowerCase() ?? null, name, cls.mime, f.size, cls.kind, key, user.id],
-  );
+  const created = await db().storedFile.create({
+    data: { id, conversationId: conversationId?.toLowerCase() ?? null, name, mime: cls.mime, size: f.size, kind: cls.kind, s3Key: key, userId: user.id },
+    select: INFO_SELECT,
+  });
   await recordUpload(user, f.size);
-  const target = { id, name, kind: cls.kind, s3_key: key };
+  const target = { id, name, kind: cls.kind, s3Key: key };
   const done = processFile(target, f.buffer);
   // Images are quick: answer with the finished state.
   if (cls.kind === "image") await Promise.race([done, new Promise((r) => setTimeout(r, 4000))]);
-  const row = (await getFileRow(id)) ?? rows[0];
+  const row = (await getFileRow(id)) ?? toFileRow(created);
   log.info("file uploaded", { id, kind: cls.kind, size: f.size });
   res.status(201).json({ file: await signedInfo(row) });
 });
@@ -92,14 +91,14 @@ function fileId(raw: string): string {
 }
 
 filesRouter.get("/:id", async (req, res) => {
-  getPool();
+  db();
   const row = await getFileRow(fileId(req.params.id));
   if (!row) throw new AppError(404, "not_found", "File not found");
   res.json({ file: await signedInfo(row) });
 });
 
 filesRouter.get("/:id/text", async (req, res) => {
-  getPool();
+  db();
   const raw = Number(req.query.limit ?? 200_000);
   const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.floor(raw), 1), 1_000_000) : 200_000;
   const row = await getFileRow(fileId(req.params.id), true);
@@ -110,7 +109,7 @@ filesRouter.get("/:id/text", async (req, res) => {
 });
 
 filesRouter.delete("/:id", async (req, res) => {
-  getPool();
+  db();
   const row = await getFileRow(fileId(req.params.id));
   if (!row) throw new AppError(404, "not_found", "File not found");
   await deleteFile(row);

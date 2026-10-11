@@ -1,11 +1,10 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { query } from "../db/pool.js";
+import { db } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { rateLimit } from "../util/rateLimit.js";
-import { deleteFile, type FileRow } from "../files/store.js";
-import { INFO_COLS } from "../files/store.js";
+import { deleteFile, INFO_SELECT, toFileRow } from "../files/store.js";
 import { userOf } from "../auth/context.js";
 import { limitsFor, resetsAt, usageFor } from "../auth/limits.js";
 import {
@@ -127,12 +126,11 @@ const patchBody = z
 authRouter.patch("/me", async (req, res) => {
   const user = await me(req);
   const b = patchBody.parse(req.body ?? {});
-  const { rows } = await query<UserRow>(
-    `UPDATE users SET name = COALESCE($2, name), avatar_url = CASE WHEN $3::boolean THEN $4 ELSE avatar_url END
-      WHERE id = $1 RETURNING *`,
-    [user.id, b.name ?? null, b.avatar !== undefined, b.avatar ?? null],
-  );
-  res.json({ user: publicUser(rows[0]) });
+  const updated = await db().user.update({
+    where: { id: user.id },
+    data: { ...(b.name != null ? { name: b.name } : {}), ...(b.avatar !== undefined ? { avatarUrl: b.avatar } : {}) },
+  });
+  res.json({ user: publicUser(updated) });
 });
 
 const passwordBody = z.object({ current: z.string().max(PASSWORD_MAX), next: password });
@@ -141,8 +139,8 @@ const passwordBody = z.object({ current: z.string().max(PASSWORD_MAX), next: pas
 authRouter.post("/password", async (req, res) => {
   const user = await me(req);
   const b = passwordBody.parse(req.body ?? {});
-  if (!(await checkPassword(user.password_hash, b.current))) throw new AppError(400, "wrong_password", "Current password is wrong");
-  await query("UPDATE users SET password_hash = $2 WHERE id = $1", [user.id, await hashPassword(b.next)]);
+  if (!(await checkPassword(user.passwordHash, b.current))) throw new AppError(400, "wrong_password", "Current password is wrong");
+  await db().user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(b.next) } });
   await revokeOthers(user.id, userOf(req).sid);
   res.status(204).end();
 });
@@ -168,13 +166,13 @@ authRouter.delete("/me", async (req, res) => {
   const user = await me(req);
   if (user.role === "owner") throw new AppError(403, "owner_cannot_delete", "The owner account cannot be deleted");
   const b = deleteBody.safeParse(req.body ?? {});
-  if (!b.success || !(await checkPassword(user.password_hash, b.data.password))) {
+  if (!b.success || !(await checkPassword(user.passwordHash, b.data.password))) {
     throw new AppError(400, "wrong_password", "Password is wrong");
   }
-  const { rows: files } = await query<FileRow>(`SELECT ${INFO_COLS} FROM files WHERE user_id = $1`, [user.id]);
+  const files = (await db().storedFile.findMany({ where: { userId: user.id }, select: INFO_SELECT })).map(toFileRow);
   for (const f of files) await deleteFile(f).catch(() => undefined);
   // Conversations, sources (documents, chunks), sessions and usage cascade.
-  await query("DELETE FROM users WHERE id = $1", [user.id]);
+  await db().user.deleteMany({ where: { id: user.id } });
   forgetUser(user.id);
   log.info("account deleted", { files: files.length });
   res.status(204).end();

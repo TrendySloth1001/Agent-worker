@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { getPool, query, withTx } from "../db/pool.js";
+import { db, Prisma, tx } from "../db/prisma.js";
+import type { Conversation } from "../generated/prisma/client.js";
 import { AppError } from "../util/errors.js";
 import { generateTitle } from "../conversations/title.js";
 import { mergeBriefing, type MergeChat } from "../conversations/merge.js";
@@ -10,6 +12,8 @@ import { userOf } from "../auth/context.js";
 export const conversationsRouter = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// `files.id::text` is lowercase, so only lowercase ids ever matched a row.
+const FILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const citationSchema = z
   .object({
@@ -84,89 +88,98 @@ function idParam(raw: string): string {
   return raw.toLowerCase();
 }
 
-type Row = {
-  id: string;
-  title: string | null;
-  title_source: string | null;
-  message_count: number;
-  preview: string | null;
-  pinned_at: Date | null;
-  archived_at: Date | null;
-  origin: "fork" | "merge" | null;
-  forked_from: string | null;
-  fork_point: number | null;
-  merged_from: string[] | null;
-  parent_title?: string | null;
-  created_at: Date;
-  updated_at: Date;
-};
+/** A conversation row plus its fork parent's title (loaded with WITH_PARENT). */
+type Row = Conversation & { parent?: { title: string | null } | null };
 
-// Row columns plus the fork parent's title, for SELECT and RETURNING lists.
-const COLS = "*, (SELECT p.title FROM conversations p WHERE p.id = conversations.forked_from) AS parent_title";
+// Every read of a summary also loads the fork parent's title (one query, no N+1).
+const WITH_PARENT = { parent: { select: { title: true } } } satisfies Prisma.ConversationInclude;
+
+/** For rows written without the include (upsert): fetch the parent's title separately. */
+async function withParent(r: Conversation): Promise<Row> {
+  if (!r.forkedFrom) return r;
+  const parent = await db().conversation.findUnique({ where: { id: r.forkedFrom }, select: { title: true } });
+  return { ...r, parent };
+}
 
 const summary = (r: Row) => ({
   id: r.id,
   title: r.title,
-  titleSource: r.title_source,
-  messageCount: r.message_count,
+  titleSource: r.titleSource,
+  messageCount: r.messageCount,
   preview: r.preview,
-  pinned: r.pinned_at != null,
-  archived: r.archived_at != null,
+  pinned: r.pinnedAt != null,
+  archived: r.archivedAt != null,
   origin: r.origin ?? null,
-  forkedFrom: r.forked_from ?? null,
-  forkPoint: r.fork_point ?? null,
-  parent: r.forked_from ? { id: r.forked_from, title: r.parent_title ?? null } : null,
-  mergedFrom: r.merged_from ?? [],
-  createdAt: r.created_at.toISOString(),
-  updatedAt: r.updated_at.toISOString(),
+  forkedFrom: r.forkedFrom ?? null,
+  forkPoint: r.forkPoint ?? null,
+  parent: r.forkedFrom ? { id: r.forkedFrom, title: r.parent?.title ?? null } : null,
+  mergedFrom: r.mergedFrom ?? [],
+  createdAt: r.createdAt.toISOString(),
+  updatedAt: r.updatedAt.toISOString(),
 });
+
+/** JSON column input (validated request data). */
+const asJson = (v: unknown) => v as Prisma.InputJsonValue;
 
 // GET /conversations?q=&limit=&before=<ISO updatedAt>&archived=1
 // Pinned chats come first; archived ones are listed only with archived=1.
-// Every query is limited to the caller's chats (`user_id IS NOT DISTINCT FROM`);
-// another user's chat reads as not found.
+// Every query is limited to the caller's chats (`userId: uid`, which is
+// `user_id IS NULL` for the not-yet-claimed rows); another user's chat reads as not found.
 conversationsRouter.get("/", async (req, res) => {
-  getPool();
+  db();
   const uid = userOf(req).id;
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
   const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
   const archived = req.query.archived === "1" || req.query.archived === "true";
-  const before = typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before)) ? req.query.before : null;
-  const { rows } = await query<Row>(
-    `SELECT ${COLS} FROM conversations
-     WHERE ($1 = '' OR title ILIKE '%' || $1 || '%' OR EXISTS (
-         SELECT 1 FROM conversation_messages m
-         WHERE m.conversation_id = conversations.id AND m.content ILIKE '%' || $1 || '%'))
-       AND ($2::timestamptz IS NULL OR updated_at < $2::timestamptz)
-       AND ((archived_at IS NOT NULL) = $4)
-       AND user_id IS NOT DISTINCT FROM $5
-     ORDER BY pinned_at IS NOT NULL DESC, pinned_at DESC NULLS LAST, updated_at DESC LIMIT $3`,
-    [q, before, limit, archived, uid],
-  );
+  const before = typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before)) ? new Date(req.query.before) : null;
+  const rows = await db().conversation.findMany({
+    where: {
+      userId: uid,
+      archivedAt: archived ? { not: null } : null,
+      ...(before ? { updatedAt: { lt: before } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { title: { contains: q, mode: "insensitive" } },
+              { messages: { some: { content: { contains: q, mode: "insensitive" } } } },
+            ],
+          }
+        : {}),
+    },
+    // Pinned first (most recently pinned on top), then by activity.
+    orderBy: [{ pinnedAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
+    take: limit,
+    include: WITH_PARENT,
+  });
   res.json({ conversations: rows.map(summary) });
 });
 
 /** A conversation with its messages, as GET /:id returns it; null when it does not exist. */
 async function loadConversation(id: string, uid: string | null) {
-  const { rows } = await query<Row>(`SELECT ${COLS} FROM conversations WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2`, [id, uid]);
-  if (!rows[0]) return null;
-  const messages = await query(
-    `SELECT role, content, model, citations, used_ids, is_error, images, evidence, attachments, meta, "table" FROM conversation_messages
-     WHERE conversation_id = $1 ORDER BY position`,
-    [id],
-  );
+  const row = await db().conversation.findFirst({
+    where: { id, userId: uid },
+    include: {
+      ...WITH_PARENT,
+      messages: {
+        orderBy: { position: "asc" },
+        select: { role: true, content: true, model: true, citations: true, usedIds: true, isError: true, images: true, evidence: true, attachments: true, meta: true, table: true },
+      },
+    },
+  });
+  if (!row) return null;
   return {
-    ...summary(rows[0]),
-    messages: messages.rows.map((m) => ({
+    ...summary(row),
+    messages: row.messages.map((m) => ({
       role: m.role,
       content: m.content,
       model: m.model,
       citations: m.citations,
-      usedIds: m.used_ids,
-      isError: m.is_error,
+      usedIds: m.usedIds,
+      isError: m.isError,
       images: m.images,
       evidence: m.evidence,
-      attachments: m.attachments ?? [],
+      // Stored as the app sent it (validated attachment objects).
+      attachments: (m.attachments ?? []) as Array<Record<string, unknown>>,
       meta: m.meta ?? {},
       table: m.table ?? null,
     })),
@@ -180,7 +193,7 @@ const mergeSchema = z.object({ ids: z.array(z.string()).length(2) });
 // POST /conversations/merge {ids:[a,b]}: a NEW chat that starts from an AI
 // briefing of both; the originals are untouched.
 conversationsRouter.post("/merge", async (req, res) => {
-  getPool();
+  db();
   const { ids } = mergeSchema.parse(req.body);
   const [a, b] = ids.map(idParam);
   const uid = userOf(req).id;
@@ -200,57 +213,73 @@ conversationsRouter.post("/merge", async (req, res) => {
     sources: chats.map((c) => ({ id: c.id, title: c.title, messageCount: c.messages.length })),
     summarySource: briefing.source,
   };
-  const newId = await withTx(async (c) => {
-    const { rows } = await c.query<{ id: string }>(
-      `INSERT INTO conversations (id, title, title_source, message_count, preview, origin, merged_from, user_id)
-       VALUES (gen_random_uuid(), $1, 'derived', 1, $2, 'merge', $3::uuid[], $4) RETURNING id`,
-      [title, preview, [a, b], uid],
-    );
-    await c.query(
-      `INSERT INTO conversation_messages (conversation_id, position, role, content, meta) VALUES ($1, 0, 'context', $2, $3::jsonb)`,
-      [rows[0].id, briefing.text, JSON.stringify(meta)],
-    );
-    return rows[0].id;
+  // One nested create: the chat and its briefing message are written atomically.
+  const created = await db().conversation.create({
+    data: {
+      id: randomUUID(),
+      title,
+      titleSource: "derived",
+      messageCount: 1,
+      preview,
+      origin: "merge",
+      mergedFrom: [a, b],
+      userId: uid,
+      messages: { create: { position: 0, role: "context", content: briefing.text, meta: asJson(meta) } },
+    },
+    select: { id: true },
   });
-  res.status(201).json(await loadConversation(newId, uid));
+  res.status(201).json(await loadConversation(created.id, uid));
 });
 
 // POST /conversations/:id/fork {at}: a copy of the first `at` saved messages.
 conversationsRouter.post("/:id/fork", async (req, res) => {
-  getPool();
+  db();
   const id = idParam(req.params.id);
   const { at } = forkSchema.parse(req.body);
   const uid = userOf(req).id;
-  const newId = await withTx(async (c) => {
-    const { rows } = await c.query<Row>("SELECT * FROM conversations WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2 FOR UPDATE", [id, uid]);
-    const parent = rows[0];
+  const newId = await tx(async (c) => {
+    // Raw: Prisma has no SELECT ... FOR UPDATE; the lock keeps the parent stable while copying.
+    await c.$queryRaw`SELECT 1 FROM conversations WHERE id = ${id}::uuid AND user_id IS NOT DISTINCT FROM ${uid}::uuid FOR UPDATE`;
+    const parent = await c.conversation.findFirst({ where: { id, userId: uid }, select: { title: true, preview: true } });
     if (!parent) throw new AppError(404, "not_found", "Conversation not found");
-    const count = Number((await c.query("SELECT count(*)::int AS n FROM conversation_messages WHERE conversation_id = $1", [id])).rows[0].n);
+    const count = await c.conversationMessage.count({ where: { conversationId: id } });
     if (at > count) throw new AppError(400, "bad_request", `at must be between 1 and ${count}`);
     const base = (parent.title || parent.preview || "Untitled chat").replace(/ · fork$/, "");
-    const created = await c.query<{ id: string }>(
-      `INSERT INTO conversations (id, title, title_source, message_count, preview, origin, forked_from, fork_point, user_id)
-       VALUES (gen_random_uuid(), $1, 'derived', $2, $3, 'fork', $4, $2, $5) RETURNING id`,
-      [`${base.slice(0, 120 - FORK_SUFFIX.length)}${FORK_SUFFIX}`, at, parent.preview, id, uid],
-    );
-    // Every message column is copied, so columns added later come along too.
-    const { rows: colRows } = await c.query<{ column_name: string }>(
-      `SELECT column_name FROM information_schema.columns
-        WHERE table_schema = current_schema() AND table_name = 'conversation_messages' AND column_name <> 'conversation_id'`,
-    );
-    const cols = colRows.map((r) => `"${r.column_name}"`).join(", ");
-    await c.query(
-      `INSERT INTO conversation_messages (conversation_id, ${cols})
-       SELECT $2, ${cols} FROM conversation_messages WHERE conversation_id = $1 AND position < $3`,
-      [id, created.rows[0].id, at],
-    );
-    return created.rows[0].id;
+    const created = await c.conversation.create({
+      data: {
+        id: randomUUID(),
+        title: `${base.slice(0, 120 - FORK_SUFFIX.length)}${FORK_SUFFIX}`,
+        titleSource: "derived",
+        messageCount: at,
+        preview: parent.preview,
+        origin: "fork",
+        forkedFrom: id,
+        forkPoint: at,
+        userId: uid,
+      },
+      select: { id: true },
+    });
+    // Every message field is copied, so fields added to the model later come along too.
+    const prefix = await c.conversationMessage.findMany({ where: { conversationId: id, position: { lt: at } }, orderBy: { position: "asc" } });
+    await c.conversationMessage.createMany({
+      data: prefix.map(({ conversationId: _from, ...m }) => ({
+        ...m,
+        conversationId: created.id,
+        citations: asJson(m.citations),
+        images: asJson(m.images),
+        evidence: asJson(m.evidence),
+        attachments: asJson(m.attachments),
+        meta: asJson(m.meta),
+        table: m.table === null ? Prisma.DbNull : asJson(m.table),
+      })),
+    });
+    return created.id;
   });
   res.status(201).json(await loadConversation(newId, uid));
 });
 
 conversationsRouter.get("/:id", async (req, res) => {
-  getPool();
+  db();
   const conv = await loadConversation(idParam(req.params.id), userOf(req).id);
   if (!conv) throw new AppError(404, "not_found", "Conversation not found");
   res.json(conv);
@@ -258,110 +287,113 @@ conversationsRouter.get("/:id", async (req, res) => {
 
 // Full replace of the conversation; the app is the source of truth.
 conversationsRouter.put("/:id", async (req, res) => {
-  getPool();
+  db();
   const id = idParam(req.params.id);
   const { messages } = putSchema.parse(req.body);
   const uid = userOf(req).id;
   const firstUser = messages.find((m) => m.role === "user")?.content ?? "";
   const preview = firstUser.replace(/\s+/g, " ").trim().slice(0, 140);
 
-  const row = await withTx(async (c) => {
-    const saved = await c.query<Row>(
-      `INSERT INTO conversations (id, message_count, preview, user_id) VALUES ($1, $2, NULLIF($3, ''), $4)
-       ON CONFLICT (id) DO UPDATE SET message_count = EXCLUDED.message_count,
-         preview = COALESCE(EXCLUDED.preview, conversations.preview), updated_at = now()
-       WHERE conversations.user_id IS NOT DISTINCT FROM EXCLUDED.user_id
-       RETURNING ${COLS}`,
-      [id, messages.length, preview, uid],
-    );
-    // The id belongs to someone else: nothing was written.
-    if (!saved.rows[0]) throw new AppError(404, "not_found", "Conversation not found");
-    await c.query("DELETE FROM conversation_messages WHERE conversation_id = $1", [id]);
-    await c.query(
-      `INSERT INTO conversation_messages (conversation_id, position, role, content, model, citations, used_ids, is_error, images, evidence, attachments, meta, "table")
-       SELECT $1, t.position, t.role, t.content, t.model, t.citations, t.used_ids, t.is_error, t.images, t.evidence, t.attachments, COALESCE(t.meta, '{}'), t."table"
-       FROM jsonb_to_recordset($2::jsonb)
-         AS t(position int, role text, content text, model text, citations jsonb, used_ids text[], is_error boolean, images jsonb, evidence jsonb, attachments jsonb, meta jsonb, "table" jsonb)`,
-      [
-        id,
-        JSON.stringify(
-          messages.map((m, position) => ({
-            position,
-            role: m.role,
-            content: m.content,
-            model: m.model ?? null,
-            citations: m.citations,
-            used_ids: m.usedIds,
-            is_error: m.isError,
-            images: m.images,
-            evidence: m.evidence,
-            attachments: m.attachments,
-            meta: m.meta,
-            table: m.table ?? null,
-          })),
-        ),
-      ],
-    );
-    return saved.rows[0];
+  const saved = await tx(async (c) => {
+    // Another user's id: nothing is written (and it reads as not found).
+    const owner = await c.conversation.findUnique({ where: { id }, select: { userId: true } });
+    if (owner && owner.userId !== uid) throw new AppError(404, "not_found", "Conversation not found");
+    // A plain upsert by primary key runs as INSERT ... ON CONFLICT, so concurrent first saves do not collide.
+    const row = await c.conversation.upsert({
+      where: { id },
+      create: { id, messageCount: messages.length, preview: preview || null, userId: uid },
+      update: { messageCount: messages.length, ...(preview ? { preview } : {}), updatedAt: new Date() },
+    });
+    if (row.userId !== uid) throw new AppError(404, "not_found", "Conversation not found");
+    await c.conversationMessage.deleteMany({ where: { conversationId: id } });
+    await c.conversationMessage.createMany({
+      data: messages.map((m, position) => ({
+        conversationId: id,
+        position,
+        role: m.role,
+        content: m.content,
+        model: m.model ?? null,
+        citations: asJson(m.citations),
+        usedIds: m.usedIds,
+        isError: m.isError,
+        images: asJson(m.images),
+        evidence: asJson(m.evidence),
+        attachments: asJson(m.attachments),
+        meta: asJson(m.meta ?? {}),
+        table: m.table == null ? Prisma.DbNull : asJson(m.table),
+      })),
+    });
+    return row;
   });
+  const row = await withParent(saved);
 
   // Name it once, after the first complete exchange.
   const firstReply = messages.find((m) => m.role === "assistant" && !m.isError && m.content.trim());
   if (!row.title && firstUser && firstReply) {
     const { title, source } = await generateTitle(firstUser, firstReply.content);
-    const named = await query<Row>(
-      `UPDATE conversations SET title = $2, title_source = $3 WHERE id = $1 AND title IS NULL RETURNING ${COLS}`,
-      [id, title, source],
-    );
-    if (named.rows[0]) return void res.json(summary(named.rows[0]));
+    const named = await db().conversation.updateMany({ where: { id, title: null }, data: { title, titleSource: source } });
+    if (named.count > 0) {
+      const fresh = await db().conversation.findUnique({ where: { id }, include: WITH_PARENT });
+      if (fresh) return void res.json(summary(fresh));
+    }
   }
   res.json(summary(row));
 });
 
 conversationsRouter.patch("/:id", async (req, res) => {
-  getPool();
+  db();
   const id = idParam(req.params.id);
   const { title, pinned, archived } = patchSchema.parse(req.body);
-  // Archiving unpins: an archived chat is out of the main list.
-  const unpin = archived === true;
-  const { rows } = await query<Row>(
-    `UPDATE conversations SET
-       title = COALESCE($2, title),
-       title_source = CASE WHEN $2::text IS NULL THEN title_source ELSE 'user' END,
-       pinned_at = CASE WHEN $5::boolean THEN NULL WHEN $3::boolean IS NULL THEN pinned_at WHEN $3 THEN COALESCE(pinned_at, now()) ELSE NULL END,
-       archived_at = CASE WHEN $4::boolean IS NULL THEN archived_at WHEN $4 THEN COALESCE(archived_at, now()) ELSE NULL END
-     WHERE id = $1 AND user_id IS NOT DISTINCT FROM $6 RETURNING ${COLS}`,
-    [id, title ?? null, pinned ?? null, archived ?? null, unpin, userOf(req).id],
-  );
-  if (!rows[0]) throw new AppError(404, "not_found", "Conversation not found");
-  res.json(summary(rows[0]));
+  const uid = userOf(req).id;
+  const row = await tx(async (c) => {
+    const cur = await c.conversation.findFirst({ where: { id, userId: uid }, select: { pinnedAt: true, archivedAt: true } });
+    if (!cur) throw new AppError(404, "not_found", "Conversation not found");
+    const now = new Date();
+    const data: Prisma.ConversationUpdateInput = {};
+    if (title !== undefined) Object.assign(data, { title, titleSource: "user" });
+    // Archiving unpins: an archived chat is out of the main list.
+    if (archived === true) data.pinnedAt = null;
+    else if (pinned !== undefined) data.pinnedAt = pinned ? (cur.pinnedAt ?? now) : null;
+    if (archived !== undefined) data.archivedAt = archived ? (cur.archivedAt ?? now) : null;
+    return c.conversation.update({ where: { id }, data, include: WITH_PARENT });
+  });
+  res.json(summary(row));
 });
 
 conversationsRouter.delete("/:id", async (req, res) => {
-  getPool();
+  db();
   const id = idParam(req.params.id);
   const uid = userOf(req).id;
-  const { rows: own } = await query("SELECT 1 FROM conversations WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2", [id, uid]);
-  if (!own[0]) return void res.status(204).end();
+  const own = await db().conversation.findFirst({ where: { id, userId: uid }, select: { id: true } });
+  if (!own) return void res.status(204).end();
   // Files attached in this chat go with it (storage objects and rows).
-  const { rows: attached } = await query<{ id: string }>(
-    `SELECT DISTINCT (a->>'id') AS id
-       FROM conversation_messages m, jsonb_array_elements(m.attachments) a
-      WHERE m.conversation_id = $1 AND a ? 'id'
-     UNION
-     SELECT id::text FROM files WHERE conversation_id = $1`,
-    [id],
-  );
-  await query("DELETE FROM conversations WHERE id = $1", [id]);
-  for (const { id: fileId } of attached) {
+  const [msgs, files] = await Promise.all([
+    db().conversationMessage.findMany({ where: { conversationId: id }, select: { attachments: true } }),
+    db().storedFile.findMany({ where: { conversationId: id }, select: { id: true } }),
+  ]);
+  const attached = new Set<string>();
+  for (const m of msgs) {
+    if (!Array.isArray(m.attachments)) continue;
+    for (const a of m.attachments) {
+      // Same as `a ? 'id'` / `a->>'id'`: any attachment object with an id (as text).
+      if (a && typeof a === "object" && !Array.isArray(a) && "id" in a && a.id != null) {
+        attached.add(typeof a.id === "string" ? a.id : JSON.stringify(a.id));
+      }
+    }
+  }
+  for (const f of files) attached.add(f.id);
+  await db().conversation.deleteMany({ where: { id } });
+  for (const fileId of attached) {
     // Forks share attachments by reference: a file another chat still uses stays, owned by that chat.
-    const { rows: users } = await query<{ conversation_id: string }>(
-      `SELECT m.conversation_id FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id
-        WHERE m.attachments @> jsonb_build_array(jsonb_build_object('id', $1::text)) AND c.user_id IS NOT DISTINCT FROM $2 LIMIT 1`,
-      [fileId, uid],
-    );
+    // Raw: jsonb containment (`@>`) over the attachments array has no Prisma filter.
+    const users = await db().$queryRaw<Array<{ conversation_id: string }>>`
+      SELECT m.conversation_id FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.attachments @> jsonb_build_array(jsonb_build_object('id', ${fileId}::text)) AND c.user_id IS NOT DISTINCT FROM ${uid}::uuid LIMIT 1`;
     if (users[0]) {
-      await query("UPDATE files SET conversation_id = $2 WHERE id::text = $1 AND conversation_id = $3 AND user_id IS NOT DISTINCT FROM $4", [fileId, users[0].conversation_id, id, uid]);
+      // File ids are uuids; anything else in the JSON cannot match a files row.
+      if (FILE_ID_RE.test(fileId)) {
+        await db().storedFile.updateMany({ where: { id: fileId, conversationId: id, userId: uid }, data: { conversationId: users[0].conversation_id } });
+      }
       continue;
     }
     const row = await getFileRow(fileId).catch(() => null);

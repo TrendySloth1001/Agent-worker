@@ -1,5 +1,6 @@
 import pLimit from "p-limit";
-import { query, withTx, onDbUp, isDbUp } from "../db/pool.js";
+import { db, isDbUp, onDbUp, Prisma, tx, withDb } from "../db/prisma.js";
+import { toVector } from "../db/vector.js";
 import { embedTexts } from "../embeddings/index.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
@@ -20,8 +21,8 @@ export function enqueue(sourceId: string): void {
 export function recoverQueue(): void {
   void (async () => {
     try {
-      await query("UPDATE sources SET status='queued', updated_at=now() WHERE status='running'");
-      const { rows } = await query<{ id: string }>("SELECT id FROM sources WHERE status='queued' ORDER BY created_at");
+      await db().source.updateMany({ where: { status: "running" }, data: { status: "queued", updatedAt: new Date() } });
+      const rows = await db().source.findMany({ where: { status: "queued" }, orderBy: { createdAt: "asc" }, select: { id: true } });
       for (const r of rows) enqueue(r.id);
       if (rows.length) log.info("ingestion recovered", { queued: rows.length });
     } catch (e) {
@@ -31,19 +32,23 @@ export function recoverQueue(): void {
 }
 onDbUp(recoverQueue);
 
-const vec = (v: number[]) => `[${v.join(",")}]`;
+const vec = toVector;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 200);
 
 type Pending = { doc: DocInput; hash: string; chunks: Chunk[]; reuse: Map<string, string>; need: number[] };
 
 async function runSource(id: string): Promise<void> {
   if (!isDbUp()) return;
-  const { rows } = await query("SELECT id, type, uri, options FROM sources WHERE id=$1", [id]);
-  const src = rows[0];
-  if (!src) return;
+  const row = await db().source.findUnique({ where: { id }, select: { id: true, type: true, uri: true, options: true } });
+  if (!row) return;
+  const src = { ...row, options: (row.options ?? {}) as Record<string, any> };
   const connector = connectors[src.type as keyof typeof connectors];
   const lim: number = Math.min(Math.max(Number(src.options?.limit) || 20, 1), 100);
-  await query("UPDATE sources SET status='running', error=NULL, progress_done=0, progress_total=NULL, updated_at=now() WHERE id=$1", [id]);
+  // updateMany throughout: the source may be deleted while it is being ingested.
+  await db().source.updateMany({
+    where: { id },
+    data: { status: "running", error: null, progressDone: 0, progressTotal: null, updatedAt: new Date() },
+  });
 
   let done = 0;
   let total: number | null = null;
@@ -58,7 +63,7 @@ async function runSource(id: string): Promise<void> {
     const now = Date.now();
     if (!force && now - progressTimer < 500) return;
     progressTimer = now;
-    await query("UPDATE sources SET progress_done=$2, progress_total=$3, updated_at=now() WHERE id=$1", [id, done, total]).catch(() => {});
+    await withDb((c) => c.source.updateMany({ where: { id }, data: { progressDone: done, progressTotal: total, updatedAt: new Date() } })).catch(() => {});
   };
 
   const flush = async () => {
@@ -88,7 +93,7 @@ async function runSource(id: string): Promise<void> {
       void saveProgress(true);
     },
     setTitle: (t) => {
-      void query("UPDATE sources SET title=COALESCE(title,$2) WHERE id=$1", [id, t.slice(0, 200)]).catch(() => {});
+      void withDb((c) => c.source.updateMany({ where: { id, title: null }, data: { title: t.slice(0, 200) } })).catch(() => {});
     },
     skip: (reason) => {
       done++;
@@ -104,8 +109,8 @@ async function runSource(id: string): Promise<void> {
         return;
       }
       const hash = sha(markdown);
-      const existing = (await query("SELECT id, content_hash FROM documents WHERE source_id=$1 AND url=$2", [id, doc.url])).rows[0];
-      if (existing?.content_hash === hash) {
+      const existing = await db().document.findUnique({ where: { sourceId_url: { sourceId: id, url: doc.url } }, select: { id: true, contentHash: true } });
+      if (existing?.contentHash === hash) {
         done++; // unchanged: keep chunks and embeddings
         await saveProgress();
         return;
@@ -117,8 +122,10 @@ async function runSource(id: string): Promise<void> {
       }
       const reuse = new Map<string, string>();
       if (existing) {
-        const old = await query<{ content_hash: string; emb: string }>("SELECT content_hash, embedding::text AS emb FROM chunks WHERE document_id=$1", [existing.id]);
-        for (const r of old.rows) reuse.set(r.content_hash, r.emb);
+        // Raw: reads the vector column (as its text form) to reuse unchanged chunks' embeddings.
+        const old = await db().$queryRaw<Array<{ content_hash: string; emb: string }>>`
+          SELECT content_hash, embedding::text AS emb FROM chunks WHERE document_id = ${existing.id}::uuid`;
+        for (const r of old) reuse.set(r.content_hash, r.emb);
       }
       const need = chunks.map((c, i) => (reuse.has(c.hash) ? -1 : i)).filter((i) => i >= 0);
       pending.push({ doc: { ...doc, markdown }, hash, chunks, reuse, need });
@@ -132,46 +139,41 @@ async function runSource(id: string): Promise<void> {
     await flush();
     if (stored === 0 && done > 0 && firstError && seen.size === 0) throw new AppError(502, "upstream_failed", firstError);
     // refresh semantics: drop documents that no longer exist upstream (only after a fully successful run)
-    if (seen.size > 0) await query("DELETE FROM documents WHERE source_id=$1 AND NOT (url = ANY($2::text[]))", [id, [...seen]]);
-    const counts = await query(
-      `SELECT (SELECT count(*)::int FROM documents WHERE source_id=$1) AS d, (SELECT count(*)::int FROM chunks WHERE source_id=$1) AS c`,
-      [id],
-    );
-    if (counts.rows[0].c === 0) throw new AppError(502, "upstream_failed", firstError ?? "No content could be extracted from this source");
-    await query(
-      `UPDATE sources SET status='ready', error=NULL, doc_count=$2, chunk_count=$3, progress_done=$4, progress_total=$4, last_ingested_at=now(), updated_at=now() WHERE id=$1`,
-      [id, counts.rows[0].d, counts.rows[0].c, Math.max(done, counts.rows[0].d)],
-    );
-    log.info("ingestion finished", { sourceId: id, type: src.type, docs: counts.rows[0].d, chunks: counts.rows[0].c });
+    if (seen.size > 0) await db().document.deleteMany({ where: { sourceId: id, url: { notIn: [...seen] } } });
+    const [docs, chunks] = await db().$transaction([db().document.count({ where: { sourceId: id } }), db().chunk.count({ where: { sourceId: id } })]);
+    if (chunks === 0) throw new AppError(502, "upstream_failed", firstError ?? "No content could be extracted from this source");
+    const now = new Date();
+    const finished = Math.max(done, docs);
+    await db().source.updateMany({
+      where: { id },
+      data: { status: "ready", error: null, docCount: docs, chunkCount: chunks, progressDone: finished, progressTotal: finished, lastIngestedAt: now, updatedAt: now },
+    });
+    log.info("ingestion finished", { sourceId: id, type: src.type, docs, chunks });
   } catch (e) {
     log.warn("ingestion failed", { sourceId: id, reason: errText(e) });
-    await query("UPDATE sources SET status='failed', error=$2, updated_at=now() WHERE id=$1", [id, errText(e)]).catch(() => {});
+    await withDb((c) => c.source.updateMany({ where: { id }, data: { status: "failed", error: errText(e), updatedAt: new Date() } })).catch(() => {});
   }
 }
 
 async function storeDoc(sourceId: string, p: Pending, embFor: (ci: number) => string): Promise<void> {
-  await withTx(async (c) => {
-    const d = await c.query(
-      `INSERT INTO documents (source_id, url, title, content_hash, meta) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (source_id, url) DO UPDATE SET title=EXCLUDED.title, content_hash=EXCLUDED.content_hash, meta=EXCLUDED.meta
-       RETURNING id`,
-      [sourceId, p.doc.url, p.doc.title?.slice(0, 300) ?? null, p.hash, JSON.stringify(p.doc.meta ?? {})],
-    );
-    const docId = d.rows[0].id as string;
-    await c.query("DELETE FROM chunks WHERE document_id=$1", [docId]);
-    const cols = 7;
+  await tx(async (c) => {
+    const doc = { title: p.doc.title?.slice(0, 300) ?? null, contentHash: p.hash, meta: (p.doc.meta ?? {}) as Prisma.InputJsonValue };
+    const d = await c.document.upsert({
+      where: { sourceId_url: { sourceId, url: p.doc.url } },
+      create: { sourceId, url: p.doc.url, ...doc },
+      update: doc,
+      select: { id: true },
+    });
+    await c.chunk.deleteMany({ where: { documentId: d.id } });
+    // Raw: chunks carry a vector column, which createMany cannot write. One multi-row INSERT per 50 chunks.
     for (let i = 0; i < p.chunks.length; i += 50) {
-      const part = p.chunks.slice(i, i + 50);
-      const params: unknown[] = [];
-      const values = part.map((ch, j) => {
-        params.push(docId, sourceId, ch.ord, ch.headingPath, ch.content, ch.tokenCount, ch.hash);
-        params.push(embFor(i + j));
-        return `($${j * (cols + 1) + 1},$${j * (cols + 1) + 2},$${j * (cols + 1) + 3},$${j * (cols + 1) + 4},$${j * (cols + 1) + 5},$${j * (cols + 1) + 6},$${j * (cols + 1) + 7},$${j * (cols + 1) + 8}::vector)`;
-      });
-      await c.query(
-        `INSERT INTO chunks (document_id, source_id, ord, heading_path, content, token_count, content_hash, embedding) VALUES ${values.join(",")}`,
-        params,
+      const values = p.chunks.slice(i, i + 50).map(
+        (ch, j) =>
+          Prisma.sql`(${d.id}::uuid, ${sourceId}::uuid, ${ch.ord}, ${ch.headingPath}, ${ch.content}, ${ch.tokenCount}, ${ch.hash}, ${embFor(i + j)}::vector)`,
       );
+      await c.$executeRaw`
+        INSERT INTO chunks (document_id, source_id, ord, heading_path, content, token_count, content_hash, embedding)
+        VALUES ${Prisma.join(values)}`;
     }
   });
 }

@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { getEmbeddingGuardError } from "../db/migrate.js";
+import { getEmbeddingGuardError } from "../db/embeddingGuard.js";
 import { recordUsage } from "../db/usage.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
