@@ -115,12 +115,20 @@ class _Pending {
 /// Lays out [nodes] (display order). [defaultHead] is the default branch's
 /// head: its first-parent chain keeps color 0. [colorCount] colors are
 /// cycled for the other lanes (0 is never reused).
+///
+/// [more]: older history is still to be loaded, so a parent that is not in
+/// [nodes] yet keeps its lane open (running off the bottom) instead of being
+/// drawn as a dangling stub. Pages are appended by laying out the whole list
+/// again: the rows already shown keep their lanes and colors, because a
+/// layout only ever depends on the rows above.
 GraphLayout layoutGraph(
   List<GraphNode> nodes, {
   String? defaultHead,
   int colorCount = 8,
+  bool more = false,
 }) {
-  final known = {for (final n in nodes) n.sha};
+  final loaded = {for (final n in nodes) n.sha};
+  bool isKnown(String sha) => more || loaded.contains(sha);
   final bySha = {for (final n in nodes) n.sha: n};
   final mainChain = <String>{};
   var s = defaultHead;
@@ -191,7 +199,7 @@ GraphLayout layoutGraph(
     final next = <_Lane>[];
     final out = <_Pending>[];
     _Lane? own;
-    final firstKnown = parents.isNotEmpty && known.contains(parents.first);
+    final firstKnown = parents.isNotEmpty && isKnown(parents.first);
     for (var j = 0; j < lanes.length; j++) {
       final l = lanes[j];
       if (l.expect == sha) {
@@ -214,7 +222,7 @@ GraphLayout layoutGraph(
     // Extra parents: join a waiting lane or branch off into a new one.
     var danglingExtra = 0;
     for (final p in parents.skip(1)) {
-      if (!known.contains(p)) {
+      if (!isKnown(p)) {
         danglingExtra++;
         continue;
       }

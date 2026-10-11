@@ -11,6 +11,7 @@ import '../../../../data/chat_api.dart';
 import '../../../../data/github_api.dart';
 import '../rich/rich_frame.dart';
 import 'git_graph_layout.dart';
+import 'github_branch_picker.dart';
 import 'github_commits_card.dart';
 import 'github_common.dart';
 import 'github_connect_card.dart';
@@ -99,27 +100,51 @@ class GithubGraphCard extends StatelessWidget {
   }
 }
 
-/// Toolbar (branch chips, refresh, fullscreen), the graph table and a footer.
-/// [height] null = fill the parent (fullscreen).
+/// Toolbar (branch picker, chips, refresh, fullscreen), the graph table and a
+/// footer. History loads page by page as the table is scrolled (or all at
+/// once, up to a cap, with LOAD ALL). [height] null = fill the parent
+/// (fullscreen).
 class GhGraphView extends StatefulWidget {
-  const GhGraphView({super.key, required this.spec, this.height, this.loader});
+  const GhGraphView({
+    super.key,
+    required this.spec,
+    this.height,
+    this.loader,
+    this.pageLoader,
+    this.branchLoader,
+  });
 
   final GhGraphSpec spec;
   final double? height;
 
-  /// Replaces the API call (tests).
+  /// Replaces the first-page API call (tests).
   final Future<GhGraph> Function(List<String> branches)? loader;
+
+  /// Replaces the next-page API call (tests).
+  final Future<GhGraph> Function(String cursor)? pageLoader;
+
+  /// Replaces the branch list of the picker (tests).
+  final BranchLoader? branchLoader;
 
   @override
   State<GhGraphView> createState() => _GhGraphViewState();
 }
 
-class _GhGraphViewState extends State<GhGraphView> {
+class _GhGraphViewState extends State<GhGraphView>
+    with SingleTickerProviderStateMixin {
   GhGraph? _data;
+  final _commits = <GhGraphCommit>[];
+  final _seen = <String>{};
   GraphLayout? _layout;
   Map<String, int> _rowOf = const {};
+  String? _next;
+  int? _total;
   Object? _error;
   bool _loading = true;
+  bool _loadingMore = false;
+  Object? _moreError;
+  bool _loadingAll = false;
+  bool _capped = false;
   int _gen = 0;
 
   /// Every branch seen so far (chips stay when toggled off).
@@ -128,20 +153,31 @@ class _GhGraphViewState extends State<GhGraphView> {
   /// Non-default branches to show.
   late Set<String> _selected = widget.spec.branches.toSet();
 
-  /// True once the branch set is explicit (block or chip taps).
+  /// True once the branch set is explicit (block, chips or picker).
   late bool _custom = widget.spec.branches.isNotEmpty;
   final _open = <String>{};
-  final _h = ScrollController();
+  final _v = ScrollController();
+
+  /// Horizontal offset of the text columns (the lane gutter stays put).
+  final _hx = ValueNotifier<double>(0);
+  double _hxMax = 0;
+  late final AnimationController _fling;
 
   @override
   void initState() {
     super.initState();
+    _fling = AnimationController.unbounded(vsync: this)
+      ..addListener(() => _hx.value = _fling.value.clamp(0, _hxMax));
+    _v.addListener(_maybeMore);
     _fetch();
   }
 
   @override
   void dispose() {
-    _h.dispose();
+    _gen++;
+    _v.dispose();
+    _hx.dispose();
+    _fling.dispose();
     super.dispose();
   }
 
@@ -152,13 +188,24 @@ class _GhGraphViewState extends State<GhGraphView> {
     return def.isEmpty ? const [] : [def];
   }
 
-  /// Fetches again (chip toggles, refresh, retry).
+  /// Fetches again (chip toggles, picker, refresh, retry).
   void _load() {
     setState(() {
       _loading = true;
       _error = null;
+      _loadingAll = false;
     });
     _fetch();
+  }
+
+  void _relayout() {
+    _layout = layoutGraph(
+      [for (final c in _commits) GraphNode(c.sha, c.parents)],
+      defaultHead: _data?.defaultHead,
+      colorCount: GithubGraphColors.lanes.length,
+      more: _next != null,
+    );
+    _rowOf = {for (var i = 0; i < _commits.length; i++) _commits[i].sha: i};
   }
 
   Future<void> _fetch() async {
@@ -170,20 +217,17 @@ class _GhGraphViewState extends State<GhGraphView> {
                 widget.spec.ref.owner,
                 widget.spec.ref.repo,
                 branches: _request,
-                limit: widget.spec.limit ?? GithubGraphLimits.defaultLimit,
+                limit: widget.spec.limit ?? GithubPagingLimits.graphPage,
               ));
       if (!mounted || gen != _gen) return;
-      final layout = layoutGraph(
-        [for (final c in g.commits) GraphNode(c.sha, c.parents)],
-        defaultHead: g.defaultHead,
-        colorCount: GithubGraphColors.lanes.length,
-      );
       setState(() {
         _data = g;
-        _layout = layout;
-        _rowOf = {
-          for (var i = 0; i < g.commits.length; i++) g.commits[i].sha: i,
-        };
+        _commits.clear();
+        _seen.clear();
+        _open.clear();
+        _capped = false;
+        _moreError = null;
+        _append(g);
         _loading = false;
         for (final b in g.branches) {
           if (!_known.any((k) => k.name == b.name)) _known.add(b);
@@ -196,6 +240,8 @@ class _GhGraphViewState extends State<GhGraphView> {
           };
         }
       });
+      if (_v.hasClients) _v.jumpTo(0);
+      _checkFill();
     } catch (e) {
       if (!mounted || gen != _gen) return;
       setState(() {
@@ -203,6 +249,82 @@ class _GhGraphViewState extends State<GhGraphView> {
         _loading = false;
       });
     }
+  }
+
+  /// Adds a page (skipping commits already shown) and lays out again.
+  void _append(GhGraph g) {
+    for (final c in g.commits) {
+      if (_seen.add(c.sha)) _commits.add(c);
+    }
+    _next = g.nextCursor;
+    _total = g.totalCount ?? _total;
+    _relayout();
+  }
+
+  /// After a page lands: a short page may not fill the view, so no scroll
+  /// would ever ask for more.
+  void _checkFill() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted) _maybeMore();
+  });
+
+  void _maybeMore() {
+    if (!_v.hasClients || _loadingAll) return;
+    if (_v.position.extentAfter < GithubPagingSizes.prefetchExtent) _more();
+  }
+
+  /// Loads the next (older) page; false when there is none or it failed.
+  Future<bool> _more() async {
+    final cursor = _next;
+    if (cursor == null || _loadingMore || _loading) return false;
+    final gen = _gen;
+    setState(() {
+      _loadingMore = true;
+      _moreError = null;
+    });
+    try {
+      final g =
+          await (widget.pageLoader?.call(cursor) ??
+              GithubApi.instance.graph(
+                widget.spec.ref.owner,
+                widget.spec.ref.repo,
+                after: cursor,
+                limit: GithubPagingLimits.graphPage,
+              ));
+      if (!mounted || gen != _gen) return false;
+      setState(() {
+        _loadingMore = false;
+        _append(g);
+      });
+      if (!_loadingAll) _checkFill();
+      return true;
+    } catch (e) {
+      if (!mounted || gen != _gen) return false;
+      setState(() {
+        _loadingMore = false;
+        _moreError = e;
+      });
+      return false;
+    }
+  }
+
+  /// LOAD ALL: pages until the history ends, STOP, or the safety cap.
+  Future<void> _loadAll() async {
+    if (_loadingAll) {
+      setState(() => _loadingAll = false);
+      return;
+    }
+    setState(() {
+      _loadingAll = true;
+      _capped = false;
+    });
+    while (mounted && _loadingAll && _next != null) {
+      if (_commits.length >= GithubPagingLimits.loadAllCap) {
+        setState(() => _capped = true);
+        break;
+      }
+      if (!await _more()) break;
+    }
+    if (mounted) setState(() => _loadingAll = false);
   }
 
   void _toggle(GhGraphBranch b) {
@@ -214,8 +336,34 @@ class _GhGraphViewState extends State<GhGraphView> {
     _load();
   }
 
+  Future<void> _pickBranches() async {
+    final picked = await showBranchPicker(
+      context,
+      repo: widget.spec.ref,
+      selected: _selected,
+      loader: widget.branchLoader,
+    );
+    if (picked == null || !mounted) return;
+    final def = _data?.defaultBranch;
+    setState(() {
+      _custom = true;
+      _selected = {
+        for (final b in picked)
+          if (b != def) b,
+      };
+      // New picks get chips too (their color once loaded).
+      for (final b in _selected) {
+        if (!_known.any((k) => k.name == b)) {
+          _known.add(GhGraphBranch({'name': b}));
+        }
+      }
+    });
+    _load();
+  }
+
   Color _branchColor(BuildContext context, GhGraphBranch b) {
-    final i = _rowOf[b.sha];
+    final head = _data?.branches.where((x) => x.name == b.name).firstOrNull;
+    final i = _rowOf[head?.sha ?? b.sha];
     if (i == null || _layout == null) return context.palette.textTertiary;
     return GithubGraphColors.lane(_layout!.rows[i].color);
   }
@@ -228,6 +376,19 @@ class _GhGraphViewState extends State<GhGraphView> {
     );
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => _GraphFullscreen(spec: spec)),
+    );
+  }
+
+  void _pan(double dx) {
+    _fling.stop();
+    _hx.value = (_hx.value - dx).clamp(0, _hxMax);
+  }
+
+  void _panEnd(double velocity) {
+    if (velocity.abs() < 1) return;
+    _fling.value = _hx.value;
+    _fling.animateWith(
+      ClampingScrollSimulation(position: _hx.value, velocity: -velocity),
     );
   }
 
@@ -259,13 +420,16 @@ class _GhGraphViewState extends State<GhGraphView> {
       height: GithubGraphSizes.toolbarHeight,
       child: Row(
         children: [
+          _ToolButton(
+            icon: GithubIcons.branch,
+            label: GithubBranchStrings.title,
+            onTap: _loading ? null : _pickBranches,
+            color: p.textPrimary,
+          ),
           Expanded(
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(
-                horizontal: GithubSizes.pad,
-                vertical: AppSpacing.sm,
-              ),
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               children: [
                 for (final b in _known) ...[
                   _BranchChip(
@@ -299,24 +463,84 @@ class _GhGraphViewState extends State<GhGraphView> {
   }
 
   Widget _footer(BuildContext context, GhGraph g) {
+    final p = context.palette;
+    final t = context.text;
     final parts = [
-      GithubGraphStrings.commits(g.commits.length),
+      GithubPagingStrings.commitsOf(_commits.length, _total),
       GithubGraphStrings.branches(g.branches.length),
-      if (g.truncated) GithubGraphStrings.truncated,
+      if (_capped) GithubPagingStrings.capped(GithubPagingLimits.loadAllCap),
+      if (_next == null && g.truncated) GithubGraphStrings.truncated,
       if ((_layout?.width ?? 0) > GithubGraphLimits.maxLanes)
         GithubGraphStrings.overflow,
     ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: GithubSizes.pad,
-        vertical: AppSpacing.sm,
-      ),
-      child: Text(
-        parts.join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: context.text.caption,
-      ),
+    final busy = _loadingAll || _loadingMore;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Thin progress bar while LOAD ALL runs (share of the cap).
+        if (_loadingAll)
+          LinearProgressIndicator(
+            minHeight: GithubPagingSizes.progress,
+            value: (_commits.length / GithubPagingLimits.loadAllCap).clamp(
+              0,
+              1,
+            ),
+            color: p.textPrimary,
+            backgroundColor: p.border,
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: GithubSizes.pad,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _loadingAll
+                      ? GithubPagingStrings.loadingAll(
+                          _commits.length,
+                          GithubPagingLimits.loadAllCap,
+                        )
+                      : parts.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.caption,
+                ),
+              ),
+              if (_next != null && !_capped)
+                GhTap(
+                  onTap: _loadAll,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                      vertical: AppSpacing.xs,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppIcon(
+                          _loadingAll
+                              ? GithubPagingIcons.stop
+                              : GithubPagingIcons.loadAll,
+                          size: AppIconSize.sm,
+                          color: busy ? p.accent : p.textSecondary,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          _loadingAll
+                              ? GithubPagingStrings.stop
+                              : GithubPagingStrings.loadAll,
+                          style: t.caption.copyWith(color: p.textPrimary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -345,7 +569,7 @@ class _GhGraphViewState extends State<GhGraphView> {
         child: GhSkeleton(rows: GithubGraphSizes.skeletonRows),
       );
     }
-    if (g.commits.isEmpty) {
+    if (_commits.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(GithubSizes.pad),
         child: Text(GithubGraphStrings.empty, style: context.text.bodySmall),
@@ -354,14 +578,11 @@ class _GhGraphViewState extends State<GhGraphView> {
     return AnimatedOpacity(
       duration: GithubDurations.expand,
       opacity: _loading ? GithubGraphColors.mergeTextAlpha : 1,
-      child: IgnorePointer(
-        ignoring: _loading,
-        child: _table(context, g, layout),
-      ),
+      child: IgnorePointer(ignoring: _loading, child: _table(context, layout)),
     );
   }
 
-  Widget _table(BuildContext context, GhGraph g, GraphLayout layout) {
+  Widget _table(BuildContext context, GraphLayout layout) {
     final lanes = math.min(layout.width, GithubGraphLimits.maxLanes);
     final overflow = layout.width > GithubGraphLimits.maxLanes;
     final graphW =
@@ -369,61 +590,70 @@ class _GhGraphViewState extends State<GhGraphView> {
         math.max(lanes - 1, 0) * GithubGraphSizes.laneWidth +
         (overflow ? GithubGraphSizes.overflowGap * 3 : 0);
     const gap = GithubGraphSizes.colGap;
-    final fixed =
-        graphW +
-        gap * 4 +
+    const fixedRight =
+        gap * 3 +
         GithubGraphSizes.dateWidth +
         GithubGraphSizes.authorWidth +
         GithubGraphSizes.shaWidth;
     final repo = GhRef(widget.spec.ref.owner, widget.spec.ref.repo);
     return LayoutBuilder(
       builder: (context, c) {
-        final tableW = math.max(
-          c.maxWidth,
-          fixed + GithubGraphSizes.subjectMin,
+        final viewport = math.max(c.maxWidth - graphW, 0.0);
+        final subject = math.max(
+          viewport - fixedRight - gap,
+          GithubGraphSizes.subjectMin,
         );
+        final content = subject + gap + fixedRight;
+        _hxMax = math.max(content - viewport, 0);
         final cols = _Columns(
           graph: graphW,
-          subject: tableW - fixed,
-          viewport: c.maxWidth,
+          subject: subject,
+          content: content,
         );
-        return Scrollbar(
-          controller: _h,
-          child: SingleChildScrollView(
-            controller: _h,
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: tableW,
-              height: c.maxHeight,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _HeaderRow(cols: cols),
-                  const GhDivider(),
-                  Expanded(
-                    child: ListView.builder(
-                      padding: EdgeInsets.zero,
-                      itemCount: g.commits.length,
-                      itemBuilder: (context, i) {
-                        final c = g.commits[i];
-                        return _GraphRowView(
-                          key: ValueKey(c.sha),
-                          repo: repo,
-                          commit: c,
-                          row: layout.rows[i],
-                          cols: cols,
-                          open: _open.contains(c.sha),
-                          onTap: () => setState(() {
-                            if (!_open.remove(c.sha)) _open.add(c.sha);
-                          }),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+        final pan = _Pan(offset: _hx, max: _hxMax, onPan: _pan, onEnd: _panEnd);
+        final tail = _next != null || _moreError != null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _HeaderRow(cols: cols, pan: pan),
+            const GhDivider(),
+            Expanded(
+              child: ListView.builder(
+                controller: _v,
+                padding: EdgeInsets.zero,
+                itemCount: _commits.length + (tail ? 1 : 0),
+                itemBuilder: (context, i) {
+                  if (i >= _commits.length) {
+                    final err = _moreError;
+                    if (err != null) {
+                      return GhError(
+                        message: err is ApiException
+                            ? err.message
+                            : GithubStrings.loadFailed,
+                        onRetry: _more,
+                      );
+                    }
+                    return const GhLoadingRow(
+                      label: GithubPagingStrings.loadingMore,
+                    );
+                  }
+                  final c = _commits[i];
+                  return _GraphRowView(
+                    key: ValueKey(c.sha),
+                    repo: repo,
+                    commit: c,
+                    row: layout.rows[i],
+                    cols: cols,
+                    pan: pan,
+                    open: _open.contains(c.sha),
+                    onTap: () => setState(() {
+                      if (!_open.remove(c.sha)) _open.add(c.sha);
+                    }),
+                  );
+                },
               ),
             ),
-          ),
+          ],
         );
       },
     );
@@ -434,9 +664,64 @@ class _Columns {
   const _Columns({
     required this.graph,
     required this.subject,
-    required this.viewport,
+    required this.content,
   });
-  final double graph, subject, viewport;
+
+  /// Lane gutter, subject column, and all text columns together.
+  final double graph, subject, content;
+}
+
+/// Shared horizontal pan of the text columns.
+class _Pan {
+  const _Pan({
+    required this.offset,
+    required this.max,
+    required this.onPan,
+    required this.onEnd,
+  });
+  final ValueNotifier<double> offset;
+
+  /// Largest offset for the current width (the notifier may hold more
+  /// after a resize; it is clamped when drawn).
+  final double max;
+  final void Function(double dx) onPan;
+  final void Function(double velocity) onEnd;
+}
+
+/// The text columns of one row, shifted by the shared pan offset and clipped
+/// to the space right of the lane gutter. Drag sideways to pan.
+class _PannedColumns extends StatelessWidget {
+  const _PannedColumns({
+    required this.pan,
+    required this.width,
+    required this.child,
+  });
+
+  final _Pan pan;
+  final double width;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onHorizontalDragUpdate: (d) => pan.onPan(d.delta.dx),
+    onHorizontalDragEnd: (d) => pan.onEnd(d.velocity.pixelsPerSecond.dx),
+    child: ClipRect(
+      child: ValueListenableBuilder<double>(
+        valueListenable: pan.offset,
+        child: child,
+        builder: (context, x, child) => OverflowBox(
+          alignment: Alignment.centerLeft,
+          minWidth: width,
+          maxWidth: width,
+          child: Transform.translate(
+            offset: Offset(-x.clamp(0.0, pan.max), 0),
+            child: child,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _ToolButton extends StatelessWidget {
@@ -525,9 +810,10 @@ class _BranchChip extends StatelessWidget {
 }
 
 class _HeaderRow extends StatelessWidget {
-  const _HeaderRow({required this.cols});
+  const _HeaderRow({required this.cols, required this.pan});
 
   final _Columns cols;
+  final _Pan pan;
 
   @override
   Widget build(BuildContext context) {
@@ -553,19 +839,35 @@ class _HeaderRow extends StatelessWidget {
               ),
             ),
           ),
-          cell(GithubGraphStrings.colSubject, cols.subject),
-          gap,
-          cell(GithubGraphStrings.colDate, GithubGraphSizes.dateWidth),
-          gap,
-          cell(GithubGraphStrings.colAuthor, GithubGraphSizes.authorWidth),
-          gap,
-          cell(GithubGraphStrings.colSha, GithubGraphSizes.shaWidth),
+          Expanded(
+            child: _PannedColumns(
+              pan: pan,
+              width: cols.content,
+              child: Row(
+                children: [
+                  cell(GithubGraphStrings.colSubject, cols.subject),
+                  gap,
+                  cell(GithubGraphStrings.colDate, GithubGraphSizes.dateWidth),
+                  gap,
+                  cell(
+                    GithubGraphStrings.colAuthor,
+                    GithubGraphSizes.authorWidth,
+                  ),
+                  gap,
+                  cell(GithubGraphStrings.colSha, GithubGraphSizes.shaWidth),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
+/// One commit: lane gutter (fixed) + panned text columns; when open, the
+/// commit detail spans the full width below it (outside the panned area, so
+/// diffs wrap and scroll on their own) while the lanes keep running alongside.
 class _GraphRowView extends StatelessWidget {
   const _GraphRowView({
     super.key,
@@ -573,6 +875,7 @@ class _GraphRowView extends StatelessWidget {
     required this.commit,
     required this.row,
     required this.cols,
+    required this.pan,
     required this.open,
     required this.onTap,
   });
@@ -581,6 +884,7 @@ class _GraphRowView extends StatelessWidget {
   final GhGraphCommit commit;
   final GraphRow row;
   final _Columns cols;
+  final _Pan pan;
   final bool open;
   final VoidCallback onTap;
 
@@ -594,9 +898,65 @@ class _GraphRowView extends StatelessWidget {
     final primary = p.textPrimary.withValues(alpha: dim);
     final secondary = p.textSecondary.withValues(alpha: dim);
     const gap = SizedBox(width: GithubGraphSizes.colGap);
-    final detailW = math.max(
-      cols.viewport - cols.graph - GithubSizes.pad,
-      GithubGraphSizes.subjectMin,
+    final cells = Row(
+      children: [
+        SizedBox(
+          width: cols.subject,
+          child: Row(
+            children: [
+              for (final r in c.refs.take(GithubGraphLimits.refsShown)) ...[
+                _RefPill(name: r, color: laneColor),
+                const SizedBox(width: AppSpacing.xs),
+              ],
+              if (c.refs.length > GithubGraphLimits.refsShown) ...[
+                Text(
+                  GithubGraphStrings.moreRefs(
+                    c.refs.length - GithubGraphLimits.refsShown,
+                  ),
+                  style: t.caption.copyWith(color: laneColor),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
+              Expanded(
+                child: Text(
+                  c.subject,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.bodySmall.copyWith(color: primary, height: 1),
+                ),
+              ),
+            ],
+          ),
+        ),
+        gap,
+        SizedBox(
+          width: GithubGraphSizes.dateWidth,
+          child: Text(
+            GithubGraphStrings.dateTime(c.date),
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: t.caption.copyWith(color: secondary),
+          ),
+        ),
+        gap,
+        SizedBox(
+          width: GithubGraphSizes.authorWidth,
+          child: Text(
+            c.author,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: t.caption.copyWith(color: secondary),
+          ),
+        ),
+        gap,
+        SizedBox(
+          width: GithubGraphSizes.shaWidth,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: GhChip(c.shortSha, onTap: () => ghCopy(context, c.sha)),
+          ),
+        ),
+      ],
     );
     return Container(
       color: open ? p.surfaceRaised : null,
@@ -609,7 +969,7 @@ class _GraphRowView extends StatelessWidget {
           overflowColor: p.textTertiary,
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             GhTap(
               onTap: onTap,
@@ -618,68 +978,11 @@ class _GraphRowView extends StatelessWidget {
                 child: Row(
                   children: [
                     SizedBox(width: cols.graph),
-                    SizedBox(
-                      width: cols.subject,
-                      child: Row(
-                        children: [
-                          for (final r in c.refs.take(
-                            GithubGraphLimits.refsShown,
-                          )) ...[
-                            _RefPill(name: r, color: laneColor),
-                            const SizedBox(width: AppSpacing.xs),
-                          ],
-                          if (c.refs.length > GithubGraphLimits.refsShown) ...[
-                            Text(
-                              GithubGraphStrings.moreRefs(
-                                c.refs.length - GithubGraphLimits.refsShown,
-                              ),
-                              style: t.caption.copyWith(color: laneColor),
-                            ),
-                            const SizedBox(width: AppSpacing.xs),
-                          ],
-                          Expanded(
-                            child: Text(
-                              c.subject,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: t.bodySmall.copyWith(
-                                color: primary,
-                                height: 1,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    gap,
-                    SizedBox(
-                      width: GithubGraphSizes.dateWidth,
-                      child: Text(
-                        GithubGraphStrings.dateTime(c.date),
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: t.caption.copyWith(color: secondary),
-                      ),
-                    ),
-                    gap,
-                    SizedBox(
-                      width: GithubGraphSizes.authorWidth,
-                      child: Text(
-                        c.author,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.caption.copyWith(color: secondary),
-                      ),
-                    ),
-                    gap,
-                    SizedBox(
-                      width: GithubGraphSizes.shaWidth,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: GhChip(
-                          c.shortSha,
-                          onTap: () => ghCopy(context, c.sha),
-                        ),
+                    Expanded(
+                      child: _PannedColumns(
+                        pan: pan,
+                        width: cols.content,
+                        child: cells,
                       ),
                     ),
                   ],
@@ -690,12 +993,10 @@ class _GraphRowView extends StatelessWidget {
               Padding(
                 padding: EdgeInsets.only(
                   left: cols.graph,
+                  right: GithubSizes.pad,
                   bottom: AppSpacing.sm,
                 ),
-                child: SizedBox(
-                  width: detailW,
-                  child: GhCommitDetail(repo: repo, sha: c.sha),
-                ),
+                child: GhCommitDetail(repo: repo, sha: c.sha),
               ),
           ],
         ),

@@ -211,6 +211,7 @@ abstract final class GithubSizes {
 abstract final class GithubLimits {
   static const pageRepos = 8;
   static const pageCommits = 15;
+  static const pageCommitsInfinite = GithubPagingLimits.pageCommits;
   static const pageItems = 15;
   static const initialVisible = 6;
   static const topics = 8;
@@ -448,4 +449,111 @@ abstract final class GithubGraphLimits {
   /// Lanes drawn side by side; more collapse into the last one.
   static const maxLanes = 8;
   static const refsShown = 2;
+}
+
+// ---- paging, branch picker, repo search ------------------------------------
+
+abstract final class GithubPagingLimits {
+  /// Commits per request of the infinite commit list.
+  static const pageCommits = 30;
+
+  /// Commits per graph page (the server caps a branch page at 100).
+  static const graphPage = 100;
+
+  /// LOAD ALL stops here (memory and GitHub quota).
+  static const loadAllCap = 5000;
+}
+
+abstract final class GithubSearchLimits {
+  static const repos = 12;
+  static const myRepoMatches = 50;
+}
+
+abstract final class GithubBranchLimits {
+  static const page = 100;
+
+  /// Branches the graph shows at once ("all branches" takes the newest).
+  static const maxSelected = 25;
+}
+
+abstract final class GithubPagingSizes {
+  /// Fetch the next page when this close to the end of a list.
+  static const prefetchExtent = 480.0;
+  static const progress = 2.0;
+  static const spinner = 14.0;
+  static const sheetHeightFactor = 0.82;
+  static const checkBox = 16.0;
+  static const checkIcon = 12.0;
+  static const fieldHeight = 36.0;
+  static const filterBarHeight = 40.0;
+  static const repoListHeight = 460.0;
+  static const commitListHeight = 520.0;
+}
+
+abstract final class GithubPagingStrings {
+  static const loadAll = 'LOAD ALL';
+  static const stop = 'STOP';
+  static const loadingMore = 'LOADING OLDER COMMITS…';
+  static const endOfHistory = 'START OF HISTORY';
+  static const commitFilterHint = 'Filter by message, author or sha';
+  static const filteredLocally = 'FILTERED IN LOADED COMMITS';
+  static const clear = 'Clear';
+
+  static String _n(int n) => n.toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+
+  /// `120 OF 1,485,074 COMMITS` (or `120 COMMITS` when the total is unknown).
+  static String commitsOf(int n, int? total) => total == null || total < n
+      ? '${_n(n)} COMMITS'
+      : '${_n(n)} OF ${_n(total)} COMMITS';
+  static String loadingAll(int n, int cap) => 'LOADING ${_n(n)} / ${_n(cap)}…';
+  static String capped(int cap) => 'STOPPED AT ${_n(cap)}';
+  static String reposOf(int n, int total) =>
+      n == total ? '${_n(n)} REPOS' : '${_n(n)} OF ${_n(total)} REPOS';
+  static String count(int n) => _n(n);
+}
+
+abstract final class GithubBranchStrings {
+  static const title = 'BRANCHES';
+  static const pick = 'BRANCH';
+  static const filterHint = 'Filter branches';
+  static const all = 'ALL BRANCHES';
+  static const recent = 'RECENT';
+  static const apply = 'APPLY';
+  static const isDefault = 'DEFAULT';
+  static const none = 'No branches match.';
+  static String selected(int n) => '$n SELECTED';
+  static String countOf(int shown, int total) =>
+      shown == total ? '$total BRANCHES' : '$shown OF $total BRANCHES';
+  static String cap(int n) => 'UP TO $n AT ONCE';
+}
+
+abstract final class GithubRepoFilterStrings {
+  static const searchHint = 'Search your repos (typos are fine)';
+  static const sortRecent = 'RECENT';
+  static const sortStars = 'STARS';
+  static const sortName = 'NAME';
+  static const sortBest = 'BEST MATCH';
+  static const sortUpdated = 'UPDATED';
+  static const privateOnly = 'PRIVATE';
+  static const archived = 'ARCHIVED';
+  static const forks = 'FORKS';
+  static const owner = 'OWNER';
+  static const language = 'LANGUAGE';
+  static const any = 'ANY';
+  static const forkBadge = 'FORK';
+  static const refresh = 'REFRESH';
+  static String corrected(String q) => 'SHOWING RESULTS FOR "$q"';
+  static String ownerIs(String o) => o;
+}
+
+abstract final class GithubPagingIcons {
+  static const check = AppIcons.check;
+  static const clear = AppIcons.close;
+  static const stop = AppIcons.stop;
+  static const loadAll = AppIcons.scrollDown;
+  static const filter = AppIcons.search;
+  static const picker = AppIcons.expand;
 }

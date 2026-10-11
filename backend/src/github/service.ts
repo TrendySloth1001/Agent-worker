@@ -1,5 +1,6 @@
 import { AppError } from "../util/errors.js";
-import { gh, ghAuth, lastRate, tokenScopes } from "./client.js";
+import { gh, ghAuth, ghGraphql, lastRate, tokenScopes } from "./client.js";
+import { publicAttempts, queryTokens, rankNames, rankRepos, repairTypos, scoreRepo } from "./repoSearch.js";
 
 /** Compact, app-facing shapes of GitHub data (never the raw API dumps). */
 
@@ -93,11 +94,77 @@ const files = (fs: any[] | undefined) => ({
 
 // ---- search --------------------------------------------------------------
 
+const REPO_SORTS = new Set(["stars", "forks", "updated", "help-wanted-issues"]);
+
+/**
+ * Repository search that survives loose text: the query gets qualifiers
+ * (in:name,description,readme, language:, user:, topic:), then falls back to
+ * plain words and a typo-repaired variant when results are thin; everything
+ * found is merged, de-duplicated and re-ranked ("best-match"), or sorted by
+ * stars / last update.
+ */
 export async function searchRepos(q: string, sort?: string, perPage?: unknown, signal?: AbortSignal) {
-  const s = sort && ["stars", "forks", "updated", "help-wanted-issues"].includes(sort) ? `&sort=${sort}&order=desc` : "";
   const n = clampInt(perPage, 10, 1, 30);
-  const d = await gh(`/search/repositories?q=${enc(await publicQ(q))}${s}&per_page=${n}`, { signal });
-  return { total: d.total_count ?? 0, incomplete: !!d.incomplete_results, items: (d.items ?? []).map(repoSummary) };
+  const mode = sort === "stars" || sort === "updated" || sort === "forks" ? sort : "best-match";
+  // Raw GitHub syntax (qualifiers, OR, quotes) beyond simple words: run as typed first.
+  const s = mode !== "best-match" && REPO_SORTS.has(mode) ? `&sort=${mode}&order=desc` : "";
+  const run = async (query: string) => {
+    const d = await gh(`/search/repositories?q=${enc(await publicQ(query))}${s}&per_page=${Math.max(n, 20)}`, { signal });
+    return { total: (d.total_count as number) ?? 0, incomplete: !!d.incomplete_results, items: ((d.items ?? []) as any[]).map(repoSummary) };
+  };
+  const attempts = publicAttempts(q);
+  const fixed = repairTypos(q.replace(/\b[a-z-]+:\S+/gi, " ").trim());
+  const seen = new Map<string, { r: ReturnType<typeof repoSummary>; rank: number }>();
+  let total = 0;
+  let incomplete = false;
+  let used = attempts[0] ?? q;
+  let tries = 0;
+  let ranFixed = false;
+  for (const a of attempts) {
+    if (tries >= 4) break;
+    const isFixed = !!fixed && a.includes(fixed);
+    // Enough hits already: stop spending search quota (but try a typo repair once).
+    if (seen.size >= n && tries >= 1 && (!isFixed || ranFixed)) continue;
+    ranFixed ||= isFixed;
+    tries++;
+    let res;
+    try {
+      res = await run(a);
+    } catch (e) {
+      if (tries === 1 && !attempts[1]) throw e;
+      if ((e as AppError).status === 429) break;
+      continue;
+    }
+    if (!total && res.total) used = a;
+    total = Math.max(total, res.total);
+    incomplete ||= res.incomplete;
+    res.items.forEach((r, i) => {
+      const key = r.fullName.toLowerCase();
+      const rank = 1 - i / Math.max(res.items.length, 1);
+      const prev = seen.get(key);
+      if (!prev || prev.rank < rank) seen.set(key, { r, rank });
+    });
+  }
+  // Ranking text: the repaired words when the typed ones found little.
+  const rankText = fixed ?? q.replace(/\b[a-z-]+:\S+/gi, " ");
+  const scored = [...seen.values()].map(({ r, rank }) => {
+    const m = scoreRepo(rankText, r);
+    const pop = Math.min(1, Math.log10((r.stars ?? 0) + 1) / 5);
+    return { r, score: m.score * 0.6 + rank * 0.3 + pop * 0.25, matched: m.matched };
+  });
+  if (mode === "stars") scored.sort((a, b) => b.r.stars - a.r.stars);
+  else if (mode === "updated") scored.sort((a, b) => Date.parse(b.r.pushedAt ?? "") - Date.parse(a.r.pushedAt ?? "") || 0);
+  else if (mode === "forks") scored.sort((a, b) => b.r.forks - a.r.forks);
+  else scored.sort((a, b) => b.score - a.score);
+  return {
+    total: Math.max(total, scored.length),
+    incomplete,
+    sort: mode,
+    query: used,
+    corrected: fixed,
+    tokens: queryTokens(rankText),
+    items: scored.slice(0, n).map((x) => ({ ...x.r, score: Math.round(x.score * 1000) / 1000, matched: x.matched })),
+  };
 }
 
 export async function searchCode(q: string, perPage?: unknown) {
@@ -186,23 +253,138 @@ function readmeExcerpt(md: string): string {
   return clip(text, 1_500);
 }
 
-export async function commits(owner: string, repo: string, q: { sha?: string; path?: string; perPage?: unknown; stats?: boolean }, signal?: AbortSignal) {
+export type CommitsQuery = {
+  sha?: string;
+  path?: string;
+  author?: string;
+  since?: string;
+  until?: string;
+  /** Message / author / sha filter (GitHub commit search on the default branch). */
+  q?: string;
+  after?: string;
+  perPage?: unknown;
+  stats?: boolean;
+};
+
+const GQL_COMMIT = `oid messageHeadline messageBody authoredDate committedDate url additions deletions parents { totalCount } author { name email user { login avatarUrl url } }`;
+const fromGqlCommit = (c: any) => ({
+  sha: c.oid as string,
+  shortSha: String(c.oid).slice(0, 7),
+  message: String(c.messageHeadline ?? "").slice(0, 200),
+  body: clip(c.messageBody, BODY_MAX),
+  author: c.author?.user ? { login: c.author.user.login, avatar: c.author.user.avatarUrl ?? "", url: c.author.user.url ?? "" } : null,
+  authorName: c.author?.name ?? c.author?.user?.login ?? "",
+  date: c.authoredDate ?? c.committedDate ?? null,
+  url: c.url as string,
+  parents: c.parents?.totalCount ?? 0,
+  additions: (c.additions as number | undefined) ?? null,
+  deletions: (c.deletions as number | undefined) ?? null,
+});
+type CommitRow = ReturnType<typeof fromGqlCommit>;
+export type CommitPage = { items: CommitRow[]; totalCount: number | null; nextCursor: string | null };
+
+const isoOrUndef = (v?: string) => {
+  if (!v) return undefined;
+  const t = Date.parse(v);
+  if (!Number.isFinite(t)) throw new AppError(400, "bad_request", "Invalid date");
+  return new Date(t).toISOString();
+};
+
+/**
+ * One page of commit history, newest first. Cursors: `g:<graphql cursor>`,
+ * `r:<rest page>` or `s:<search page>`; nextCursor null at the end.
+ */
+export async function commitsPage(owner: string, repo: string, q: CommitsQuery, signal?: AbortSignal): Promise<CommitPage> {
   checkName(owner, repo);
-  const n = clampInt(q.perPage, 15, 1, 50);
-  const params = new URLSearchParams({ per_page: String(n) });
+  const n = clampInt(q.perPage, 15, 1, 100);
+  const after = q.after ?? "";
+  const filter = (q.q ?? "").trim().slice(0, 200);
+  if (filter) return commitSearch(owner, repo, filter, after, n, signal);
+  const since = isoOrUndef(q.since);
+  const until = isoOrUndef(q.until);
+  const auth = await ghAuth();
+  if (auth.token && !after.startsWith("r:")) {
+    try {
+      let author: Record<string, unknown> | undefined;
+      if (q.author) {
+        if (q.author.includes("@")) author = { emails: [q.author] };
+        else {
+          const u = await ghGraphql<{ user: { id: string } | null }>(`query($l: String!) { user(login: $l) { id } }`, { l: q.author }, { signal, partial: true });
+          if (!u?.user?.id) return { items: [], totalCount: 0, nextCursor: null };
+          author = { id: u.user.id };
+        }
+      }
+      const d = await ghGraphql<{ repository: any }>(
+        `query($owner: String!, $name: String!, $expr: String!, $n: Int!, $after: String, $path: String, $since: GitTimestamp, $until: GitTimestamp, $author: CommitAuthor) {
+          repository(owner: $owner, name: $name) { object(expression: $expr) { ... on Commit {
+            history(first: $n, after: $after, path: $path, since: $since, until: $until, author: $author) {
+              totalCount pageInfo { hasNextPage endCursor } nodes { ${GQL_COMMIT} }
+            } } } }
+        }`,
+        {
+          owner,
+          name: repo,
+          expr: q.sha || "HEAD",
+          n,
+          after: after.startsWith("g:") ? after.slice(2) : null,
+          path: q.path || null,
+          since: since ?? null,
+          until: until ?? null,
+          author: author ?? null,
+        },
+        { signal },
+      );
+      if (!d?.repository) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+      const h = d.repository.object?.history;
+      if (!h) throw new AppError(404, "not_found", "GitHub: no such branch or commit");
+      return {
+        items: (h.nodes ?? []).map(fromGqlCommit),
+        totalCount: typeof h.totalCount === "number" ? h.totalCount : null,
+        nextCursor: h.pageInfo?.hasNextPage && h.pageInfo.endCursor ? `g:${h.pageInfo.endCursor}` : null,
+      };
+    } catch (e) {
+      const status = (e as AppError).status;
+      if (status === 404 || status === 409 || status === 429 || status === 400 || signal?.aborted) throw e;
+      // Fall through to REST.
+    }
+  }
+  const pageNo = after.startsWith("r:") ? clampInt(after.slice(2), 1, 1, 100_000) : 1;
+  const params = new URLSearchParams({ per_page: String(n), page: String(pageNo) });
   if (q.sha) params.set("sha", q.sha);
   if (q.path) params.set("path", q.path);
+  if (q.author) params.set("author", q.author);
+  if (since) params.set("since", since);
+  if (until) params.set("until", until);
   const list = await gh<any[]>(`/repos/${owner}/${repo}/commits?${params}`, { signal });
-  const items = list.map(commitItem);
+  let items = list.map((c) => ({ ...commitItem(c), additions: null as number | null, deletions: null as number | null }));
   if (q.stats !== false) {
-    // The list has no line counts; fetch them for the first few (cached).
-    const firstN = items.slice(0, 15);
     const stats = await Promise.all(
-      firstN.map((c) => gh(`/repos/${owner}/${repo}/commits/${c.sha}`, { signal }).then((d) => d.stats).catch(() => null)),
+      items.slice(0, 15).map((c) => gh(`/repos/${owner}/${repo}/commits/${c.sha}`, { signal }).then((d) => d.stats).catch(() => null)),
     );
-    return items.map((c, i) => ({ ...c, additions: stats[i]?.additions ?? null, deletions: stats[i]?.deletions ?? null }));
+    items = items.map((c, i) => ({ ...c, additions: stats[i]?.additions ?? null, deletions: stats[i]?.deletions ?? null }));
   }
-  return items.map((c) => ({ ...c, additions: null, deletions: null }));
+  return { items, totalCount: null, nextCursor: list.length === n ? `r:${pageNo + 1}` : null };
+}
+
+/** Commits matching a message / author / sha filter. */
+async function commitSearch(owner: string, repo: string, filter: string, after: string, n: number, signal?: AbortSignal): Promise<CommitPage> {
+  if (/^[0-9a-f]{7,40}$/i.test(filter) && !after) {
+    const c = await gh(`/repos/${owner}/${repo}/commits/${enc(filter)}`, { allow404: true, signal }).catch(() => null);
+    if (c?.sha) return { items: [{ ...commitItem(c), additions: c.stats?.additions ?? null, deletions: c.stats?.deletions ?? null }], totalCount: 1, nextCursor: null };
+  }
+  const pageNo = after.startsWith("s:") ? clampInt(after.slice(2), 1, 1, 10) : 1;
+  // Search returns at most 1,000 results (10 pages of 100).
+  const per = Math.min(n, 100);
+  const words = filter.replace(/\b(repo|org|user):\S+/gi, " ").trim();
+  const d = await gh(`/search/commits?q=${enc(`repo:${owner}/${repo} ${words}`)}&sort=committer-date&order=desc&per_page=${per}&page=${pageNo}`, { signal });
+  const items = ((d.items ?? []) as any[]).map((c) => ({ ...commitItem(c), additions: null as number | null, deletions: null as number | null }));
+  const total = (d.total_count as number) ?? items.length;
+  return { items, totalCount: total, nextCursor: items.length === per && pageNo * per < Math.min(total, 1000) ? `s:${pageNo + 1}` : null };
+}
+
+/** The first page of commits as a plain list (grounding, older callers). */
+export async function commits(owner: string, repo: string, q: { sha?: string; path?: string; perPage?: unknown; stats?: boolean }, signal?: AbortSignal) {
+  return (await commitsPage(owner, repo, q, signal)).items;
 }
 
 export async function commit(owner: string, repo: string, sha: string) {
@@ -312,19 +494,116 @@ function languageOf(name: string): string {
   return EXT_LANG[lower.split(".").pop() ?? ""] ?? "";
 }
 
-export async function branches(owner: string, repo: string) {
-  const r = await repoRaw(owner, repo);
-  const list = await gh<any[]>(`/repos/${owner}/${repo}/branches?per_page=100`);
-  // The default branch may sit beyond the first page: always list it.
-  if (!list.some((b) => b.name === r.default_branch)) {
-    const d = await gh(`/repos/${owner}/${repo}/branches/${enc(r.default_branch)}`, { allow404: true }).catch(() => null);
-    list.unshift(d ?? { name: r.default_branch });
+export type BranchItem = { name: string; sha: string; date: string | null; protected: boolean; default: boolean };
+const BRANCH_PAGES_MAX = 50;
+const BRANCH_CONCURRENCY = 6;
+const branchCache = new Map<string, { at: number; value: { defaultBranch: string; items: BranchItem[]; complete: boolean } }>();
+const BRANCH_TTL = 5 * 60_000;
+
+const REFS_QUERY = `query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef { name }
+    refs(refPrefix: "refs/heads/", first: 100, after: $after) {
+      totalCount pageInfo { hasNextPage endCursor }
+      nodes { name target { oid ... on Commit { committedDate } } }
+    }
   }
+}`;
+
+/** Every branch with its head commit date (GraphQL; pages fetched in parallel when cursors are offsets). */
+async function allBranchesGql(owner: string, repo: string, signal?: AbortSignal) {
+  const first = await ghGraphql<{ repository: any }>(REFS_QUERY, { owner, name: repo, after: null }, { signal });
+  const r = first?.repository;
+  if (!r) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+  const def: string = r.defaultBranchRef?.name ?? "";
+  const total: number = r.refs?.totalCount ?? 0;
+  const pages: any[][] = [r.refs?.nodes ?? []];
+  const pagesNeeded = Math.min(BRANCH_PAGES_MAX, Math.ceil(total / 100));
+  // Ref cursors are base64 offsets ("MTAw" = "100"): fetch the rest side by side.
+  if (r.refs?.pageInfo?.hasNextPage && Buffer.from(String(r.refs.pageInfo.endCursor), "base64").toString() === "100") {
+    const offsets = Array.from({ length: pagesNeeded - 1 }, (_, i) => (i + 1) * 100);
+    for (let i = 0; i < offsets.length; i += BRANCH_CONCURRENCY) {
+      const batch = await Promise.all(
+        offsets.slice(i, i + BRANCH_CONCURRENCY).map((off) =>
+          ghGraphql<{ repository: any }>(REFS_QUERY, { owner, name: repo, after: Buffer.from(String(off)).toString("base64") }, { signal }).then(
+            (d) => d?.repository?.refs?.nodes ?? [],
+          ),
+        ),
+      );
+      pages.push(...batch);
+    }
+  } else {
+    let page = r.refs?.pageInfo;
+    while (page?.hasNextPage && pages.length < BRANCH_PAGES_MAX) {
+      const d = await ghGraphql<{ repository: any }>(REFS_QUERY, { owner, name: repo, after: page.endCursor }, { signal });
+      pages.push(d?.repository?.refs?.nodes ?? []);
+      page = d?.repository?.refs?.pageInfo;
+    }
+  }
+  const seen = new Set<string>();
+  const items: BranchItem[] = [];
+  for (const x of pages.flat()) {
+    if (!x?.name || seen.has(x.name)) continue;
+    seen.add(x.name);
+    items.push({ name: x.name, sha: x.target?.oid ?? "", date: x.target?.committedDate ?? null, protected: false, default: x.name === def });
+  }
+  return { defaultBranch: def, items, complete: items.length >= total };
+}
+
+/** REST fallback: every page of /branches (no dates). */
+async function allBranchesRest(owner: string, repo: string, signal?: AbortSignal) {
+  const r = await repoRaw(owner, repo, signal);
+  const items: BranchItem[] = [];
+  let complete = false;
+  for (let page = 1; page <= BRANCH_PAGES_MAX; page++) {
+    const list = await gh<any[]>(`/repos/${owner}/${repo}/branches?per_page=100&page=${page}`, { signal });
+    for (const b of list) items.push({ name: b.name, sha: b.commit?.sha ?? "", date: null, protected: !!b.protected, default: b.name === r.default_branch });
+    if (list.length < 100) {
+      complete = true;
+      break;
+    }
+  }
+  return { defaultBranch: r.default_branch as string, items, complete };
+}
+
+/**
+ * All branches of a repository (cached 5 minutes): default first, then by last
+ * commit date; [q] filters by fuzzy name match. Paged by offset cursors.
+ */
+export async function branches(owner: string, repo: string, opts: { q?: string; after?: string; limit?: unknown; refresh?: boolean } = {}, signal?: AbortSignal) {
+  checkName(owner, repo);
+  const auth = await ghAuth();
+  const key = `${auth.key}|${owner.toLowerCase()}/${repo.toLowerCase()}`;
+  let hit = branchCache.get(key);
+  if (!hit || opts.refresh || Date.now() - hit.at > BRANCH_TTL) {
+    let value;
+    try {
+      value = auth.token ? await allBranchesGql(owner, repo, signal) : await allBranchesRest(owner, repo, signal);
+    } catch (e) {
+      const status = (e as AppError).status;
+      if (!auth.token || status === 404 || status === 409 || status === 429 || signal?.aborted) throw e;
+      value = await allBranchesRest(owner, repo, signal);
+    }
+    hit = { at: Date.now(), value };
+    branchCache.set(key, hit);
+    while (branchCache.size > 100) branchCache.delete(branchCache.keys().next().value!);
+  }
+  const { defaultBranch, items: all, complete } = hit.value;
+  const time = (b: BranchItem) => (b.date ? Date.parse(b.date) : 0);
+  const q = (opts.q ?? "").trim();
+  const sorted = q
+    ? rankNames(q, all, (b) => b.name).map((x) => x.item)
+    : [...all].sort((a, b) => Number(b.default) - Number(a.default) || time(b) - time(a) || a.name.localeCompare(b.name));
+  const limit = clampInt(opts.limit, 100, 1, 500);
+  const offset = clampInt(opts.after, 0, 0, 1_000_000);
+  const items = sorted.slice(offset, offset + limit);
   return {
-    defaultBranch: r.default_branch,
-    items: list
-      .map((b) => ({ name: b.name as string, sha: b.commit?.sha ?? "", protected: !!b.protected, default: b.name === r.default_branch }))
-      .sort((a, b) => Number(b.default) - Number(a.default)),
+    defaultBranch,
+    totalCount: all.length,
+    matchCount: sorted.length,
+    complete,
+    items,
+    nextCursor: offset + limit < sorted.length ? String(offset + limit) : null,
   };
 }
 
@@ -452,14 +731,64 @@ export async function me(signal?: AbortSignal) {
 
 const VISIBILITY = new Set(["all", "public", "private"]);
 const MY_SORTS = new Set(["updated", "pushed", "created", "full_name"]);
+const MY_PAGES_MAX = 50;
+const MY_TTL = 5 * 60_000;
+const myCache = new Map<string, { at: number; value: ReturnType<typeof repoSummary>[] }>();
 
-/** Repositories the token's user can access (owned, collaborator, org member). */
-export async function myRepos(q: { visibility?: unknown; sort?: unknown; perPage?: unknown } = {}, signal?: AbortSignal) {
+/**
+ * Every repository the token's user can access (owned, collaborator,
+ * organization member), all pages, cached per user for 5 minutes.
+ */
+export async function allMyRepos(opts: { refresh?: boolean } = {}, signal?: AbortSignal) {
+  const auth = await ghAuth();
+  const hit = myCache.get(auth.key);
+  if (hit && !opts.refresh && Date.now() - hit.at < MY_TTL) return hit.value;
+  const out: ReturnType<typeof repoSummary>[] = [];
+  for (let page = 1; page <= MY_PAGES_MAX; page++) {
+    const params = new URLSearchParams({
+      visibility: "all",
+      sort: "pushed",
+      direction: "desc",
+      per_page: "100",
+      page: String(page),
+      affiliation: "owner,collaborator,organization_member",
+    });
+    const list = await gh<any[]>(`/user/repos?${params}`, { ttlMs: opts.refresh ? 0 : 60_000, signal });
+    out.push(...list.map(repoSummary));
+    if (list.length < 100) break;
+  }
+  const value = auth.publicOnly ? out.filter((r) => !r.private) : out;
+  myCache.set(auth.key, { at: Date.now(), value });
+  while (myCache.size > 200) myCache.delete(myCache.keys().next().value!);
+  return value;
+}
+
+const sorters: Record<string, (a: ReturnType<typeof repoSummary>, b: ReturnType<typeof repoSummary>) => number> = {
+  updated: (a, b) => Date.parse(b.updatedAt ?? "") - Date.parse(a.updatedAt ?? "") || 0,
+  pushed: (a, b) => Date.parse(b.pushedAt ?? "") - Date.parse(a.pushedAt ?? "") || 0,
+  created: (a, b) => Date.parse(b.createdAt ?? "") - Date.parse(a.createdAt ?? "") || 0,
+  full_name: (a, b) => a.fullName.localeCompare(b.fullName),
+};
+
+/** Repositories the token's user can access; [perPage] caps the list (0 / absent = all). */
+export async function myRepos(q: { visibility?: unknown; sort?: unknown; perPage?: unknown; refresh?: boolean } = {}, signal?: AbortSignal) {
   const visibility = typeof q.visibility === "string" && VISIBILITY.has(q.visibility) ? q.visibility : "all";
   const sort = typeof q.sort === "string" && MY_SORTS.has(q.sort) ? q.sort : "updated";
-  const n = clampInt(q.perPage, 30, 1, 100);
-  const params = new URLSearchParams({ visibility, sort, per_page: String(n), affiliation: "owner,collaborator,organization_member" });
-  if (sort !== "full_name") params.set("direction", "desc");
-  const list = await gh<any[]>(`/user/repos?${params}`, { ttlMs: 60_000, signal });
-  return { visibility, sort, items: list.map(repoSummary) };
+  const all = await allMyRepos({ refresh: q.refresh }, signal);
+  const list = all.filter((r) => visibility === "all" || (visibility === "private" ? r.private : !r.private)).sort(sorters[sort]);
+  const cap = q.perPage == null || q.perPage === "" ? list.length : clampInt(q.perPage, list.length, 1, 10_000);
+  return { visibility, sort, total: list.length, items: list.slice(0, cap) };
+}
+
+/** The user's repositories ranked for loose text ("keepit", "reprot card"). */
+export async function searchMyRepos(text: string, limit?: unknown, signal?: AbortSignal) {
+  const all = await allMyRepos({}, signal);
+  const res = rankRepos(text, all, { limit: clampInt(limit, 20, 1, 100) });
+  return {
+    q: text,
+    tokens: queryTokens(text),
+    confident: res.confident,
+    total: all.length,
+    items: res.items.map((x) => ({ ...x.repo, score: x.score, matched: x.matched })),
+  };
 }

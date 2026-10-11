@@ -39,6 +39,15 @@ class GhLabel {
 class GhRepo {
   GhRepo(Map<String, dynamic> j)
     : fullName = _s(j['fullName']),
+      owner = _s(j['owner']).isNotEmpty
+          ? _s(j['owner'])
+          : _s(j['fullName']).split('/').first,
+      name = _s(j['name']).isNotEmpty
+          ? _s(j['name'])
+          : _s(j['fullName']).split('/').last,
+      fork = j['fork'] == true,
+      score = (j['score'] as num?)?.toDouble(),
+      matched = [for (final t in (j['matched'] as List? ?? const [])) '$t'],
       avatar = _s(j['avatar']),
       description = _s(j['description']),
       url = _s(j['url']),
@@ -63,8 +72,16 @@ class GhRepo {
           : null,
       readme = _s(j['readme']);
 
-  final String fullName, avatar, description, url, defaultBranch, readme;
+  final String fullName, owner, name, avatar, description, url;
+  final String defaultBranch, readme;
   final String? homepage, language, license;
+
+  /// A fork of another repository.
+  final bool fork;
+
+  /// Search rank (higher is better) and the query tokens that hit.
+  final double? score;
+  final List<String> matched;
   final int stars, forks, openIssues;
   final int? watchers;
   final List<String> topics;
@@ -318,22 +335,84 @@ class GhGraphBranch {
   final bool isDefault;
 }
 
-/// Commit DAG of the default branch plus a few branches.
+/// One page of the commit DAG of the default branch plus selected branches.
 class GhGraph {
   GhGraph(Map<String, dynamic> j)
     : repo = _s(j['repo']),
       defaultBranch = _s(j['defaultBranch']),
       branches = [for (final b in _list(j['branches'])) GhGraphBranch(b)],
       commits = [for (final c in _list(j['commits'])) GhGraphCommit(c)],
-      truncated = j['truncated'] == true;
+      truncated = j['truncated'] == true,
+      nextCursor = j['nextCursor'] as String?,
+      totalCount = _iOrNull(j['totalCount']);
 
   final String repo, defaultBranch;
   final List<GhGraphBranch> branches;
   final List<GhGraphCommit> commits;
   final bool truncated;
 
+  /// Older history: pass back as `after`; null when every branch is done.
+  final String? nextCursor;
+
+  /// Commits on the shown branches, when GitHub reports it.
+  final int? totalCount;
+
   String? get defaultHead =>
       branches.where((b) => b.isDefault).firstOrNull?.sha;
+}
+
+/// One page of commit history (`GET /repos/:o/:r/commits`).
+class GhCommitPage {
+  GhCommitPage(Map<String, dynamic> j)
+    : items = [for (final c in _list(j['items'])) GhCommit(c)],
+      totalCount = _iOrNull(j['totalCount']),
+      nextCursor = j['nextCursor'] as String?;
+  final List<GhCommit> items;
+  final int? totalCount;
+  final String? nextCursor;
+}
+
+/// A branch with its head commit date.
+class GhBranch {
+  GhBranch(Map<String, dynamic> j)
+    : name = _s(j['name']),
+      sha = _s(j['sha']),
+      date = _date(j['date']),
+      isDefault = j['default'] == true;
+  final String name, sha;
+  final DateTime? date;
+  final bool isDefault;
+}
+
+/// One page of every branch (default first, then newest; or ranked by `q`).
+class GhBranchPage {
+  GhBranchPage(Map<String, dynamic> j)
+    : defaultBranch = _s(j['defaultBranch']),
+      totalCount = _i(j['totalCount']),
+      matchCount = _i(j['matchCount']),
+      items = [for (final b in _list(j['items'])) GhBranch(b)],
+      nextCursor = j['nextCursor'] as String?;
+  final String defaultBranch;
+  final int totalCount, matchCount;
+  final List<GhBranch> items;
+  final String? nextCursor;
+}
+
+/// Ranked repository search results.
+class GhRepoSearch {
+  GhRepoSearch(Map<String, dynamic> j)
+    : total = _i(j['total']),
+      items = [for (final r in _list(j['items'])) GhRepo(r)],
+      tokens = [for (final t in (j['tokens'] as List? ?? const [])) '$t'],
+      corrected = j['corrected'] as String?,
+      confident = j['confident'] == true;
+  final int total;
+  final List<GhRepo> items;
+  final List<String> tokens;
+
+  /// The typo-repaired query, when one was used.
+  final String? corrected;
+  final bool confident;
 }
 
 /// The account the backend's token belongs to.
@@ -423,15 +502,27 @@ class GithubApi {
 
   Future<GhMe> me() async => GhMe(await _get('/me'));
 
-  /// The token owner's repositories ([visibility]: all, private or public).
-  Future<List<GhRepo>> myRepos({String visibility = 'all'}) async {
+  /// Every repository the user can access ([visibility]: all, private or
+  /// public); [refresh] skips the server's 5 minute cache.
+  Future<List<GhRepo>> myRepos({
+    String visibility = 'all',
+    bool refresh = false,
+  }) async {
     final j = await _get('/my/repos', {
       'visibility': visibility,
-      'sort': 'updated',
-      'per_page': '${GithubReviewLimits.pageMyRepos}',
+      'sort': 'pushed',
+      if (refresh) 'refresh': '1',
     });
     return [for (final r in _list(j['items'])) GhRepo(r)];
   }
+
+  /// The user's repositories ranked for loose text (typos, partial names).
+  Future<GhRepoSearch> searchMyRepos(String q) async => GhRepoSearch(
+    await _get('/my/repos/search', {
+      'q': q,
+      'limit': '${GithubSearchLimits.myRepoMatches}',
+    }),
+  );
 
   String _repo(String owner, String repo) =>
       '/repos/${Uri.encodeComponent(owner)}/${Uri.encodeComponent(repo)}';
@@ -455,14 +546,51 @@ class GithubApi {
   }
 
   /// Commit graph; [branches] empty = the default and recently pushed ones.
+  /// [after] = a previous page's `nextCursor` (older history).
   Future<GhGraph> graph(
     String owner,
     String repo, {
     List<String> branches = const [],
     int limit = GithubGraphLimits.defaultLimit,
+    String? after,
   }) async => GhGraph(
     await _get('${_repo(owner, repo)}/graph', {
-      'branches': branches.join(','),
+      'branches': after == null ? branches.join(',') : '',
+      'limit': '$limit',
+      'after': after ?? '',
+    }),
+  );
+
+  /// One page of history; [q] filters by message, author or sha.
+  Future<GhCommitPage> commitPage(
+    String owner,
+    String repo, {
+    String? sha,
+    String? path,
+    String? q,
+    String? after,
+    int perPage = GithubLimits.pageCommitsInfinite,
+  }) async => GhCommitPage(
+    await _get('${_repo(owner, repo)}/commits', {
+      'sha': sha ?? '',
+      'path': path ?? '',
+      'q': q ?? '',
+      'after': after ?? '',
+      'per_page': '$perPage',
+    }),
+  );
+
+  /// Every branch (paged), default first then newest, or ranked for [q].
+  Future<GhBranchPage> branches(
+    String owner,
+    String repo, {
+    String q = '',
+    String? after,
+    int limit = GithubBranchLimits.page,
+  }) async => GhBranchPage(
+    await _get('${_repo(owner, repo)}/branches', {
+      'q': q,
+      'after': after ?? '',
       'limit': '$limit',
     }),
   );
@@ -528,16 +656,15 @@ class GithubApi {
     return [for (final f in _list(j['files'])) GhFile(f)];
   }
 
-  Future<GhSearch<GhRepo>> searchRepos(String q, {String? sort}) async {
-    final j = await _get('/search/repos', {
-      'q': q,
-      'sort': sort ?? '',
-      'per_page': '${GithubLimits.pageRepos}',
-    });
-    return GhSearch(_i(j['total']), [
-      for (final r in _list(j['items'])) GhRepo(r),
-    ]);
-  }
+  /// Ranked repository search ([sort]: best-match, stars or updated).
+  Future<GhRepoSearch> searchRepos(String q, {String? sort}) async =>
+      GhRepoSearch(
+        await _get('/search/repos', {
+          'q': q,
+          'sort': sort ?? '',
+          'per_page': '${GithubSearchLimits.repos}',
+        }),
+      );
 
   Future<GhSearch<GhCodeHit>> searchCode(String q) async {
     final j = await _get('/search/code', {

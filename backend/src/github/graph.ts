@@ -26,20 +26,27 @@ export type Graph = {
   defaultBranch: string;
   branches: GraphBranch[];
   commits: GraphCommit[];
+  /** Older history exists (same as nextCursor != null on paged responses). */
   truncated: boolean;
   source: "graphql" | "rest";
+  /** Pass back as `after` for the next (older) page; null when every branch is exhausted. */
+  nextCursor: string | null;
+  /** Commits on the default branch plus those only on the shown branches (null when unknown). */
+  totalCount: number | null;
 };
 
 const LIMIT_DEFAULT = 150;
 const LIMIT_MAX = 300;
-/** Extra branches beside the default one. */
-const BRANCHES_MAX = 8;
-/** History fetched per non-default branch (most of it overlaps the default). */
-const BRANCH_DEPTH = 60;
+/** Branches a request may name (the picker's "all branches" sends the most recent ones). */
+export const BRANCHES_MAX = 25;
+/** Recently pushed branches shown when none are named. */
+const BRANCHES_RECENT = 8;
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX = 100;
 const BRANCH_RE = /^[\w./+-]{1,120}$/;
 const REST_CANDIDATES = 20;
+/** Rounds of per-branch pages fetched for one response. */
+const ROUNDS_MAX = 4;
 
 const cache = new Map<string, { at: number; value: Graph }>();
 
@@ -145,13 +152,14 @@ export function buildGraph(
     commits: ordered.slice(0, limit),
     truncated: moreHistory || ordered.length > limit,
     source,
+    nextCursor: null,
+    totalCount: null,
   };
 }
 
 // ---- GraphQL ---------------------------------------------------------------
 
 const COMMIT_FIELDS = `oid messageHeadline committedDate parents(first: 8) { nodes { oid } } author { name user { login avatarUrl } }`;
-const HISTORY = (n: string) => `... on Commit { oid history(first: ${n}) { pageInfo { hasNextPage endCursor } nodes { ${COMMIT_FIELDS} } } }`;
 /** GitHub caps `first` at 100 per connection. */
 const PAGE_MAX = 100;
 
@@ -175,9 +183,218 @@ const fromGql = (c: GqlCommit): GraphCommit => ({
   refs: [],
 });
 
+const fromRest = (c: any): GraphCommit => ({
+  sha: c.sha,
+  parents: (c.parents ?? []).map((p: any) => p.sha),
+  subject: String(c.commit?.message ?? "").split("\n")[0].slice(0, 200),
+  author: c.author?.login ?? c.commit?.author?.name ?? "",
+  authorAvatar: c.author?.avatar_url ?? null,
+  date: c.commit?.committer?.date ?? c.commit?.author?.date ?? null,
+  refs: [],
+});
+
+// ---- paging ------------------------------------------------------------------
+//
+// Every branch is a stream of its history (newest first), resumed from a
+// position: a GraphQL edge cursor or, over REST, an offset. A page merges the
+// streams like a k-way merge on commit date: a commit is only emitted once no
+// unfetched commit of another stream can be newer (the horizon), so pages
+// never need re-sorting and children stay above parents across pages. A
+// non-default branch stops after the commits it has beyond the default branch
+// (compare aheadBy) since the rest is the default branch's own history.
+
+type Stream = {
+  /** Branch name and pinned head sha (stable while paging). */
+  n: string;
+  o: string;
+  d?: 1;
+  /** GraphQL cursor (null = from the head). */
+  a?: string | null;
+  /** REST offset. */
+  k?: number;
+  /** Commits still worth emitting (aheadBy + 1); undefined = unbounded. */
+  r?: number;
+  x?: 1;
+};
+type Cursor = { v: 1; s: Graph["source"]; repo: string; def: string; t: number | null; b: Stream[] };
+
+export function encodeCursor(c: Cursor): string {
+  return Buffer.from(JSON.stringify(c)).toString("base64url");
+}
+
+export function decodeCursor(v: unknown, owner: string, repo: string): Cursor | null {
+  if (typeof v !== "string" || !v) return null;
+  try {
+    const c = JSON.parse(Buffer.from(v, "base64url").toString("utf8")) as Cursor;
+    if (c?.v !== 1 || !Array.isArray(c.b) || typeof c.repo !== "string") throw new Error("shape");
+    if (c.repo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) throw new Error("repo");
+    for (const b of c.b) if (typeof b.n !== "string" || !/^[0-9a-f]{40}$/i.test(String(b.o))) throw new Error("stream");
+    return c;
+  } catch {
+    throw new AppError(400, "bad_request", "Invalid cursor");
+  }
+}
+
+type Fetched = { items: { c: GraphCommit; pos: string | number }[]; more: boolean; total?: number };
+const time = (c: GraphCommit) => (c.date ? Date.parse(c.date) || 0 : 0);
+
+/**
+ * One merge step over [fetched] (same order as [streams]): the commits to
+ * emit and each stream's new position. Pure, for tests.
+ */
+export function mergeStep(streams: Stream[], fetched: Fetched[]): { emitted: GraphCommit[]; streams: Stream[] } {
+  let horizon = -Infinity;
+  let lead = -1;
+  fetched.forEach((f, i) => {
+    if (!f.more || !f.items.length) return;
+    const t = time(f.items[f.items.length - 1].c);
+    if (t > horizon) [horizon, lead] = [t, i];
+  });
+  const emitted: GraphCommit[] = [];
+  const next = streams.map((s, i) => {
+    const f = fetched[i];
+    if (!f) return s;
+    let take = f.items.length;
+    if (f.more && i !== lead) {
+      take = 0;
+      while (take < f.items.length && time(f.items[take].c) >= horizon) take++;
+    }
+    if (s.r != null) take = Math.min(take, s.r);
+    const part = f.items.slice(0, take);
+    emitted.push(...part.map((x) => x.c));
+    const out: Stream = { ...s };
+    if (take > 0) {
+      const pos = part[take - 1].pos;
+      if (typeof pos === "number") out.k = pos;
+      else out.a = pos;
+    }
+    if (out.r != null) out.r -= take;
+    if ((!f.more && take === f.items.length) || (out.r != null && out.r <= 0)) out.x = 1;
+    return out;
+  });
+  return { emitted, streams: next };
+}
+
+type Source = {
+  kind: Graph["source"];
+  fetch(streams: Stream[], n: number, withTotal: boolean): Promise<Fetched[]>;
+};
+
+const EDGE_FIELDS = `pageInfo { hasNextPage } edges { cursor node { ${COMMIT_FIELDS} } }`;
+
+function gqlSource(owner: string, repo: string, signal?: AbortSignal): Source {
+  return {
+    kind: "graphql",
+    async fetch(streams, n, withTotal) {
+      const vars: Record<string, unknown> = { owner, name: repo };
+      const decl: string[] = [];
+      const parts = streams.map((s, i) => {
+        decl.push(`$o${i}: GitObjectID!`, `$a${i}: String`, `$n${i}: Int!`);
+        vars[`o${i}`] = s.o;
+        vars[`a${i}`] = s.a ?? null;
+        vars[`n${i}`] = Math.max(1, Math.min(PAGE_MAX, n, s.r ?? PAGE_MAX));
+        const total = withTotal && s.d ? "totalCount" : "";
+        return `s${i}: object(oid: $o${i}) { ... on Commit { history(first: $n${i}, after: $a${i}) { ${total} ${EDGE_FIELDS} } } }`;
+      });
+      const d = await ghGraphql<{ repository: Record<string, any> | null }>(
+        `query($owner: String!, $name: String!, ${decl.join(", ")}) { repository(owner: $owner, name: $name) { ${parts.join("\n")} } }`,
+        vars,
+        { signal, partial: true },
+      );
+      if (!d?.repository) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+      return streams.map((_, i) => {
+        const h = d.repository![`s${i}`]?.history;
+        if (!h) return { items: [], more: false };
+        return {
+          items: (h.edges ?? []).map((e: any) => ({ c: fromGql(e.node), pos: e.cursor as string })),
+          more: !!h.pageInfo?.hasNextPage,
+          total: typeof h.totalCount === "number" ? h.totalCount : undefined,
+        };
+      });
+    },
+  };
+}
+
+const REST_PAGE = 100;
+
+function restSource(base: string, signal?: AbortSignal): Source {
+  return {
+    kind: "rest",
+    async fetch(streams, n) {
+      return Promise.all(
+        streams.map(async (s) => {
+          const k = s.k ?? 0;
+          const page = Math.floor(k / REST_PAGE) + 1;
+          const list = await gh<any[]>(`${base}/commits?sha=${s.o}&per_page=${REST_PAGE}&page=${page}`, { signal, ttlMs: CACHE_TTL_MS }).catch(
+            () => [] as any[],
+          );
+          const skip = k % REST_PAGE;
+          const want = Math.min(n, s.r ?? n);
+          const items = list.slice(skip, skip + want).map((c, j) => ({ c: fromRest(c), pos: k + j + 1 }));
+          const more = skip + items.length < list.length || list.length === REST_PAGE;
+          return { items, more };
+        }),
+      );
+    },
+  };
+}
+
+/** Runs merge rounds until [limit] new commits are out or every stream is done. */
+async function page(src: Source, cur: Cursor, limit: number, first: boolean): Promise<Graph> {
+  const bySha = new Map<string, GraphCommit>();
+  let streams = cur.b;
+  let total = cur.t;
+  for (let round = 0; round < ROUNDS_MAX && bySha.size < limit; round++) {
+    const active = streams.map((s, i) => [s, i] as const).filter(([s]) => !s.x);
+    if (!active.length) break;
+    const n = Math.min(PAGE_MAX, Math.max(10, limit - bySha.size));
+    const fetched = await src.fetch(
+      active.map(([s]) => s),
+      n,
+      first && round === 0,
+    );
+    if (first && round === 0) {
+      const def = fetched.find((_, j) => active[j][0].d);
+      if (def?.total != null) total = def.total + (total ?? 0);
+    }
+    const step = mergeStep(
+      active.map(([s]) => s),
+      fetched,
+    );
+    // A branch without a known merge base stops once it reaches commits of the default branch.
+    const defShas = new Set<string>();
+    fetched.forEach((f, j) => active[j][0].d && f.items.forEach((x) => defShas.add(x.c.sha)));
+    step.streams.forEach((s, j) => {
+      if (!s.d && s.r == null && fetched[j].items.some((x) => defShas.has(x.c.sha))) s.x = 1;
+    });
+    const updated = [...streams];
+    active.forEach(([, i], j) => (updated[i] = step.streams[j]));
+    streams = updated;
+    for (const c of step.emitted) if (!bySha.has(c.sha)) bySha.set(c.sha, c);
+  }
+  const done = streams.every((s) => s.x);
+  const next: Cursor = { ...cur, t: total, b: streams };
+  const branches: GraphBranch[] = cur.b.map((s) => ({ name: s.n, sha: s.o, isDefault: !!s.d }));
+  const commits = [...bySha.values()].map((c) => ({ ...c, refs: [] as string[] }));
+  const at = new Map(commits.map((c) => [c.sha, c]));
+  for (const b of branches) at.get(b.sha)?.refs.push(b.name);
+  return {
+    repo: cur.repo,
+    defaultBranch: cur.def,
+    branches,
+    commits: orderCommits(commits),
+    truncated: !done,
+    source: src.kind,
+    nextCursor: done ? null : encodeCursor(next),
+    totalCount: total,
+  };
+}
+
+// ---- first page: which branches --------------------------------------------
+
 const REFS_PAGES = 2;
 /** Candidates asked for: some may have been deleted since they were pushed. */
-const CANDIDATES = BRANCHES_MAX + 4;
+const CANDIDATES = BRANCHES_RECENT + 4;
 const SKIP_BRANCH = /^(gh-readonly-queue|dependabot)\//;
 
 /**
@@ -214,7 +431,7 @@ async function datedBranches(owner: string, repo: string, def: string, n: number
   }`;
   const heads: { name: string; t: number }[] = [];
   let after: string | null = null;
-  for (let page = 0; page < REFS_PAGES; page++) {
+  for (let p = 0; p < REFS_PAGES; p++) {
     const d: any = await ghGraphql(query, { owner, name: repo, after }, { signal });
     const refs = d?.repository?.refs;
     for (const x of refs?.nodes ?? []) heads.push({ name: x.name, t: Date.parse(x.target?.committedDate ?? "") || 0 });
@@ -228,164 +445,145 @@ async function datedBranches(owner: string, repo: string, def: string, n: number
     .map((h) => h.name);
 }
 
-async function recentBranches(owner: string, repo: string, signal?: AbortSignal): Promise<string[]> {
-  const r = await gh(`/repos/${owner}/${repo}`, { signal });
-  const def = String(r.default_branch ?? "");
+async function recentBranches(owner: string, repo: string, def: string, signal?: AbortSignal): Promise<string[]> {
   const active = await activeBranches(owner, repo, def, CANDIDATES, signal).catch((e) => {
     log.info("github graph: no activity feed", { message: (e as Error).message.slice(0, 80) });
     return [] as string[];
   });
   if (active.length) return active;
-  return datedBranches(owner, repo, def, CANDIDATES, signal);
+  return datedBranches(owner, repo, def, CANDIDATES, signal).catch(() => [] as string[]);
 }
 
-async function viaGraphql(owner: string, repo: string, requested: string[], limit: number, signal?: AbortSignal): Promise<Graph> {
-  const wanted = requested.length ? requested : await recentBranches(owner, repo, signal);
-  const depth = Math.min(limit, BRANCH_DEPTH, PAGE_MAX);
-  const named = wanted.map((_, i) => `b${i}: ref(qualifiedName: $q${i}) { name target { ${HISTORY("$depth")} } }`).join("\n");
-  const vars = (wanted.length ? ", $depth: Int!" : "") + wanted.map((_, i) => `, $q${i}: String!`).join("");
-  const query = `query($owner: String!, $name: String!, $limit: Int!${vars}) {
-    repository(owner: $owner, name: $name) {
-      nameWithOwner
-      defaultBranchRef { name target { ${HISTORY("$limit")} } }
-      ${named}
-    }
-  }`;
-  const variables: Record<string, unknown> = { owner, name: repo, limit: Math.min(limit, PAGE_MAX) };
-  if (wanted.length) variables.depth = depth;
-  wanted.forEach((b, i) => (variables[`q${i}`] = `refs/heads/${b}`));
-  const d = await ghGraphql<{ repository: any }>(query, variables, { signal });
-  const r = d?.repository;
+/** Default branch, the named (or recent) branches with pinned heads, and how far each is ahead. */
+async function startGql(owner: string, repo: string, requested: string[], signal?: AbortSignal): Promise<Cursor> {
+  const meta = await ghGraphql<{ repository: any }>(
+    `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { nameWithOwner defaultBranchRef { name target { oid } } } }`,
+    { owner, name: repo },
+    { signal },
+  );
+  const r = meta?.repository;
   if (!r) throw new AppError(404, "not_found", "GitHub: not found (or private)");
-  const def = r.defaultBranchRef as GqlRef;
-  if (!def?.target?.history) return buildGraph(r.nameWithOwner, def?.name ?? "", [], [], limit, false, "graphql");
-  const refs = wanted.map((_, i) => r[`b${i}`] as GqlRef);
-  const others = refs.filter((x): x is NonNullable<GqlRef> => !!x?.target?.history && x.name !== def.name).slice(0, BRANCHES_MAX);
-  const branches: GraphBranch[] = [
-    { name: def.name, sha: def.target!.oid, isDefault: true },
-    ...others.map((x) => ({ name: x.name, sha: x.target!.oid, isDefault: false })),
-  ];
-  // The default branch beyond the first page.
-  const main = [...def.target.history.nodes];
-  let page = def.target.history.pageInfo;
-  while (main.length < limit && page.hasNextPage && page.endCursor) {
-    const next = await ghGraphql<{ repository: { object: { history: GqlHistory } | null } | null }>(
-      `query($owner: String!, $name: String!, $oid: GitObjectID!, $n: Int!, $after: String!) {
-        repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: $n, after: $after) { pageInfo { hasNextPage endCursor } nodes { ${COMMIT_FIELDS} } } } } }
-      }`,
-      { owner, name: repo, oid: def.target.oid, n: Math.min(PAGE_MAX, limit - main.length), after: page.endCursor },
-      { signal },
+  const def = r.defaultBranchRef as { name: string; target: { oid: string } | null } | null;
+  if (!def?.target) return { v: 1, s: "graphql", repo: r.nameWithOwner, def: def?.name ?? "", t: 0, b: [] };
+  const wanted = (requested.length ? requested : await recentBranches(owner, repo, def.name, signal))
+    .filter((b) => b !== def.name)
+    .slice(0, requested.length ? BRANCHES_MAX : CANDIDATES);
+  const streams: Stream[] = [{ n: def.name, o: def.target.oid, d: 1, a: null }];
+  let total: number | null = 0;
+  if (wanted.length) {
+    const vars: Record<string, unknown> = { owner, name: repo };
+    const decl = wanted.map((_, i) => `$q${i}: String!`).join(", ");
+    wanted.forEach((b, i) => (vars[`q${i}`] = `refs/heads/${b}`));
+    const d = await ghGraphql<{ repository: any }>(
+      `query($owner: String!, $name: String!, ${decl}) { repository(owner: $owner, name: $name) {
+        ${wanted.map((_, i) => `b${i}: ref(qualifiedName: $q${i}) { name target { oid } }`).join("\n")}
+        defaultBranchRef { ${wanted.map((_, i) => `c${i}: compare(headRef: $q${i}) { aheadBy }`).join("\n")} }
+      } }`,
+      vars,
+      { signal, partial: true },
     );
-    const h = next?.repository?.object?.history;
-    if (!h) break;
-    main.push(...h.nodes);
-    page = h.pageInfo;
+    const rr = d?.repository ?? {};
+    let shown = 0;
+    wanted.forEach((_, i) => {
+      const ref = rr[`b${i}`];
+      if (!ref?.target?.oid || (!requested.length && shown >= BRANCHES_RECENT)) return;
+      shown++;
+      const ahead = rr.defaultBranchRef?.[`c${i}`]?.aheadBy;
+      const s: Stream = { n: ref.name, o: ref.target.oid, a: null };
+      if (typeof ahead === "number") {
+        s.r = ahead + 1;
+        if (total != null) total += ahead;
+      } else total = null;
+      streams.push(s);
+    });
   }
-  const histories = [main.map(fromGql), ...others.map((x) => x.target!.history!.nodes.map(fromGql))];
-  return buildGraph(r.nameWithOwner, def.name, branches, histories, limit, !!page.hasNextPage, "graphql");
+  return { v: 1, s: "graphql", repo: r.nameWithOwner, def: def.name, t: total, b: streams };
 }
 
-// ---- REST fallback -----------------------------------------------------------
-
-const fromRest = (c: any): GraphCommit => ({
-  sha: c.sha,
-  parents: (c.parents ?? []).map((p: any) => p.sha),
-  subject: String(c.commit?.message ?? "").split("\n")[0].slice(0, 200),
-  author: c.author?.login ?? c.commit?.author?.name ?? "",
-  authorAvatar: c.author?.avatar_url ?? null,
-  date: c.commit?.committer?.date ?? c.commit?.author?.date ?? null,
-  refs: [],
-});
-
-async function restHistory(base: string, sha: string, n: number, signal?: AbortSignal): Promise<{ list: GraphCommit[]; more: boolean }> {
-  // A fixed page size keeps page offsets aligned.
-  const per = Math.min(100, n);
-  const out: GraphCommit[] = [];
-  for (let page = 1; ; page++) {
-    const list = await gh<any[]>(`${base}/commits?sha=${encodeURIComponent(sha)}&per_page=${per}&page=${page}`, { signal, ttlMs: CACHE_TTL_MS });
-    out.push(...list.map(fromRest));
-    if (list.length < per) return { list: out.slice(0, n), more: false };
-    if (out.length >= n) return { list: out.slice(0, n), more: true };
-  }
-}
-
-/** Activity-feed branches that still exist in [all] (the first branches page). */
-async function activeHeads(base: string, def: string, all: any[], signal?: AbortSignal): Promise<{ name: string; sha: string }[]> {
-  const [, owner, repo] = base.split("/").slice(1);
-  const names = await activeBranches(owner, repo, def, CANDIDATES, signal).catch(() => [] as string[]);
-  const out: { name: string; sha: string }[] = [];
-  for (const name of names) {
-    const known = all.find((b) => b.name === name);
-    const b = known ?? (await gh(`${base}/branches/${encodeURIComponent(name)}`, { allow404: true, signal }).catch(() => null));
-    if (b?.commit?.sha) out.push({ name, sha: b.commit.sha });
-    if (out.length >= BRANCHES_MAX) break;
-  }
-  return out;
-}
-
-async function viaRest(owner: string, repo: string, wanted: string[], limit: number, signal?: AbortSignal): Promise<Graph> {
+async function startRest(owner: string, repo: string, requested: string[], signal?: AbortSignal): Promise<Cursor> {
   const r = await gh(`/repos/${owner}/${repo}`, { signal });
   const base = `/repos/${r.full_name}`;
   const def: string = r.default_branch;
-  const all = await gh<any[]>(`${base}/branches?per_page=100`, { signal }).catch(() => [] as any[]);
-  let picked: { name: string; sha: string }[] = [];
-  if (wanted.length) {
-    picked = (
-      await Promise.all(
-        wanted
-          .filter((b) => b !== def)
-          .map((b) => gh(`${base}/branches/${encodeURIComponent(b)}`, { allow404: true, signal }).catch(() => null)),
-      )
-    )
-      .filter(Boolean)
-      .map((b: any) => ({ name: b.name, sha: b.commit?.sha ?? "" }));
-  } else if ((picked = await activeHeads(base, def, all, signal)).length) {
-    // Recently pushed branches from the activity feed.
-  } else {
-    // REST lists branches by name: date the heads to find the recent ones.
-    const cands = all.filter((b) => b.name !== def).slice(0, REST_CANDIDATES);
-    const dated = await Promise.all(
-      cands.map(async (b) => {
-        const c = await gh(`${base}/git/commits/${b.commit?.sha}`, { signal }).catch(() => null);
-        return { name: b.name as string, sha: (b.commit?.sha as string) ?? "", t: c?.committer?.date ? Date.parse(c.committer.date) : 0 };
-      }),
-    );
-    picked = dated.sort((a, b) => b.t - a.t).slice(0, BRANCHES_MAX);
+  const head = await gh(`${base}/branches/${encodeURIComponent(def)}`, { allow404: true, signal }).catch(() => null);
+  if (!head?.commit?.sha) return { v: 1, s: "rest", repo: r.full_name, def, t: 0, b: [] };
+  let names = requested.filter((b) => b !== def).slice(0, BRANCHES_MAX);
+  if (!names.length && !requested.length) {
+    names = await activeBranches(owner, repo, def, CANDIDATES, signal).catch(() => [] as string[]);
+    if (!names.length) {
+      // REST lists branches by name: date the heads to find the recent ones.
+      const all = await gh<any[]>(`${base}/branches?per_page=100`, { signal }).catch(() => [] as any[]);
+      const dated = await Promise.all(
+        all
+          .filter((b) => b.name !== def)
+          .slice(0, REST_CANDIDATES)
+          .map(async (b) => {
+            const c = await gh(`${base}/git/commits/${b.commit?.sha}`, { signal }).catch(() => null);
+            return { name: b.name as string, t: c?.committer?.date ? Date.parse(c.committer.date) : 0 };
+          }),
+      );
+      names = dated.sort((a, b) => b.t - a.t).map((b) => b.name);
+    }
+    names = names.slice(0, CANDIDATES);
   }
-  const depth = Math.min(limit, BRANCH_DEPTH);
-  const [main, ...rest] = await Promise.all([
-    restHistory(base, def, limit, signal),
-    ...picked.map((b) => restHistory(base, b.sha, depth, signal).catch(() => ({ list: [], more: false }))),
-  ]);
-  const defSha = all.find((b) => b.name === def)?.commit?.sha ?? main.list[0]?.sha ?? "";
-  const branches: GraphBranch[] = [{ name: def, sha: defSha, isDefault: true }, ...picked.map((b) => ({ ...b, isDefault: false }))];
-  return buildGraph(r.full_name, def, branches, [main.list, ...rest.map((x) => x.list)], limit, main.more, "rest");
+  const heads = await Promise.all(
+    names.map((b) => gh(`${base}/branches/${encodeURIComponent(b)}`, { allow404: true, signal }).catch(() => null)),
+  );
+  const picked = heads.filter((b: any) => b?.commit?.sha).slice(0, requested.length ? BRANCHES_MAX : BRANCHES_RECENT);
+  const ahead = await Promise.all(
+    picked.map((b: any) =>
+      gh(`${base}/compare/${encodeURIComponent(def)}...${b.commit.sha}`, { signal })
+        .then((c) => (typeof c?.ahead_by === "number" ? (c.ahead_by as number) : null))
+        .catch(() => null),
+    ),
+  );
+  let total: number | null = null;
+  const streams: Stream[] = [
+    { n: def, o: head.commit.sha, d: 1, k: 0 },
+    ...picked.map((b: any, i) => {
+      const s: Stream = { n: b.name, o: b.commit.sha, k: 0 };
+      if (ahead[i] != null) s.r = ahead[i]! + 1;
+      return s;
+    }),
+  ];
+  return { v: 1, s: "rest", repo: r.full_name, def, t: total, b: streams };
 }
 
 // ---- entry -------------------------------------------------------------------
 
-export async function graph(owner: string, repo: string, q: { branches?: unknown; limit?: unknown }, signal?: AbortSignal): Promise<Graph> {
+export async function graph(
+  owner: string,
+  repo: string,
+  q: { branches?: unknown; limit?: unknown; after?: unknown },
+  signal?: AbortSignal,
+): Promise<Graph> {
   checkName(owner, repo);
-  const wanted = parseBranches(q.branches);
   const limit = clampLimit(q.limit);
+  const after = decodeCursor(q.after, owner, repo);
+  const wanted = after ? [] : parseBranches(q.branches);
   const auth = await ghAuth();
-  const key = `${auth.key}|${owner.toLowerCase()}/${repo.toLowerCase()}|${wanted.join(",")}|${limit}`;
+  const key = `${auth.key}|${owner.toLowerCase()}/${repo.toLowerCase()}|${wanted.join(",")}|${limit}|${typeof q.after === "string" ? q.after : ""}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 
   let value: Graph;
-  if (auth.token) {
+  if (after) {
+    const src = after.s === "graphql" && auth.token ? gqlSource(owner, repo, signal) : restSource(`/repos/${after.repo}`, signal);
+    value = await page(src, after, limit, false);
+  } else if (auth.token) {
     try {
-      value = await viaGraphql(owner, repo, wanted, limit, signal);
+      const cur = await startGql(owner, repo, wanted, signal);
+      value = await page(gqlSource(owner, repo, signal), cur, limit, true);
     } catch (e) {
       const status = (e as AppError).status;
       // Missing repo, rate limit, revoked token: REST would fail the same way.
       if (status === 404 || status === 409 || status === 429 || signal?.aborted) throw e;
       log.warn("github graph: graphql failed, using REST", { message: (e as Error).message.slice(0, 120) });
-      value = await viaRest(owner, repo, wanted, limit, signal);
+      const cur = await startRest(owner, repo, wanted, signal);
+      value = await page(restSource(`/repos/${cur.repo}`, signal), cur, limit, true);
     }
   } else {
-    value = await viaRest(owner, repo, wanted, limit, signal);
+    const cur = await startRest(owner, repo, wanted, signal);
+    value = await page(restSource(`/repos/${cur.repo}`, signal), cur, limit, true);
   }
   cache.delete(key);
   cache.set(key, { at: Date.now(), value });

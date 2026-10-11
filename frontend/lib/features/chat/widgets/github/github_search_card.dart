@@ -108,14 +108,7 @@ class GithubSearchCard extends StatelessWidget {
             ),
           ),
           switch (query.kind) {
-            _Kind.repos => GhFuture<GhSearch<GhRepo>>(
-              load: () => api.searchRepos(query.q, sort: query.sort),
-              builder: (context, s) => _Results(
-                total: s.total,
-                count: s.items.length,
-                row: (i, open) => _RepoRow(repo: s.items[i], open: open),
-              ),
-            ),
+            _Kind.repos => _RepoSearch(q: query.q, sort: query.sort),
             _Kind.code => GhFuture<GhSearch<GhCodeHit>>(
               load: () => api.searchCode(query.q),
               builder: (context, s) => _Results(
@@ -143,6 +136,92 @@ class GithubSearchCard extends StatelessWidget {
           },
         ],
       ),
+    );
+  }
+}
+
+/// Ranked repository results with a sort switch (best match, stars,
+/// updated) and the matched words highlighted.
+class _RepoSearch extends StatefulWidget {
+  const _RepoSearch({required this.q, this.sort});
+
+  final String q;
+  final String? sort;
+
+  @override
+  State<_RepoSearch> createState() => _RepoSearchState();
+}
+
+class _RepoSearchState extends State<_RepoSearch> {
+  static const _sorts = ['best-match', 'stars', 'updated'];
+  late String _sort = _sorts.contains(widget.sort) ? widget.sort! : _sorts[0];
+
+  String _label(String s) => switch (s) {
+    'stars' => GithubRepoFilterStrings.sortStars,
+    'updated' => GithubRepoFilterStrings.sortUpdated,
+    _ => GithubRepoFilterStrings.sortBest,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            GithubSizes.pad,
+            AppSpacing.sm,
+            GithubSizes.pad,
+            0,
+          ),
+          child: Wrap(
+            spacing: AppSpacing.xs,
+            children: [
+              for (final s in _sorts)
+                GhFilterChip(
+                  label: _label(s),
+                  on: s == _sort,
+                  onTap: () => setState(() => _sort = s),
+                ),
+            ],
+          ),
+        ),
+        GhFuture<GhRepoSearch>(
+          key: ValueKey(_sort),
+          load: () => GithubApi.instance.searchRepos(widget.q, sort: _sort),
+          builder: (context, s) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (s.corrected != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    GithubSizes.pad,
+                    AppSpacing.sm,
+                    GithubSizes.pad,
+                    0,
+                  ),
+                  child: Text(
+                    GithubRepoFilterStrings.corrected(s.corrected!),
+                    style: context.text.caption.copyWith(
+                      color: context.palette.accent,
+                    ),
+                  ),
+                ),
+              _Results(
+                total: s.total,
+                count: s.items.length,
+                row: (i, open) => _RepoRow(
+                  repo: s.items[i],
+                  open: open,
+                  tokens: s.items[i].matched.isEmpty
+                      ? s.tokens
+                      : s.items[i].matched,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -241,10 +320,14 @@ class _Head extends StatelessWidget {
     required this.sub,
     this.trailing,
     required this.open,
+    this.tokens = const [],
   });
 
   final Widget lead;
   final String title, sub;
+
+  /// Search words highlighted in the title and subtitle.
+  final List<String> tokens;
   final Widget? trailing;
   final bool open;
 
@@ -264,22 +347,17 @@ class _Head extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              GhHighlight(
                 title,
+                tokens: tokens,
                 maxLines: open ? null : 2,
-                overflow: open ? null : TextOverflow.ellipsis,
                 style: t.bodySmall.copyWith(
                   color: p.textPrimary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               if (sub.isNotEmpty)
-                Text(
-                  sub,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.caption,
-                ),
+                GhHighlight(sub, tokens: tokens, maxLines: 1, style: t.caption),
             ],
           ),
         ),
@@ -336,10 +414,15 @@ class _Body extends StatelessWidget {
 }
 
 class _RepoRow extends StatelessWidget {
-  const _RepoRow({required this.repo, required this.open});
+  const _RepoRow({
+    required this.repo,
+    required this.open,
+    this.tokens = const [],
+  });
 
   final GhRepo repo;
   final bool open;
+  final List<String> tokens;
 
   @override
   Widget build(BuildContext context) {
@@ -353,6 +436,7 @@ class _RepoRow extends StatelessWidget {
           sub: open ? '' : r.description,
           trailing: GhStat(GithubOcticons.star, GithubStrings.countOf(r.stars)),
           open: open,
+          tokens: tokens,
         ),
         if (open)
           _Body(

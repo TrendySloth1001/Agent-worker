@@ -119,4 +119,69 @@ void main() {
     expect(down(g, 1), ['0>0:straight', '1>1:straight', '1>0:join']);
     expect(g.width, 2);
   });
+
+  group('pages', () {
+    // Page 1 ends mid-history: f's parent (base) and m's parents are on page 2.
+    final page1 = [
+      n('m', ['b', 'f']),
+      n('f', ['base']),
+      n('b', ['base']),
+    ];
+    final page2 = [
+      n('base', ['root']),
+      n('root'),
+    ];
+
+    test('pending parents keep lanes open instead of dangling stubs', () {
+      final g = layoutGraph(page1, defaultHead: 'm', more: true);
+      expect(
+        g.rows.any((r) => r.danglingFirst || r.danglingExtra > 0),
+        isFalse,
+      );
+      // Both lanes still wait for base below the last loaded row.
+      expect(down(g, 2), ['0>0:straight', '1>1:straight']);
+    });
+
+    test('without more history the same parents are dangling', () {
+      final g = layoutGraph(page1, defaultHead: 'm');
+      expect(g.rows[1].danglingFirst, isTrue);
+      expect(g.rows[2].danglingFirst, isTrue);
+    });
+
+    test('appending a page keeps earlier rows and connects the parents', () {
+      final first = layoutGraph(page1, defaultHead: 'm', more: true);
+      final both = layoutGraph([...page1, ...page2], defaultHead: 'm');
+      for (var i = 0; i < page1.length; i++) {
+        expect(both.rows[i].lane, first.rows[i].lane);
+        expect(both.rows[i].color, first.rows[i].color);
+        expect(
+          both.rows[i].up.map((l) => '$l'),
+          first.rows[i].up.map((l) => '$l'),
+        );
+      }
+      // At base the feature lane closes into main: connected, not a stub.
+      expect(both.rows[3].up.map((l) => '$l'), ['0>0:straight', '1>0:merge']);
+      expect(both.rows.any((r) => r.danglingFirst), isFalse);
+      expect(both.rows.last.down, isEmpty);
+    });
+
+    test('a few thousand commits lay out quickly', () {
+      final nodes = [
+        for (var i = 5000; i > 0; i--)
+          n('c$i', ['c${i - 1}', if (i % 50 == 0) 's$i']),
+        n('c0'),
+      ];
+      final sideBranches = [
+        for (var i = 50; i <= 5000; i += 50) n('s$i', ['c${i - 10}']),
+      ];
+      final sw = Stopwatch()..start();
+      final g = layoutGraph(
+        [...nodes, ...sideBranches],
+        defaultHead: 'c5000',
+        more: true,
+      );
+      expect(g.rows, hasLength(nodes.length + sideBranches.length));
+      expect(sw.elapsedMilliseconds, lessThan(1500));
+    });
+  });
 }

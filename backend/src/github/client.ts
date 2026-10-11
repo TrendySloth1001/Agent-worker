@@ -165,7 +165,11 @@ function mapError(status: number, message: string, rate: RateInfo | null): AppEr
 /** The server token is set (public GitHub features for everyone). */
 export const githubEnabled = () => !!config.githubToken;
 
-export type GqlOptions = { signal?: AbortSignal };
+export type GqlOptions = {
+  signal?: AbortSignal;
+  /** Return the data despite field errors (e.g. one failed alias); NOT_FOUND / rate limits still throw. */
+  partial?: boolean;
+};
 
 /**
  * POST a GitHub GraphQL query with the same token as gh() (GraphQL always
@@ -204,8 +208,10 @@ export async function ghGraphql<T = any>(query: string, variables: Record<string
   }
   const body = (await res.json()) as { data?: T; errors?: { type?: string; message?: string }[] };
   const errors = body.errors ?? [];
-  if (errors.some((e) => e.type === "NOT_FOUND")) throw new AppError(404, "not_found", "GitHub: not found (or private)");
   if (errors.some((e) => e.type === "RATE_LIMITED")) throw mapError(403, "rate limit", rate);
+  // Partial: a missing alias (deleted branch) is fine; the caller checks for a null repository.
+  if (errors.length && opts.partial && body.data) return body.data as T;
+  if (errors.some((e) => e.type === "NOT_FOUND")) throw new AppError(404, "not_found", "GitHub: not found (or private)");
   if (errors.length) {
     log.warn("github graphql error", { message: String(errors[0]?.message ?? "").slice(0, 120) });
     throw new AppError(502, "upstream_failed", "GitHub GraphQL error", true);

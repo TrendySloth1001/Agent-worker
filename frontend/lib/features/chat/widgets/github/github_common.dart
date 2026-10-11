@@ -624,3 +624,371 @@ class _Patch extends StatelessWidget {
     );
   }
 }
+
+// ---- paging and filtering pieces ---------------------------------------------
+
+/// Outlined search / filter field with a clear button.
+class GhSearchField extends StatefulWidget {
+  const GhSearchField({
+    super.key,
+    required this.hint,
+    required this.onChanged,
+    this.autofocus = false,
+  });
+
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final bool autofocus;
+
+  @override
+  State<GhSearchField> createState() => _GhSearchFieldState();
+}
+
+class _GhSearchFieldState extends State<GhSearchField> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = context.text;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      borderSide: BorderSide(color: p.border, width: AppBorder.thin),
+    );
+    return SizedBox(
+      height: GithubPagingSizes.fieldHeight,
+      child: TextField(
+        controller: _c,
+        autofocus: widget.autofocus,
+        onChanged: (v) {
+          setState(() {});
+          widget.onChanged(v);
+        },
+        cursorColor: p.accent,
+        textInputAction: TextInputAction.search,
+        style: t.bodySmall.copyWith(color: p.textPrimary),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: false,
+          hintText: widget.hint,
+          hintStyle: t.bodySmall.copyWith(color: p.textTertiary),
+          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          prefixIcon: AppIcon(
+            GithubPagingIcons.filter,
+            size: AppIconSize.sm,
+            color: p.textTertiary,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: GithubPagingSizes.fieldHeight,
+          ),
+          suffixIcon: _c.text.isEmpty
+              ? null
+              : GhTap(
+                  onTap: () {
+                    _c.clear();
+                    setState(() {});
+                    widget.onChanged('');
+                  },
+                  child: AppIcon(
+                    GithubPagingIcons.clear,
+                    size: AppIconSize.sm,
+                    color: p.textTertiary,
+                    semanticLabel: GithubPagingStrings.clear,
+                  ),
+                ),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: GithubPagingSizes.fieldHeight,
+          ),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: border.copyWith(
+            borderSide: BorderSide(color: p.textPrimary, width: AppBorder.thin),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Square check mark for multi-select rows.
+class GhCheck extends StatelessWidget {
+  const GhCheck({super.key, required this.on, this.muted = false});
+
+  final bool on;
+
+  /// Checked but fixed (the default branch).
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final color = muted ? p.textTertiary : p.textPrimary;
+    return Container(
+      width: GithubPagingSizes.checkBox,
+      height: GithubPagingSizes.checkBox,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: on ? color : null,
+        borderRadius: BorderRadius.circular(AppRadius.sm / 2),
+        border: Border.all(
+          color: on ? color : p.borderStrong,
+          width: AppBorder.thin,
+        ),
+      ),
+      child: on
+          ? AppIcon(
+              GithubPagingIcons.check,
+              size: GithubPagingSizes.checkIcon,
+              color: p.background,
+            )
+          : null,
+    );
+  }
+}
+
+/// Small spinner row at the end of an infinite list.
+class GhLoadingRow extends StatelessWidget {
+  const GhLoadingRow({super.key, this.label});
+
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox.square(
+            dimension: GithubPagingSizes.spinner,
+            child: CircularProgressIndicator(
+              strokeWidth: AppBorder.thin,
+              color: p.textSecondary,
+            ),
+          ),
+          if (label != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Text(label!, style: context.text.caption),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Toggle / picker chip of filter bars.
+class GhFilterChip extends StatelessWidget {
+  const GhFilterChip({
+    super.key,
+    required this.label,
+    required this.on,
+    required this.onTap,
+    this.picker = false,
+  });
+
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+
+  /// Opens a choice (shows a chevron).
+  final bool picker;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return GhTap(
+      onTap: onTap,
+      child: Container(
+        height: GithubSizes.chipHeight,
+        padding: const EdgeInsets.symmetric(horizontal: GithubSizes.chipPadH),
+        decoration: BoxDecoration(
+          color: on ? p.textPrimary : null,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: on ? p.textPrimary : p.border,
+            width: AppBorder.thin,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: context.text.caption.copyWith(
+                color: on ? p.background : p.textSecondary,
+              ),
+            ),
+            if (picker) ...[
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(
+                GithubPagingIcons.picker,
+                size: GithubPagingSizes.checkIcon,
+                color: on ? p.background : p.textTertiary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [text] with the words matching [tokens] (case-insensitive) in accent.
+class GhHighlight extends StatelessWidget {
+  const GhHighlight(
+    this.text, {
+    super.key,
+    required this.tokens,
+    required this.style,
+    this.maxLines,
+  });
+
+  final String text;
+  final List<String> tokens;
+  final TextStyle style;
+  final int? maxLines;
+
+  /// `(start, end)` ranges of [text] to highlight.
+  static List<(int, int)> ranges(String text, List<String> tokens) {
+    final lower = text.toLowerCase();
+    final marks = List<bool>.filled(text.length, false);
+    for (final tok in tokens) {
+      final q = tok.toLowerCase();
+      if (q.length < 2) continue;
+      var i = lower.indexOf(q);
+      while (i >= 0) {
+        for (var k = i; k < i + q.length; k++) {
+          marks[k] = true;
+        }
+        i = lower.indexOf(q, i + q.length);
+      }
+    }
+    final out = <(int, int)>[];
+    var start = -1;
+    for (var i = 0; i <= marks.length; i++) {
+      final on = i < marks.length && marks[i];
+      if (on && start < 0) start = i;
+      if (!on && start >= 0) {
+        out.add((start, i));
+        start = -1;
+      }
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final marks = ranges(text, tokens);
+    final hi = style.copyWith(
+      color: context.palette.accent,
+      fontWeight: FontWeight.w700,
+    );
+    final spans = <TextSpan>[];
+    var at = 0;
+    for (final (s, e) in marks) {
+      if (s > at) spans.add(TextSpan(text: text.substring(at, s)));
+      spans.add(TextSpan(text: text.substring(s, e), style: hi));
+      at = e;
+    }
+    if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+    return Text.rich(
+      TextSpan(style: style, children: spans),
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
+    );
+  }
+}
+
+/// Bottom sheet listing [options]; returns the one tapped.
+Future<String?> ghPickOne(
+  BuildContext context, {
+  required String title,
+  required List<String> options,
+  String? selected,
+}) {
+  final p = context.palette;
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: p.surface,
+    shape: RoundedRectangleBorder(
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(AppRadius.lg),
+      ),
+      side: BorderSide(color: p.border),
+    ),
+    builder: (context) {
+      final t = context.text;
+      final media = MediaQuery.of(context);
+      return ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: media.size.height * GithubPagingSizes.sheetHeightFactor,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenPadding,
+                  AppSpacing.lg,
+                  AppSpacing.screenPadding,
+                  AppSpacing.sm,
+                ),
+                child: Text(title, style: t.caption),
+              ),
+              const GhDivider(),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.screenPadding,
+                  ),
+                  children: [
+                    for (final o in options)
+                      GhTap(
+                        onTap: () => Navigator.pop(context, o),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.md,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border(bottom: BorderSide(color: p.border)),
+                          ),
+                          child: Row(
+                            children: [
+                              GhCheck(on: o == selected),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  o,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: t.bodySmall.copyWith(
+                                    color: p.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}

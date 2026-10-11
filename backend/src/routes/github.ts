@@ -41,8 +41,19 @@ githubRouter.get("/me", async (_req, res) => {
   await send(res, await svc.me());
 });
 
+const flag = (v: unknown) => ["1", "true"].includes(str(v));
+
+// Every repository the caller can access (cached 5 min; refresh=1 reloads).
 githubRouter.get("/my/repos", async (req, res) => {
-  await send(res, await svc.myRepos({ visibility: str(req.query.visibility), sort: str(req.query.sort), perPage: req.query.per_page }));
+  await send(
+    res,
+    await svc.myRepos({ visibility: str(req.query.visibility), sort: str(req.query.sort), perPage: req.query.per_page, refresh: flag(req.query.refresh) }),
+  );
+});
+
+// The caller's repositories ranked for loose text (typos, partial names, owner words).
+githubRouter.get("/my/repos/search", async (req, res) => {
+  await send(res, await svc.searchMyRepos(query(req), req.query.limit));
 });
 
 // ---- search --------------------------------------------------------------
@@ -66,16 +77,22 @@ githubRouter.get("/repos/:owner/:repo", async (req, res) => {
 
 githubRouter.get("/repos/:owner/:repo/commits", async (req, res) => {
   const { owner, repo } = req.params;
+  const q = str(req.query.q);
+  if (q.length > 256) throw new AppError(400, "bad_request", "q is too long");
   await send(
     res,
-    {
-      items: await svc.commits(owner, repo, {
-        sha: str(req.query.sha) || undefined,
-        path: str(req.query.path) || undefined,
-        perPage: req.query.per_page,
-        stats: str(req.query.stats) !== "0",
-      }),
-    },
+    await svc.commitsPage(owner, repo, {
+      sha: str(req.query.sha) || str(req.query.branch) || undefined,
+      path: str(req.query.path) || undefined,
+      author: str(req.query.author) || undefined,
+      since: str(req.query.since) || undefined,
+      until: str(req.query.until) || undefined,
+      q: q || undefined,
+      after: str(req.query.after) || undefined,
+      perPage: req.query.per_page,
+      stats: str(req.query.stats) !== "0",
+    }),
+    q ? "search" : "core",
   );
 });
 
@@ -85,7 +102,7 @@ githubRouter.get("/repos/:owner/:repo/graph", async (req, res) => {
   res.on("close", () => {
     if (!res.writableFinished) ctl.abort();
   });
-  await send(res, await graph(req.params.owner, req.params.repo, { branches: req.query.branches, limit: req.query.limit }, ctl.signal));
+  await send(res, await graph(req.params.owner, req.params.repo, { branches: req.query.branches, limit: req.query.limit, after: req.query.after }, ctl.signal));
 });
 
 githubRouter.get("/repos/:owner/:repo/commits/:sha", async (req, res) => {
@@ -109,7 +126,15 @@ githubRouter.get("/repos/:owner/:repo/contents/:ref", async (req, res) => {
 });
 
 githubRouter.get("/repos/:owner/:repo/branches", async (req, res) => {
-  await send(res, await svc.branches(req.params.owner, req.params.repo));
+  await send(
+    res,
+    await svc.branches(req.params.owner, req.params.repo, {
+      q: str(req.query.q).slice(0, 120),
+      after: str(req.query.after),
+      limit: req.query.limit,
+      refresh: flag(req.query.refresh),
+    }),
+  );
 });
 
 githubRouter.get("/repos/:owner/:repo/pulls", async (req, res) => {

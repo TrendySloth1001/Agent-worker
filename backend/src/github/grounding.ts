@@ -3,6 +3,7 @@ import { log } from "../util/logger.js";
 import { gh, ghAuth } from "./client.js";
 import * as svc from "./service.js";
 import { graph as commitGraph } from "./graph.js";
+import { rankRepos } from "./repoSearch.js";
 
 /**
  * GitHub grounding for chat: when the user's message is clearly about GitHub
@@ -34,8 +35,10 @@ export type GithubIntent = {
   pr: (RepoRef & { number: number }) | null;
   /** "my repos", "my private repos": the token owner's repositories. */
   mine: { visibility: "all" | "private" | "public" } | null;
-  /** "my repo X": a repository of the token owner, by name only. */
+  /** "my repo X", "my keepit repo", "my report card generator project": a repository of the user, named loosely. */
   myRepo: string | null;
+  /** "the report card generator repo": maybe one of the user's repositories (resolved when connected). */
+  looseRepo: string | null;
   /** "my PRs", "PRs waiting for my review". */
   myPulls: boolean;
   /** "my GitHub issues", "issues assigned to me". */
@@ -84,6 +87,26 @@ const PR_HASH = /(?<![\w./@:-])([A-Za-z0-9][\w-]{0,38})\/([A-Za-z0-9_.-]{1,100})
 const REVIEW = /\b(review|code[- ]review|critique|audit|look (?:over|at the (?:diff|changes))|any (?:bugs|issues|problems) in|is (?:it|this) (?:safe|ok|good) to merge)\b/i;
 const MINE = /\b(?:my|mine|i own|i have)\b[^.?!\n]{0,24}\b(repos?|repositor(?:y|ies)|projects? on github|github projects?)\b/i;
 const MY_REPO_NAMED = /\bmy\s+(?:own\s+)?(?:private\s+|public\s+)?(?:github\s+)?(?:repo|repository|project)\s+(?:called\s+|named\s+)?[`"']?([A-Za-z0-9_.-]{2,100})/i;
+/** "my keepit repo", "my report card generator project". */
+const MY_REPO_PHRASE = /\bmy\s+(?:own\s+)?(?:private\s+|public\s+)?(?:github\s+)?([A-Za-z0-9_.\- ]{2,60}?)\s+(?:repo|repository|project|codebase)\b(?!s)/i;
+/** "the report card generator repo". */
+const THE_REPO_PHRASE = /\bthe\s+([A-Za-z0-9_.\- ]{2,60}?)\s+(?:repo|repository|codebase)\b(?!s)/i;
+/** Words that describe a repo rather than name it ("my new repo", "the main repo"). */
+const GENERIC_REPO = new Set(
+  "github gh private public new old own latest recent main first last other favorite favourite best top open source code same whole entire current this that".split(" "),
+);
+
+/** The repo-naming part of a loose phrase, or null when it is generic. */
+function repoPhrase(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const words = raw
+    .trim()
+    .split(/\s+/)
+    .filter((w) => !GENERIC_REPO.has(w.toLowerCase()));
+  const kept = words.slice(-5).join(" ").replace(/[.,;:]+$/, "");
+  return kept.length >= 2 ? kept : null;
+}
+
 const MY_REPO_STOP = new Set(["list", "and", "or", "on", "in", "with", "that", "which", "is", "are", "the", "a", "for", "to", "from", "please", "github"]);
 const MY_PULLS =
   /\bmy\s+(?:own\s+|open\s+|recent\s+|latest\s+|pending\s+)?(?:github\s+)?(?:prs|pull requests)\b|\b(?:prs?|pull requests?)\b[^.?!\n]{0,30}\b(?:i (?:opened|authored|created|made|submitted)|assigned to me|(?:waiting )?for my review|requested? (?:my review|me)|review requests?)\b|\bmy review requests\b/i;
@@ -164,7 +187,9 @@ export function githubIntent(text: string): GithubIntent | null {
   const pr = prRef(t);
   const review = pr && REVIEW.test(t) ? pr : null;
   const named = t.match(MY_REPO_NAMED)?.[1]?.replace(/[.,;:]+$/, "") ?? null;
-  const myRepo = named && !MY_REPO_STOP.has(named.toLowerCase()) && !/^repos?$/i.test(named) ? named : null;
+  const myRepo =
+    (named && !MY_REPO_STOP.has(named.toLowerCase()) && !/^repos?$/i.test(named) ? named : null) ?? repoPhrase(t.match(MY_REPO_PHRASE)?.[1]);
+  const looseRepo = myRepo ? null : repoPhrase(t.match(THE_REPO_PHRASE)?.[1]);
   const myPulls = MY_PULLS.test(t);
   const myIssues = !myPulls && MY_ISSUES.test(t);
   const myActivity = MY_ACTIVITY.test(t);
@@ -180,9 +205,10 @@ export function githubIntent(text: string): GithubIntent | null {
   const personal = !!mine || !!myRepo || myPulls || myIssues || myActivity;
   if (repos.length === 0 && !personal) {
     const wantsSearch = (STRONG.test(t) && FINDISH.test(t)) || FIND_LIB.test(t);
-    if (!wantsSearch) return null;
-    search = searchQuery(t);
-    if (!search) return null;
+    if (!wantsSearch && !looseRepo) return null;
+    // A loosely named repo falls back to a public search when it is not one of the user's.
+    search = wantsSearch ? searchQuery(t) : searchQuery(looseRepo!);
+    if (!search && !looseRepo) return null;
   }
   return {
     repos,
@@ -198,6 +224,7 @@ export function githubIntent(text: string): GithubIntent | null {
     pr: review ? null : pr,
     mine,
     myRepo,
+    looseRepo: repos.length ? null : looseRepo,
     myPulls,
     myIssues,
     myActivity,
@@ -288,6 +315,53 @@ function eventLine(e: any): string {
   }
 }
 
+const matchLine = (phrase: string, items: { repo: { fullName: string; private: boolean; description: string; pushedAt: string | null }; score: number }[]) =>
+  [
+    `Best matches among the user's repositories for "${phrase}" (score, higher is better; 1.0+ is an exact name):`,
+    ...items.map(
+      (x) => `${x.repo.fullName}${x.repo.private ? " (private)" : ""} score ${x.score.toFixed(2)}: ${x.repo.description || "no description"}. Last push ${day(x.repo.pushedAt)}.`,
+    ),
+  ].join("\n");
+
+/**
+ * "my keepit repo": ranks the user's repositories for the phrase. A confident
+ * match becomes the repo to fetch; otherwise the top real candidates are
+ * listed and the returned hint makes the model ask which one is meant.
+ */
+async function resolveMyRepo(phrase: string, push: Push, signal?: AbortSignal): Promise<{ ask: string | null; repo: RepoRef | null }> {
+  const all = await svc.allMyRepos({}, signal);
+  const res = rankRepos(phrase, all, { limit: 5 });
+  if (res.confident) {
+    const top = res.items[0].repo;
+    push(`Repository match for "${phrase}" (GitHub)`, top.url, matchLine(phrase, res.items.slice(0, 3)));
+    const [owner, repo] = top.fullName.split("/");
+    return { ask: null, repo: { owner, repo } };
+  }
+  const cands = res.items.slice(0, 3);
+  if (!cands.length) {
+    push(
+      `No repository matches "${phrase}" (GitHub)`,
+      "https://github.com/settings/repositories",
+      `None of the user's ${all.length} repositories matches "${phrase}". Most recently pushed: ${all
+        .slice(0, 5)
+        .map((r) => r.fullName)
+        .join(", ")}.`,
+    );
+    return {
+      ask: `GitHub: no repository of the user matches "${phrase}". Do not guess or invent a repository name. Say so in one sentence and ask them to type the exact owner/repo (you may mention the recently pushed ones listed in the <github> block).`,
+      repo: null,
+    };
+  }
+  push(`Possible repositories for "${phrase}" (GitHub)`, cands[0].repo.url, matchLine(phrase, cands));
+  return {
+    repo: null,
+    ask:
+    `GitHub: "${phrase}" does not clearly match one of the user's repositories. Do not guess and do not fetch or describe any of them yet. ` +
+    "Ask which one they mean with an ```ask block whose options are exactly these full names (no others, no invented ones), plus other: true:\n" +
+    cands.map((c) => `- ${c.repo.fullName}`).join("\n"),
+  };
+}
+
 /** Fetches the GitHub sources for [text]; null when it is not about GitHub. */
 export async function githubGround(text: string, signal?: AbortSignal): Promise<GithubGrounding | null> {
   const auth = await ghAuth();
@@ -318,6 +392,24 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
   const items: ContextItem[] = [];
   const push = (title: string, url: string, body: string) => items.push({ id: `G${items.length + 1}`, title, url, text: body });
   const blocks: string[] = [];
+  let askHint: string | null = null;
+
+  // "the report card generator repo": one of the user's own repos when it matches confidently.
+  if (intent.looseRepo && canSeePrivate && !intent.repos.length) {
+    try {
+      const all = await svc.allMyRepos({}, signal);
+      const res = rankRepos(intent.looseRepo, all, { limit: 3 });
+      if (res.confident) {
+        const top = res.items[0].repo;
+        push(`Repository match for "${intent.looseRepo}" (GitHub)`, top.url, matchLine(intent.looseRepo, res.items));
+        const [o, r] = top.fullName.split("/");
+        intent.repos.unshift({ owner: o, repo: r });
+        intent.search = null;
+      }
+    } catch (e) {
+      log.info("github loose repo lookup failed", { message: (e as Error).message.slice(0, 80) });
+    }
+  }
 
   // "my repos" / "my private repo X" / "my PRs": resolved against the caller's
   // connected account (or, for the owner, the server token's account).
@@ -326,11 +418,12 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
       const me = await svc.me(signal);
       await personalSources(intent, me.login, push, blocks, signal);
       if (intent.myRepo && !intent.repos.some((r) => r.repo.toLowerCase() === intent.myRepo!.toLowerCase())) {
-        const list = await svc.myRepos({ visibility: "all", sort: "updated", perPage: 100 }, signal).catch(() => null);
-        const hit = list?.items.find((r) => r.name.toLowerCase() === intent.myRepo!.toLowerCase());
-        const [o, r] = (hit?.fullName ?? `${me.login}/${intent.myRepo}`).split("/");
-        intent.repos.unshift({ owner: o, repo: r });
-        intent.repos.splice(2);
+        const m = await resolveMyRepo(intent.myRepo, push, signal);
+        askHint = m.ask;
+        if (m.repo) {
+          intent.repos.unshift(m.repo);
+          intent.repos.splice(2);
+        }
       }
       if (intent.mine) {
         const list = await svc.myRepos({ visibility: intent.mine.visibility, sort: "updated", perPage: 30 }, signal);
@@ -499,6 +592,7 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
     else blocks.push(`\`\`\`github-repo\n${full}\n\`\`\``);
   }
 
+  if (askHint) return { items, hint: askHint };
   if (!items.length) return null;
   const reviewHint = intent.review
     ? " The review card runs a full AI code review of the diff in the app (it takes a minute): introduce it in one or two sentences from the PR source (what the PR changes), do not write your own line-by-line review."
