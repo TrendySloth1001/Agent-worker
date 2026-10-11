@@ -20,6 +20,7 @@ import '../../data/account_api.dart';
 import '../../data/auth_models.dart';
 import '../../data/chat_api.dart';
 import '../../data/sso_api.dart';
+import '../about/about_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../auth/widgets/github_device_sheet.dart';
@@ -448,6 +449,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ],
+                const SizedBox(height: AppSpacing.xl),
+                const AboutFooterLink(),
               ],
             ),
           ),

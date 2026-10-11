@@ -14,6 +14,7 @@ import '../../core/widgets/segmented.dart';
 import '../../core/widgets/toggle_row.dart';
 import '../../data/usage.dart';
 import '../knowledge/knowledge_screen.dart';
+import '../about/about_screen.dart';
 import '../storage/storage_screen.dart';
 import '../storage/widgets/storage_usage_card.dart';
 import '../../core/constants/storage.dart';
@@ -165,6 +166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _modeChips(context, scope),
                 const SectionHeader(AppStrings.about, icon: AppIcons.about),
                 _aboutRows(context, scope),
+                const AboutEntryRow(),
               ],
             ),
           ),
