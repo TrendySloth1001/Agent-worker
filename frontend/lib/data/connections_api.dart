@@ -49,10 +49,14 @@ class ConnectionsState {
       ],
       githubConfigured =
           ((j['providers'] as Map?)?['github'] as Map?)?['configured'] == true,
+      githubWeb = ((j['providers'] as Map?)?['github'] as Map?)?['web'] == true,
       isOwner = j['isOwner'] == true;
 
   final List<Connection> items;
   final bool githubConfigured, isOwner;
+
+  /// One-tap OAuth web flow available (else the device code).
+  final bool githubWeb;
 
   Connection? get github =>
       items.where((c) => c.provider == ConnectProviders.github).firstOrNull;

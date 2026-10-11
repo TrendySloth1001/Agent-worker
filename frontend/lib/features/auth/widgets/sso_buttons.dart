@@ -11,6 +11,7 @@ import '../../../data/sso_api.dart';
 import '../auth_controller.dart';
 import 'auth_widgets.dart';
 import 'github_device_sheet.dart';
+import 'github_web_sheet.dart';
 
 /// "OR" and the CONTINUE WITH GITHUB / GOOGLE buttons under the email form.
 /// Shows only the providers the server has set up (GET /auth/providers), so
@@ -50,6 +51,16 @@ class _SsoSectionState extends State<SsoSection> {
       _error = null;
     });
     try {
+      // One tap (OAuth web flow); the device code stays as the fallback.
+      if (_providers?.githubWeb ?? false) {
+        final w = await showGithubWebSheet(
+          context,
+          title: SsoStrings.sheetTitle,
+          mode: GithubWeb.signin,
+        );
+        if (w != GithubWebSheetResult.useCode || !mounted) return;
+      }
+      if (!mounted) return;
       final r = await showGithubDeviceSheet(
         context,
         title: SsoStrings.sheetTitle,

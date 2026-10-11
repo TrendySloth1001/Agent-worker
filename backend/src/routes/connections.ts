@@ -23,7 +23,8 @@ connectionsRouter.get("/", async (req, res) => {
   const user = userOf(req);
   res.json({
     items: user.id ? await listConnections(user.id) : [],
-    providers: { github: { configured: !!config.githubOAuth.clientId } },
+    // web: the one-tap OAuth web flow is available (needs the client secret).
+    providers: { github: { configured: !!config.githubOAuth.clientId, web: !!(config.githubOAuth.clientId && config.githubOAuth.clientSecret) } },
     isOwner: user.role === "owner",
   });
 });

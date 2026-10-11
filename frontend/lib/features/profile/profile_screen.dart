@@ -24,6 +24,7 @@ import '../about/about_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../auth/widgets/github_device_sheet.dart';
+import '../auth/widgets/github_web_sheet.dart';
 import '../connections/connections_controller.dart';
 import '../settings/format.dart';
 import '../settings/widgets/section_header.dart';
@@ -107,6 +108,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _linkGithub() async {
     setState(() => _methodBusy = SsoProviderIds.github);
     try {
+      if (_providers?.githubWeb ?? false) {
+        final w = await showGithubWebSheet(
+          context,
+          title: SsoStrings.linkTitle,
+          mode: GithubWeb.link,
+        );
+        if (!mounted) return;
+        if (w == GithubWebSheetResult.done) {
+          await _loadMethods();
+          return;
+        }
+        if (w != GithubWebSheetResult.useCode) return;
+      }
       final r = await showGithubDeviceSheet(
         context,
         title: SsoStrings.linkTitle,

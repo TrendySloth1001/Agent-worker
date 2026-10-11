@@ -72,6 +72,20 @@ abstract final class Browsers {
     }
   }
 
+  /// Packages that can open [url] itself, the one Android would pick first.
+  /// Empty off Android or on failure.
+  static Future<List<String>> resolvesUrl(String url) async {
+    if (!supported) return const [];
+    try {
+      final raw = await _channel.invokeListMethod<String>('resolvesUrl', {
+        'url': url,
+      });
+      return raw ?? const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Opens an HTML document in [package]. False when nothing could show it.
   static Future<bool> openHtml(
     String html, {

@@ -95,6 +95,65 @@ abstract final class GoogleAuthChannel {
   static const noAccount = 'no_account';
 }
 
+/// One-tap GitHub (OAuth web flow): the app opens GitHub's authorize page
+/// (in the GitHub app when it handles it, else the browser), the backend's
+/// callback sends the browser to `sparky://auth/github?ticket&mode&state`,
+/// and the app redeems the ticket.
+abstract final class GithubWeb {
+  static const signin = 'signin';
+  static const connect = 'connect';
+  static const link = 'link';
+
+  // Deep link sparky://auth/github (AndroidManifest intent-filter).
+  static const scheme = 'sparky';
+  static const host = 'auth';
+  static const path = '/github';
+  static const ticket = 'ticket';
+  static const mode = 'mode';
+  static const state = 'state';
+  static const error = 'error';
+  static const message = 'message';
+
+  /// Backend error codes in the deep link.
+  static const errDenied = 'access_denied';
+
+  /// Opened here when it can handle the authorize URL.
+  static const githubAppPackage = 'com.github.android';
+}
+
+/// MainActivity's deep-link bridge.
+abstract final class DeepLinkChannel {
+  static const name = 'app/links';
+  static const initialLink = 'initialLink';
+  static const onLink = 'onLink';
+}
+
+abstract final class GithubWebStrings {
+  static const opening = 'OPENING GITHUB…';
+  static const waiting = 'WAITING FOR GITHUB…';
+  static const finishing = 'FINISHING…';
+  static const inApp =
+      'Opened in the GitHub app. Approve there and you '
+      'will come right back.';
+  static const inBrowser =
+      'Opened in your browser. Approve on GitHub and '
+      'you will come right back.';
+  static const openAgain = 'OPEN AGAIN';
+  static const useCode = 'USE A CODE INSTEAD';
+  static const cancel = 'CANCEL';
+  static const openFailed = 'Could not open GitHub. Use a code instead.';
+  static const failed = 'Could not finish with GitHub.';
+  static const denied = 'Access was denied on GitHub.';
+  static const signedIn = 'Signed in with GitHub.';
+  static const connected = 'GitHub connected.';
+  static const linked = 'GitHub linked.';
+}
+
+abstract final class GithubWebDurations {
+  /// A pending flow older than this is forgotten (the server's is 10 min).
+  static const pendingTtl = Duration(minutes: 15);
+}
+
 abstract final class SsoAssets {
   static const githubMark = 'assets/brand/sso/github_mark.svg';
   static const googleG = 'assets/brand/sso/google_g.svg';

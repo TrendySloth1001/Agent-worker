@@ -10,6 +10,9 @@ import { limitsFor, resetsAt, usageFor } from "../auth/limits.js";
 import { config } from "../config.js";
 import { notConfigured, type CorePoll } from "../connections/deviceFlow.js";
 import { githubSso, type GithubSsoResult } from "../auth/githubSso.js";
+import { githubWeb, WEB_MODES } from "../auth/githubWeb.js";
+import { callbackPage } from "../auth/githubWebPage.js";
+import { randomBytes } from "node:crypto";
 import { verifyGoogleIdToken } from "../auth/google.js";
 import { linkIdentity, signInMethods, ssoSignIn, unlinkIdentity } from "../auth/sso.js";
 import {
@@ -100,7 +103,12 @@ authPublicRouter.post("/refresh", async (req, res) => {
 authPublicRouter.get("/providers", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const webClientId = config.google.webClientId;
-  res.json({ github: !!config.githubOAuth.clientId, google: webClientId ? { webClientId } : null });
+  res.json({
+    github: !!config.githubOAuth.clientId,
+    // One-tap OAuth web flow (needs the client secret); else the app uses the device code.
+    githubWeb: githubWeb.configured(),
+    google: webClientId ? { webClientId } : null,
+  });
 });
 
 authPublicRouter.post("/github/device", rateLimit(10, 60_000));
@@ -138,6 +146,57 @@ authPublicRouter.post("/github/device/:flowId/poll", async (req, res) => {
   if (out?.kind !== "session") throw new AppError(500, "internal", "Unexpected sign-in result");
   log.info("signed in with github", { outcome: out.outcome, role: out.user.role });
   res.json({ status: "ok", outcome: out.outcome, session: session(out.user, out.tokens) });
+});
+
+// ---- GitHub over the OAuth web flow (src/auth/githubWeb.ts) ----------------
+// start/redeem are public for sign-in; connect/link fall through (next()) to the
+// signed-in routes below, behind requireUser.
+
+const webStartBody = z.object({ mode: z.enum(WEB_MODES as [string, ...string[]]), device });
+const ticketBody = z.object({ ticket: z.string().min(20).max(200) });
+const webStart = (req: Request) => {
+  const parsed = webStartBody.safeParse(req.body ?? {});
+  if (!parsed.success) throw new AppError(400, "bad_request", "mode must be signin, connect or link");
+  return parsed.data as { mode: "signin" | "connect" | "link"; device?: string };
+};
+const ticketOf = (req: Request) => {
+  const parsed = ticketBody.safeParse(req.body ?? {});
+  if (!parsed.success) throw new AppError(400, "invalid_ticket", "This GitHub sign-in expired or was already used. Start again.");
+  return parsed.data.ticket;
+};
+
+authPublicRouter.post("/github/web/start", rateLimit(10, 60_000));
+authPublicRouter.get("/github/callback", rateLimit(30, 60_000));
+authPublicRouter.post("/github/web/redeem", rateLimit(30, 60_000));
+
+authPublicRouter.post("/github/web/start", async (req, res, next) => {
+  const body = webStart(req);
+  if (body.mode !== "signin") return next();
+  res.setHeader("Cache-Control", "no-store");
+  res.json(await githubWeb.start({ mode: "signin", userId: null, device: deviceLabel(req, body) }));
+});
+
+authPublicRouter.get("/github/callback", async (req, res) => {
+  const q = (k: string) => (typeof req.query[k] === "string" ? (req.query[k] as string).slice(0, 500) : undefined);
+  const cb = await githubWeb.callback({ code: q("code"), state: q("state"), error: q("error") });
+  if (cb.ok) log.info("github web flow approved", { mode: cb.mode });
+  const nonce = randomBytes(16).toString("base64");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none'`);
+  res.type("html").send(callbackPage(cb, nonce));
+});
+
+authPublicRouter.post("/github/web/redeem", async (req, res, next) => {
+  const ticket = ticketOf(req);
+  const mode = await githubWeb.ticketMode(ticket);
+  if (mode && mode !== "signin") return next();
+  res.setHeader("Cache-Control", "no-store");
+  const r = await githubWeb.redeem(ticket, null);
+  if (r.mode !== "signin") throw new AppError(500, "internal", "Unexpected sign-in result");
+  log.info("signed in with github (web)", { outcome: r.outcome, role: r.user.role });
+  res.json({ ...session(r.user, r.tokens), outcome: r.outcome, mode: "signin" });
 });
 
 const googleBody = z.object({ idToken: z.string().min(20).max(8000), device });
@@ -248,6 +307,22 @@ authRouter.post("/identities/github/device/:flowId/poll", async (req, res) => {
   if (view) return void res.json(view);
   if (r.result?.kind !== "linked") throw new AppError(500, "internal", "Unexpected link result");
   res.json({ status: "ok", identity: r.result.identity });
+});
+
+// Connect / link over the web flow (signed in; see the public routes above).
+authRouter.post("/github/web/start", async (req, res) => {
+  const body = webStart(req);
+  const user = await me(req);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(await githubWeb.start({ mode: body.mode, userId: user.id, device: null }));
+});
+
+authRouter.post("/github/web/redeem", async (req, res) => {
+  const user = await me(req);
+  const r = await githubWeb.redeem(ticketOf(req), user.id);
+  res.setHeader("Cache-Control", "no-store");
+  if (r.mode === "signin") throw new AppError(500, "internal", "Unexpected sign-in result");
+  res.json({ ok: true, mode: r.mode, connection: r.connection, ...(r.mode === "link" ? { identity: r.identity } : {}) });
 });
 
 authRouter.post("/identities/google", rateLimit(10, 60_000));

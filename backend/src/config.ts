@@ -23,6 +23,8 @@ const schema = z.object({
   GITHUB_OAUTH_CLIENT_ID: str,
   GITHUB_OAUTH_CLIENT_SECRET: str,
   CONNECTIONS_KEY: str,
+  /** Where this server is reachable from phones/browsers (OAuth callback URLs). */
+  PUBLIC_BASE_URL: str,
   GOOGLE_WEB_CLIENT_ID: str,
   GOOGLE_WEB_CLIENT_SECRET: str,
   STACKEXCHANGE_KEY: str,
@@ -69,6 +71,8 @@ export const config = {
   /** Per-user GitHub connections (OAuth device flow); see src/connections. */
   githubOAuth: { clientId: env.GITHUB_OAUTH_CLIENT_ID, clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET },
   connectionsKey: env.CONNECTIONS_KEY,
+  /** Public origin, no trailing slash; GitHub's OAuth callback is `${publicBaseUrl}/auth/github/callback`. */
+  publicBaseUrl: (env.PUBLIC_BASE_URL?.trim() || "https://sparky.cloudnsofts.com").replace(/\/+$/, ""),
   /**
    * "Continue with Google": the app gets an ID token for this Web client id
    * (serverClientId) and the server checks it is the token's audience. The

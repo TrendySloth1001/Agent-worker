@@ -116,13 +116,31 @@ async function trustsEmail(c: Tx, u: UserRow): Promise<boolean> {
 /** Sign-in with [p] inside [c]: resolve, stamp the login, start a session. */
 export async function ssoSignInTx(c: Tx, p: SsoProfile, device: string | null): Promise<{ user: UserRow; tokens: Tokens; outcome: SsoOutcome }> {
   const { user, outcome } = await resolveSsoUser(c, p);
+  return { ...(await startSsoSession(c, user, device)), outcome };
+}
+
+/** Stamps the login and starts a session for an account an SSO provider resolved. */
+async function startSsoSession(c: Tx, user: UserRow, device: string | null): Promise<{ user: UserRow; tokens: Tokens }> {
   const updated = await c.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   const { rowId: _row, ...tokens } = await issue(c, updated, null, device);
-  return { user: updated, tokens, outcome };
+  return { user: updated, tokens };
 }
 
 export async function ssoSignIn(p: SsoProfile, device: string | null) {
   return tx((c) => ssoSignInTx(c, p, device));
+}
+
+/**
+ * A session for an account resolved earlier (the GitHub web flow resolves at
+ * the callback and hands the session out when the app redeems its ticket).
+ */
+export async function ssoSessionFor(userId: string, device: string | null): Promise<{ user: UserRow; tokens: Tokens }> {
+  return tx(async (c) => {
+    const user = await c.user.findUnique({ where: { id: userId } });
+    if (!user) throw new AppError(404, "not_found", "That account no longer exists.");
+    if (user.disabled) throw disabled();
+    return startSsoSession(c, user, device);
+  });
 }
 
 // ---- linked sign-in methods (Profile) -----------------------------------

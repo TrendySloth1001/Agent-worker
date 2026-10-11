@@ -44,14 +44,15 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
 
-  sessions      AuthSession[]
-  dailyUsage    UserDailyUsage[]
-  conversations Conversation[]
-  files         StoredFile[]
-  sources       Source[]
-  connections   Connection[]
-  identities    AuthIdentity[]
-  docs          Doc[]
+  sessions         AuthSession[]
+  dailyUsage       UserDailyUsage[]
+  conversations    Conversation[]
+  files            StoredFile[]
+  sources          Source[]
+  connections      Connection[]
+  identities       AuthIdentity[]
+  githubOAuthFlows GithubOAuthFlow[]
+  docs             Doc[]
 
   @@map("users")
 }
@@ -359,6 +360,35 @@ model AuthIdentity {
   @@unique([provider, providerUserId])
   @@index([userId])
   @@map("auth_identities")
+}
+
+/// "Continue with / Connect / Link GitHub" over the OAuth web flow
+/// (authorization code + PKCE, src/auth/githubWeb.ts). A row lives from
+/// POST /auth/github/web/start until it is redeemed; rows older than a day are
+/// purged. Only hashes of the state and the one-time ticket are stored.
+/// CHECK mode IN ('signin','connect','link');
+/// CHECK status IN ('pending','exchanging','ready','redeemed','failed').
+model GithubOAuthFlow {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stateHash       String    @unique @map("state_hash")
+  /// PKCE code_verifier; cleared once the code is exchanged.
+  codeVerifier    String    @map("code_verifier")
+  mode            String
+  /// The signed-in user for connect/link; NULL for sign-in.
+  userId          String?   @map("user_id") @db.Uuid
+  device          String?
+  status          String    @default("pending")
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  ticketHash      String?   @unique @map("ticket_hash")
+  ticketExpiresAt DateTime? @map("ticket_expires_at") @db.Timestamptz(6)
+  /// What the callback resolved (no tokens): user id + outcome, identity or account.
+  result          Json?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([createdAt])
+  @@map("github_oauth_flows")
 }
 
 // ---- long-form documents (DOC mode, docs/DOCS_MODE.md) -------------------------

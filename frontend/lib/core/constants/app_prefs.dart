@@ -17,4 +17,8 @@ abstract final class AppPrefs {
   static const profileSignature = 'profile_signature';
   static const browserPackage = 'browser_package';
   static const browserLabel = 'browser_label';
+
+  /// The GitHub web sign-in waiting for its deep link (survives the app
+  /// being killed while the user is in the browser).
+  static const githubWebPending = 'github_web_pending';
 }

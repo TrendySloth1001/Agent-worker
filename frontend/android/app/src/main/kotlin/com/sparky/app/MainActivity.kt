@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Bundle
 import android.util.Base64
 import androidx.core.content.FileProvider
 import androidx.credentials.ClearCredentialStateRequest
@@ -34,6 +35,11 @@ import kotlinx.coroutines.launch
 class MainActivity : FlutterActivity() {
     private val channelName = "app/browsers"
     private val authChannelName = "app/auth"
+    private val linksChannelName = "app/links"
+    private var linksChannel: MethodChannel? = null
+
+    // A sparky:// link the app was opened with (cold start), until Dart asks.
+    private var pendingLink: String? = null
     private val iconPx = 96
     private val maxDataUrlChars = 100_000
 
@@ -45,8 +51,44 @@ class MainActivity : FlutterActivity() {
         return true
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Before super: Dart may ask for the initial link as soon as it runs.
+        if (savedInstanceState == null) pendingLink = appLink(intent)
+        super.onCreate(savedInstanceState)
+    }
+
+    // singleTask: a sparky:// link while the app is alive lands here.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val link = appLink(intent) ?: return
+        val channel = linksChannel
+        if (channel == null) pendingLink = link else channel.invokeMethod("onLink", link)
+    }
+
+    /** The sparky:// URI of a VIEW intent (not when replayed from Recents). */
+    private fun appLink(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_VIEW) return null
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+        val uri = intent.data ?: return null
+        return if (uri.scheme == "sparky") uri.toString() else null
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        linksChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, linksChannelName)
+            .also { ch ->
+                ch.setMethodCallHandler { call, result ->
+                    when (call.method) {
+                        // Hands out the cold-start link once.
+                        "initialLink" -> {
+                            result.success(pendingLink)
+                            pendingLink = null
+                        }
+                        else -> result.notImplemented()
+                    }
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result -> handle(call, result) }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, authChannelName)
@@ -139,6 +181,10 @@ class MainActivity : FlutterActivity() {
                     result.success(openUrl(url, call.argument<String>("package")))
                 }
             }
+            "resolvesUrl" -> {
+                val url = call.argument<String>("url")
+                result.success(if (url.isNullOrEmpty()) emptyList<String>() else resolvesUrl(url))
+            }
             "openHtml" -> {
                 val html = call.argument<String>("html") ?: ""
                 val title = call.argument<String>("title") ?: ""
@@ -146,6 +192,25 @@ class MainActivity : FlutterActivity() {
             }
             else -> result.notImplemented()
         }
+    }
+
+    /**
+     * Packages with an activity for [url] itself (e.g. the GitHub app for
+     * github.com/login/oauth/authorize), the one that would open it first.
+     */
+    private fun resolvesUrl(url: String): List<String> = try {
+        val pm = packageManager
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        val out = LinkedHashSet<String>()
+        pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            ?.takeIf { it != "android" }
+            ?.let { out.add(it) }
+        for (info in pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)) {
+            info.activityInfo?.packageName?.let { out.add(it) }
+        }
+        out.toList()
+    } catch (e: Exception) {
+        emptyList()
     }
 
     private fun browsableIntent(): Intent =

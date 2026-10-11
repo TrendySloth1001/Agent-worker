@@ -399,14 +399,30 @@ export class DeviceFlows {
   /** Reads the account behind the grant and persists the encrypted token. */
   private async store(userId: string, grant: DeviceGrant): Promise<GithubAccount> {
     const u = await fetchGithubUser(this.deps.fetch, grant.accessToken, grant.scope);
-    const account: GithubAccount = { login: u.login, id: u.id, avatarUrl: u.avatarUrl, scopes: u.scopes };
-    await this.deps.save({
-      ...account,
-      userId,
-      accessTokenEnc: this.deps.encrypt(grant.accessToken),
-      refreshTokenEnc: grant.refreshToken ? this.deps.encrypt(grant.refreshToken) : null,
-      expiresAt: grant.expiresIn > 0 ? new Date(this.deps.now() + grant.expiresIn * 1000) : null,
-    });
-    return account;
+    const row = connectionRow(u, userId, grant, this.deps);
+    await this.deps.save(row);
+    return { login: row.login, id: row.id, avatarUrl: row.avatarUrl, scopes: row.scopes };
   }
+}
+
+/**
+ * [grant] as [userId]'s connection row (tokens encrypted). Shared by the device
+ * flow ("Connect GitHub", "Continue with GitHub") and the web flow (githubWeb.ts).
+ */
+export function connectionRow(
+  u: GithubAccount,
+  userId: string,
+  grant: DeviceGrant,
+  deps: { encrypt: (plain: string) => string; now: () => number },
+): ConnectionRow {
+  return {
+    login: u.login,
+    id: u.id,
+    avatarUrl: u.avatarUrl,
+    scopes: u.scopes,
+    userId,
+    accessTokenEnc: deps.encrypt(grant.accessToken),
+    refreshTokenEnc: grant.refreshToken ? deps.encrypt(grant.refreshToken) : null,
+    expiresAt: grant.expiresIn > 0 ? new Date(deps.now() + grant.expiresIn * 1000) : null,
+  };
 }

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/connections.dart';
+import '../../core/constants/sso_constants.dart';
+import '../auth/sso/github_web_auth.dart';
 import '../../data/connections_api.dart';
 
 /// Where the GitHub connection stands, for the card and Settings.
@@ -13,6 +15,9 @@ enum GithubPhase {
   idle,
   starting,
   waiting,
+
+  /// One-tap web flow: GitHub is open in the GitHub app or a browser.
+  browser,
   connected,
   expired,
   denied,
@@ -26,8 +31,19 @@ enum GithubPhase {
 /// backend at the interval GitHub asked for (the backend never asks GitHub
 /// faster than that either).
 class ConnectionsController extends ChangeNotifier {
-  ConnectionsController._();
+  ConnectionsController._() {
+    final web = GithubWebAuth.instance;
+    web.addListener(notifyListeners);
+    web.outcomes.listen((o) {
+      if (o.ok || o.mode != GithubWeb.connect) return;
+      // The web flow failed: show it like a failed device flow.
+      web.cancel();
+      _end(o.denied ? ConnectFlowStatus.denied : 'failed', o.message);
+    });
+  }
   static final instance = ConnectionsController._();
+
+  GithubWebAuth get web => GithubWebAuth.instance;
 
   final _api = ConnectionsApi.instance;
 
@@ -67,6 +83,10 @@ class ConnectionsController extends ChangeNotifier {
 
   GithubPhase get githubPhase {
     if (github != null) return GithubPhase.connected;
+    if (web.activeFor(GithubWeb.connect)) {
+      if (web.phase == GithubWebPhase.failed) return GithubPhase.failed;
+      return GithubPhase.browser;
+    }
     if (starting) return GithubPhase.starting;
     if (flow != null) return GithubPhase.waiting;
     switch (_flowEnd) {
@@ -137,8 +157,43 @@ class ConnectionsController extends ChangeNotifier {
     }
   }
 
+  /// CONNECT: the one-tap web flow (falls back to the code when the server
+  /// has no client secret).
+  Future<void> connectGithub() async {
+    if (!(state?.githubWeb ?? false)) {
+      await startGithub();
+      return;
+    }
+    _stopTimers();
+    flow = null;
+    _flowEnd = null;
+    flowError = null;
+    justConnected = false;
+    final ok = await web.start(GithubWeb.connect);
+    if (!ok && web.activeFor(GithubWeb.connect)) {
+      final message = web.error;
+      web.cancel();
+      _end('failed', message);
+    }
+  }
+
+  /// USE A CODE INSTEAD: drops the web flow and starts the device flow.
+  Future<void> useCode() async {
+    if (web.activeFor(GithubWeb.connect)) web.cancel();
+    await startGithub();
+  }
+
+  /// A web flow connected (or linked) GitHub: reload.
+  Future<void> githubWebConnected({required bool justConnected}) async {
+    _end('', null);
+    _flowEnd = null;
+    this.justConnected = justConnected;
+    await refresh();
+  }
+
   /// Drops the running flow (back to CONNECT).
   void cancelFlow() {
+    if (web.activeFor(GithubWeb.connect)) web.cancel();
     _stopTimers();
     flow = null;
     _flowEnd = null;

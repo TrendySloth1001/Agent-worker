@@ -20,16 +20,24 @@ class SsoException extends ApiException {
 
 /// `GET /auth/providers`: which "Continue with ..." buttons to show.
 class SsoProviders {
-  const SsoProviders({this.github = false, this.googleWebClientId});
+  const SsoProviders({
+    this.github = false,
+    this.githubWeb = false,
+    this.googleWebClientId,
+  });
 
   SsoProviders.fromJson(Map<String, dynamic> j)
     : github = j['github'] == true,
+      githubWeb = j['githubWeb'] == true,
       googleWebClientId = switch ((j['google'] as Map?)?['webClientId']) {
         final String id when id.isNotEmpty => id,
         _ => null,
       };
 
   final bool github;
+
+  /// One-tap OAuth web flow available (else the device code).
+  final bool githubWeb;
 
   /// The Web OAuth client id (Google's serverClientId); null hides Google.
   final String? googleWebClientId;
@@ -57,6 +65,16 @@ class SsoPoll {
 
   bool get waiting =>
       status == SsoFlowStatus.pending || status == SsoFlowStatus.slowDown;
+}
+
+/// `POST /auth/github/web/start`: where to send the user.
+class GithubWebStart {
+  GithubWebStart(Map<String, dynamic> j)
+    : authorizeUrl = j['authorizeUrl'] as String? ?? '',
+      state = j['state'] as String? ?? '',
+      mode = j['mode'] as String? ?? '';
+
+  final String authorizeUrl, state, mode;
 }
 
 /// One linked GitHub/Google account (`GET /auth/identities`).
@@ -148,6 +166,28 @@ class SsoApi {
       body: const {},
     ),
   );
+
+  // ---- OAuth web flow (sign-in is public; connect/link are signed in) ---
+
+  Future<GithubWebStart> startGithubWeb(String mode, {String? device}) async =>
+      GithubWebStart(
+        await _send(
+          'POST',
+          '/github/web/start',
+          body: {'mode': mode, 'device': ?device},
+          signedIn: mode != GithubWeb.signin,
+        ),
+      );
+
+  /// Sign-in: the session (same shape as /auth/login); connect/link:
+  /// `{ok, mode, connection}`.
+  Future<Map<String, dynamic>> redeemGithubWeb(String ticket, String mode) =>
+      _send(
+        'POST',
+        '/github/web/redeem',
+        body: {'ticket': ticket},
+        signedIn: mode != GithubWeb.signin,
+      );
 
   // ---- signed in (Profile) --------------------------------------------
 

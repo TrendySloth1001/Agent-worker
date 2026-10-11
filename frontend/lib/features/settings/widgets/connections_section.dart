@@ -87,7 +87,7 @@ class _ConnectionsSectionState extends State<ConnectionsSection> {
     }
     return switch (_c.githubPhase) {
       GithubPhase.loading => const SizedBox.shrink(),
-      GithubPhase.waiting => const MetaChip(
+      GithubPhase.waiting || GithubPhase.browser => const MetaChip(
         ConnectStrings.waiting,
         emphasis: true,
       ),

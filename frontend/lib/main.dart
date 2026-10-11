@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/app_messenger.dart';
 import 'core/app_scope.dart';
 import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
@@ -11,6 +12,7 @@ import 'data/files_api.dart';
 import 'data/usage_api.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_gate.dart';
+import 'features/auth/sso/github_web_auth.dart';
 import 'features/settings/settings_controller.dart';
 import 'features/settings/usage_controller.dart';
 import 'features/connections/connections_controller.dart';
@@ -27,6 +29,8 @@ Future<void> main() async {
   AuthController.instance.addSignOutHook(DocRegistry.instance.clear);
   // Not awaited: the gate shows a splash until the session is restored.
   AuthController.instance.restore();
+  // GitHub one-tap sign-in: deep links back from GitHub, incl. a cold start.
+  GithubWebAuth.instance.init();
   runApp(App(settings: settings));
 }
 
@@ -100,6 +104,7 @@ class _AppState extends State<App> {
           darkTheme: AppTheme.dark,
           themeMode: widget.settings.themeMode,
           navigatorKey: _navigator,
+          scaffoldMessengerKey: AppMessenger.key,
           home: const AuthGate(),
         ),
       ),

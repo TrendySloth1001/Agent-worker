@@ -14,7 +14,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -27,6 +27,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- GitHub OAuth web flow: the backend's callback page returns here
+                 (sparky://auth/github?ticket=...). singleTask so the link reaches
+                 the running app (onNewIntent) instead of a second copy on top of
+                 the browser tab. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sparky" android:host="auth" />
+            </intent-filter>
+            <!-- Links go to MainActivity's 'app/links' channel, not the Navigator. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false" />
         </activity>
         <service
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
@@ -47,6 +61,8 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- "Continue with GitHub" opens in the GitHub app when it handles the authorize URL. -->
+        <package android:name="com.github.android" />
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>

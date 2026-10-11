@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { encryptSecret } from "../connections/crypto.js";
 import {
+  connectionRow,
   fetchGithubEmails,
   fetchGithubUser,
   GithubDeviceFlow,
@@ -55,10 +56,35 @@ export function githubProfile(u: GithubUser, emails: GithubEmail[]): SsoProfile 
   };
 }
 
+/** Who [grant] belongs to: the GitHub user and the sign-in profile (with the best email). */
+export async function githubGrantProfile(f: typeof fetch, grant: DeviceGrant): Promise<{ u: GithubUser; profile: SsoProfile }> {
+  const u = await fetchGithubUser(f, grant.accessToken, grant.scope);
+  return { u, profile: githubProfile(u, await fetchGithubEmails(f, grant.accessToken)) };
+}
+
+/**
+ * Saves [grant] as [userId]'s GitHub connection. After a sign-in or link a
+ * failure (e.g. no CONNECTIONS_KEY) only costs the connection; the user can
+ * still CONNECT later.
+ */
+export async function saveGrantConnection(
+  deps: Pick<GithubSsoDeps, "encrypt" | "now" | "saveConnection">,
+  u: GithubUser,
+  userId: string,
+  grant: DeviceGrant,
+): Promise<boolean> {
+  try {
+    await deps.saveConnection(connectionRow(u, userId, grant, deps));
+    return true;
+  } catch (e) {
+    log.warn("github connection not saved after sign-in", { message: (e as Error).message.slice(0, 80) });
+    return false;
+  }
+}
+
 export function createGithubSso(deps: GithubSsoDeps) {
   const complete = async (grant: DeviceGrant, flow: { owner: string | null; meta: GithubSsoMeta }): Promise<GithubSsoResult> => {
-    const u = await fetchGithubUser(deps.fetch, grant.accessToken, grant.scope);
-    const profile = githubProfile(u, await fetchGithubEmails(deps.fetch, grant.accessToken));
+    const { u, profile } = await githubGrantProfile(deps.fetch, grant);
     let userId: string;
     let result: GithubSsoResult;
     if (flow.owner) {
@@ -69,22 +95,8 @@ export function createGithubSso(deps: GithubSsoDeps) {
       result = { kind: "session", ...s, login: u.login };
       userId = s.user.id;
     }
-    // Connected at once. A failure here (e.g. no CONNECTIONS_KEY) only costs
-    // the connection; the user can still CONNECT later.
-    try {
-      await deps.saveConnection({
-        login: u.login,
-        id: u.id,
-        avatarUrl: u.avatarUrl,
-        scopes: u.scopes,
-        userId,
-        accessTokenEnc: deps.encrypt(grant.accessToken),
-        refreshTokenEnc: grant.refreshToken ? deps.encrypt(grant.refreshToken) : null,
-        expiresAt: grant.expiresIn > 0 ? new Date(deps.now() + grant.expiresIn * 1000) : null,
-      });
-    } catch (e) {
-      log.warn("github connection not saved after sign-in", { message: (e as Error).message.slice(0, 80) });
-    }
+    // Connected at once.
+    await saveGrantConnection(deps, u, userId, grant);
     return result;
   };
   return new GithubDeviceFlow<GithubSsoResult, GithubSsoMeta>({

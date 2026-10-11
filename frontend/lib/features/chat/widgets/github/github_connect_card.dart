@@ -11,6 +11,9 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/illustration.dart';
 import '../../../connections/connections_controller.dart';
 import '../../../connections/widgets/device_code_panel.dart';
+import '../../../connections/widgets/github_web_panel.dart';
+import '../../../auth/sso/github_web_auth.dart';
+import '../../../../core/constants/sso_constants.dart';
 import '../open_url.dart';
 import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
@@ -107,7 +110,7 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
   }
 
   Future<void> _connect() async {
-    await _c.startGithub();
+    await _c.connectGithub();
   }
 
   Future<void> _openGithub() async {
@@ -192,6 +195,20 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
           paper: widget.paper,
           starting: _c.githubPhase == GithubPhase.starting,
           onConnect: _connect,
+        );
+      case GithubPhase.browser:
+        final web = _c.web;
+        return GithubWebPanel(
+          title: ConnectStrings.title,
+          openedInApp: web.openedInApp,
+          busyLabel: switch (web.phase) {
+            GithubWebPhase.starting => GithubWebStrings.opening,
+            GithubWebPhase.redeeming => GithubWebStrings.finishing,
+            _ => null,
+          },
+          onOpenAgain: web.reopen,
+          onCancel: _c.cancelFlow,
+          onUseCode: _c.useCode,
         );
       case GithubPhase.waiting:
         return DeviceCodePanel(
