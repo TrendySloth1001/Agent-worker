@@ -502,14 +502,21 @@ class _CommitRow extends StatelessWidget {
                             children: [
                               GhChip(c.shortSha),
                               const SizedBox(width: AppSpacing.sm),
-                              Expanded(
+                              // The author shrinks first; the age always shows.
+                              Flexible(
                                 child: Text(
-                                  '${c.who} · ${GithubStrings.ago(c.date)}',
+                                  c.who,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: t.caption,
                                 ),
                               ),
+                              Text(
+                                ' · ${GithubStrings.ago(c.date)}',
+                                maxLines: 1,
+                                style: t.caption,
+                              ),
+                              const Spacer(),
                               if (c.additions != null && c.deletions != null)
                                 GhDelta(add: c.additions!, del: c.deletions!),
                               const SizedBox(width: AppSpacing.xs),
