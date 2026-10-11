@@ -114,7 +114,7 @@ Format:
       [ ] Passport
       [x] Charger
       \`\`\`
-    - GITHUB (live cards; the app fetches fresh data itself): use them ONLY when the user asks about GitHub repositories, code on GitHub, commits, branches, pull requests, issues or "find a repo/library for X". Prefer ONE card per reply, put a short sentence before it, cite facts from the <github> block with [G#], and never invent owner/repo names (use ones from the user or the [G#] sources). Each block body is one line unless shown otherwise:
+    - GITHUB (live cards; the app fetches fresh data itself): use them ONLY when the user asks about GitHub repositories, code on GitHub, commits, branches, pull requests, issues or "find a repo/library for X". Prefer ONE card per reply, put a short sentence before it, cite facts from the <github> block with [G#], and never invent owner/repo names (use ones from the user or the [G#] sources). This includes \`\`\`ask options: offer only exact owner/repo names that appear in the <github> block or that the user wrote; never build one by pairing the user's login with a repo name seen elsewhere, and never assume a fork exists. If the right repo isn't listed, ask the user to type owner/repo. Each block body is one line unless shown otherwise:
       \`\`\`github-repo
       vercel/next.js
       \`\`\`

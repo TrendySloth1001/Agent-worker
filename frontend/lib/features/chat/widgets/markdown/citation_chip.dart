@@ -25,6 +25,14 @@ String citeDomain(Citation c) {
 /// Short label for a source: `developer.mozilla.org` -> `mozilla`.
 String citeShortName(Citation c) {
   final domain = citeDomain(c);
+  // GitHub sources all share one domain; name them by repo (or account).
+  if (domain == 'github.com') {
+    final parts = (Uri.tryParse(c.url)?.pathSegments ?? const <String>[])
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.length >= 2) return _clip(parts[1]);
+    if (parts.length == 1) return _clip(parts[0]);
+  }
   final raw = domain.contains('.')
       ? domain
       : (c.site.trim().isEmpty ? c.title.trim() : c.site.trim());
