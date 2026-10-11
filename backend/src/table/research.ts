@@ -43,7 +43,7 @@ export async function planQueries(question: string, base: string, signal: AbortS
   for (const model of PLAN_MODELS.filter((m) => avail.has(m))) {
     if (signal.aborted) break;
     try {
-      const raw = await ask(model, messages, { timeoutMs: PLAN_MS, maxTokens: PLAN_TOKENS, signal });
+      const raw = await ask(model, messages, { timeoutMs: PLAN_MS, maxTokens: PLAN_TOKENS, signal, purpose: "table-research" });
       const json = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { queries?: unknown };
       if (Array.isArray(json.queries)) planned = json.queries.filter((q): q is string => typeof q === "string");
       if (planned.length) break;

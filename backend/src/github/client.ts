@@ -3,6 +3,7 @@ import { currentUser } from "../auth/context.js";
 import { dropRevokedGithub, githubAuthFor } from "../connections/store.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
+import { recordUsage } from "../db/usage.js";
 
 const API = "https://api.github.com";
 const TTL_MS = 5 * 60_000;
@@ -119,12 +120,15 @@ export async function gh<T = any>(path: string, opts: GhOptions = {}): Promise<T
 
   const signals = [AbortSignal.timeout(TIMEOUT_MS), ...(opts.signal ? [opts.signal] : [])];
   let res: Response;
+  const t0 = Date.now();
   try {
     res = await fetch(`${API}${path}`, { headers: headers(accept, auth.token), signal: AbortSignal.any(signals) });
   } catch (e) {
     if (opts.signal?.aborted) throw e;
+    recordUsage({ provider: "github", model: "rest", kind: "github", ok: false, latencyMs: Date.now() - t0, errorCode: "timeout", errorMessage: "GitHub did not answer in time" });
     throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
   }
+  recordUsage({ provider: "github", model: "rest", kind: "github", ok: res.ok || (res.status === 404 && !!opts.allow404), status: res.status, latencyMs: Date.now() - t0, errorMessage: res.ok ? undefined : `GET ${path.split("?")[0].slice(0, 80)}` });
   const rate = readRate(res, auth.key);
   const scopeHeader = res.headers.get("x-oauth-scopes");
   if (scopeHeader != null) scopesByKey.set(auth.key, scopeHeader.split(",").map((x) => x.trim()).filter(Boolean));
@@ -181,6 +185,7 @@ export async function ghGraphql<T = any>(query: string, variables: Record<string
   if (!auth.token) throw new AppError(503, "github_disabled", "GitHub GraphQL needs a token");
   const signals = [AbortSignal.timeout(TIMEOUT_MS * 2), ...(opts.signal ? [opts.signal] : [])];
   let res: Response;
+  const t0 = Date.now();
   try {
     res = await fetch(`${API}/graphql`, {
       method: "POST",
@@ -190,8 +195,10 @@ export async function ghGraphql<T = any>(query: string, variables: Record<string
     });
   } catch (e) {
     if (opts.signal?.aborted) throw e;
+    recordUsage({ provider: "github", model: "graphql", kind: "github", ok: false, latencyMs: Date.now() - t0, errorCode: "timeout", errorMessage: "GitHub did not answer in time" });
     throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
   }
+  recordUsage({ provider: "github", model: "graphql", kind: "github", ok: res.ok, status: res.status, latencyMs: Date.now() - t0 });
   const rate = readRate(res, auth.key);
   if (!res.ok) {
     if (res.status === 401 && auth.kind === "user" && auth.userId) {

@@ -411,7 +411,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
         calls++;
         const at = Date.now();
         try {
-          const raw = await ask(model, draftMsgs, { timeoutMs: Math.min(DRAFT_MS, left), maxTokens: DRAFT_TOKENS, maxChars: DRAFT_MAX_CHARS, signal });
+          const raw = await ask(model, draftMsgs, { timeoutMs: Math.min(DRAFT_MS, left), maxTokens: DRAFT_TOKENS, maxChars: DRAFT_MAX_CHARS, signal, purpose: "table-draft" });
           recordLatency("draft", model, Date.now() - at);
           const text = stripTags(raw.replace(/【/g, "[").replace(/】/g, "]"), valid);
           const summary = summaryOf(text);
@@ -449,7 +449,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
     calls++;
     const at = Date.now();
     try {
-      const parsed = parseJson(await ask(model, judgeMsgs, { timeoutMs: JUDGE_MS, signal }), "agree");
+      const parsed = parseJson(await ask(model, judgeMsgs, { timeoutMs: JUDGE_MS, signal, purpose: "table-judge" }), "agree");
       recordLatency("judge", model, Date.now() - at);
       conflicts = Array.isArray(parsed.conflicts) ? parsed.conflicts.filter((c: unknown): c is string => typeof c === "string" && !!c.trim()).map((c: string) => clip(c.trim(), 140)).slice(0, 5) : [];
       agreed = parsed.agree === true && conflicts.length === 0;
@@ -489,7 +489,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
         let review: TableReview = { seat: own.seat, model: own.model, verdict: "unknown", points: [] };
         const at = Date.now();
         try {
-          const parsed = parseJson(await ask(own.model, msgs, { timeoutMs: reviewMs, maxTokens: REVIEW_TOKENS, signal }), "verdict");
+          const parsed = parseJson(await ask(own.model, msgs, { timeoutMs: reviewMs, maxTokens: REVIEW_TOKENS, signal, purpose: "table-review" }), "verdict");
           recordLatency("review", own.model, Date.now() - at);
           const points = parsePoints(parsed.points, valid).filter((p) => p.seat !== own.seat);
           const verdict = ["agree", "minor", "major"].includes(parsed.verdict) ? parsed.verdict : points.length ? "minor" : "agree";

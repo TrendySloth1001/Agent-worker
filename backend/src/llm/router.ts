@@ -148,12 +148,14 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     attempt++;
     const started = Date.now();
     let produced = false;
+    let ttft: number | null = null;
     let handle: Awaited<ReturnType<typeof streamModel>> | null = null;
     try {
       handle = await streamModel(id, messages, { signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS });
       for await (const token of handle.tokens) {
         if (!produced) {
           produced = true;
+          ttft = Date.now() - started;
           hooks.onModel(id, attempt);
         }
         hooks.onDelta(token);
@@ -166,6 +168,8 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         ok: true,
         status: 200,
         latencyMs: Date.now() - started,
+        ttftMs: ttft,
+        attempt,
         promptTokens: handle.usage.promptTokens,
         completionTokens: handle.usage.completionTokens,
       });
@@ -188,6 +192,11 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         ok: false,
         status: err.status || undefined,
         latencyMs: Date.now() - started,
+        ttftMs: ttft,
+        attempt,
+        errorMessage: err.message,
+        promptTokens: handle?.usage.promptTokens ?? null,
+        completionTokens: handle?.usage.completionTokens ?? null,
       });
       applyCooldown(id, err);
       console.warn(`[chat] ${id} failed: ${describe(err)}`);

@@ -40,6 +40,7 @@ const schema = z.object({
   LIMIT_TABLE_PER_DAY: num(20),
   LIMIT_UPLOADS_PER_DAY: num(30),
   LIMIT_STORAGE_MB: num(500),
+  LIMIT_DOCS_PER_DAY: num(5),
 });
 
 const env = schema.parse(process.env);
@@ -95,5 +96,6 @@ export const config = {
     table: env.LIMIT_TABLE_PER_DAY,
     uploads: env.LIMIT_UPLOADS_PER_DAY,
     storageBytes: env.LIMIT_STORAGE_MB * 1024 * 1024,
+    docs: env.LIMIT_DOCS_PER_DAY,
   },
 };

@@ -129,8 +129,7 @@ async function groqTranscribe(audio: Buffer, name: string): Promise<string> {
     recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: true, status, latencyMs: Date.now() - t0 });
     return (j.text ?? "").trim();
   } catch (e) {
-    if (!status) recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: false, latencyMs: Date.now() - t0 });
-    else recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: false, status, latencyMs: Date.now() - t0 });
+    recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: false, status: status || undefined, latencyMs: Date.now() - t0, errorMessage: (e as Error).message });
     throw e;
   }
 }

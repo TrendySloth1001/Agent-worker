@@ -51,6 +51,7 @@ model User {
   sources       Source[]
   connections   Connection[]
   identities    AuthIdentity[]
+  docs          Doc[]
 
   @@map("users")
 }
@@ -82,6 +83,7 @@ model UserDailyUsage {
   tables  Int      @default(0)
   uploads Int      @default(0)
   bytes   BigInt   @default(0)
+  docs    Int      @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -114,6 +116,7 @@ model Conversation {
   parent   Conversation?         @relation("ConversationForks", fields: [forkedFrom], references: [id], onDelete: SetNull, onUpdate: NoAction)
   forks    Conversation[]        @relation("ConversationForks")
   user     User?                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  docs     Doc[]
 
   @@index([forkedFrom])
   @@index([updatedAt(sort: Desc)], map: "conversations_updated_idx")
@@ -282,9 +285,23 @@ model UsageEvent {
   count            Int      @default(1)
   promptTokens     Int?     @map("prompt_tokens")
   completionTokens Int?     @map("completion_tokens")
+  /// What the call was for: chat, title, assist, table-draft, web-search, embedding, ...
+  purpose          String?
+  errorCode        String?  @map("error_code")
+  /// Short upstream error text, never secrets (see db/usage.ts scrub()).
+  errorMessage     String?  @map("error_message")
+  ttftMs           Int?     @map("ttft_ms")
+  /// 1-based fallback attempt within one chat request.
+  attempt          Int?
+  /// Who triggered it; no FK so deleting a user keeps the history.
+  userId           String?  @map("user_id") @db.Uuid
+  requestId        String?  @map("request_id")
+  conversationId   String?  @map("conversation_id")
 
   @@index([provider, ts])
   @@index([ts])
+  @@index([model, ts])
+  @@index([userId, ts])
   @@map("usage_events")
 }
 
@@ -342,4 +359,99 @@ model AuthIdentity {
   @@unique([provider, providerUserId])
   @@index([userId])
   @@map("auth_identities")
+}
+
+// ---- long-form documents (DOC mode, docs/DOCS_MODE.md) -------------------------
+// Named Doc* because `Document` / `documents` is the knowledge-base page table.
+
+/// CHECK status IN ('planning','outline_ready','researching','writing','done','partial','failed','interrupted').
+model Doc {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  conversationId String?  @map("conversation_id") @db.Uuid
+  title          String   @default("")
+  prompt         String
+  /// {length, web, kb, sourceIds, model, profile, attachments}
+  options        Json     @default("{}")
+  status         String   @default("planning")
+  /// {title, subtitle, audience, style, sections: [...]}
+  outline        Json     @default("{}")
+  glossary       Json     @default("[]")
+  /// Citation[] (plus stored source text for evidence; never sent to clients).
+  sources        Json     @default("[]")
+  /// One-paragraph abstract written at the end.
+  summary        String   @default("")
+  words          Int      @default(0)
+  version        Int      @default(1)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  conversation Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sections     DocSection[]
+  revisions    DocRevision[]
+  highlights   DocHighlight[]
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@index([conversationId])
+  @@map("docs")
+}
+
+/// CHECK status IN ('pending','writing','done','failed').
+model DocSection {
+  docId     String   @map("doc_id") @db.Uuid
+  sectionId String   @map("section_id")
+  ord       Int
+  heading   String
+  level     Int      @default(2)
+  markdown  String   @default("")
+  summary   String   @default("")
+  status    String   @default("pending")
+  sourceIds String[] @default([]) @map("source_ids")
+  usedIds   String[] @default([]) @map("used_ids")
+  evidence  Json     @default("[]")
+  images    Json     @default("[]")
+  model     String?
+  words     Int      @default(0)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  doc Doc @relation(fields: [docId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([docId, sectionId])
+  @@map("doc_sections")
+}
+
+/// CHECK reason IN ('generate','regenerate','expand','shorten','simplify','edit','custom'); last 10 kept per section.
+model DocRevision {
+  id        BigInt   @id @default(autoincrement())
+  docId     String   @map("doc_id") @db.Uuid
+  sectionId String   @map("section_id")
+  version   Int
+  markdown  String
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  doc Doc @relation(fields: [docId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([docId, sectionId, createdAt(sort: Desc)])
+  @@map("doc_revisions")
+}
+
+/// W3C text-quote selector (quote + prefix/suffix context).
+model DocHighlight {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  docId     String   @map("doc_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  sectionId String   @map("section_id")
+  quote     String
+  prefix    String   @default("")
+  suffix    String   @default("")
+  color     String   @default("yellow")
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  doc Doc @relation(fields: [docId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([docId])
+  @@map("doc_highlights")
 }

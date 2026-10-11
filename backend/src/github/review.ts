@@ -239,7 +239,7 @@ async function run(owner: string, repo: string, n: number, p: any, headSha: stri
     const left = TOTAL_MS - (Date.now() - started);
     if (left < 10_000) break;
     try {
-      const text = await ask(model, messages, { timeoutMs: Math.min(REVIEW_MS, left), maxTokens: REVIEW_TOKENS });
+      const text = await ask(model, messages, { timeoutMs: Math.min(REVIEW_MS, left), maxTokens: REVIEW_TOKENS, purpose: "github-review" });
       const review = parseReview(text, names);
       log.info("github review", { pr: `${owner}/${repo}#${n}`, model, comments: review.comments.length, ms: Date.now() - started });
       return {

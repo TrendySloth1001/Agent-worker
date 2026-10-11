@@ -4,8 +4,8 @@ import { db } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
 import type { AuthUser } from "./context.js";
 
-export type Limits = { chat: number; table: number; uploads: number; storageBytes: number };
-export type Usage = { chats: number; tables: number; uploads: number; bytes: number; storageBytes: number };
+export type Limits = { chat: number; table: number; uploads: number; storageBytes: number; docs: number };
+export type Usage = { chats: number; tables: number; uploads: number; bytes: number; storageBytes: number; docs: number };
 
 /** UTC day the counters belong to, as YYYY-MM-DD. */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -25,7 +25,7 @@ export async function limitsFor(user: AuthUser): Promise<Limits | null> {
   const row = await db().user.findUnique({ where: { id: user.id }, select: { limits: true } });
   const o = (row?.limits ?? {}) as Partial<Limits>;
   const pick = (k: keyof Limits) => (typeof o[k] === "number" && o[k]! >= 0 ? o[k]! : config.limits[k]);
-  return { chat: pick("chat"), table: pick("table"), uploads: pick("uploads"), storageBytes: pick("storageBytes") };
+  return { chat: pick("chat"), table: pick("table"), uploads: pick("uploads"), storageBytes: pick("storageBytes"), docs: pick("docs") };
 }
 
 export async function usageFor(userId: string | null): Promise<Usage> {
@@ -39,6 +39,7 @@ export async function usageFor(userId: string | null): Promise<Usage> {
     uploads: day?.uploads ?? 0,
     bytes: Number(day?.bytes ?? 0),
     storageBytes: Number(storage._sum.size ?? 0),
+    docs: day?.docs ?? 0,
   };
 }
 
@@ -95,4 +96,33 @@ export async function recordUpload(user: AuthUser, size: number): Promise<void> 
     create: { userId: user.id, day: todayDate(), uploads: 1, bytes: size },
     update: { uploads: { increment: 1 }, bytes: { increment: size } },
   });
+}
+
+/** Counts a POST /docs against today's `docs` limit (default 5/day); 429 when over. Owner: counted, unlimited. */
+export async function docLimit(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const user = req.user;
+  if (!user?.id) return next();
+  const limits = await limitsFor(user);
+  if (!limits) {
+    await db().userDailyUsage.upsert({
+      where: { userId_day: { userId: user.id, day: todayDate() } },
+      create: { userId: user.id, day: todayDate(), docs: 1 },
+      update: { docs: { increment: 1 } },
+    });
+    return next();
+  }
+  if (limits.docs <= 0) return next(limitError("documents", limits.docs));
+  const rows = await db().$queryRaw<Array<{ docs: number }>>`
+    INSERT INTO user_daily_usage (user_id, day, docs) VALUES (${user.id}::uuid, ${today()}::date, 1)
+    ON CONFLICT (user_id, day) DO UPDATE SET docs = user_daily_usage.docs + 1
+      WHERE user_daily_usage.docs < ${limits.docs}::numeric
+    RETURNING docs`;
+  if (rows[0]) return next();
+  next(limitError("documents", limits.docs));
+}
+
+/** Gives back a counted document (the request was rejected before a job started). */
+export async function refundDoc(userId: string | null): Promise<void> {
+  if (!userId) return;
+  await db().$executeRaw`UPDATE user_daily_usage SET docs = GREATEST(docs - 1, 0) WHERE user_id = ${userId}::uuid AND day = ${today()}::date`.catch(() => undefined);
 }

@@ -11,6 +11,8 @@ export type AskOptions = {
   /** Stop collecting (and cancel the stream) once this many characters arrived. */
   maxChars?: number;
   signal?: AbortSignal;
+  /** Telemetry label: table-draft, table-judge, github-review, ... */
+  purpose?: string;
 };
 
 type Provider = "ollama" | "openrouter" | "groq" | "nvidia";
@@ -36,11 +38,13 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
   try {
     return await withSlot(modelId, ctl.signal, async () => {
       const started = Date.now();
+      let ttft: number | null = null;
       try {
         const left = Math.max(1_000, opts.timeoutMs);
         const handle = await streamModel(modelId, messages, { signal: ctl.signal, firstByteMs: left, idleMs: left, maxTokens: opts.maxTokens });
         let text = "";
         for await (const token of handle.tokens) {
+          ttft ??= Date.now() - started;
           text += token;
           if (opts.maxChars && text.length >= opts.maxChars) {
             text = text.slice(0, opts.maxChars);
@@ -48,7 +52,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
           }
         }
         if (!text.trim()) throw new UpstreamError(0, "empty response");
-        recordUsage({ provider, model, kind: "chat", ok: true, status: 200, latencyMs: Date.now() - started, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
+        recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
         if (modelId.endsWith(":free")) noteOpenRouterFreeRequest();
         clearCooldown(modelId);
         return text;
@@ -61,7 +65,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
               ? e
               : new UpstreamError(0, (e as Error).message ?? "unknown error");
         if (err instanceof UpstreamError) {
-          recordUsage({ provider, model, kind: "chat", ok: false, status: err.status || undefined, latencyMs: Date.now() - started });
+          recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: false, status: err.status || undefined, latencyMs: Date.now() - started, ttftMs: ttft, errorMessage: err.message });
           applyCooldown(modelId, err);
         }
         throw err;

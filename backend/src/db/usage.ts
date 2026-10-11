@@ -1,8 +1,11 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { EventEmitter } from "node:events";
 import { db, isDbUp, Prisma } from "./prisma.js";
+import { currentUser } from "../auth/context.js";
 
-export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe";
+export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe" | "github";
 type Event = {
-  provider: "ollama" | "openrouter" | "groq" | "nvidia";
+  provider: "ollama" | "openrouter" | "groq" | "nvidia" | "github";
   model?: string;
   kind: UsageKind;
   ok: boolean;
@@ -11,35 +14,155 @@ type Event = {
   count?: number;
   promptTokens?: number | null;
   completionTokens?: number | null;
+  /** Overrides the ambient purpose (see withTelemetry). */
+  purpose?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  ttftMs?: number | null;
+  attempt?: number;
 };
 
-// In-memory counters since boot: fallback when the DB is down.
+/** A recorded event as the telemetry API returns it. */
+export type TelemetryEvent = {
+  id: string;
+  ts: string;
+  provider: string;
+  model: string | null;
+  kind: string;
+  purpose: string;
+  ok: boolean;
+  status: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  latencyMs: number | null;
+  ttftMs: number | null;
+  count: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  attempt: number | null;
+  userId: string | null;
+  requestId: string | null;
+  conversationId: string | null;
+};
+
+// ---- ambient context ---------------------------------------------------------
+
+type Ctx = { purpose?: string; requestId?: string; conversationId?: string };
+const ctx = new AsyncLocalStorage<Ctx>();
+
+/** Runs [fn] with extra telemetry context (purpose, request/conversation id) for every event it records. */
+export function withTelemetry<T>(patch: Ctx, fn: () => T): T {
+  return ctx.run({ ...ctx.getStore(), ...patch }, fn);
+}
+
+/** Express middleware: one telemetry scope per request, with a fresh request id. */
+export function telemetryScope(_req: unknown, _res: unknown, next: () => void): void {
+  ctx.run({ requestId: Math.random().toString(36).slice(2, 10) }, next);
+}
+
+/** Updates the current request's scope in place (e.g. the chat route's own request id). */
+export function setTelemetry(patch: Ctx): void {
+  const s = ctx.getStore();
+  if (s) Object.assign(s, patch);
+}
+
+// Keys, bearer tokens and long hex/base64 runs never reach the table.
+export function scrub(msg: string | undefined | null): string | null {
+  if (!msg) return null;
+  return msg
+    .replace(/(bearer|authorization|api[_-]?key|access[_-]?token|secret|password)([\s:=]+)\S+/gi, "$1$2[redacted]")
+    .replace(/\b(sk|gsk|nvapi|ghp|gho|github_pat|or)[-_][A-Za-z0-9_-]{8,}/g, "[redacted]")
+    .replace(/[A-Za-z0-9_\-]{32,}/g, "[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
+}
+
+// ---- recording ---------------------------------------------------------------
+
+type Row = Omit<TelemetryEvent, "id" | "ts"> & { ts: Date };
+
+/** New events after they are stored (or kept in memory when the DB is down). */
+export const usageEvents = new EventEmitter();
+usageEvents.setMaxListeners(50);
+
+// In-memory events since boot: fallback when the DB is down.
 const mem: Array<Event & { ts: number }> = [];
+const memRows: TelemetryEvent[] = [];
+let memSeq = 0;
+
+const FLUSH_MS = 750;
+const FLUSH_MAX = 100;
+let queue: Row[] = [];
+let timer: NodeJS.Timeout | null = null;
 
 export function recordUsage(e: Event): void {
   mem.push({ ...e, ts: Date.now() });
   if (mem.length > 5000) mem.splice(0, mem.length - 5000);
-  if (!isDbUp()) return;
+  const c = ctx.getStore();
+  const user = currentUser();
+  const row: Row = {
+    ts: new Date(),
+    provider: e.provider,
+    model: e.model ?? null,
+    kind: e.kind,
+    purpose: e.purpose ?? c?.purpose ?? defaultPurpose(e.kind),
+    ok: e.ok,
+    status: e.status ?? null,
+    errorCode: e.ok ? null : (e.errorCode ?? errorCodeFor(e.status, e.errorMessage)).slice(0, 40),
+    errorMessage: e.ok ? null : scrub(e.errorMessage),
+    latencyMs: e.latencyMs ?? null,
+    ttftMs: e.ttftMs ?? null,
+    count: e.count ?? 1,
+    promptTokens: e.promptTokens ?? null,
+    completionTokens: e.completionTokens ?? null,
+    attempt: e.attempt ?? null,
+    userId: user?.id ?? null,
+    requestId: c?.requestId ?? null,
+    conversationId: c?.conversationId ?? null,
+  };
+  queue.push(row);
+  if (queue.length >= FLUSH_MAX) void flush();
+  else timer ??= setTimeout(() => void flush(), FLUSH_MS);
+}
+
+/** A short machine code for a failed upstream call: http_429, timeout, empty, network. */
+export function errorCodeFor(status: number | undefined, message: string | undefined): string {
+  if (status) return `http_${status}`;
+  const m = (message ?? "").toLowerCase();
+  if (/timeout|timed out|first byte|idle/.test(m)) return "timeout";
+  if (/empty/.test(m)) return "empty";
+  if (/abort/.test(m)) return "aborted";
+  return "network";
+}
+
+function defaultPurpose(kind: UsageKind): string {
+  return { chat: "chat", embed: "embedding", search: "web-search", fetch: "web-fetch", transcribe: "transcribe", github: "github" }[kind];
+}
+
+/** Writes the queued events in one insert, off the request path. */
+export async function flush(): Promise<void> {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  const batch = queue;
+  queue = [];
+  if (batch.length === 0) return;
+  let stored: TelemetryEvent[];
   try {
-    db()
-      .usageEvent.create({
-        data: {
-          provider: e.provider,
-          model: e.model ?? null,
-          kind: e.kind,
-          ok: e.ok,
-          status: e.status ?? null,
-          latencyMs: e.latencyMs ?? null,
-          count: e.count ?? 1,
-          promptTokens: e.promptTokens ?? null,
-          completionTokens: e.completionTokens ?? null,
-        },
-        select: { id: true },
-      })
-      .catch(() => {});
+    if (!isDbUp()) throw new Error("db down");
+    const rows = await db().usageEvent.createManyAndReturn({ data: batch, select: { id: true, ts: true } });
+    stored = batch.map((r, i) => ({ ...r, id: String(rows[i]?.id ?? `m${++memSeq}`), ts: (rows[i]?.ts ?? r.ts).toISOString() }));
   } catch {
-    /* database just went down */
+    stored = batch.map((r) => ({ ...r, id: `m${++memSeq}`, ts: r.ts.toISOString() }));
+    memRows.push(...stored);
+    if (memRows.length > 2000) memRows.splice(0, memRows.length - 2000);
   }
+  for (const ev of stored) usageEvents.emit("event", ev);
+}
+
+/** Events kept in memory while the database was down (newest last). */
+export function memoryEvents(): TelemetryEvent[] {
+  return memRows;
 }
 
 // Start of the current UTC day / month, as SQL fragments (no user input).

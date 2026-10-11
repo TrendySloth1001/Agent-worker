@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { AppError } from "../util/errors.js";
 import { pickCandidates } from "../llm/router.js";
-import { streamModel, type Message } from "../providers.js";
+import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { setCooldown } from "../models.js";
 import { recordUsage } from "../db/usage.js";
 import { log } from "../util/logger.js";
@@ -90,15 +90,32 @@ async function ask(model: string, messages: Message[]): Promise<string> {
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   const started = Date.now();
   const provider = model.slice(0, model.indexOf(":")) as "ollama" | "openrouter" | "groq" | "nvidia";
+  let ttft: number | null = null;
+  let handle: Awaited<ReturnType<typeof streamModel>> | null = null;
   try {
-    const handle = await streamModel(model, messages, { signal: ctl.signal, firstByteMs: 15_000, idleMs: 15_000 });
+    handle = await streamModel(model, messages, { signal: ctl.signal, firstByteMs: 15_000, idleMs: 15_000 });
     let text = "";
-    for await (const token of handle.tokens) text += token;
+    for await (const token of handle.tokens) {
+      ttft ??= Date.now() - started;
+      text += token;
+    }
     if (!text.trim()) throw new Error("empty response");
-    recordUsage({ provider, model: model.slice(provider.length + 1), kind: "chat", ok: true, latencyMs: Date.now() - started });
+    recordUsage({ provider, model: model.slice(provider.length + 1), kind: "chat", purpose: "assist", ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
     return text;
   } catch (e) {
-    recordUsage({ provider, model: model.slice(provider.length + 1), kind: "chat", ok: false, latencyMs: Date.now() - started });
+    recordUsage({
+      provider,
+      model: model.slice(provider.length + 1),
+      kind: "chat",
+      purpose: "assist",
+      ok: false,
+      status: e instanceof UpstreamError ? e.status || undefined : undefined,
+      latencyMs: Date.now() - started,
+      ttftMs: ttft,
+      errorMessage: ctl.signal.aborted ? "timeout" : (e as Error).message,
+      promptTokens: handle?.usage.promptTokens ?? null,
+      completionTokens: handle?.usage.completionTokens ?? null,
+    });
     throw e;
   } finally {
     clearTimeout(timer);

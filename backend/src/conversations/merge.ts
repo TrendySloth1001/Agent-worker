@@ -85,7 +85,7 @@ export async function mergeBriefing(a: MergeChat, b: MergeChat): Promise<{ text:
   ];
   for (const model of MERGE_MODELS) {
     try {
-      const text = cleanBriefing(await ask(model, messages, TIMEOUT_MS));
+      const text = cleanBriefing(await ask(model, messages, TIMEOUT_MS, "merge"));
       if (text) return { text, source: "ai" };
     } catch (e) {
       log.warn("merge briefing failed", { model, message: (e as Error).message?.slice(0, 120) });

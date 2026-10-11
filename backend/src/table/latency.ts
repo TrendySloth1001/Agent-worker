@@ -1,7 +1,7 @@
 // Rolling per-model latencies for Round Table steps, kept in memory, used to
 // estimate how long a running table still needs (the ETA shown in the app).
 
-export type StepKind = "research" | "draft" | "judge" | "review" | "chair";
+export type StepKind = "research" | "draft" | "judge" | "review" | "chair" | "doc_section";
 
 /** Starting guesses until a model has its own samples. */
 const DEFAULT_MS: Record<StepKind, number> = {
@@ -10,6 +10,7 @@ const DEFAULT_MS: Record<StepKind, number> = {
   judge: 3_000,
   review: 20_000,
   chair: 45_000,
+  doc_section: 35_000,
 };
 const SAMPLES = 12;
 const MIN_MS = 500;

@@ -1,4 +1,5 @@
-import { streamModel, type Message } from "../providers.js";
+import { streamModel, UpstreamError, type Message } from "../providers.js";
+import { recordUsage } from "../db/usage.js";
 import { log } from "../util/logger.js";
 import { needsFreshFacts } from "./freshness.js";
 
@@ -19,11 +20,33 @@ const cache = new Map<string, SearchDecision>();
 async function askModel(model: string, messages: Message[]): Promise<string> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const started = Date.now();
+  const provider = model.slice(0, model.indexOf(":")) as "ollama" | "groq";
+  const name = model.slice(provider.length + 1);
+  let ttft: number | null = null;
+  let handle: Awaited<ReturnType<typeof streamModel>> | null = null;
   try {
-    const handle = await streamModel(model, messages, { signal: ctl.signal, firstByteMs: TIMEOUT_MS, idleMs: TIMEOUT_MS });
+    handle = await streamModel(model, messages, { signal: ctl.signal, firstByteMs: TIMEOUT_MS, idleMs: TIMEOUT_MS });
     let text = "";
-    for await (const t of handle.tokens) text += t;
+    for await (const t of handle.tokens) {
+      ttft ??= Date.now() - started;
+      text += t;
+    }
+    recordUsage({ provider, model: name, kind: "chat", purpose: "search-decision", ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
     return text;
+  } catch (e) {
+    recordUsage({
+      provider,
+      model: name,
+      kind: "chat",
+      purpose: "search-decision",
+      ok: false,
+      status: e instanceof UpstreamError ? e.status || undefined : undefined,
+      latencyMs: Date.now() - started,
+      ttftMs: ttft,
+      errorMessage: ctl.signal.aborted ? "timeout" : (e as Error).message,
+    });
+    throw e;
   } finally {
     clearTimeout(timer);
   }

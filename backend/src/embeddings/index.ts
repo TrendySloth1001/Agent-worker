@@ -64,7 +64,7 @@ async function embedBatch(batch: string[], kind: "document" | "query"): Promise<
       }
       const body = (await res.text()).slice(0, 200);
       lastErr = `HTTP ${status}: ${body}`;
-      recordUsage({ provider: config.embeddingProvider, model: config.embeddingModel, kind: "embed", ok: false, status, latencyMs: Date.now() - t0, count: batch.length });
+      recordUsage({ provider: config.embeddingProvider, model: config.embeddingModel, kind: "embed", ok: false, status, latencyMs: Date.now() - t0, count: batch.length, errorMessage: lastErr });
       if (status === 400 && useInputType) {
         useInputType = false; // some models reject input_type
         attempt--;
@@ -75,7 +75,7 @@ async function embedBatch(batch: string[], kind: "document" | "query"): Promise<
       await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 30) * 1000 : Math.min(2 ** attempt * 1000, 20_000));
     } catch (e) {
       lastErr = (e as Error).message.slice(0, 200);
-      if (!status) recordUsage({ provider: config.embeddingProvider, model: config.embeddingModel, kind: "embed", ok: false, latencyMs: Date.now() - t0, count: batch.length });
+      recordUsage({ provider: config.embeddingProvider, model: config.embeddingModel, kind: "embed", ok: false, status: status || undefined, latencyMs: Date.now() - t0, count: batch.length, errorMessage: lastErr });
       if (attempt < MAX_TRIES) await sleep(Math.min(2 ** attempt * 1000, 20_000));
     }
   }

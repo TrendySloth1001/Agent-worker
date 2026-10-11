@@ -11,6 +11,7 @@ import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
 import { githubGround } from "../github/grounding.js";
 import { decideSearch } from "../web/searchDecision.js";
+import { setTelemetry, withTelemetry } from "../db/usage.js";
 import { findImages, type ImageResult } from "../web/images.js";
 import { intentHint } from "../prompts/intent.js";
 import { buildContextMessage, buildSystemPrompt, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
@@ -70,6 +71,8 @@ const bodySchema = z.object({
     .min(1)
     .max(40),
   model: z.string().optional(),
+  // Telemetry only: which saved conversation this turn belongs to.
+  conversationId: z.string().max(64).optional(),
   webSearch: z.boolean().default(false),
   knowledge: z.boolean().default(false),
   sourceIds: z.array(z.string()).max(50).optional(),
@@ -134,6 +137,7 @@ chatRouter.post("/", async (req, res) => {
   }
   const auto = !requested || visionSwitched;
   const requestId = Math.random().toString(36).slice(2, 10);
+  setTelemetry({ requestId, conversationId: body.conversationId });
   const started = Date.now();
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const lastUserText = lastUser.trim() === ATTACH_PLACEHOLDER ? "" : lastUser;
@@ -362,7 +366,7 @@ chatRouter.post("/", async (req, res) => {
     const validTags = new Set(citations.map((c) => c.id));
     const keepValid = (s: string) => (table ? s.replace(/\[([KWD]\d+)\]/g, (m, id: string) => (validTags.has(id) ? m : "")) : s);
     const chairAt = Date.now();
-    const result = await runChat(
+    const result = await withTelemetry({ purpose: table ? "table-chair" : "chat" }, () => runChat(
       table ? table.candidates : auto ? preferForPrompt(candidates, promptChars) : candidates,
       table ? [...prompt, table.chairMessage] : prompt,
       ctl.signal,
@@ -389,7 +393,7 @@ chatRouter.post("/", async (req, res) => {
         onFallback: (from, to) => sse.send("notice", { code: "fallback", message: `${from} failed, trying ${to}.` }),
       },
       auto || !!table,
-    );
+    ));
 
     const held = table ? unresolved.flush() : "";
     if (held) {

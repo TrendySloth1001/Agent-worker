@@ -10,6 +10,8 @@ import { knowledgeRouter } from "./routes/knowledge.js";
 import { chatRouter } from "./routes/chat.js";
 import { modelsRouter } from "./routes/models.js";
 import { usageRouter } from "./routes/usage.js";
+import { telemetryRouter } from "./routes/telemetry.js";
+import { flush as flushUsage, telemetryScope } from "./db/usage.js";
 import { healthRouter } from "./routes/health.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { imagesRouter } from "./routes/images.js";
@@ -20,7 +22,10 @@ import { githubRouter } from "./routes/github.js";
 import { connectionsRouter } from "./routes/connections.js";
 import { failInterrupted } from "./files/process.js";
 import { authPublicRouter, authRouter, requireUser } from "./routes/auth.js";
-import { chatLimit } from "./auth/limits.js";
+import { chatLimit, docLimit } from "./auth/limits.js";
+import { docsRouter } from "./routes/docs.js";
+import { prismaStore as docStore } from "./docs/store.js";
+import { liveIds as liveDocIds } from "./docs/registry.js";
 import { githubGate } from "./auth/githubGate.js";
 
 const app = express();
@@ -37,14 +42,18 @@ app.use(cors());
 app.use("/health", healthRouter);
 app.use("/auth", authPublicRouter);
 app.use(requireUser);
+app.use(telemetryScope);
 app.use("/auth", authRouter);
 
 app.post("/chat", rateLimit(20), chatLimit);
+app.post("/docs", rateLimit(5), docLimit);
+app.post("/docs/:id/sections/:sid/rewrite", rateLimit(20));
 app.post("/knowledge/sources", rateLimit(10));
 app.post("/connections/github/device", rateLimit(10));
 
 app.use("/models", modelsRouter);
 app.use("/usage", usageRouter);
+app.use("/admin/telemetry", telemetryRouter);
 app.use("/chat", chatRouter);
 app.use("/knowledge", knowledgeRouter);
 app.use("/conversations", conversationsRouter);
@@ -54,6 +63,7 @@ app.use("/assist", assistRouter);
 app.use("/files", filesRouter);
 app.use("/github", githubGate, githubRouter);
 app.use("/connections", connectionsRouter);
+app.use("/docs", docsRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));
 app.use(errorMiddleware);
@@ -65,6 +75,8 @@ process.on("unhandledRejection", (reason) => {
 // After a model switch, rebuild stored vectors as soon as the database is ready.
 onDbUp(() => void reembedAll());
 onDbUp(() => void failInterrupted());
+// Documents left mid-run by a restart can be resumed.
+onDbUp(() => void docStore.sweepInterrupted(liveDocIds()).then((n) => n && log.info("docs interrupted", { count: n })).catch(() => undefined));
 initDb();
 const server = app.listen(config.port, () => log.info(`Server listening on http://localhost:${config.port}`));
 
@@ -74,7 +86,9 @@ function shutdown() {
   closing = true;
   server.close();
   server.closeAllConnections();
-  closeDb().finally(() => process.exit(0));
+  flushUsage()
+    .catch(() => {})
+    .finally(() => closeDb().finally(() => process.exit(0)));
   setTimeout(() => process.exit(0), 3000).unref();
 }
 process.on("SIGINT", shutdown);

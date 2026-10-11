@@ -37,7 +37,7 @@ export async function generateTitle(firstUser: string, firstAssistant: string): 
   ];
   for (const model of TITLE_MODELS) {
     try {
-      const title = clean(await ask(model, messages, TIMEOUT_MS));
+      const title = clean(await ask(model, messages, TIMEOUT_MS, "title"));
       if (title) return { title, source: "ai" };
     } catch (e) {
       log.warn("title generation failed", { model, message: (e as Error).message?.slice(0, 120) });

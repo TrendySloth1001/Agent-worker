@@ -45,7 +45,7 @@ async function ollamaPost(path: "web_search" | "web_fetch", body: object, signal
     recordUsage({ provider: "ollama", kind, ok: true, status, latencyMs: Date.now() - started });
     return data as any;
   } catch (e) {
-    if (!(e instanceof AppError) || status) recordUsage({ provider: "ollama", kind, ok: false, status: status || undefined, latencyMs: Date.now() - started });
+    if (!(e instanceof AppError) || status) recordUsage({ provider: "ollama", kind, ok: false, status: status || undefined, latencyMs: Date.now() - started, errorMessage: (e as Error).message });
     if (e instanceof AppError) throw e;
     throw new AppError(502, "upstream_failed", `${path} failed: ${(e as Error).message}`, true);
   }
