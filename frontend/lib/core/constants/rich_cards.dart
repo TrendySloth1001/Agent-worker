@@ -1,3 +1,4 @@
+import 'package:flutter/painting.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import 'app_icons.dart';
@@ -105,11 +106,7 @@ abstract final class RichSizes {
   static const actionMinTap = 32.0;
   static const brandIcon = 16.0;
   static const specIcon = 28.0;
-  static const diffGutter = 16.0;
 
-  /// Tint strength over the card for added / removed diff lines.
-  static const diffAddAlpha = 0.07;
-  static const diffRemoveAlpha = 0.12;
   static const inlineCodeAlpha = 0.6;
   static const disabledAlpha = 0.4;
   static const progressHeight = 2.0;
@@ -152,4 +149,26 @@ abstract final class AskSizes {
   static const arrow = 16.0;
   static const flowIcon = 20.0;
   static const fieldMaxLines = 3;
+}
+
+/// Code diff viewer (```diff cards and GitHub commit / compare diffs).
+abstract final class DiffStyle {
+  static const fontSize = 12.0;
+  static const lineHeight = 1.5;
+  static const numberWidth = 30.0;
+  static const signWidth = 14.0;
+  static const tabSpaces = '  ';
+
+  /// Rows shown before SHOW ALL.
+  static const maxRows = 300;
+
+  /// Green for added lines (the palette has no green; diffs need one).
+  static const addDark = Color(0xFF3FB950);
+  static const addLight = Color(0xFF1A7F37);
+  static const addAlpha = 0.14;
+  static const removeAlpha = 0.12;
+
+  static const wrap = 'WRAP';
+  static const scroll = 'SCROLL';
+  static const showAll = 'SHOW ALL';
 }
