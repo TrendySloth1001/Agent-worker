@@ -1,4 +1,5 @@
 import { query } from "../db/pool.js";
+import { ownerFilter } from "../auth/context.js";
 import { embedTexts } from "../embeddings/index.js";
 import { getObject } from "../storage/s3.js";
 import type { ContextItem } from "../prompts/system.js";
@@ -16,7 +17,12 @@ export type AttachedMessage = { role: "user" | "assistant"; content: string; att
 
 export async function loadRows(ids: string[]): Promise<Map<string, FileRow>> {
   if (ids.length === 0) return new Map();
-  const { rows } = await query<FileRow>(`SELECT ${INFO_COLS} FROM files WHERE id = ANY($1::uuid[])`, [ids]);
+  // Another user's file id reads as not found.
+  const [unscoped, uid] = ownerFilter();
+  const { rows } = await query<FileRow>(
+    `SELECT ${INFO_COLS} FROM files WHERE id = ANY($1::uuid[]) AND ($2::boolean OR user_id IS NOT DISTINCT FROM $3::uuid)`,
+    [ids, unscoped, uid],
+  );
   const map = new Map(rows.map((r) => [r.id, r]));
   const missing = ids.find((id) => !map.has(id));
   if (missing) throw new AppError(404, "not_found", `Attachment not found: ${missing}`);

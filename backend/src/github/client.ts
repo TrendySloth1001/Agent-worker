@@ -13,6 +13,10 @@ export type RateInfo = { limit: number | null; remaining: number | null; resetsA
 const rates = new Map<string, RateInfo>();
 export const lastRate = (resource = "core"): RateInfo | null => rates.get(resource) ?? null;
 
+/** OAuth scopes of the token, from the last X-OAuth-Scopes header (classic PATs only). */
+let scopes: string[] | null = null;
+export const tokenScopes = (): string[] | null => scopes;
+
 const cache = new Map<string, { at: number; value: unknown }>();
 
 function remember(key: string, value: unknown) {
@@ -77,6 +81,8 @@ export async function gh<T = any>(path: string, opts: GhOptions = {}): Promise<T
     throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
   }
   const rate = readRate(res);
+  const scopeHeader = res.headers.get("x-oauth-scopes");
+  if (scopeHeader != null) scopes = scopeHeader.split(",").map((x) => x.trim()).filter(Boolean);
   if (!res.ok) {
     if (res.status === 404 && opts.allow404) return null as T;
     let message = "";

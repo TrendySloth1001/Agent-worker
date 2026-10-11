@@ -1,5 +1,5 @@
 import { AppError } from "../util/errors.js";
-import { gh } from "./client.js";
+import { gh, lastRate, tokenScopes } from "./client.js";
 
 /** Compact, app-facing shapes of GitHub data (never the raw API dumps). */
 
@@ -49,6 +49,8 @@ export function repoSummary(r: any) {
     defaultBranch: (r.default_branch as string) ?? "main",
     archived: !!r.archived,
     fork: !!r.fork,
+    private: !!r.private,
+    visibility: (r.visibility as string | undefined) ?? (r.private ? "private" : "public"),
     createdAt: r.created_at ?? null,
     pushedAt: r.pushed_at ?? null,
     updatedAt: r.updated_at ?? null,
@@ -408,4 +410,47 @@ export async function releases(owner: string, repo: string, perPage?: unknown) {
       body: clip(r.body, BODY_MAX),
     })),
   };
+}
+
+// ---- the token's own account --------------------------------------------
+
+/** Who the token belongs to, its scopes, private repo count and quota. */
+export async function me(signal?: AbortSignal) {
+  const u = await gh(`/user`, { ttlMs: 60_000, signal });
+  const scopes = tokenScopes();
+  // Fine-grained tokens omit the private counters: count what the token can list.
+  let privateRepos: number | null = (u.total_private_repos as number | undefined) ?? null;
+  if (privateRepos == null) {
+    const list = await gh<any[]>(`/user/repos?visibility=private&per_page=100`, { ttlMs: 60_000, signal }).catch(() => null);
+    privateRepos = Array.isArray(list) ? list.length : null;
+  }
+  return {
+    login: u.login as string,
+    name: (u.name as string | null) ?? null,
+    avatar: (u.avatar_url as string) ?? "",
+    url: (u.html_url as string) ?? `https://github.com/${u.login}`,
+    publicRepos: u.public_repos ?? 0,
+    // Only present when the token may see private data.
+    privateRepos,
+    ownedPrivateRepos: (u.owned_private_repos as number | undefined) ?? null,
+    scopes,
+    // Fine-grained tokens send no X-OAuth-Scopes header.
+    tokenKind: scopes == null ? "fine-grained" : "classic",
+    canReadPrivate: scopes == null ? (privateRepos ?? 0) > 0 : scopes.includes("repo"),
+    rate: lastRate("core"),
+  };
+}
+
+const VISIBILITY = new Set(["all", "public", "private"]);
+const MY_SORTS = new Set(["updated", "pushed", "created", "full_name"]);
+
+/** Repositories the token's user can access (owned, collaborator, org member). */
+export async function myRepos(q: { visibility?: unknown; sort?: unknown; perPage?: unknown } = {}, signal?: AbortSignal) {
+  const visibility = typeof q.visibility === "string" && VISIBILITY.has(q.visibility) ? q.visibility : "all";
+  const sort = typeof q.sort === "string" && MY_SORTS.has(q.sort) ? q.sort : "updated";
+  const n = clampInt(q.perPage, 30, 1, 100);
+  const params = new URLSearchParams({ visibility, sort, per_page: String(n), affiliation: "owner,collaborator,organization_member" });
+  if (sort !== "full_name") params.set("direction", "desc");
+  const list = await gh<any[]>(`/user/repos?${params}`, { ttlMs: 60_000, signal });
+  return { visibility, sort, items: list.map(repoSummary) };
 }

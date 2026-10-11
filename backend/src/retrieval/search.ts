@@ -3,6 +3,7 @@ import { isDbUp, query, withTx } from "../db/pool.js";
 import { embedTexts } from "../embeddings/index.js";
 import { config } from "../config.js";
 import { AppError } from "../util/errors.js";
+import { ownerFilter } from "../auth/context.js";
 
 export type KbHit = { chunkId: number; score: number; title: string; url: string; headingPath: string | null; content: string; sourceType: string; site: string };
 
@@ -42,7 +43,14 @@ export async function retrieve(queryText: string, opts: { k?: number; sourceIds?
   if (guard) throw new AppError(503, "unavailable", guard);
 
   const filter = opts.sourceIds?.length ? opts.sourceIds : null;
-  const any = await query("SELECT 1 FROM chunks WHERE ($1::uuid[] IS NULL OR source_id = ANY($1::uuid[])) LIMIT 1", [filter]);
+  // Only the caller's own knowledge base.
+  const [unscoped, uid] = ownerFilter();
+  const mine = "($4::boolean OR s.user_id IS NOT DISTINCT FROM $5::uuid)";
+  const any = await query(
+    `SELECT 1 FROM chunks c JOIN sources s ON s.id = c.source_id
+      WHERE ($1::uuid[] IS NULL OR c.source_id = ANY($1::uuid[])) AND ($2::boolean OR s.user_id IS NOT DISTINCT FROM $3::uuid) LIMIT 1`,
+    [filter, unscoped, uid],
+  );
   if (any.rowCount === 0) return [];
 
   const [qv] = await embedTexts([text], "query");
@@ -51,19 +59,21 @@ export async function retrieve(queryText: string, opts: { k?: number; sourceIds?
 
   const { vecRows, kwRows } = await withTx(async (c) => {
     await c.query("SET LOCAL hnsw.ef_search = 40");
+    // Keep scanning the index until enough rows pass the per-user filter.
+    await c.query("SET LOCAL hnsw.iterative_scan = relaxed_order");
     const v = await c.query<Row>(
       `SELECT ${COLS}, 1 - (c.embedding <=> $1::vector) AS sim ${JOINS}
-       WHERE ($2::uuid[] IS NULL OR c.source_id = ANY($2::uuid[]))
+       WHERE ($2::uuid[] IS NULL OR c.source_id = ANY($2::uuid[])) AND ($3::boolean OR s.user_id IS NOT DISTINCT FROM $4::uuid)
        ORDER BY c.embedding <=> $1::vector LIMIT ${CANDIDATES}`,
-      [vec, filter],
+      [vec, filter, unscoped, uid],
     );
     let kRows: Row[] = [];
     if (kw) {
       const r = await c.query<Row>(
         `SELECT ${COLS}, 1 - (c.embedding <=> $1::vector) AS sim ${JOINS}
-         WHERE c.tsv @@ websearch_to_tsquery('english', $3) AND ($2::uuid[] IS NULL OR c.source_id = ANY($2::uuid[]))
+         WHERE c.tsv @@ websearch_to_tsquery('english', $3) AND ($2::uuid[] IS NULL OR c.source_id = ANY($2::uuid[])) AND ${mine}
          ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', $3)) DESC LIMIT ${CANDIDATES}`,
-        [vec, filter, kw],
+        [vec, filter, kw, unscoped, uid],
       );
       kRows = r.rows;
     }
@@ -109,7 +119,12 @@ export async function retrieve(queryText: string, opts: { k?: number; sourceIds?
 export async function kbStats(): Promise<{ sources: number; chunks: number } | null> {
   if (!isDbUp()) return null;
   try {
-    const r = await query(`SELECT (SELECT count(*)::int FROM sources) AS s, (SELECT count(*)::int FROM chunks) AS c`);
+    const [unscoped, uid] = ownerFilter();
+    const r = await query(
+      `SELECT (SELECT count(*)::int FROM sources WHERE $1::boolean OR user_id IS NOT DISTINCT FROM $2::uuid) AS s,
+              (SELECT count(*)::int FROM chunks c JOIN sources x ON x.id = c.source_id WHERE $1::boolean OR x.user_id IS NOT DISTINCT FROM $2::uuid) AS c`,
+      [unscoped, uid],
+    );
     return { sources: r.rows[0].s, chunks: r.rows[0].c };
   } catch {
     return null;

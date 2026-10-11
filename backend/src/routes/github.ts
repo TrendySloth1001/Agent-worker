@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { AppError } from "../util/errors.js";
 import { githubEnabled, lastRate } from "../github/client.js";
 import * as svc from "../github/service.js";
+import { reviewPull } from "../github/review.js";
 
 export const githubRouter = Router();
 
@@ -31,6 +32,15 @@ githubRouter.use((_req, _res, next) => {
 
 githubRouter.get("/rate", (_req, res) => {
   res.json({ core: lastRate("core"), search: lastRate("search"), code_search: lastRate("code_search") });
+});
+
+// ---- the token's account (private repos when the token allows) ---------
+githubRouter.get("/me", async (_req, res) => {
+  send(res, await svc.me());
+});
+
+githubRouter.get("/my/repos", async (req, res) => {
+  send(res, await svc.myRepos({ visibility: str(req.query.visibility), sort: str(req.query.sort), perPage: req.query.per_page }));
 });
 
 // ---- search --------------------------------------------------------------
@@ -97,6 +107,18 @@ githubRouter.get("/repos/:owner/:repo/pulls", async (req, res) => {
 
 githubRouter.get("/repos/:owner/:repo/pulls/:n", async (req, res) => {
   send(res, await svc.pull(req.params.owner, req.params.repo, Number(req.params.n)));
+});
+
+// LLM review of the PR's diff (slow: one strong model, cached per head sha).
+githubRouter.post("/repos/:owner/:repo/pulls/:n/review", async (req, res) => {
+  const ctl = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) ctl.abort();
+  });
+  const fresh = ["1", "true"].includes(str(req.query.fresh)) || req.body?.fresh === true;
+  const review = await reviewPull(req.params.owner, req.params.repo, Number(req.params.n), { fresh, signal: ctl.signal });
+  res.setHeader("Cache-Control", "no-store");
+  res.json(review);
 });
 
 githubRouter.get("/repos/:owner/:repo/issues", async (req, res) => {

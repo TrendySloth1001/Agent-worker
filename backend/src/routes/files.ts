@@ -8,6 +8,8 @@ import { classify, MAX_UPLOAD_BYTES, SIZE_LIMITS } from "../files/kinds.js";
 import { deleteFile, getFileRow, signedInfo, type FileRow } from "../files/store.js";
 import { processFile } from "../files/process.js";
 import { deleteObject, putObject } from "../storage/s3.js";
+import { userOf } from "../auth/context.js";
+import { checkUpload, recordUpload } from "../auth/limits.js";
 
 export const filesRouter = Router();
 
@@ -62,16 +64,19 @@ filesRouter.post("/", async (req, res) => {
   if (f.size === 0) throw new AppError(400, "bad_request", "File is empty");
   const conversationId = typeof req.body?.conversationId === "string" && req.body.conversationId ? req.body.conversationId : null;
   if (conversationId && !UUID_RE.test(conversationId)) throw new AppError(400, "bad_request", "conversationId must be a UUID");
+  const user = userOf(req);
+  await checkUpload(user, f.size);
 
   const id = randomUUID();
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) : "";
   const key = `${id}/original${ext ? "." + ext : ""}`;
   await putObject(key, f.buffer, cls.mime);
   const { rows } = await query<FileRow>(
-    `INSERT INTO files (id, conversation_id, name, mime, size, kind, s3_key) VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO files (id, conversation_id, name, mime, size, kind, s3_key, user_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING id, conversation_id, name, mime, size, kind, status, error, s3_key, thumb_key, meta, created_at`,
-    [id, conversationId?.toLowerCase() ?? null, name, cls.mime, f.size, cls.kind, key],
+    [id, conversationId?.toLowerCase() ?? null, name, cls.mime, f.size, cls.kind, key, user.id],
   );
+  await recordUpload(user, f.size);
   const target = { id, name, kind: cls.kind, s3_key: key };
   const done = processFile(target, f.buffer);
   // Images are quick: answer with the finished state.

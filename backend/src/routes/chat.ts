@@ -423,7 +423,7 @@ chatRouter.post("/", async (req, res) => {
     const latencyMs = Date.now() - started;
     if (table) {
       recordLatency("chair", result.model, Date.now() - chairAt);
-      table.finish(result.model, chairCalls, unresolved.items());
+      table.finish(result.model, chairCalls, unresolved.items(), text);
     }
     sse.send("done", { model: result.model, used, finishReason: result.finishReason, latencyMs, ...(table ? { table: true } : {}) });
     log.info("chat", { requestId, model: result.model, latencyMs, status: 200 });

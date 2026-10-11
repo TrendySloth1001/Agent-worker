@@ -2,6 +2,7 @@ import type { ContextItem } from "../prompts/system.js";
 import { log } from "../util/logger.js";
 import { githubEnabled } from "./client.js";
 import * as svc from "./service.js";
+import { isOwnerRequest } from "../auth/context.js";
 
 /**
  * GitHub grounding for chat: when the user's message is clearly about GitHub
@@ -20,6 +21,14 @@ export type GithubIntent = {
   releases: boolean;
   contributors: boolean;
   tree: boolean;
+  /** "review this PR" with a PR link or owner/repo#n. */
+  review: (RepoRef & { number: number }) | null;
+  /** A pull request named by link or owner/repo#n (without a review ask). */
+  pr: (RepoRef & { number: number }) | null;
+  /** "my repos", "my private repos": the token owner's repositories. */
+  mine: { visibility: "all" | "private" | "public" } | null;
+  /** "my repo X": a repository of the token owner, by name only. */
+  myRepo: string | null;
 };
 
 const URL_REF = /github\.com\/([A-Za-z0-9][\w-]{0,38})\/([\w.-]{1,100})/gi;
@@ -57,6 +66,12 @@ const PULLS = /\b(pull requests?|prs?|merge requests?)\b/i;
 const ISSUES = /\b(issues?|bugs?|bug reports?)\b/i;
 const RELEASES = /\b(releases?|latest version|changelog|release notes)\b/i;
 const CONTRIB = /\b(contributors?|maintainers?|who (?:wrote|maintains|built))\b/i;
+const PR_URL = /github\.com\/([A-Za-z0-9][\w-]{0,38})\/([\w.-]{1,100})\/pull\/(\d{1,7})/i;
+const PR_HASH = /(?<![\w./@:-])([A-Za-z0-9][\w-]{0,38})\/([A-Za-z0-9_.-]{1,100})#(\d{1,7})\b/;
+const REVIEW = /\b(review|code[- ]review|critique|audit|look (?:over|at the (?:diff|changes))|any (?:bugs|issues|problems) in|is (?:it|this) (?:safe|ok|good) to merge)\b/i;
+const MINE = /\b(?:my|mine|i own|i have)\b[^.?!\n]{0,24}\b(repos?|repositor(?:y|ies)|projects? on github|github projects?)\b/i;
+const MY_REPO_NAMED = /\bmy\s+(?:own\s+)?(?:private\s+|public\s+)?(?:github\s+)?(?:repo|repository|project)\s+(?:called\s+|named\s+)?[`"']?([A-Za-z0-9_.-]{2,100})/i;
+const MY_REPO_STOP = new Set(["list", "and", "or", "on", "in", "with", "that", "which", "is", "are", "the", "a", "for", "to", "from", "please", "github"]);
 const TREE = /\b(file tree|folder structure|directory structure|project structure|files in|structure of|tree)\b/i;
 
 function repoRefs(text: string): RepoRef[] {
@@ -102,12 +117,26 @@ function searchQuery(text: string): { q: string; sort?: "stars" } | null {
   return { q: lang ? `${q} language:${lang}` : q, sort: POPULAR.test(text) ? "stars" : undefined };
 }
 
+function prRef(text: string): (RepoRef & { number: number }) | null {
+  const m = text.match(PR_URL) ?? text.match(PR_HASH);
+  if (!m) return null;
+  return { owner: m[1], repo: m[2].replace(/\.git$/, ""), number: Number(m[3]) };
+}
+
 export function githubIntent(text: string): GithubIntent | null {
   const t = (text ?? "").slice(0, 800);
   if (!t.trim()) return null;
-  const repos = repoRefs(t);
+  const pr = prRef(t);
+  const review = pr && REVIEW.test(t) ? pr : null;
+  const named = t.match(MY_REPO_NAMED)?.[1]?.replace(/[.,;:]+$/, "") ?? null;
+  const myRepo = named && !MY_REPO_STOP.has(named.toLowerCase()) && !/^repos?$/i.test(named) ? named : null;
+  const mine = !myRepo && MINE.test(t) ? { visibility: /\bprivate\b/i.test(t) ? ("private" as const) : /\bpublic\b/i.test(t) ? ("public" as const) : ("all" as const) } : null;
+  const repos = repoRefs(t.replace(/#\d+/g, ""));
+  if (pr && !repos.some((r) => r.owner.toLowerCase() === pr.owner.toLowerCase() && r.repo.toLowerCase() === pr.repo.toLowerCase())) {
+    repos.unshift({ owner: pr.owner, repo: pr.repo });
+  }
   let search: GithubIntent["search"] = null;
-  if (repos.length === 0) {
+  if (repos.length === 0 && !mine && !myRepo) {
     const wantsSearch = (STRONG.test(t) && FINDISH.test(t)) || FIND_LIB.test(t);
     if (!wantsSearch) return null;
     search = searchQuery(t);
@@ -122,6 +151,10 @@ export function githubIntent(text: string): GithubIntent | null {
     releases: RELEASES.test(t),
     contributors: CONTRIB.test(t),
     tree: TREE.test(t),
+    review,
+    pr: review ? null : pr,
+    mine,
+    myRepo,
   };
 }
 
@@ -138,6 +171,38 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
   const items: ContextItem[] = [];
   const push = (title: string, url: string, body: string) => items.push({ id: `G${items.length + 1}`, title, url, text: body });
   const blocks: string[] = [];
+
+  // "my repos" / "my private repo X": resolved against the token's account.
+  // The server token is the owner's: other users get public data only.
+  if ((intent.mine || intent.myRepo) && isOwnerRequest()) {
+    try {
+      const me = await svc.me(signal);
+      if (intent.myRepo && !intent.repos.some((r) => r.repo.toLowerCase() === intent.myRepo!.toLowerCase())) {
+        const list = await svc.myRepos({ visibility: "all", sort: "updated", perPage: 100 }, signal).catch(() => null);
+        const hit = list?.items.find((r) => r.name.toLowerCase() === intent.myRepo!.toLowerCase());
+        const [o, r] = (hit?.fullName ?? `${me.login}/${intent.myRepo}`).split("/");
+        intent.repos.unshift({ owner: o, repo: r });
+        intent.repos.splice(2);
+      }
+      if (intent.mine) {
+        const list = await svc.myRepos({ visibility: intent.mine.visibility, sort: "updated", perPage: 30 }, signal);
+        push(
+          `Repositories of ${me.login} (${intent.mine.visibility}, GitHub)`,
+          `https://github.com/${me.login}?tab=repositories`,
+          [
+            `Signed in as ${me.login}. Public repos: ${me.publicRepos}. Private repos: ${me.privateRepos ?? "not visible to this token"}.`,
+            ...list.items.map(
+              (r) =>
+                `${r.fullName}${r.private ? " (private)" : ""}: ${r.description || "no description"}. ${r.language ?? "n/a"}, ${r.stars} stars, last push ${day(r.pushedAt)}.`,
+            ),
+          ].join("\n"),
+        );
+        blocks.push(`\`\`\`github-my-repos\n${intent.mine.visibility}\n\`\`\``);
+      }
+    } catch (e) {
+      log.warn("github my repos failed", { message: (e as Error).message.slice(0, 120) });
+    }
+  }
 
   if (intent.search) {
     const { q, sort } = intent.search;
@@ -167,6 +232,7 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
     let full = `${owner}/${repo}`;
     try {
       const d = await svc.repoDetail(owner, repo, signal);
+      if (d.private && !isOwnerRequest()) continue;
       full = d.fullName;
       push(
         `${d.fullName} (GitHub repository)`,
@@ -190,6 +256,24 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
     }
     const [o, r] = full.split("/");
     const extra: Promise<void>[] = [];
+    const pr = [intent.review, intent.pr].find((x) => x && x.owner.toLowerCase() === owner.toLowerCase() && x.repo.toLowerCase() === repo.toLowerCase());
+    if (pr) {
+      extra.push(
+        svc.pull(o, r, pr.number).then((d) => {
+          push(
+            `Pull request ${full}#${d.number}: ${d.title}`,
+            d.url,
+            [
+              `State: ${d.state}. By ${d.user?.login ?? "?"}. ${d.head} -> ${d.base}. ${d.commits} commits, ${d.changedFiles} files, +${d.additions} -${d.deletions}.`,
+              d.body ? `Description:\n${d.body.slice(0, 1_200)}` : "",
+              `Files: ${d.files.slice(0, 30).map((f) => `${f.filename} (+${f.additions} -${f.deletions})`).join(", ")}`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          );
+        }),
+      );
+    }
     if (intent.commits) {
       extra.push(
         svc.commits(o, r, { perPage: 10, stats: false }, signal).then((list) => {
@@ -242,7 +326,8 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
       );
     }
     await Promise.allSettled(extra);
-    if (intent.commits) blocks.push(`\`\`\`github-commits\n${full}\n\`\`\``);
+    if (intent.review && pr === intent.review) blocks.push(`\`\`\`github-review\n${full}#${intent.review.number}\n\`\`\``);
+    else if (intent.commits) blocks.push(`\`\`\`github-commits\n${full}\n\`\`\``);
     else if (intent.pulls) blocks.push(`\`\`\`github-prs\n${full} open\n\`\`\``);
     else if (intent.issues) blocks.push(`\`\`\`github-issues\n${full} open\n\`\`\``);
     else if (intent.tree) blocks.push(`\`\`\`github-tree\n${full}\n\`\`\``);
@@ -250,10 +335,14 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
   }
 
   if (!items.length) return null;
+  const reviewHint = intent.review
+    ? " The review card runs a full AI code review of the diff in the app (it takes a minute): introduce it in one or two sentences from the PR source (what the PR changes), do not write your own line-by-line review."
+    : "";
   const hint =
     "GitHub: the <github> block holds live GitHub API data for this question; cite it with its [G#] tags. " +
     (blocks.length
       ? `Right after your opening sentence, include this live card exactly as written (the app renders it with fresh data), then continue with your answer (for lists of commits, PRs or issues: a short summary of 3-5 notable items citing [G#], no table that repeats the card); do not add any other github-* card:\n${blocks[0]}`
-      : "");
+      : "") +
+    reviewHint;
   return { items, hint };
 }

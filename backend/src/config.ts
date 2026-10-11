@@ -28,6 +28,13 @@ const schema = z.object({
   S3_ACCESS_KEY_ID: str,
   S3_SECRET_ACCESS_KEY: str,
   S3_BUCKET: str,
+  // ---- accounts ----
+  AUTH_JWT_SECRET: str,
+  OWNER_EMAIL: str,
+  LIMIT_CHAT_PER_DAY: num(200),
+  LIMIT_TABLE_PER_DAY: num(20),
+  LIMIT_UPLOADS_PER_DAY: num(30),
+  LIMIT_STORAGE_MB: num(500),
 });
 
 const env = schema.parse(process.env);
@@ -60,5 +67,19 @@ export const config = {
     accessKeyId: env.S3_ACCESS_KEY_ID,
     secretAccessKey: env.S3_SECRET_ACCESS_KEY,
     bucket: env.S3_BUCKET ?? "attachments",
+  },
+  auth: {
+    jwtSecret: env.AUTH_JWT_SECRET,
+    /** The account registering with this email becomes the owner. */
+    ownerEmail: env.OWNER_EMAIL?.trim().toLowerCase(),
+    accessTtlS: 15 * 60,
+    refreshTtlDays: 30,
+  },
+  /** Default per-user daily limits; the owner is unlimited. */
+  limits: {
+    chat: env.LIMIT_CHAT_PER_DAY,
+    table: env.LIMIT_TABLE_PER_DAY,
+    uploads: env.LIMIT_UPLOADS_PER_DAY,
+    storageBytes: env.LIMIT_STORAGE_MB * 1024 * 1024,
   },
 };

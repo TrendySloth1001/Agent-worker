@@ -5,6 +5,7 @@ import { pickCandidates, preferForPrompt } from "../llm/router.js";
 import { log } from "../util/logger.js";
 import { CHAIR_PROMPT, DRAFT_NO_SOURCES, DRAFT_PROMPT, JUDGE_PROMPT, REVIEW_PROMPT, seatResearchIntro } from "../prompts/table.js";
 import { expectedMs, recordLatency, type StepKind } from "./latency.js";
+import { computeSupport, type SupportItem } from "./support.js";
 
 // ---- configuration ---------------------------------------------------------
 
@@ -75,6 +76,8 @@ export type TableTranscript = {
   chair: string;
   calls: number;
   ms: number;
+  /** Which seats' drafts back each sentence of the answer. */
+  support?: SupportItem[];
 };
 export type TableEvent = {
   phase: TablePhase;
@@ -121,8 +124,8 @@ export type TableRun = {
   chairMessage: Message;
   /** Candidates for the chair's streamed answer. */
   candidates: string[];
-  /** Finishes the transcript once the chair answered. */
-  finish(chair: string, chairCalls: number, unresolved: string[]): TableTranscript;
+  /** Finishes the transcript once the chair answered ([answer]: its text, for the support map). */
+  finish(chair: string, chairCalls: number, unresolved: string[], answer?: string): TableTranscript;
 };
 
 // ---- helpers ---------------------------------------------------------------
@@ -147,7 +150,7 @@ function summaryOf(draft: string): string {
  * The last balanced {...} object in `raw` that parses and has `key`. Models
  * sometimes echo the schema template or wrap the JSON in prose or fences.
  */
-function parseJson(raw: string, key: string): any {
+export function parseJson(raw: string, key: string): any {
   let found: any = undefined;
   for (let start = raw.indexOf("{"); start >= 0; start = raw.indexOf("{", start + 1)) {
     let depth = 0;
@@ -535,10 +538,26 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
   return {
     chairMessage,
     candidates,
-    finish(chair, chairCalls, unresolved) {
+    finish(chair, chairCalls, unresolved, answer = "") {
       const disputedReviews = reviews.some((r) => r.verdict === "minor" || r.verdict === "major");
       const consensus = unresolved.length > 0 ? "disputed" : agreed || !disputedReviews ? "agreed" : "resolved";
-      const transcript: TableTranscript = { seats, reviews, consensus, unresolved, chair, calls: tableCalls + chairCalls, ms: Date.now() - started };
+      let support: SupportItem[] = [];
+      try {
+        const disputes = [...conflicts, ...unresolved, ...reviews.flatMap((r) => r.points.filter((p) => p.kind !== "missing").map((p) => p.claim))];
+        support = computeSupport(answer, drafts, disputes);
+      } catch (e) {
+        log.warn("table support failed", { message: (e as Error).message?.slice(0, 120) });
+      }
+      const transcript: TableTranscript = {
+        seats,
+        reviews,
+        consensus,
+        unresolved,
+        chair,
+        calls: tableCalls + chairCalls,
+        ms: Date.now() - started,
+        ...(support.length ? { support } : {}),
+      };
       emit({ phase: "done", transcript });
       return transcript;
     },

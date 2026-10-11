@@ -2,7 +2,7 @@
 
 Files live in Supabase Storage (private bucket `attachments`) via the S3 API.
 Env (backend/.env): `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`.
-All routes need `Authorization: Bearer <API_TOKEN>` like the rest of the API.
+All routes need `Authorization: Bearer <access token>` (a signed-in user's JWT; the static API_TOKEN works as an owner dev bypass) like the rest of the API. Files belong to the uploading user.
 
 ## Kinds and limits
 

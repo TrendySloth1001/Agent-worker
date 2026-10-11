@@ -2,6 +2,10 @@ import { config } from "../config.js";
 
 export type GithubInfo = {
   login: string | null;
+  avatar?: string | null;
+  /** Classic PAT scopes (X-OAuth-Scopes); null for fine-grained tokens. */
+  scopes?: string[] | null;
+  privateRepos?: number | null;
   limit: number | null;
   remaining: number | null;
   resetsAt: string | null;
@@ -24,9 +28,21 @@ export async function getGithubInfo(): Promise<GithubInfo | null> {
     ]);
     if (!rate.ok) throw new Error(rate.status === 401 ? "Token rejected" : `GitHub ${rate.status}`);
     const core = ((await rate.json()) as any)?.resources?.core ?? {};
-    const login = user.ok ? (((await user.json()) as any)?.login ?? null) : null;
+    const u = user.ok ? ((await user.json()) as any) : null;
+    const login = u?.login ?? null;
+    const scopeHeader = user.headers.get("x-oauth-scopes");
+    let privateRepos: number | null = u?.total_private_repos ?? null;
+    if (privateRepos == null && u) {
+      // Fine-grained tokens omit the counter: count what the token can list.
+      const list = await fetch("https://api.github.com/user/repos?visibility=private&per_page=100", { headers, signal: AbortSignal.timeout(8000) }).catch(() => null);
+      const body = list?.ok ? ((await list.json()) as unknown) : null;
+      privateRepos = Array.isArray(body) ? body.length : null;
+    }
     value = {
       login,
+      avatar: u?.avatar_url ?? null,
+      scopes: scopeHeader == null ? null : scopeHeader.split(",").map((x) => x.trim()).filter(Boolean),
+      privateRepos,
       limit: core.limit ?? null,
       remaining: core.remaining ?? null,
       resetsAt: core.reset ? new Date(core.reset * 1000).toISOString() : null,

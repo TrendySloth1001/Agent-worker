@@ -1,4 +1,5 @@
 import { query } from "../db/pool.js";
+import { ownerFilter } from "../auth/context.js";
 import { deleteObject, presign } from "../storage/s3.js";
 import type { FileKind } from "./kinds.js";
 
@@ -58,8 +59,13 @@ export async function signedInfo(r: FileRow): Promise<FileInfo> {
   return { ...plainInfo(r), url, thumbUrl };
 }
 
+/** A file of the current request's user (any file outside a request). */
 export async function getFileRow(id: string, withText = false): Promise<FileRow | null> {
-  const { rows } = await query<FileRow>(`SELECT ${INFO_COLS}${withText ? ", text" : ""} FROM files WHERE id = $1`, [id]);
+  const [unscoped, uid] = ownerFilter();
+  const { rows } = await query<FileRow>(
+    `SELECT ${INFO_COLS}${withText ? ", text" : ""} FROM files WHERE id = $1 AND ($2::boolean OR user_id IS NOT DISTINCT FROM $3::uuid)`,
+    [id, unscoped, uid],
+  );
   return rows[0] ?? null;
 }
 

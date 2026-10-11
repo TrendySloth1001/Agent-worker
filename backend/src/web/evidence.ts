@@ -81,9 +81,9 @@ function clip(s: string, max: number): string {
   return (sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd() + "…";
 }
 
-type Index = { sents: string[]; toks: Set<string>[]; idf: Map<string, number> };
+export type Index = { sents: string[]; toks: Set<string>[]; idf: Map<string, number> };
 
-function buildIndex(text: string): Index {
+export function buildIndex(text: string): Index {
   const sents = sourceSentences(text);
   const toks = sents.map((s) => new Set(tokens(s)));
   const df = new Map<string, number>();
@@ -140,7 +140,7 @@ export function bestPassage(claim: string, idx: Index): { quote: string; score: 
   return { quote: clip(quote, MAX_QUOTE), score: Math.round(Math.min(best.score, 1) * 100) / 100 };
 }
 
-function stripFences(text: string): string {
+export function stripFences(text: string): string {
   return text.replace(/```[\s\S]*?(?:```|$)/g, "\n").replace(/~~~[\s\S]*?(?:~~~|$)/g, "\n");
 }
 

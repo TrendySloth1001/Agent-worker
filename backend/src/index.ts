@@ -18,6 +18,9 @@ import { assistRouter } from "./routes/assist.js";
 import { filesRouter } from "./routes/files.js";
 import { githubRouter } from "./routes/github.js";
 import { failInterrupted } from "./files/process.js";
+import { authPublicRouter, authRouter, requireUser } from "./routes/auth.js";
+import { chatLimit } from "./auth/limits.js";
+import { githubGate } from "./auth/githubGate.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -27,17 +30,17 @@ const largeJson = express.json({ limit: "4mb" });
 app.use((req, res, next) => (req.path.startsWith("/conversations") ? largeJson : smallJson)(req, res, next));
 app.use(cors());
 
-// Optional bearer token; /health stays open.
-app.use((req, _res, next) => {
-  if (!config.apiToken || req.path === "/health") return next();
-  if (req.headers.authorization === `Bearer ${config.apiToken}`) return next();
-  next(new AppError(401, "unauthorized", "Missing or invalid token"));
-});
+// Public: health and the sign-in endpoints. Everything after requireUser
+// needs an access token (Bearer JWT). The static API_TOKEN is still accepted
+// as an admin/dev bypass that acts as the owner account (curl tests).
+app.use("/health", healthRouter);
+app.use("/auth", authPublicRouter);
+app.use(requireUser);
+app.use("/auth", authRouter);
 
-app.post("/chat", rateLimit(20));
+app.post("/chat", rateLimit(20), chatLimit);
 app.post("/knowledge/sources", rateLimit(10));
 
-app.use("/health", healthRouter);
 app.use("/models", modelsRouter);
 app.use("/usage", usageRouter);
 app.use("/chat", chatRouter);
@@ -47,7 +50,7 @@ app.use("/images", imagesRouter);
 app.use("/icons", iconsRouter);
 app.use("/assist", assistRouter);
 app.use("/files", filesRouter);
-app.use("/github", githubRouter);
+app.use("/github", githubGate, githubRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));
 app.use(errorMiddleware);

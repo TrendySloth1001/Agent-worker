@@ -7,6 +7,7 @@ import { getGithubInfo } from "../usage/github.js";
 import { keyHint } from "../usage/keyHint.js";
 import { getOpenRouterKeyInfo } from "../usage/openrouterKey.js";
 import { rateSnapshots } from "../usage/rateLimits.js";
+import { limitsFor, usageFor } from "../auth/limits.js";
 
 export const usageRouter = Router();
 
@@ -109,7 +110,15 @@ function capacity(p: ProviderDef, modelCount: number) {
   return { requestsPerDay: daily("requests"), tokensPerDay: daily("tokens") };
 }
 
-usageRouter.get("/", async (_req, res) => {
+usageRouter.get("/", async (req, res) => {
+  // Provider quotas and keys are the owner's business; other users see their own counts.
+  const caller = req.user;
+  const mine = caller ? await Promise.all([limitsFor(caller), usageFor(caller.id)]).catch(() => null) : null;
+  const me = mine ? { limits: mine[0], usage: mine[1], resetsAt: nextUtcMidnight(), unlimited: mine[0] === null } : null;
+  if (caller && caller.role !== "owner") {
+    res.json({ providers: [], totals: {}, services: { kb: await kbStats().catch(() => null) }, me });
+    return;
+  }
   const [orKey, summary, perProvider, kb, github] = await Promise.all([
     getOpenRouterKeyInfo(),
     getUsageSummary().catch(() => null),
@@ -180,11 +189,12 @@ usageRouter.get("/", async (_req, res) => {
   };
 
   res.json({
+    me,
     providers,
     totals,
     services: {
       github: config.githubToken
-        ? { configured: true, keyHint: keyHint(config.githubToken), purpose: "Knowledge ingestion from GitHub", limitLabel: "5,000 requests per hour", ...github }
+        ? { configured: true, keyHint: keyHint(config.githubToken), purpose: "Knowledge ingestion and live GitHub cards", limitLabel: "5,000 requests per hour", ...github }
         : { configured: false, keyHint: null, purpose: "Knowledge ingestion from GitHub", limitLabel: "60 requests per hour without a token", login: null, limit: 60, remaining: null, resetsAt: null, error: null },
       embeddings: {
         provider: config.embeddingProvider,
