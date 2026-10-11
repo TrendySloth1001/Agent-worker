@@ -1,4 +1,4 @@
-package com.example.app
+package com.sparky.app
 
 import android.content.ActivityNotFoundException
 import android.content.Intent

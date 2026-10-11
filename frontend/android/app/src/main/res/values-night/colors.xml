@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window behind Flutter until its first frame: AppColors.darkBackground (no white flash). -->
+    <color name="app_background">#000000</color>
+</resources>
