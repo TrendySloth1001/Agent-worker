@@ -94,7 +94,12 @@ export async function githubAuthFor(userId: string): Promise<GithubUserAuth | nu
   const hit = authCache.get(userId);
   if (hit && Date.now() - hit.at < AUTH_TTL_MS) return hit.value;
   let value: GithubUserAuth | null = null;
-  const row = await db().connection.findUnique({ where: { userId_provider: { userId, provider: "github" } } });
+  let row = await db().connection.findUnique({ where: { userId_provider: { userId, provider: "github" } } });
+  // Expiring tokens (the OAuth app has "expire user access tokens" on) are
+  // renewed with the refresh token shortly before they run out.
+  if (row?.expiresAt && row.refreshTokenEnc && row.expiresAt.getTime() - Date.now() < REFRESH_EARLY_MS) {
+    row = (await refreshGithubToken(userId, row.refreshTokenEnc)) ?? row;
+  }
   if (row && !(row.expiresAt && row.expiresAt.getTime() <= Date.now())) {
     try {
       value = { token: decryptSecret(row.accessTokenEnc), login: row.accountLogin, scopes: row.scopes };
@@ -110,6 +115,55 @@ export async function githubAuthFor(userId: string): Promise<GithubUserAuth | nu
       .catch(() => {});
   }
   return value;
+}
+
+const REFRESH_EARLY_MS = 5 * 60_000;
+const refreshing = new Map<string, Promise<Awaited<ReturnType<typeof doRefresh>>>>();
+
+/** One refresh per user at a time; concurrent callers share it. */
+function refreshGithubToken(userId: string, refreshTokenEnc: string) {
+  let p = refreshing.get(userId);
+  if (!p) {
+    p = doRefresh(userId, refreshTokenEnc).finally(() => refreshing.delete(userId));
+    refreshing.set(userId, p);
+  }
+  return p;
+}
+
+/** Swaps the refresh token for a new access/refresh pair. Null when it can't. */
+async function doRefresh(userId: string, refreshTokenEnc: string) {
+  const { clientId, clientSecret } = config.githubOAuth;
+  if (!clientId || !clientSecret) return null;
+  try {
+    const res = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "refresh_token",
+        refresh_token: decryptSecret(refreshTokenEnc),
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || typeof j.access_token !== "string") {
+      log.warn("github token refresh failed", { error: String(j.error ?? res.status).slice(0, 60) });
+      return null;
+    }
+    const expiresIn = Number(j.expires_in);
+    return await db().connection.update({
+      where: { userId_provider: { userId, provider: "github" } },
+      data: {
+        accessTokenEnc: encryptSecret(j.access_token),
+        refreshTokenEnc: typeof j.refresh_token === "string" ? encryptSecret(j.refresh_token) : refreshTokenEnc,
+        expiresAt: expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : null,
+      },
+    });
+  } catch (e) {
+    log.warn("github token refresh failed", { message: (e as Error).message.slice(0, 80) });
+    return null;
+  }
 }
 
 /**
