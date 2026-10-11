@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:http/http.dart' as http;
 import 'package:markdown/markdown.dart' as md;
 
 import '../../../../core/constants/app_config.dart';
@@ -11,6 +10,7 @@ import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/markdown_sizes.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../data/chat_api.dart';
+import '../../../../data/api_client.dart';
 
 /// `{{icon:SET:NAME}}` in a reply, e.g. `{{icon:logos:postgresql}}`.
 const _pattern =
@@ -198,7 +198,7 @@ class ResolvedIcon {
 abstract final class IconCache {
   static final _icons = <String, ResolvedIcon>{};
   static final _pending = <String, Future<ResolvedIcon?>>{};
-  static final _client = http.Client();
+  static final _client = AuthClient();
 
   static ResolvedIcon? peek(String set, String name) => _icons['$set:$name'];
 

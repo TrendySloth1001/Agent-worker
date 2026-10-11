@@ -19,6 +19,7 @@ import 'md_callout.dart';
 import 'md_heading.dart';
 import 'math_syntax.dart';
 import 'math_view.dart';
+import 'media_list.dart';
 import 'md_table.dart';
 import 'timeline_list.dart';
 
@@ -148,6 +149,12 @@ class _Flow extends StatelessWidget {
         MdListBlock() => TimelineList(
           list: b.list,
           renderText: (t) => _inline(context, t),
+        ),
+        MdMediaListBlock() => MediaList(
+          block: b,
+          streaming: streaming,
+          renderText: (t) => _inline(context, t),
+          renderLine: (t, style) => _markdown(context, t, textStyle: style),
         ),
         MdTableBlock() => MdTable(
           block: b,

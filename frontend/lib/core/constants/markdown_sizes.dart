@@ -42,6 +42,12 @@ abstract final class MdSizes {
   static const imageMaxHeight = 240.0;
   static const imagePlaceholderHeight = 160.0;
   static const tlMarkerNested = 8.0;
+
+  // Picture lists: a thumbnail beside each item, stacked on narrow screens.
+  static const mediaThumbWidth = 120.0;
+  static const mediaThumbAspect = 4 / 3;
+  static const mediaStackBelow = 360.0;
+  static const mediaStackedHeight = 160.0;
   static const tlMarkerOrdered = 18.0;
   static const tlMarkerOrderedNested = 16.0;
   static const tlCheckbox = 14.0;

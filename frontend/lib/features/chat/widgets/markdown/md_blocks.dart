@@ -35,6 +35,41 @@ class MdImageBlock extends MdBlock {
   final String? caption;
 }
 
+/// A list whose items lead with `{{image:…}}`: one thumbnail row per item.
+class MdMediaListBlock extends MdBlock {
+  const MdMediaListBlock(this.items);
+  final List<MdMediaItem> items;
+}
+
+/// One row of a picture list: thumbnail, numbered title, description and an
+/// optional example line. Text fields are still markdown.
+class MdMediaItem {
+  const MdMediaItem({
+    required this.number,
+    this.query,
+    this.caption,
+    this.title,
+    this.body = '',
+    this.example,
+    this.children,
+  });
+
+  /// From the list (ordered) or the item's position (bullets).
+  final int number;
+
+  /// Image search query; null when the item has no image marker.
+  final String? query;
+  final String? caption;
+
+  /// The leading bold span, without its `**`.
+  final String? title;
+  final String body;
+
+  /// Text after `*Example:*`, without the label.
+  final String? example;
+  final MdList? children;
+}
+
 /// Display math: `$$…$$`, `\[…\]` or a ```math / ```latex / ```tex fence.
 class MdMathBlock extends MdBlock {
   const MdMathBlock(this.tex);
@@ -310,7 +345,7 @@ List<MdBlock> parseBlocks(String src) {
     if (m != null && m[1]!.length <= 3 && !_hrRe.hasMatch(line)) {
       flush();
       final r = _parseList(lines, i);
-      out.add(MdListBlock(r.$1));
+      out.add(_mediaList(r.$1) ?? MdListBlock(r.$1));
       i = r.$2;
       continue;
     }
@@ -553,4 +588,82 @@ class _Entry {
     lists.last.items.add(e.item);
   }
   return (root, j);
+}
+
+// ---- picture lists -----------------------------------------------------------
+
+// The model sometimes wraps the marker in emphasis: `**{{image:…}}**`.
+final _leadImageRe = RegExp(
+  r'^\s*(?:\*\*|__|\*|_)?\{\{image:([^}|]{2,120})(?:\|([^}]{1,160}))?\}\}(?:\*\*|__|\*|_)?\s*',
+);
+final _leadTitleRe = RegExp(
+  r'^(?:\*\*(.+?)\*\*|__(.+?)__)\s*(?::\s*|[-–—]\s+)?',
+);
+final _exampleRe = RegExp(
+  r'\s*(?:\*\*|\*|__|_)(?:example|e\.g\.)\s*:?\s*(?:\*\*|\*|__|_)\s*:?\s*',
+  caseSensitive: false,
+);
+
+/// `*Example: the whole sentence in italics.*` at the end of the item.
+final _exampleWholeRe = RegExp(
+  r'\s*(?:\*|_)(?:example|e\.g\.)\s*:\s*([^*_\n]+?)(?:\*|_)\s*$',
+  caseSensitive: false,
+);
+
+/// [list] as a picture list when at least two thirds of its started items
+/// lead with an image. An item still streaming in (empty text) is not
+/// counted either way, so the block keeps its kind while it grows.
+MdMediaListBlock? _mediaList(MdList list) {
+  final started = list.items.where((i) => i.text.trim().isNotEmpty).toList();
+  if (started.isEmpty || started.any((i) => i.checked != null)) return null;
+  final withImage = started.where((i) => _leadImageRe.hasMatch(i.text)).length;
+  if (withImage == 0 || withImage * 3 < started.length * 2) return null;
+  return MdMediaListBlock([
+    for (var k = 0; k < list.items.length; k++)
+      _mediaItem(list.items[k], list.ordered ? list.items[k].number : k + 1),
+  ]);
+}
+
+MdMediaItem _mediaItem(MdItem item, int number) {
+  var text = item.text.trim();
+  String? query, caption;
+  final image = _leadImageRe.firstMatch(text);
+  if (image != null) {
+    query = image[1]!.trim();
+    caption = image[2]?.trim();
+    if (caption != null && caption.isEmpty) caption = null;
+    text = text.substring(image.end);
+  }
+  // A stray leading icon would compete with the thumbnail.
+  text = text.replaceFirst(_leadIconRe, '');
+  String? title;
+  final t = _leadTitleRe.firstMatch(text);
+  if (t != null) {
+    title = (t[1] ?? t[2])!.trim().replaceFirst(RegExp(r'\s*:$'), '');
+    text = text.substring(t.end);
+  }
+  // Empty while the example is still streaming in: the row keeps its line.
+  String? example;
+  final whole = _exampleWholeRe.firstMatch(text);
+  var e = whole == null ? _exampleRe.firstMatch(text) : null;
+  // An example with code or several paragraphs stays in the body.
+  if (e != null && text.substring(e.end).contains(RegExp(r'```|\n\s*\n'))) {
+    e = null;
+  }
+  if (whole != null) {
+    example = whole[1]!.trim();
+    text = text.substring(0, whole.start);
+  } else if (e != null) {
+    example = text.substring(e.end).trim();
+    text = text.substring(0, e.start);
+  }
+  return MdMediaItem(
+    number: number,
+    query: query,
+    caption: caption,
+    title: title == null || title.isEmpty ? caption : title,
+    body: text.trim(),
+    example: example,
+    children: item.children,
+  );
 }

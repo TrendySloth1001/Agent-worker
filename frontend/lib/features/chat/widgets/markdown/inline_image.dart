@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:markdown/markdown.dart' as md;
 
 import '../../../../core/constants/app_config.dart';
@@ -12,6 +11,7 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../data/chat_api.dart';
 import '../../../../data/chat_event.dart';
 import '../image_strip.dart';
+import '../../../../data/api_client.dart';
 
 /// A picture the model placed on its own line with `{{image:QUERY|CAPTION}}`.
 /// The backend finds it (Wikipedia, Wikimedia Commons); nothing shows if no
@@ -160,7 +160,7 @@ abstract final class ImageQueryCache {
       final uri = Uri.parse(
         '${AppConfig.apiBaseUrl}/images/search',
       ).replace(queryParameters: {'q': query, 'n': '1'});
-      final res = await http
+      final res = await apiHttp
           .get(uri, headers: apiHeaders())
           .timeout(AppDurations.iconFetchTimeout);
       if (res.statusCode != 200) return const [];
