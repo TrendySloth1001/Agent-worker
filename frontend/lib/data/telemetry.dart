@@ -1,0 +1,374 @@
+/// Owner telemetry payloads (`/admin/telemetry/*`). Parsing is lenient:
+/// missing or mistyped fields become null/zero instead of throwing.
+library;
+
+int _i(Object? v) => v is num ? v.toInt() : 0;
+int? _ni(Object? v) => v is num ? v.toInt() : null;
+double _d(Object? v) => v is num ? v.toDouble() : 0;
+String? _s(Object? v) => v is String ? v : null;
+DateTime? _t(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
+Map<String, dynamic> _m(Object? v) =>
+    v is Map<String, dynamic> ? v : const <String, dynamic>{};
+List<Map<String, dynamic>> _l(Object? v) => [
+  if (v is List)
+    for (final x in v)
+      if (x is Map<String, dynamic>) x,
+];
+
+/// Counts, tokens and latency for one slice (total, provider, model, ...).
+class TelemetryAgg {
+  const TelemetryAgg({
+    this.requests = 0,
+    this.ok = 0,
+    this.failed = 0,
+    this.failureRate = 0,
+    this.tokensIn = 0,
+    this.tokensOut = 0,
+    this.units = 0,
+    this.latencyAvg,
+    this.latencyP50,
+    this.latencyP95,
+    this.ttftAvg,
+    this.ttftP50,
+    this.lastAt,
+  });
+
+  factory TelemetryAgg.fromJson(Map<String, dynamic> j) => TelemetryAgg(
+    requests: _i(j['requests']),
+    ok: _i(j['ok']),
+    failed: _i(j['failed']),
+    failureRate: _d(j['failureRate']),
+    tokensIn: _i(j['tokensIn']),
+    tokensOut: _i(j['tokensOut']),
+    units: _i(j['units']),
+    latencyAvg: _ni(j['latencyAvg']),
+    latencyP50: _ni(j['latencyP50']),
+    latencyP95: _ni(j['latencyP95']),
+    ttftAvg: _ni(j['ttftAvg']),
+    ttftP50: _ni(j['ttftP50']),
+    lastAt: _t(j['lastAt']),
+  );
+
+  final int requests, ok, failed, tokensIn, tokensOut, units;
+  final double failureRate;
+  final int? latencyAvg, latencyP50, latencyP95, ttftAvg, ttftP50;
+  final DateTime? lastAt;
+
+  int get tokens => tokensIn + tokensOut;
+}
+
+class TelemetryLastError {
+  const TelemetryLastError({
+    required this.at,
+    this.code,
+    this.status,
+    this.message,
+    this.kind,
+  });
+
+  static TelemetryLastError? fromJson(Object? raw) {
+    final j = _m(raw);
+    final at = _t(j['at']);
+    if (at == null) return null;
+    return TelemetryLastError(
+      at: at,
+      code: _s(j['code']),
+      status: _ni(j['status']),
+      message: _s(j['message']),
+      kind: _s(j['kind']),
+    );
+  }
+
+  final DateTime at;
+  final String? code, message, kind;
+  final int? status;
+}
+
+/// Latest provider rate-limit headers for a model (Groq reports them).
+class TelemetryRateLimit {
+  const TelemetryRateLimit({
+    this.limitRequests,
+    this.remainingRequests,
+    this.limitTokens,
+    this.remainingTokens,
+    this.resetsAt,
+  });
+
+  static TelemetryRateLimit? fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    return TelemetryRateLimit(
+      limitRequests: _ni(raw['limitRequests']),
+      remainingRequests: _ni(raw['remainingRequests']),
+      limitTokens: _ni(raw['limitTokens']),
+      remainingTokens: _ni(raw['remainingTokens']),
+      resetsAt: _t(raw['resetsAt']),
+    );
+  }
+
+  final int? limitRequests, remainingRequests, limitTokens, remainingTokens;
+  final DateTime? resetsAt;
+}
+
+class ModelTelemetry {
+  ModelTelemetry({
+    required this.id,
+    required this.provider,
+    required this.model,
+    required this.name,
+    required this.agg,
+    required this.failuresByCode,
+    required this.inRegistry,
+    this.lastError,
+    this.cooldownEnds,
+    this.rateLimit,
+  });
+
+  factory ModelTelemetry.fromJson(Map<String, dynamic> j, DateTime fetchedAt) {
+    final ms = _i(j['cooldownMs']);
+    return ModelTelemetry(
+      id: _s(j['id']) ?? '',
+      provider: _s(j['provider']) ?? '',
+      model: _s(j['model']),
+      name: _s(j['name']) ?? _s(j['model']) ?? '',
+      agg: TelemetryAgg.fromJson(j),
+      failuresByCode: {
+        for (final e in _m(j['failuresByCode']).entries)
+          if (e.value is num) e.key: (e.value as num).toInt(),
+      },
+      inRegistry: j['inRegistry'] == true,
+      lastError: TelemetryLastError.fromJson(j['lastError']),
+      // Server clock may differ: anchor the countdown to the local fetch time.
+      cooldownEnds: ms > 0 ? fetchedAt.add(Duration(milliseconds: ms)) : null,
+      rateLimit: TelemetryRateLimit.fromJson(j['rateLimit']),
+    );
+  }
+
+  final String id, provider, name;
+  final String? model;
+  final TelemetryAgg agg;
+  final Map<String, int> failuresByCode;
+  final bool inRegistry;
+  final TelemetryLastError? lastError;
+  final DateTime? cooldownEnds;
+  final TelemetryRateLimit? rateLimit;
+
+  Duration? cooldownLeft(DateTime now) {
+    final end = cooldownEnds;
+    if (end == null || !end.isAfter(now)) return null;
+    return end.difference(now);
+  }
+}
+
+class NamedAgg {
+  const NamedAgg(this.name, this.agg);
+  final String name;
+  final TelemetryAgg agg;
+}
+
+class UserTelemetry {
+  const UserTelemetry({
+    this.userId,
+    this.email,
+    this.name,
+    this.role,
+    required this.window,
+    required this.todayRequests,
+    required this.todayTokens,
+    required this.todayFailed,
+  });
+
+  factory UserTelemetry.fromJson(Map<String, dynamic> j) {
+    final today = _m(j['today']);
+    return UserTelemetry(
+      userId: _s(j['userId']),
+      email: _s(j['email']),
+      name: _s(j['name']),
+      role: _s(j['role']),
+      window: TelemetryAgg.fromJson(_m(j['window'])),
+      todayRequests: _i(today['requests']),
+      todayTokens: _i(today['tokens']),
+      todayFailed: _i(today['failed']),
+    );
+  }
+
+  final String? userId, email, name, role;
+  final TelemetryAgg window;
+  final int todayRequests, todayTokens, todayFailed;
+}
+
+class TopError {
+  const TopError({
+    required this.provider,
+    this.model,
+    this.code,
+    this.message,
+    required this.count,
+    this.lastAt,
+  });
+
+  factory TopError.fromJson(Map<String, dynamic> j) => TopError(
+    provider: _s(j['provider']) ?? '',
+    model: _s(j['model']),
+    code: _s(j['code']),
+    message: _s(j['message']),
+    count: _i(j['count']),
+    lastAt: _t(j['lastAt']),
+  );
+
+  final String provider;
+  final String? model, code, message;
+  final int count;
+  final DateTime? lastAt;
+}
+
+class TelemetryOverview {
+  const TelemetryOverview({
+    required this.window,
+    required this.totals,
+    required this.providers,
+    required this.models,
+    required this.kinds,
+    required this.users,
+    required this.topErrors,
+  });
+
+  factory TelemetryOverview.fromJson(Map<String, dynamic> j) {
+    final now = DateTime.now();
+    return TelemetryOverview(
+      window: _s(j['window']) ?? '',
+      totals: TelemetryAgg.fromJson(_m(j['totals'])),
+      providers: [
+        for (final p in _l(j['providers']))
+          NamedAgg(_s(p['provider']) ?? '', TelemetryAgg.fromJson(p)),
+      ],
+      models: [
+        for (final m in _l(j['models'])) ModelTelemetry.fromJson(m, now),
+      ],
+      kinds: [
+        for (final k in _l(j['kinds']))
+          NamedAgg(_s(k['kind']) ?? '', TelemetryAgg.fromJson(k)),
+      ],
+      users: [for (final u in _l(j['users'])) UserTelemetry.fromJson(u)],
+      topErrors: [for (final e in _l(j['topErrors'])) TopError.fromJson(e)],
+    );
+  }
+
+  final String window;
+  final TelemetryAgg totals;
+  final List<NamedAgg> providers, kinds;
+  final List<ModelTelemetry> models;
+  final List<UserTelemetry> users;
+  final List<TopError> topErrors;
+}
+
+class SeriesPoint {
+  const SeriesPoint({
+    required this.t,
+    required this.requests,
+    required this.failed,
+    required this.tokensIn,
+    required this.tokensOut,
+    this.latencyP50,
+    this.ttftP50,
+  });
+
+  factory SeriesPoint.fromJson(Map<String, dynamic> j) => SeriesPoint(
+    t: _t(j['t']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+    requests: _i(j['requests']),
+    failed: _i(j['failed']),
+    tokensIn: _i(j['tokensIn']),
+    tokensOut: _i(j['tokensOut']),
+    latencyP50: _ni(j['latencyP50']),
+    ttftP50: _ni(j['ttftP50']),
+  );
+
+  final DateTime t;
+  final int requests, failed, tokensIn, tokensOut;
+  final int? latencyP50, ttftP50;
+}
+
+class TelemetrySeries {
+  const TelemetrySeries({required this.bucket, required this.points});
+
+  factory TelemetrySeries.fromJson(Map<String, dynamic> j) => TelemetrySeries(
+    bucket: _s(j['bucket']) ?? '',
+    points: [for (final p in _l(j['points'])) SeriesPoint.fromJson(p)],
+  );
+
+  final String bucket;
+  final List<SeriesPoint> points;
+}
+
+/// One recorded call: the minute-to-minute log.
+class TelemetryEvent {
+  const TelemetryEvent({
+    required this.id,
+    required this.ts,
+    required this.provider,
+    this.model,
+    required this.kind,
+    required this.purpose,
+    required this.ok,
+    this.status,
+    this.errorCode,
+    this.errorMessage,
+    this.latencyMs,
+    this.ttftMs,
+    this.count = 1,
+    this.promptTokens,
+    this.completionTokens,
+    this.attempt,
+    this.userId,
+    this.userEmail,
+    this.requestId,
+    this.conversationId,
+  });
+
+  factory TelemetryEvent.fromJson(Map<String, dynamic> j) => TelemetryEvent(
+    id: '${j['id'] ?? ''}',
+    ts: _t(j['ts']) ?? DateTime.now(),
+    provider: _s(j['provider']) ?? '',
+    model: _s(j['model']),
+    kind: _s(j['kind']) ?? '',
+    purpose: _s(j['purpose']) ?? _s(j['kind']) ?? '',
+    ok: j['ok'] == true,
+    status: _ni(j['status']),
+    errorCode: _s(j['errorCode']),
+    errorMessage: _s(j['errorMessage']),
+    latencyMs: _ni(j['latencyMs']),
+    ttftMs: _ni(j['ttftMs']),
+    count: _ni(j['count']) ?? 1,
+    promptTokens: _ni(j['promptTokens']),
+    completionTokens: _ni(j['completionTokens']),
+    attempt: _ni(j['attempt']),
+    userId: _s(j['userId']),
+    userEmail: _s(j['userEmail']),
+    requestId: _s(j['requestId']),
+    conversationId: _s(j['conversationId']),
+  );
+
+  final String id, provider, kind, purpose;
+  final DateTime ts;
+  final String? model, errorCode, errorMessage, userId, userEmail;
+  final String? requestId, conversationId;
+  final bool ok;
+  final int? status, latencyMs, ttftMs, promptTokens, completionTokens;
+  final int? attempt;
+  final int count;
+
+  int get tokens => (promptTokens ?? 0) + (completionTokens ?? 0);
+
+  /// Numeric id for ordering; events kept in memory server-side have none.
+  int get order => int.tryParse(id) ?? 0;
+}
+
+class EventsPage {
+  const EventsPage(this.events, this.nextBefore);
+
+  factory EventsPage.fromJson(Map<String, dynamic> j) => EventsPage([
+    for (final e in _l(j['events'])) TelemetryEvent.fromJson(e),
+  ], _s(j['nextBefore']));
+
+  final List<TelemetryEvent> events;
+  final String? nextBefore;
+}

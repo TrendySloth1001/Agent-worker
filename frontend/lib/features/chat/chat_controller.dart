@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/docs.dart';
 import '../../core/haptics.dart';
 import '../../core/notifications.dart';
 import '../../data/ai_model.dart';
@@ -13,14 +14,25 @@ import '../../data/chat_event.dart';
 import '../../data/chat_message.dart';
 import '../../data/conversation.dart';
 import '../../data/conversations_api.dart';
+import '../../data/doc_models.dart';
+import '../../data/docs_api.dart';
 import '../../data/files_api.dart';
+import '../docs/doc_controller.dart';
+import '../docs/doc_registry.dart';
 import '../settings/settings_controller.dart';
 
 class ChatController extends ChangeNotifier {
-  ChatController(this._api, this._settings, this._conversations)
-    : webSearch = _settings.defaultWebSearch,
-      knowledge = _settings.defaultKnowledge,
-      roundTable = _settings.defaultRoundTable {
+  ChatController(
+    this._api,
+    this._settings,
+    this._conversations, {
+    DocsApi? docs,
+    DocRegistry? docRegistry,
+  }) : _docRegistry = docRegistry ?? DocRegistry.instance,
+       _docsOverride = docs,
+       webSearch = _settings.defaultWebSearch,
+       knowledge = _settings.defaultKnowledge,
+       roundTable = _settings.defaultRoundTable {
     _lastDefaults = (_settings.defaultWebSearch, _settings.defaultKnowledge);
     _lastRoundTableDefault = _settings.defaultRoundTable;
     _settings.addListener(_onSettings);
@@ -66,6 +78,24 @@ class ChatController extends ChangeNotifier {
 
   /// Round Table: several models draft and cross-check, a chair answers.
   bool roundTable;
+
+  // ---- DOC mode --------------------------------------------------------------
+
+  final DocRegistry _docRegistry;
+  final DocsApi? _docsOverride;
+  DocsApi get _docs => _docsOverride ?? _docRegistry.api;
+
+  /// DOC: the next message is written as a long-form document.
+  bool doc = false;
+
+  /// short, standard or long.
+  String docLength = DocConfig.defaultLength;
+
+  /// Id of a document just started from this chat (the screen opens it).
+  final docStarted = ValueNotifier<String?>(null);
+
+  /// Doc id to the listener that keeps its card's `meta.doc` current.
+  final _docLinks = <String, VoidCallback>{};
 
   /// True from send until the stream ends or is stopped.
   bool isSending = false;
@@ -146,8 +176,139 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleDoc() {
+    doc = !doc;
+    notifyListeners();
+  }
+
+  void setDocLength(String length) {
+    docLength = length;
+    notifyListeners();
+  }
+
+  /// DOC: [text] becomes a document (POST /docs) instead of a chat reply.
+  /// The reply is a card linked through `meta.doc`; the document keeps
+  /// being written on the server while the chat moves on. [brief] replaces
+  /// the prompt sent (TURN INTO DOC).
+  Future<void> sendDoc(
+    String text, {
+    List<FileInfo> attachments = const [],
+    String? brief,
+  }) async {
+    final content = text.trim();
+    if ((content.isEmpty && attachments.isEmpty) || isSending) return;
+    messages.add(
+      ChatMessage(
+        role: Role.user,
+        content: content,
+        attachments: List.of(attachments),
+      ),
+    );
+    final reply = ChatMessage(role: Role.assistant, isStreaming: true)
+      ..status = 'queued';
+    messages.add(reply);
+    isSending = true;
+    notifyListeners();
+    final session = _session;
+    final chatId = conversationId ??= ConversationsApi.newId();
+    try {
+      final id = await _docs.create(
+        DocRequest(
+          prompt: brief ?? content,
+          conversationId: chatId,
+          length: docLength,
+          webSearch: webSearch,
+          knowledge: knowledge,
+          attachments: [for (final a in attachments) a.id],
+          profile: _settings.profileJson(),
+        ),
+      );
+      if (session != _session) return;
+      final live = _docRegistry.watch(
+        id,
+        seed: Doc(id: id, prompt: content, conversationId: chatId),
+      );
+      reply
+        ..isStreaming = false
+        ..status = null
+        ..content = DocStrings.messageText(live.doc.title)
+        ..meta = {...reply.meta, 'doc': live.doc.toMeta()};
+      isSending = false;
+      Haptics.send();
+      notifyListeners();
+      _save();
+      _linkDoc(reply, live);
+      docStarted.value = id;
+    } catch (e) {
+      if (session != _session) return;
+      Haptics.error();
+      reply
+        ..isStreaming = false
+        ..status = null
+        ..isError = true
+        ..content = e is ApiException ? e.message : DocStrings.startFailed;
+      isSending = false;
+      notifyListeners();
+    }
+  }
+
+  /// TURN INTO DOC: the reply (with its question) is the brief.
+  void turnIntoDoc(ChatMessage reply) {
+    final i = messages.indexOf(reply);
+    final question = i > 0 && messages[i - 1].role == Role.user
+        ? messages[i - 1].content
+        : null;
+    sendDoc(
+      DocStrings.turnIntoDocTurn,
+      brief: DocStrings.briefFromReply(question, reply.content),
+    );
+  }
+
+  /// Keeps [reply]'s `meta.doc` in step with the live doc, and saves the
+  /// chat when its status or title changes.
+  void _linkDoc(ChatMessage reply, DocController live) {
+    _docLinks.remove(live.id)?.call();
+    void listener() {
+      if (!messages.contains(reply)) return;
+      final meta = live.doc.toMeta();
+      final old = reply.meta['doc'];
+      final changed =
+          old is! Map ||
+          old['status'] != meta['status'] ||
+          old['title'] != meta['title'];
+      reply
+        ..meta = {...reply.meta, 'doc': meta}
+        ..content = DocStrings.messageText(live.doc.title);
+      if (changed) _save();
+    }
+
+    live.addListener(listener);
+    _docLinks[live.id] = () => live.removeListener(listener);
+  }
+
+  /// Re-links cards of documents that were still running when saved.
+  void _relinkDocs() {
+    for (final m in messages) {
+      final link = DocLink.fromMeta(m.meta);
+      if (link == null || !DocStatus.isRunning(link.status)) continue;
+      final live = _docRegistry.watch(
+        link.id,
+        seed: Doc(id: link.id, title: link.title, status: link.status),
+      );
+      _linkDoc(m, live);
+    }
+  }
+
+  void _unlinkDocs() {
+    for (final off in _docLinks.values) {
+      off();
+    }
+    _docLinks.clear();
+  }
+
   void newChat() {
     _detachTable();
+    _unlinkDocs();
     _session++;
     _teardown();
     messages.clear();
@@ -179,6 +340,7 @@ class ChatController extends ChangeNotifier {
   /// Shows a chat the server just returned (opened, forked or merged).
   void adopt(ConversationSummary summary, List<ChatMessage> saved) {
     _detachTable();
+    _unlinkDocs();
     _session++;
     _teardown();
     isSending = false;
@@ -190,6 +352,7 @@ class ChatController extends ChangeNotifier {
     origin = summary.origin;
     parentId = summary.forkedFrom;
     parentTitle = summary.parentTitle;
+    _relinkDocs();
     notifyListeners();
   }
 
@@ -385,6 +548,10 @@ class ChatController extends ChangeNotifier {
   void send(String text, {List<FileInfo> attachments = const []}) {
     final content = text.trim();
     if ((content.isEmpty && attachments.isEmpty) || isSending) return;
+    if (doc) {
+      sendDoc(content, attachments: attachments);
+      return;
+    }
     messages.add(
       ChatMessage(
         role: Role.user,
@@ -498,6 +665,7 @@ class ChatController extends ChangeNotifier {
           profile: _settings.profileJson(),
           context: _contextText,
           roundTable: roundTableOverride ?? roundTable,
+          conversationId: conversationId,
         )
         .listen(
           onEvent,
@@ -904,7 +1072,9 @@ class ChatController extends ChangeNotifier {
     _notify.background.removeListener(_onBackground);
     _dropBackground();
     _teardown();
+    _unlinkDocs();
     draft.dispose();
+    docStarted.dispose();
     super.dispose();
   }
 }

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/docs.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/glass.dart';
@@ -29,6 +30,11 @@ class ChatInput extends StatefulWidget {
     this.roundTable = false,
     this.onToggleRoundTable,
     this.draft,
+    this.doc = false,
+    this.onToggleDoc,
+    this.docLength = DocConfig.defaultLength,
+    this.onDocLength,
+    this.onSendAsDoc,
   });
 
   final void Function(String text, List<FileInfo> attachments) onSend;
@@ -48,6 +54,17 @@ class ChatInput extends StatefulWidget {
   /// Text to place in the field; consumed (reset to null) once applied.
   final ValueNotifier<String?>? draft;
 
+  /// DOC chip (long-form document); hidden when [onToggleDoc] is null.
+  final bool doc;
+  final VoidCallback? onToggleDoc;
+
+  /// Document length while DOC is on, and its picker.
+  final String docLength;
+  final ValueChanged<String>? onDocLength;
+
+  /// Sends the text as a document once (the WRITE AS DOCUMENT? hint).
+  final void Function(String text, List<FileInfo> attachments)? onSendAsDoc;
+
   @override
   State<ChatInput> createState() => _ChatInputState();
 }
@@ -57,6 +74,9 @@ class _ChatInputState extends State<ChatInput> {
   final _files = AttachmentsController();
   final _picker = ImagePicker();
   bool _waiting = false;
+
+  /// Text the user dismissed the document hint for.
+  String? _hintDismissed;
 
   @override
   void initState() {
@@ -93,7 +113,7 @@ class _ChatInputState extends State<ChatInput> {
 
   bool get _canSend => _controller.text.trim().isNotEmpty || _files.hasUploaded;
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool asDoc = false}) async {
     if (widget.isStreaming || _waiting || !_canSend) return;
     final text = _controller.text;
     // Uploads that are still running finish first; the server waits for
@@ -109,7 +129,8 @@ class _ChatInputState extends State<ChatInput> {
     }
     if (text.trim().isEmpty && ready.isEmpty) return;
     Haptics.send();
-    widget.onSend(text, ready);
+    final send = asDoc ? widget.onSendAsDoc ?? widget.onSend : widget.onSend;
+    send(text, ready);
     _controller.clear();
     _files.clearSent();
   }
@@ -179,8 +200,43 @@ class _ChatInputState extends State<ChatInput> {
     for (final x in xs) (path: x.path, name: x.name, size: await x.length()),
   ];
 
+  /// "write a report on …" with DOC off: offer a document, never start one.
+  bool _suggestsDoc(String text) =>
+      !widget.doc &&
+      widget.onSendAsDoc != null &&
+      !widget.isStreaming &&
+      text != _hintDismissed &&
+      DocConfig.intent.hasMatch(text);
+
   @override
   Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) => AnimatedSize(
+            duration: AppDurations.fast,
+            alignment: Alignment.bottomCenter,
+            child: _suggestsDoc(_controller.text)
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: _DocHint(
+                      onWrite: () => _submit(asDoc: true),
+                      onDismiss: () =>
+                          setState(() => _hintDismissed = _controller.text),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ),
+        _capsule(context),
+      ],
+    );
+  }
+
+  Widget _capsule(BuildContext context) {
     return Glass(
       radius: AppRadius.lg,
       padding: const EdgeInsets.all(AppSpacing.xs),
@@ -188,6 +244,8 @@ class _ChatInputState extends State<ChatInput> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AttachmentBar(controller: _files),
+          if (widget.doc && widget.onDocLength != null)
+            _DocLengthRow(value: widget.docLength, onPick: widget.onDocLength!),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -223,31 +281,44 @@ class _ChatInputState extends State<ChatInput> {
               AppSpacing.sm,
               AppSpacing.xs,
             ),
-            child: Row(
-              children: [
-                _Chip(
-                  label: AppStrings.web,
-                  icon: AppIcons.web,
-                  active: widget.webSearch,
-                  onTap: widget.onToggleWebSearch,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                _Chip(
-                  label: AppStrings.kb,
-                  icon: AppIcons.knowledge,
-                  active: widget.knowledge,
-                  onTap: widget.onToggleKnowledge,
-                ),
-                if (widget.onToggleRoundTable != null) ...[
+            // Scrolls rather than overflowing when every chip is shown.
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _Chip(
+                    label: AppStrings.web,
+                    icon: AppIcons.web,
+                    active: widget.webSearch,
+                    onTap: widget.onToggleWebSearch,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   _Chip(
-                    label: TableStrings.chip,
-                    icon: AppIcons.roundTable,
-                    active: widget.roundTable,
-                    onTap: widget.onToggleRoundTable!,
+                    label: AppStrings.kb,
+                    icon: AppIcons.knowledge,
+                    active: widget.knowledge,
+                    onTap: widget.onToggleKnowledge,
                   ),
+                  if (widget.onToggleRoundTable != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    _Chip(
+                      label: TableStrings.chip,
+                      icon: AppIcons.roundTable,
+                      active: widget.roundTable,
+                      onTap: widget.onToggleRoundTable!,
+                    ),
+                  ],
+                  if (widget.onToggleDoc != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    _Chip(
+                      label: DocStrings.chip,
+                      icon: AppIcons.doc,
+                      active: widget.doc,
+                      onTap: widget.onToggleDoc!,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -361,6 +432,122 @@ class _Chip extends StatelessWidget {
           text: label,
           style: context.text.caption,
           color: active ? p.textInverse : p.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// WRITE AS DOCUMENT? — one tap sends the message as a document.
+class _DocHint extends StatelessWidget {
+  const _DocHint({required this.onWrite, required this.onDismiss});
+
+  final VoidCallback onWrite;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = context.text;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Glass(
+        padding: const EdgeInsets.only(left: AppSpacing.md),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                Haptics.tap();
+                onWrite();
+              },
+              child: SizedBox(
+                height: AppSizes.sendButton,
+                child: Row(
+                  children: [
+                    AppIcon(
+                      AppIcons.doc,
+                      size: AppIconSize.sm,
+                      color: p.accent,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      DocStrings.suggest,
+                      style: t.caption.copyWith(color: p.textPrimary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                Haptics.tap();
+                onDismiss();
+              },
+              child: SizedBox.square(
+                dimension: AppSizes.sendButton,
+                child: AppIcon(
+                  AppIcons.close,
+                  size: AppIconSize.sm,
+                  semanticLabel: AppStrings.cancel,
+                  color: p.textTertiary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// LENGTH  SHORT · STANDARD · LONG, shown while DOC is on.
+class _DocLengthRow extends StatelessWidget {
+  const _DocLengthRow({required this.value, required this.onPick});
+
+  final String value;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = context.text;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.xs,
+        AppSpacing.md,
+        0,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            Text(DocStrings.lengthLabel, style: t.caption),
+            const SizedBox(width: AppSpacing.sm),
+            for (final (id, label) in DocStrings.lengths)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  Haptics.tap();
+                  onPick(id);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: Text(
+                    label,
+                    style: t.caption.copyWith(
+                      color: id == value ? p.accent : p.textTertiary,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

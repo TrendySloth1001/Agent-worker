@@ -98,6 +98,7 @@ class ChatApi {
     Map<String, String> profile = const {},
     String? context,
     bool roundTable = false,
+    String? conversationId,
   }) async* {
     final request =
         http.Request('POST', Uri.parse('${AppConfig.apiBaseUrl}/chat'))
@@ -114,6 +115,7 @@ class ChatApi {
             if (profile.isNotEmpty) 'profile': profile,
             'context': ?context,
             if (roundTable) 'roundTable': true,
+            'conversationId': ?conversationId,
           });
 
     // [client] stays the caller's (closing it stops the stream); the

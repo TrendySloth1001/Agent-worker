@@ -57,6 +57,7 @@ abstract final class AppIcons {
   static const retry = HugeIcons.strokeRoundedRefresh;
   static const playPlain = HugeIcons.strokeRoundedPlay;
   static const pause = HugeIcons.strokeRoundedPause;
+  static const fileDeleted = HugeIcons.strokeRoundedFileRemove;
 
   // Chat
   static const web = HugeIcons.strokeRoundedGlobe02;
@@ -64,6 +65,9 @@ abstract final class AppIcons {
   static const chat = HugeIcons.strokeRoundedBubbleChat;
   static const diagram = HugeIcons.strokeRoundedFlowchart01;
   static const code = HugeIcons.strokeRoundedCodeSquare;
+
+  /// DOC mode: a long-form document (chip, card, reader).
+  static const doc = HugeIcons.strokeRoundedFile02;
 
   // Modes
   static const modeEngineer = HugeIcons.strokeRoundedComputerTerminal01;

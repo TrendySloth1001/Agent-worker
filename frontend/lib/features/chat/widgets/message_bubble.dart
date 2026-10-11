@@ -5,12 +5,15 @@ import '../../../data/chat_api.dart';
 import '../../../data/knowledge_api.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/docs.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/appear.dart';
 import '../../../core/widgets/copy_action.dart';
 import '../../../data/chat_message.dart';
+import '../../../data/doc_models.dart';
+import '../../docs/doc_card.dart';
 import '../chat_actions.dart';
 import '../share/reply_share.dart';
 import 'markdown/app_markdown.dart';
@@ -36,6 +39,7 @@ class MessageBubble extends StatelessWidget {
     this.onAnswerFast,
     this.onNotify,
     this.onEdit,
+    this.onTurnIntoDoc,
   });
 
   final ChatMessage message;
@@ -60,6 +64,9 @@ class MessageBubble extends StatelessWidget {
 
   /// User message: edit it in place (long-press menu). Null while sending.
   final VoidCallback? onEdit;
+
+  /// Reply: write a document from it (long-press menu, long replies).
+  final VoidCallback? onTurnIntoDoc;
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +134,8 @@ class MessageBubble extends StatelessWidget {
     final p = context.palette;
     final t = context.text;
     final waiting = message.isStreaming && message.content.isEmpty;
+    final doc = message.isError ? null : DocLink.fromMeta(message.meta);
+    if (doc != null) return _docReply(context, doc);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -160,13 +169,24 @@ class MessageBubble extends StatelessWidget {
         else if (waiting)
           ThinkingIndicator(label: _statusLabel())
         else
-          ReplyScope(
-            message: message,
-            child: AppMarkdown(
-              data: message.content,
-              citations: message.citations,
-              evidence: message.evidence,
-              streaming: message.isStreaming,
+          GestureDetector(
+            onLongPress:
+                message.isStreaming ||
+                    message.content.length < DocConfig.turnIntoDocMinChars
+                ? null
+                : () => showReplyActions(
+                    context,
+                    text: message.content,
+                    onTurnIntoDoc: onTurnIntoDoc,
+                  ),
+            child: ReplyScope(
+              message: message,
+              child: AppMarkdown(
+                data: message.content,
+                citations: message.citations,
+                evidence: message.evidence,
+                streaming: message.isStreaming,
+              ),
             ),
           ),
         if (message.error != null) ...[
@@ -228,6 +248,34 @@ class MessageBubble extends StatelessWidget {
             ],
           ),
         ],
+      ],
+    );
+  }
+}
+
+extension on MessageBubble {
+  /// A reply that is a document: the model line, then the live card.
+  Widget _docReply(BuildContext context, DocLink doc) {
+    final p = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: AppSizes.dot,
+              height: AppSizes.dot,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: p.textPrimary,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(DocStrings.card, style: context.text.caption),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        DocCard(link: doc),
       ],
     );
   }

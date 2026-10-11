@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/docs.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
@@ -60,6 +61,51 @@ Future<void> showUserMessageActions(
   );
   if (action == EditStrings.edit) onEdit?.call();
   if (action == LineageStrings.forkFromHere) onForkHere?.call();
+  if (action == AppStrings.copy) {
+    await Clipboard.setData(ClipboardData(text: text));
+    Haptics.received();
+  }
+}
+
+/// Long-press menu for a reply: TURN INTO DOC (long replies, when
+/// [onTurnIntoDoc] is set) and COPY.
+Future<void> showReplyActions(
+  BuildContext context, {
+  required String text,
+  VoidCallback? onTurnIntoDoc,
+}) async {
+  Haptics.tap();
+  final p = context.palette;
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: p.surface,
+    shape: RoundedRectangleBorder(
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(AppRadius.lg),
+      ),
+      side: BorderSide(color: p.border),
+    ),
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onTurnIntoDoc != null)
+            _Row(
+              label: DocStrings.turnIntoDoc,
+              icon: AppIcons.doc,
+              subtitle: DocStrings.turnIntoDocHint,
+              onTap: () => Navigator.pop(sheet, DocStrings.turnIntoDoc),
+            ),
+          _Row(
+            label: AppStrings.copy,
+            icon: AppIcons.copy,
+            onTap: () => Navigator.pop(sheet, AppStrings.copy),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (action == DocStrings.turnIntoDoc) onTurnIntoDoc?.call();
   if (action == AppStrings.copy) {
     await Clipboard.setData(ClipboardData(text: text));
     Haptics.received();

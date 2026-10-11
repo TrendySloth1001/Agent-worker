@@ -48,6 +48,9 @@ abstract final class ShareStrings {
   static const mdMime = 'text/markdown';
   static const pdfMime = 'application/pdf';
   static const pngMime = 'image/png';
+  static const docxExtension = 'docx';
+  static const docxMime =
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   static const replyFile = 'reply';
 
   /// "2026-10-11 14:03".

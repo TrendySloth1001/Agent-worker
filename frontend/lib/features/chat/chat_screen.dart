@@ -14,6 +14,7 @@ import '../../core/widgets/size_reporter.dart';
 import '../../data/chat_message.dart';
 import '../../data/conversations_api.dart';
 import '../../data/files_api.dart';
+import '../docs/doc_screen.dart';
 import 'chat_actions.dart';
 import 'chat_controller.dart';
 import 'share/chat_export.dart';
@@ -69,6 +70,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.addListener(() {
       _showScrollButton.value = _scroll.offset > AppSizes.scrollButtonThreshold;
     });
+    _controller.docStarted.addListener(_onDocStarted);
     AppNotifications.instance.opened.addListener(_onNotificationOpened);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _onNotificationOpened(),
@@ -81,6 +83,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (id == null || !mounted) return;
     AppNotifications.instance.opened.value = null;
     _openChat(id);
+  }
+
+  /// A document started from the composer opens in the reader.
+  void _onDocStarted() {
+    final id = _controller.docStarted.value;
+    if (id == null || !mounted) return;
+    _controller.docStarted.value = null;
+    openDoc(context, id);
   }
 
   Future<void> _notifyMe(ChatMessage message) async {
@@ -218,6 +228,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           roundTable: _controller.roundTable,
                           onToggleRoundTable: _controller.toggleRoundTable,
                           draft: _controller.draft,
+                          doc: _controller.doc,
+                          onToggleDoc: _controller.toggleDoc,
+                          docLength: _controller.docLength,
+                          onDocLength: _controller.setDocLength,
+                          onSendAsDoc: (text, files) =>
+                              _controller.sendDoc(text, attachments: files),
                         ),
                       ),
                     ],
@@ -303,6 +319,9 @@ class _ChatScreenState extends State<ChatScreen> {
             onNotify: message.isStreaming ? () => _notifyMe(message) : null,
             onEdit: message.role == Role.user && !_controller.isSending
                 ? () => setState(() => _editing = message)
+                : null,
+            onTurnIntoDoc: canFork && message.role == Role.assistant
+                ? () => _controller.turnIntoDoc(message)
                 : null,
           );
         },

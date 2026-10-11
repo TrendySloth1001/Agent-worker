@@ -1,8 +1,8 @@
 abstract final class AppConfig {
-  /// Backend on this Mac's Wi-Fi IP. Change if your network changes.
+  /// Hosted backend (Coolify). Override with --dart-define API_BASE_URL.
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.0.18:3000',
+    defaultValue: 'https://sparky.cloudnsofts.com',
   );
 
   /// Sent as a bearer token only when non-empty (matches the server API_TOKEN).

@@ -324,6 +324,7 @@ abstract final class AppStrings {
   static const attachPage = 'PAGE';
   static const attachFile = 'FILE';
   static const attachOpenFailed = 'CANT OPEN FILE';
+  static const attachDeleted = 'FILE DELETED';
   static const attachMedia = 'PHOTOS & VIDEOS';
   static const attachTakePhoto = 'TAKE PHOTO';
   static const attachRecordVideo = 'RECORD VIDEO';

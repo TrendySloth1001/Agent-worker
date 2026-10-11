@@ -145,6 +145,13 @@ abstract final class ImageQueryCache {
 
   static List<ImageRef>? peek(String query) => _results[query.toLowerCase()];
 
+  /// Stores images the server already resolved (DOC sections), so their
+  /// `{{image:…}}` blocks show without another search.
+  static void seed(String query, List<ImageRef> images) {
+    if (query.trim().isEmpty || images.isEmpty) return;
+    _results[query.toLowerCase()] = images;
+  }
+
   static Future<List<ImageRef>> load(String query) {
     final key = query.toLowerCase();
     final hit = _results[key];

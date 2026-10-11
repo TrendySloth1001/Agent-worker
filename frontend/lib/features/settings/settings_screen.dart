@@ -14,6 +14,9 @@ import '../../core/widgets/segmented.dart';
 import '../../core/widgets/toggle_row.dart';
 import '../../data/usage.dart';
 import '../knowledge/knowledge_screen.dart';
+import '../storage/storage_screen.dart';
+import '../storage/widgets/storage_usage_card.dart';
+import '../../core/constants/storage.dart';
 import 'settings_controller.dart';
 import 'widgets/connections_section.dart';
 import 'widgets/personalization.dart';
@@ -22,6 +25,9 @@ import 'widgets/section_header.dart';
 import 'widgets/service_cards.dart';
 import 'widgets/status_strip.dart';
 import 'widgets/usage_states.dart';
+import 'telemetry/telemetry_entry.dart';
+import '../../core/constants/telemetry.dart';
+import '../auth/auth_controller.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/icon_label.dart';
@@ -67,7 +73,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         body: ListenableBuilder(
-          listenable: Listenable.merge([scope.settings, scope.usage]),
+          listenable: Listenable.merge([
+            scope.settings,
+            scope.usage,
+            AuthController.instance,
+          ]),
           builder: (context, _) => RefreshIndicator(
             color: p.accent,
             backgroundColor: p.surface,
@@ -87,11 +97,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: AppIcons.models,
                 ),
                 ..._providers(scope),
+                if (AuthController.instance.user?.isOwner ?? false) ...[
+                  const SectionHeader(
+                    TelemetryStrings.section,
+                    icon: TelemetryIcons.section,
+                  ),
+                  const TelemetryEntry(),
+                ],
                 const SectionHeader(
                   AppStrings.dataToolsSection,
                   icon: AppIcons.dataTools,
                 ),
                 ..._services(context, scope),
+                const SectionHeader(
+                  StorageStrings.section,
+                  icon: StorageIcons.section,
+                ),
+                StorageEntryCard(onOpen: () => StorageScreen.open(context)),
                 const SectionHeader(
                   ConnectStrings.section,
                   icon: ConnectIcons.connect,
