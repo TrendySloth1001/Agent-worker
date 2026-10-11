@@ -12,6 +12,7 @@ import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/settings/settings_controller.dart';
 import 'features/settings/usage_controller.dart';
+import 'features/connections/connections_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,7 @@ Future<void> main() async {
   await AppNotifications.instance.init();
   // Per-user caches go on sign-out; the chat itself is rebuilt per user.
   AuthController.instance.addSignOutHook(FilesApi.instance.clearCache);
+  AuthController.instance.addSignOutHook(ConnectionsController.instance.reset);
   // Not awaited: the gate shows a splash until the session is restored.
   AuthController.instance.restore();
   runApp(App(settings: settings));

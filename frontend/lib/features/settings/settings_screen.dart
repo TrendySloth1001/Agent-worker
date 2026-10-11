@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/app_scope.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/connections.dart';
 import '../../core/haptics.dart';
 import '../../core/platform/browsers.dart';
 import '../../core/widgets/browser_picker.dart';
@@ -14,6 +15,7 @@ import '../../core/widgets/toggle_row.dart';
 import '../../data/usage.dart';
 import '../knowledge/knowledge_screen.dart';
 import 'settings_controller.dart';
+import 'widgets/connections_section.dart';
 import 'widgets/personalization.dart';
 import 'widgets/provider_card.dart';
 import 'widgets/section_header.dart';
@@ -90,6 +92,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: AppIcons.dataTools,
                 ),
                 ..._services(context, scope),
+                const SectionHeader(
+                  ConnectStrings.section,
+                  icon: ConnectIcons.connect,
+                ),
+                const ConnectionsSection(),
                 const SectionHeader(
                   AppStrings.personalization,
                   icon: AppIcons.personalization,

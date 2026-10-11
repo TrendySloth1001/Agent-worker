@@ -1,4 +1,6 @@
 import { config } from "../config.js";
+import { currentUser } from "../auth/context.js";
+import { dropRevokedGithub, githubAuthFor } from "../connections/store.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 
@@ -9,13 +11,54 @@ const TIMEOUT_MS = 12_000;
 
 export type RateInfo = { limit: number | null; remaining: number | null; resetsAt: string | null; resource: string | null };
 
-/** The latest rate-limit headers GitHub sent, per resource (core, search, …). */
-const rates = new Map<string, RateInfo>();
-export const lastRate = (resource = "core"): RateInfo | null => rates.get(resource) ?? null;
+/**
+ * Whose token a GitHub call uses. A user who connected GitHub always uses
+ * their own token (their private repos, their identity). Otherwise the
+ * server's token (GITHUB_TOKEN, the owner's): in full for the owner, and for
+ * everyone else only for public data (`publicOnly`: private results are
+ * hidden by githubGate and the services).
+ */
+export type GhAuth = {
+  kind: "user" | "server" | "none";
+  token: string | null;
+  /** Partitions caches, quotas and scopes per token. */
+  key: string;
+  publicOnly: boolean;
+  /** The connected account's login (kind "user"). */
+  login: string | null;
+  userId: string | null;
+};
 
-/** OAuth scopes of the token, from the last X-OAuth-Scopes header (classic PATs only). */
-let scopes: string[] | null = null;
-export const tokenScopes = (): string[] | null => scopes;
+export async function ghAuth(): Promise<GhAuth> {
+  const u = currentUser();
+  if (u?.id) {
+    const conn = await githubAuthFor(u.id).catch((e) => {
+      log.warn("github connection lookup failed", { message: (e as Error).message.slice(0, 80) });
+      return null;
+    });
+    if (conn) return { kind: "user", token: conn.token, key: `u:${u.id}`, publicOnly: false, login: conn.login, userId: u.id };
+  }
+  const owner = !u || u.role === "owner";
+  if (config.githubToken) return { kind: "server", token: config.githubToken, key: owner ? "srv" : "srv-public", publicOnly: !owner, login: null, userId: u?.id ?? null };
+  return { kind: "none", token: null, key: "anon", publicOnly: true, login: null, userId: u?.id ?? null };
+}
+
+/** True when the caller may see private GitHub data (connected, or the owner on the server token). */
+export async function canSeePrivate(): Promise<boolean> {
+  return !(await ghAuth()).publicOnly;
+}
+
+/** The latest rate-limit headers GitHub sent, per token and resource (core, search, …). */
+const rates = new Map<string, RateInfo>();
+export async function lastRate(resource = "core"): Promise<RateInfo | null> {
+  return rates.get(`${(await ghAuth()).key}|${resource}`) ?? null;
+}
+
+/** OAuth scopes of the current token, from the last X-OAuth-Scopes header (classic PATs and OAuth tokens). */
+const scopesByKey = new Map<string, string[]>();
+export async function tokenScopes(): Promise<string[] | null> {
+  return scopesByKey.get((await ghAuth()).key) ?? null;
+}
 
 const cache = new Map<string, { at: number; value: unknown }>();
 
@@ -25,16 +68,16 @@ function remember(key: string, value: unknown) {
   while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
 }
 
-function headers(accept: string): Record<string, string> {
+function headers(accept: string, token: string | null): Record<string, string> {
   return {
     Accept: accept,
     "User-Agent": "AgentWorker",
     "X-GitHub-Api-Version": "2022-11-28",
-    ...(config.githubToken ? { Authorization: `Bearer ${config.githubToken}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
 
-function readRate(res: Response): RateInfo | null {
+function readRate(res: Response, authKey: string): RateInfo | null {
   const num = (h: string) => {
     const v = res.headers.get(h);
     return v == null ? null : Number(v);
@@ -48,7 +91,7 @@ function readRate(res: Response): RateInfo | null {
     resetsAt: reset ? new Date(reset * 1000).toISOString() : null,
     resource: res.headers.get("x-ratelimit-resource"),
   };
-  rates.set(info.resource ?? "core", info);
+  rates.set(`${authKey}|${info.resource ?? "core"}`, info);
   return info;
 }
 
@@ -68,22 +111,29 @@ export type GhOptions = {
  */
 export async function gh<T = any>(path: string, opts: GhOptions = {}): Promise<T> {
   const accept = opts.accept ?? "application/vnd.github+json";
-  const key = `${accept}|${opts.text ? "t" : "j"}|${path}`;
+  const auth = await ghAuth();
+  // Per token: users never see each other's (private) responses.
+  const key = `${auth.key}|${accept}|${opts.text ? "t" : "j"}|${path}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < (opts.ttlMs ?? TTL_MS)) return hit.value as T;
 
   const signals = [AbortSignal.timeout(TIMEOUT_MS), ...(opts.signal ? [opts.signal] : [])];
   let res: Response;
   try {
-    res = await fetch(`${API}${path}`, { headers: headers(accept), signal: AbortSignal.any(signals) });
+    res = await fetch(`${API}${path}`, { headers: headers(accept, auth.token), signal: AbortSignal.any(signals) });
   } catch (e) {
     if (opts.signal?.aborted) throw e;
     throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
   }
-  const rate = readRate(res);
+  const rate = readRate(res, auth.key);
   const scopeHeader = res.headers.get("x-oauth-scopes");
-  if (scopeHeader != null) scopes = scopeHeader.split(",").map((x) => x.trim()).filter(Boolean);
+  if (scopeHeader != null) scopesByKey.set(auth.key, scopeHeader.split(",").map((x) => x.trim()).filter(Boolean));
   if (!res.ok) {
+    if (res.status === 401 && auth.kind === "user" && auth.userId) {
+      // The user revoked the app on GitHub: forget the dead token.
+      await dropRevokedGithub(auth.userId);
+      throw new AppError(409, "github_not_connected", "GitHub access was revoked. Connect GitHub again.");
+    }
     if (res.status === 404 && opts.allow404) return null as T;
     let message = "";
     try {
@@ -112,4 +162,5 @@ function mapError(status: number, message: string, rate: RateInfo | null): AppEr
   return new AppError(502, "upstream_failed", `GitHub error ${status}`, true);
 }
 
+/** The server token is set (public GitHub features for everyone). */
 export const githubEnabled = () => !!config.githubToken;

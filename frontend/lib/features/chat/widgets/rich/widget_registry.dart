@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/constants/connections.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/constants/widget_kit.dart';
 import '../github/github_commits_card.dart';
 import '../github/github_compare_card.dart';
+import '../github/github_connect_card.dart';
 import '../github/github_issues_card.dart';
 import '../github/github_my_repos_card.dart';
 import '../github/github_repo_card.dart';
@@ -76,6 +78,10 @@ final Map<String, _Entry> _entries = {
   GithubLangExtra.myRepos: _Entry(
     GithubReviewStrings.myRepos,
     (s) => GithubMyReposCard(source: s),
+  ),
+  ConnectLang.githubConnect: _Entry(
+    ConnectStrings.cardTitle,
+    (s) => GithubConnectCard(source: s),
   ),
 };
 

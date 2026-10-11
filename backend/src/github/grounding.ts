@@ -1,14 +1,18 @@
 import type { ContextItem } from "../prompts/system.js";
 import { log } from "../util/logger.js";
-import { githubEnabled } from "./client.js";
+import { gh, ghAuth } from "./client.js";
 import * as svc from "./service.js";
-import { isOwnerRequest } from "../auth/context.js";
 
 /**
  * GitHub grounding for chat: when the user's message is clearly about GitHub
  * (a github.com link, an owner/repo next to repo words, or "find a repo /
  * library for X"), live GitHub data is fetched and added as [G#] sources.
  * Pure regex intent, so unrelated questions never trigger API calls.
+ *
+ * Personal questions ("my repos", "my PRs", "my GitHub activity") use the
+ * caller's connected GitHub account (the owner may fall back to the server
+ * token). Without one, and for "connect my GitHub", the reply is the
+ * ```github-connect``` card instead of a guess.
  */
 
 export type RepoRef = { owner: string; repo: string };
@@ -29,6 +33,12 @@ export type GithubIntent = {
   mine: { visibility: "all" | "private" | "public" } | null;
   /** "my repo X": a repository of the token owner, by name only. */
   myRepo: string | null;
+  /** "my PRs", "PRs waiting for my review". */
+  myPulls: boolean;
+  /** "my GitHub issues", "issues assigned to me". */
+  myIssues: boolean;
+  /** "my recent GitHub activity", "my commits". */
+  myActivity: boolean;
 };
 
 const URL_REF = /github\.com\/([A-Za-z0-9][\w-]{0,38})\/([\w.-]{1,100})/gi;
@@ -72,7 +82,27 @@ const REVIEW = /\b(review|code[- ]review|critique|audit|look (?:over|at the (?:d
 const MINE = /\b(?:my|mine|i own|i have)\b[^.?!\n]{0,24}\b(repos?|repositor(?:y|ies)|projects? on github|github projects?)\b/i;
 const MY_REPO_NAMED = /\bmy\s+(?:own\s+)?(?:private\s+|public\s+)?(?:github\s+)?(?:repo|repository|project)\s+(?:called\s+|named\s+)?[`"']?([A-Za-z0-9_.-]{2,100})/i;
 const MY_REPO_STOP = new Set(["list", "and", "or", "on", "in", "with", "that", "which", "is", "are", "the", "a", "for", "to", "from", "please", "github"]);
+const MY_PULLS =
+  /\bmy\s+(?:own\s+|open\s+|recent\s+|latest\s+|pending\s+)?(?:github\s+)?(?:prs|pull requests)\b|\b(?:prs?|pull requests?)\b[^.?!\n]{0,30}\b(?:i (?:opened|authored|created|made|submitted)|assigned to me|(?:waiting )?for my review|requested? (?:my review|me)|review requests?)\b|\bmy review requests\b/i;
+const MY_ISSUES =
+  /\bmy\s+(?:open\s+|recent\s+)?github\s+issues\b|\bissues\b[^.?!\n]{0,30}\b(?:assigned to me|i (?:opened|created|filed|reported))\b/i;
+const MY_ACTIVITY =
+  /\bmy\s+(?:(?:recent|latest)\s+(?:github\s+)?|github\s+)(?:activity|contributions|commits|pushes)\b|\bwhat (?:have|did) i (?:been )?(?:working on|work on|push(?:ed)?|commit(?:ted)?)\b[^.?!\n]{0,30}\b(?:github|lately|recently|this week)\b/i;
+const MY_GITHUB = /\bmy\s+(?:github|gh)(?:\s+(?:account|profile|code|stuff|projects?))?\b|\bmy code on github\b/i;
+/** "connect my GitHub", "link github", "sign in to GitHub" (not "connect GitHub Actions to AWS"). */
+const CONNECT =
+  /\b(?:re-?)?(?:connect|link|hook up|authori[sz]e|integrate|log ?in|sign ?in|set up|setup|add)\s+(?:(?:to|with|into)\s+)?(?:my\s+)?git ?hub(?:\s+account)?\b/i;
+const CONNECT_NOT =
+  /^\s*(?:actions?|pages|copilot|codespaces?|webhooks?|apps?|packages|ci|repo|repository|repositories|cli|desktop|sso|oauth|ssh|keys?)\b|^\s*(?:to|with|into|and)\s+(?!(?:you|sparky|this app|the app|here|this chat|chat)\b)\w/i;
 const TREE = /\b(file tree|folder structure|directory structure|project structure|files in|structure of|tree)\b/i;
+
+/** "connect my GitHub": show the connect card. */
+export function wantsGithubConnect(text: string): boolean {
+  const t = (text ?? "").slice(0, 400);
+  const m = t.match(CONNECT);
+  if (!m) return false;
+  return !CONNECT_NOT.test(t.slice((m.index ?? 0) + m[0].length));
+}
 
 function repoRefs(text: string): RepoRef[] {
   const out: RepoRef[] = [];
@@ -130,13 +160,20 @@ export function githubIntent(text: string): GithubIntent | null {
   const review = pr && REVIEW.test(t) ? pr : null;
   const named = t.match(MY_REPO_NAMED)?.[1]?.replace(/[.,;:]+$/, "") ?? null;
   const myRepo = named && !MY_REPO_STOP.has(named.toLowerCase()) && !/^repos?$/i.test(named) ? named : null;
-  const mine = !myRepo && MINE.test(t) ? { visibility: /\bprivate\b/i.test(t) ? ("private" as const) : /\bpublic\b/i.test(t) ? ("public" as const) : ("all" as const) } : null;
+  const myPulls = MY_PULLS.test(t);
+  const myIssues = !myPulls && MY_ISSUES.test(t);
+  const myActivity = MY_ACTIVITY.test(t);
+  const mine =
+    !myRepo && (MINE.test(t) || (MY_GITHUB.test(t) && !myPulls && !myIssues && !myActivity))
+      ? { visibility: /\bprivate\b/i.test(t) ? ("private" as const) : /\bpublic\b/i.test(t) ? ("public" as const) : ("all" as const) }
+      : null;
   const repos = repoRefs(t.replace(/#\d+/g, ""));
   if (pr && !repos.some((r) => r.owner.toLowerCase() === pr.owner.toLowerCase() && r.repo.toLowerCase() === pr.repo.toLowerCase())) {
     repos.unshift({ owner: pr.owner, repo: pr.repo });
   }
   let search: GithubIntent["search"] = null;
-  if (repos.length === 0 && !mine && !myRepo) {
+  const personal = !!mine || !!myRepo || myPulls || myIssues || myActivity;
+  if (repos.length === 0 && !personal) {
     const wantsSearch = (STRONG.test(t) && FINDISH.test(t)) || FIND_LIB.test(t);
     if (!wantsSearch) return null;
     search = searchQuery(t);
@@ -146,8 +183,8 @@ export function githubIntent(text: string): GithubIntent | null {
     repos,
     search,
     commits: COMMITS.test(t),
-    pulls: PULLS.test(t),
-    issues: ISSUES.test(t) && !PULLS.test(t),
+    pulls: PULLS.test(t) && !myPulls,
+    issues: ISSUES.test(t) && !PULLS.test(t) && !myIssues,
     releases: RELEASES.test(t),
     contributors: CONTRIB.test(t),
     tree: TREE.test(t),
@@ -155,28 +192,133 @@ export function githubIntent(text: string): GithubIntent | null {
     pr: review ? null : pr,
     mine,
     myRepo,
+    myPulls,
+    myIssues,
+    myActivity,
   };
 }
+
+const CONNECT_BLOCK = "```github-connect\ngithub\n```";
 
 const n = (v: number | null | undefined) => (v == null ? "?" : v >= 1000 ? `${(v / 1000).toFixed(v >= 10_000 ? 0 : 1)}k` : String(v));
 const day = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "?");
 
 export type GithubGrounding = { items: ContextItem[]; hint: string | null };
 
+type Push = (title: string, url: string, body: string) => void;
+
+/** The caller's own PRs, issues and recent activity. */
+async function personalSources(intent: GithubIntent, login: string, push: Push, blocks: string[], signal?: AbortSignal) {
+  const tasks: Promise<void>[] = [];
+  const issueLine = (i: Awaited<ReturnType<typeof svc.searchIssues>>["items"][number]) =>
+    `${i.repo}#${i.number} [${i.state}] ${i.title} (updated ${day(i.updatedAt)})`;
+  if (intent.myPulls) {
+    const authored = `is:pr author:${login} is:open archived:false`;
+    tasks.push(
+      Promise.all([svc.searchIssues(authored, 15), svc.searchIssues(`is:pr review-requested:${login} is:open archived:false`, 10)]).then(([mine, review]) => {
+        push(
+          `Open pull requests by ${login} (GitHub)`,
+          `https://github.com/pulls?q=${encodeURIComponent(authored)}`,
+          [`${mine.total} open PRs authored by ${login}.`, ...mine.items.map(issueLine)].join("\n"),
+        );
+        push(
+          `Pull requests waiting for ${login}'s review (GitHub)`,
+          "https://github.com/pulls/review-requested",
+          [`${review.total} open PRs request ${login}'s review.`, ...review.items.map(issueLine)].join("\n"),
+        );
+        blocks.push(`\`\`\`github-search\ntype: issues\nq: ${authored}\n\`\`\``);
+      }),
+    );
+  }
+  if (intent.myIssues) {
+    const assigned = `is:issue assignee:${login} is:open archived:false`;
+    tasks.push(
+      Promise.all([svc.searchIssues(assigned, 15), svc.searchIssues(`is:issue author:${login} is:open archived:false`, 10)]).then(([a, b]) => {
+        push(`Open issues assigned to ${login} (GitHub)`, `https://github.com/issues/assigned`, [`${a.total} open.`, ...a.items.map(issueLine)].join("\n"));
+        push(`Open issues opened by ${login} (GitHub)`, `https://github.com/issues/created`, [`${b.total} open.`, ...b.items.map(issueLine)].join("\n"));
+        blocks.push(`\`\`\`github-search\ntype: issues\nq: ${assigned}\n\`\`\``);
+      }),
+    );
+  }
+  if (intent.myActivity) {
+    tasks.push(
+      gh<any[]>(`/users/${encodeURIComponent(login)}/events?per_page=40`, { ttlMs: 60_000, signal }).then((events) => {
+        const lines = (Array.isArray(events) ? events : []).map(eventLine).filter(Boolean).slice(0, 30);
+        push(`Recent GitHub activity of ${login}`, `https://github.com/${login}`, lines.join("\n") || "No recent public or private events.");
+      }),
+    );
+  }
+  const results = await Promise.allSettled(tasks);
+  for (const r of results) if (r.status === "rejected") log.warn("github personal source failed", { message: String(r.reason?.message ?? r.reason).slice(0, 120) });
+}
+
+function eventLine(e: any): string {
+  const repo = e?.repo?.name ?? "?";
+  const when = day(e?.created_at);
+  const p = e?.payload ?? {};
+  switch (e?.type) {
+    case "PushEvent": {
+      const msgs = (p.commits ?? []).slice(0, 3).map((c: any) => String(c.message ?? "").split("\n")[0].slice(0, 80));
+      return `${when} pushed ${p.size ?? p.commits?.length ?? "?"} commit(s) to ${repo}${p.ref ? ` (${String(p.ref).replace("refs/heads/", "")})` : ""}${msgs.length ? `: ${msgs.join("; ")}` : ""}`;
+    }
+    case "PullRequestEvent":
+      return `${when} ${p.action} PR ${repo}#${p.number ?? p.pull_request?.number}: ${p.pull_request?.title ?? ""}`;
+    case "PullRequestReviewEvent":
+      return `${when} reviewed PR ${repo}#${p.pull_request?.number}: ${p.pull_request?.title ?? ""}`;
+    case "IssuesEvent":
+      return `${when} ${p.action} issue ${repo}#${p.issue?.number}: ${p.issue?.title ?? ""}`;
+    case "IssueCommentEvent":
+      return `${when} commented on ${repo}#${p.issue?.number}: ${p.issue?.title ?? ""}`;
+    case "CreateEvent":
+      return `${when} created ${p.ref_type}${p.ref ? ` ${p.ref}` : ""} in ${repo}`;
+    case "ReleaseEvent":
+      return `${when} ${p.action} release ${p.release?.tag_name ?? ""} in ${repo}`;
+    case "WatchEvent":
+      return `${when} starred ${repo}`;
+    case "ForkEvent":
+      return `${when} forked ${repo}`;
+    default:
+      return "";
+  }
+}
+
 /** Fetches the GitHub sources for [text]; null when it is not about GitHub. */
 export async function githubGround(text: string, signal?: AbortSignal): Promise<GithubGrounding | null> {
-  if (!githubEnabled()) return null;
+  const auth = await ghAuth();
+  const canSeePrivate = !auth.publicOnly;
   const intent = githubIntent(text);
+
+  if (wantsGithubConnect(text)) {
+    return {
+      items: [],
+      hint:
+        auth.kind === "user"
+          ? `GitHub: the user's GitHub account is already connected as @${auth.login}. Say so in one short sentence and include this card on its own line (it shows the connection and lets them disconnect); write nothing after it:\n${CONNECT_BLOCK}`
+          : "GitHub: the user wants to connect their GitHub account. Reply with one short sentence (connecting lets you read their repositories, pull requests and issues, private ones included, with their permission), then include this card on its own line; it runs the sign-in in the app. Write nothing after the card:\n" +
+            CONNECT_BLOCK,
+    };
+  }
   if (!intent) return null;
+  const personal = !!intent.mine || !!intent.myRepo || intent.myPulls || intent.myIssues || intent.myActivity;
+  if (personal && !canSeePrivate) {
+    return {
+      items: [],
+      hint:
+        "GitHub: the user asked about their own GitHub data (their repositories, code, pull requests, issues or activity), but has not connected a GitHub account, so you cannot see it. Do not guess, list or invent repositories. Say in one short sentence that they need to connect GitHub first, then include this card on its own line and write nothing after it:\n" +
+        CONNECT_BLOCK,
+    };
+  }
+  if (auth.kind === "none") return null;
   const items: ContextItem[] = [];
   const push = (title: string, url: string, body: string) => items.push({ id: `G${items.length + 1}`, title, url, text: body });
   const blocks: string[] = [];
 
-  // "my repos" / "my private repo X": resolved against the token's account.
-  // The server token is the owner's: other users get public data only.
-  if ((intent.mine || intent.myRepo) && isOwnerRequest()) {
+  // "my repos" / "my private repo X" / "my PRs": resolved against the caller's
+  // connected account (or, for the owner, the server token's account).
+  if (personal && canSeePrivate) {
     try {
       const me = await svc.me(signal);
+      await personalSources(intent, me.login, push, blocks, signal);
       if (intent.myRepo && !intent.repos.some((r) => r.repo.toLowerCase() === intent.myRepo!.toLowerCase())) {
         const list = await svc.myRepos({ visibility: "all", sort: "updated", perPage: 100 }, signal).catch(() => null);
         const hit = list?.items.find((r) => r.name.toLowerCase() === intent.myRepo!.toLowerCase());
@@ -232,7 +374,7 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
     let full = `${owner}/${repo}`;
     try {
       const d = await svc.repoDetail(owner, repo, signal);
-      if (d.private && !isOwnerRequest()) continue;
+      if (d.private && !canSeePrivate) continue;
       full = d.fullName;
       push(
         `${d.fullName} (GitHub repository)`,

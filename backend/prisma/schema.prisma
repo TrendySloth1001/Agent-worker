@@ -48,6 +48,7 @@ model User {
   conversations Conversation[]
   files         StoredFile[]
   sources       Source[]
+  connections   Connection[]
 
   @@map("users")
 }
@@ -294,4 +295,27 @@ model LegacySchemaMigration {
   appliedAt DateTime @default(now()) @map("applied_at") @db.Timestamptz(6)
 
   @@map("schema_migrations")
+}
+
+/// A user's linked third-party account (GitHub today; "google_drive" etc. later).
+/// Tokens are AES-256-GCM encrypted with CONNECTIONS_KEY (src/connections/crypto.ts).
+model Connection {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  provider        String
+  accountLogin    String    @map("account_login")
+  accountId       String    @map("account_id")
+  avatarUrl       String?   @map("avatar_url")
+  scopes          String[]  @default([])
+  accessTokenEnc  String    @map("access_token_enc")
+  refreshTokenEnc String?   @map("refresh_token_enc")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastUsedAt      DateTime? @map("last_used_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, provider])
+  @@map("connections")
 }

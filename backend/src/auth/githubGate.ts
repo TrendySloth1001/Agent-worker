@@ -1,15 +1,22 @@
 import type { NextFunction, Request, Response } from "express";
+import { ghAuth } from "../github/client.js";
 import { repoRaw } from "../github/service.js";
 import { AppError } from "../util/errors.js";
 
 /**
- * /github uses the server's token, which belongs to the owner. Other users
- * get public GitHub features only: no /me or /my/*, and a private repository
- * reads as not found.
+ * /github calls run with the caller's own GitHub token once they connected
+ * their account (POST /connections/github/device). Without a connection the
+ * server's token (the owner's) is used: in full for the owner, public data
+ * only for everyone else (no /me or /my/*, and a private repository reads as
+ * not found).
  */
 export async function githubGate(req: Request, _res: Response, next: NextFunction): Promise<void> {
-  if (req.user?.role === "owner") return next();
-  if (/^\/(me|my)(\/|$)/.test(req.path)) return next(new AppError(403, "owner_only", "Only the owner's GitHub account is connected"));
+  const auth = await ghAuth();
+  if (/^\/(me|my)(\/|$)/.test(req.path)) {
+    if (auth.kind === "user" || (auth.kind === "server" && !auth.publicOnly)) return next();
+    return next(new AppError(409, "github_not_connected", "Connect your GitHub account first"));
+  }
+  if (!auth.publicOnly) return next();
   const m = req.path.match(/^\/repos\/([^/]+)\/([^/]+)/);
   if (m) {
     const r = await repoRaw(decodeURIComponent(m[1]), decodeURIComponent(m[2])).catch(() => null);

@@ -12,7 +12,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "db:migrate:create": "prisma migrate dev --create-only",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "test": "tsx --test test/*.test.ts"
   },
   "devEngines": {
     "packageManager": {

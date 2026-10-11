@@ -17,6 +17,7 @@ import { iconsRouter } from "./routes/icons.js";
 import { assistRouter } from "./routes/assist.js";
 import { filesRouter } from "./routes/files.js";
 import { githubRouter } from "./routes/github.js";
+import { connectionsRouter } from "./routes/connections.js";
 import { failInterrupted } from "./files/process.js";
 import { authPublicRouter, authRouter, requireUser } from "./routes/auth.js";
 import { chatLimit } from "./auth/limits.js";
@@ -40,6 +41,7 @@ app.use("/auth", authRouter);
 
 app.post("/chat", rateLimit(20), chatLimit);
 app.post("/knowledge/sources", rateLimit(10));
+app.post("/connections/github/device", rateLimit(10));
 
 app.use("/models", modelsRouter);
 app.use("/usage", usageRouter);
@@ -51,6 +53,7 @@ app.use("/icons", iconsRouter);
 app.use("/assist", assistRouter);
 app.use("/files", filesRouter);
 app.use("/github", githubGate, githubRouter);
+app.use("/connections", connectionsRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));
 app.use(errorMiddleware);

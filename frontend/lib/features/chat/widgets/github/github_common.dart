@@ -14,6 +14,7 @@ import '../open_url.dart';
 import '../rich/diff_block.dart';
 import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
+import 'github_connect_card.dart';
 
 // ---- block parsing -----------------------------------------------------------
 
@@ -398,6 +399,10 @@ class _GhFutureState<T> extends State<GhFuture<T>> {
       builder: (context, snap) {
         if (snap.hasError) {
           final e = snap.error;
+          // A personal card (my repos) before GitHub is connected.
+          if (e is ApiException && e.status == 409) {
+            return GithubConnectPanel(paper: context.palette.codeBackground);
+          }
           return GhError(
             message: e is ApiException ? e.message : GithubStrings.loadFailed,
             onRetry: () => setState(() => _future = widget.load()),

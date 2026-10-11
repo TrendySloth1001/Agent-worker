@@ -1,7 +1,11 @@
 import { AppError } from "../util/errors.js";
-import { gh, lastRate, tokenScopes } from "./client.js";
+import { gh, ghAuth, lastRate, tokenScopes } from "./client.js";
 
 /** Compact, app-facing shapes of GitHub data (never the raw API dumps). */
+
+/** On the shared server token, non-owners search public repositories only. */
+const publicQ = async (q: string) => ((await ghAuth()).publicOnly ? `${q} is:public` : q);
+const publicOnly = async () => (await ghAuth()).publicOnly;
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,100}$/;
 const PATCH_MAX = 12_000;
@@ -92,13 +96,14 @@ const files = (fs: any[] | undefined) => ({
 export async function searchRepos(q: string, sort?: string, perPage?: unknown, signal?: AbortSignal) {
   const s = sort && ["stars", "forks", "updated", "help-wanted-issues"].includes(sort) ? `&sort=${sort}&order=desc` : "";
   const n = clampInt(perPage, 10, 1, 30);
-  const d = await gh(`/search/repositories?q=${enc(q)}${s}&per_page=${n}`, { signal });
+  const d = await gh(`/search/repositories?q=${enc(await publicQ(q))}${s}&per_page=${n}`, { signal });
   return { total: d.total_count ?? 0, incomplete: !!d.incomplete_results, items: (d.items ?? []).map(repoSummary) };
 }
 
 export async function searchCode(q: string, perPage?: unknown) {
   const n = clampInt(perPage, 10, 1, 30);
   const d = await gh(`/search/code?q=${enc(q)}&per_page=${n}`, { accept: "application/vnd.github.text-match+json" });
+  if (await publicOnly()) d.items = (d.items ?? []).filter((i: any) => i.repository?.private === false);
   return {
     total: d.total_count ?? 0,
     incomplete: !!d.incomplete_results,
@@ -116,7 +121,7 @@ export async function searchCode(q: string, perPage?: unknown) {
 
 export async function searchIssues(q: string, perPage?: unknown) {
   const n = clampInt(perPage, 10, 1, 30);
-  const d = await gh(`/search/issues?q=${enc(q)}&per_page=${n}`);
+  const d = await gh(`/search/issues?q=${enc(await publicQ(q))}&per_page=${n}`);
   return {
     total: d.total_count ?? 0,
     incomplete: !!d.incomplete_results,
@@ -130,6 +135,7 @@ export async function searchIssues(q: string, perPage?: unknown) {
 export async function searchCommits(q: string, perPage?: unknown) {
   const n = clampInt(perPage, 10, 1, 30);
   const d = await gh(`/search/commits?q=${enc(q)}&per_page=${n}`);
+  if (await publicOnly()) d.items = (d.items ?? []).filter((c: any) => c.repository?.private === false);
   return {
     total: d.total_count ?? 0,
     incomplete: !!d.incomplete_results,
@@ -417,7 +423,8 @@ export async function releases(owner: string, repo: string, perPage?: unknown) {
 /** Who the token belongs to, its scopes, private repo count and quota. */
 export async function me(signal?: AbortSignal) {
   const u = await gh(`/user`, { ttlMs: 60_000, signal });
-  const scopes = tokenScopes();
+  const auth = await ghAuth();
+  const scopes = await tokenScopes();
   // Fine-grained tokens omit the private counters: count what the token can list.
   let privateRepos: number | null = (u.total_private_repos as number | undefined) ?? null;
   if (privateRepos == null) {
@@ -437,7 +444,9 @@ export async function me(signal?: AbortSignal) {
     // Fine-grained tokens send no X-OAuth-Scopes header.
     tokenKind: scopes == null ? "fine-grained" : "classic",
     canReadPrivate: scopes == null ? (privateRepos ?? 0) > 0 : scopes.includes("repo"),
-    rate: lastRate("core"),
+    rate: await lastRate("core"),
+    /** "user": the caller's own connected account; "server": the server token (owner). */
+    source: auth.kind,
   };
 }
 
