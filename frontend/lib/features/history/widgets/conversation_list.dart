@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/illustration.dart';
 import '../../../data/conversation.dart';
 import '../history_controller.dart';
 import 'chat_row.dart';
@@ -57,17 +59,21 @@ class ConversationList extends StatelessWidget {
         children: [
           const SizedBox(height: AppSpacing.xxl),
           Center(
-            child: AppIcon(
-              failed
-                  ? AppIcons.alert
-                  : searching
-                  ? AppIcons.search
-                  : controller.archived
-                  ? AppIcons.archive
-                  : AppIcons.history,
-              size: AppIconSize.empty,
-              color: failed ? p.accent : p.textTertiary,
-            ),
+            child: !failed && !searching && !controller.archived
+                ? Illustration(
+                    kind: IllustrationKind.emptyHistory,
+                    height: IllustrationSizes.emptyHistory,
+                    paper: p.surface,
+                  )
+                : AppIcon(
+                    failed
+                        ? AppIcons.alert
+                        : searching
+                        ? AppIcons.search
+                        : AppIcons.archive,
+                    size: AppIconSize.empty,
+                    color: failed ? p.accent : p.textTertiary,
+                  ),
           ),
           const SizedBox(height: AppSpacing.md),
           Text(

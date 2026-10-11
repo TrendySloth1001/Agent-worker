@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/app_scope.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/illustrations.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
@@ -13,6 +14,7 @@ import 'widgets/add_source_sheet.dart';
 import 'widgets/source_tile.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/widgets/app_icon.dart';
+import '../../core/widgets/illustration.dart';
 
 class KnowledgeScreen extends StatefulWidget {
   const KnowledgeScreen({super.key});
@@ -142,13 +144,20 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
         padding: padding,
         children: [
           const SizedBox(height: AppSpacing.xxl),
-          AppIcon(
-            failed ? AppIcons.alert : AppIcons.knowledge,
-            size: AppIconSize.empty,
-            color: failed
-                ? context.palette.accent
-                : context.palette.textTertiary,
-          ),
+          if (failed)
+            AppIcon(
+              AppIcons.alert,
+              size: AppIconSize.empty,
+              color: context.palette.accent,
+            )
+          else
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Illustration(
+                kind: IllustrationKind.emptyKnowledge,
+                height: IllustrationSizes.emptyKnowledge,
+              ),
+            ),
           const SizedBox(height: AppSpacing.md),
           Text(
             failed ? controller.loadError! : AppStrings.knowledgeEmpty,

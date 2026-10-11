@@ -49,6 +49,13 @@ flutter:
     # Static weights of Space Grotesk for PDF export (the app font is variable).
     - assets/pdf/SpaceGrotesk-Regular.ttf
     - assets/pdf/SpaceGrotesk-Bold.ttf
+    # Open Peeps line art (CC0), see assets/illustrations/CREDITS.md.
+    # Listed one by one so previews/ and tools/ stay out of the bundle.
+    - assets/illustrations/login.svg
+    - assets/illustrations/hello.svg
+    - assets/illustrations/github.svg
+    - assets/illustrations/empty_knowledge.svg
+    - assets/illustrations/empty_history.svg
 
   fonts:
     - family: Doto

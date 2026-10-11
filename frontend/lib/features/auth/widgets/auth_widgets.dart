@@ -5,11 +5,13 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/auth_constants.dart';
+import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/system_chrome.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/dot_grid_background.dart';
+import '../../../core/widgets/illustration.dart';
 
 /// Dot-grid page with the big "sparky" wordmark over a centered form.
 /// Scrolls above the keyboard.
@@ -27,6 +29,15 @@ class AuthScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    // Read above the Scaffold, which strips the inset from its body.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final illustration =
+        keyboardOpen || screenHeight < IllustrationSizes.loginHiddenBelow
+        ? 0.0
+        : screenHeight < IllustrationSizes.loginCompactBelow
+        ? IllustrationSizes.loginCompact
+        : IllustrationSizes.login;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: systemOverlayFor(context),
       child: Scaffold(
@@ -57,6 +68,7 @@ class AuthScaffold extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              _AuthIllustration(height: illustration),
                               const Wordmark(),
                               const SizedBox(height: AppSpacing.xs),
                               Text(
@@ -81,6 +93,37 @@ class AuthScaffold extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The peep-with-a-laptop over the wordmark. Collapses to nothing
+/// ([height] 0) while the keyboard is open or on very short screens.
+class _AuthIllustration extends StatelessWidget {
+  const _AuthIllustration({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : IllustrationDurations.resize,
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topLeft,
+      child: height == 0
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Illustration(
+                  kind: IllustrationKind.login,
+                  height: height,
+                ),
+              ),
+            ),
     );
   }
 }

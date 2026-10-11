@@ -13,6 +13,13 @@ abstract final class AppStrings {
   static const emptyTitle = 'HELLO';
   static const emptySubtitle = 'Start a conversation.';
 
+  /// One-tap starter prompts on an empty chat; tapping one sends it.
+  static const emptyPrompts = [
+    'Explain a concept',
+    'Review my code',
+    'Plan my day',
+  ];
+
   // Models
   static const providerOllama = 'OLLAMA';
 

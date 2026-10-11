@@ -179,7 +179,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 const Positioned.fill(child: DotGridBackground()),
                 Positioned.fill(
                   child: isEmpty
-                      ? const EmptyState()
+                      ? EmptyState(onSuggestion: _controller.send)
                       : _messageList(padding, bottomClear),
                 ),
                 _Fade(
