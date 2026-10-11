@@ -74,4 +74,11 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // "Continue with Google": Credential Manager + Sign in with Google
+    // (MainActivity, channel app/auth). No google-services.json needed.
+    implementation("androidx.credentials:credentials:1.6.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
+    // 1.2.1+ is built with Kotlin 2.4 metadata; this project compiles with Kotlin 2.2.
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
 }

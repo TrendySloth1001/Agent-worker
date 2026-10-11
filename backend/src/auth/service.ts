@@ -19,6 +19,8 @@ export const publicUser = (u: UserRow) => ({
   role: u.role as Role,
   createdAt: u.createdAt.toISOString(),
   lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+  /** False for accounts made with GitHub/Google until they set a password. */
+  hasPassword: u.passwordHash !== null,
 });
 
 export const normalizeEmail = (e: string) => e.trim().toLowerCase();
@@ -55,7 +57,7 @@ export type Tokens = {
 
 const refreshExpiry = () => new Date(Date.now() + config.auth.refreshTtlDays * 86_400_000);
 
-async function issue(c: Tx, user: { id: string; role: string }, family: { id: string; createdAt: Date } | null, device: string | null): Promise<Tokens & { rowId: string }> {
+export async function issue(c: Tx, user: { id: string; role: string }, family: { id: string; createdAt: Date } | null, device: string | null): Promise<Tokens & { rowId: string }> {
   const refreshToken = newRefreshToken();
   const expires = refreshExpiry();
   const row = await c.authSession.create({
@@ -94,31 +96,55 @@ export async function register(input: { email: string; password: string; name: s
   return tx(async (c) => {
     const existing = await c.user.findUnique({ where: { email }, select: { id: true } });
     if (existing) throw new AppError(400, "register_failed", "Could not create an account with these details. If you already have one, sign in.");
-    // The owner: OWNER_EMAIL when set, otherwise the very first account.
-    const users = await c.user.count();
-    const owners = await c.user.count({ where: { role: "owner" } });
-    const owner = owners === 0 && (config.auth.ownerEmail ? email === config.auth.ownerEmail : users === 0);
-    const user = await c.user.create({
-      data: { email, passwordHash, name: input.name.trim(), role: owner ? "owner" : "user", lastLoginAt: new Date() },
-    });
-    if (owner) {
-      // Data from before accounts existed belongs to the owner.
-      const unclaimed = { where: { userId: null }, data: { userId: user.id } };
-      const claimed = {
-        conversations: (await c.conversation.updateMany(unclaimed)).count,
-        files: (await c.storedFile.updateMany(unclaimed)).count,
-        sources: (await c.source.updateMany(unclaimed)).count,
-      };
-      log.info("owner account created", claimed);
-    }
-    forgetOwner();
+    const user = await createAccount(c, { email, passwordHash, name: input.name.trim(), avatarUrl: null, mayOwn: true });
     return { user, tokens: await issue(c, user, null, device) };
   });
 }
 
+/**
+ * Inserts a user. The owner is OWNER_EMAIL when set, otherwise the very first
+ * account, and only when [mayOwn] (the caller proved the email: API_TOKEN for
+ * a password sign-up, a provider-verified email for GitHub/Google).
+ */
+export async function createAccount(
+  c: Tx,
+  input: { email: string; passwordHash: string | null; name: string; avatarUrl: string | null; mayOwn: boolean },
+): Promise<UserRow> {
+  const email = normalizeEmail(input.email);
+  let owner = false;
+  if (input.mayOwn) {
+    const owners = await c.user.count({ where: { role: "owner" } });
+    owner = owners === 0 && (config.auth.ownerEmail ? email === config.auth.ownerEmail : (await c.user.count()) === 0);
+  }
+  const user = await c.user.create({
+    data: { email, passwordHash: input.passwordHash, name: input.name, avatarUrl: input.avatarUrl, role: owner ? "owner" : "user", lastLoginAt: new Date() },
+  });
+  if (owner) {
+    // Data from before accounts existed belongs to the owner.
+    const unclaimed = { where: { userId: null }, data: { userId: user.id } };
+    const claimed = {
+      conversations: (await c.conversation.updateMany(unclaimed)).count,
+      files: (await c.storedFile.updateMany(unclaimed)).count,
+      sources: (await c.source.updateMany(unclaimed)).count,
+    };
+    log.info("owner account created", claimed);
+  }
+  forgetOwner();
+  return user;
+}
+
+const PROVIDER_LABEL: Record<string, string> = { github: "GitHub", google: "Google" };
+
 export async function login(emailRaw: string, password: string, device: string | null) {
   const user = await db().user.findUnique({ where: { email: normalizeEmail(emailRaw) } });
   const ok = await checkPassword(user?.passwordHash ?? null, password);
+  if (user && user.passwordHash === null && !user.disabled) {
+    // Made with GitHub/Google and no password yet: say how to get in.
+    const ids = await db().authIdentity.findMany({ where: { userId: user.id }, select: { provider: true }, distinct: ["provider"] });
+    const names = ids.map((i) => PROVIDER_LABEL[i.provider] ?? i.provider);
+    const via = names.length ? names.join(" or ") : "GitHub or Google";
+    throw new AppError(401, "password_not_set", `This account signs in with ${via}. Use Continue with ${via}, then set a password from Profile.`);
+  }
   if (!user || !ok || user.disabled) throw new AppError(401, "invalid_credentials", BAD_LOGIN);
   return tx(async (c) => {
     const updated = await c.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });

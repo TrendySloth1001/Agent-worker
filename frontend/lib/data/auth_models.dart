@@ -9,9 +9,13 @@ class AuthUser {
     required this.name,
     required this.role,
     this.avatarUrl,
+    this.hasPassword = true,
   });
 
   final String id, email, name, role;
+
+  /// False for accounts made with GitHub/Google until a password is set.
+  final bool hasPassword;
 
   /// A data: URL (uploaded photo) or an https URL; null shows initials.
   final String? avatarUrl;
@@ -51,6 +55,7 @@ class AuthUser {
     name: j['name'] as String? ?? '',
     role: j['role'] as String? ?? 'user',
     avatarUrl: j['avatarUrl'] as String?,
+    hasPassword: j['hasPassword'] != false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -59,6 +64,7 @@ class AuthUser {
     'name': name,
     'role': role,
     'avatarUrl': avatarUrl,
+    'hasPassword': hasPassword,
   };
 }
 

@@ -4,6 +4,7 @@ import 'core/app_scope.dart';
 import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/notifications.dart';
+import 'core/platform/google_auth.dart';
 import 'core/theme/app_theme.dart';
 import 'data/chat_api.dart';
 import 'data/files_api.dart';
@@ -21,6 +22,7 @@ Future<void> main() async {
   // Per-user caches go on sign-out; the chat itself is rebuilt per user.
   AuthController.instance.addSignOutHook(FilesApi.instance.clearCache);
   AuthController.instance.addSignOutHook(ConnectionsController.instance.reset);
+  AuthController.instance.addSignOutHook(GoogleAuth.signOut);
   // Not awaited: the gate shows a splash until the session is restored.
   AuthController.instance.restore();
   runApp(App(settings: settings));

@@ -16,3 +16,10 @@
 # MainActivity is referenced from the manifest; FileProvider from the manifest too.
 -keep class com.sparky.app.MainActivity { *; }
 -keep class androidx.core.content.FileProvider { *; }
+
+# "Continue with Google" (Credential Manager): the Play Services provider is
+# loaded reflectively by androidx.credentials, and Sign in with Google parses
+# its credential bundle; keep both under R8.
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }

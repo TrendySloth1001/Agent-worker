@@ -8,7 +8,9 @@ import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/auth_constants.dart';
+import '../../core/constants/sso_constants.dart';
 import '../../core/haptics.dart';
+import '../../core/platform/google_auth.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/app_icon.dart';
@@ -17,12 +19,17 @@ import '../../core/widgets/user_avatar.dart';
 import '../../data/account_api.dart';
 import '../../data/auth_models.dart';
 import '../../data/chat_api.dart';
+import '../../data/sso_api.dart';
 import '../auth/auth_controller.dart';
 import '../auth/widgets/auth_widgets.dart';
+import '../auth/widgets/github_device_sheet.dart';
+import '../connections/connections_controller.dart';
 import '../settings/format.dart';
 import '../settings/widgets/section_header.dart';
+import 'widgets/sign_in_methods.dart';
 
-/// Account: name and photo, today's usage, password, devices, log out.
+/// Account: name and photo, today's usage, sign-in methods, password,
+/// devices, log out.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -36,8 +43,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final _name = TextEditingController(text: _auth.user?.name ?? '');
   AccountInfo? _info;
   List<DeviceSession>? _sessions;
-  String? _loadError;
+  SignInMethods? _methods;
+  SsoProviders? _providers;
+  String? _loadError, _methodsError;
+
+  /// Provider or identity id with a link/unlink running.
+  String? _methodBusy;
   bool _savingName = false, _savingPhoto = false;
+
+  bool get _hasPassword =>
+      _methods?.hasPassword ?? _auth.user?.hasPassword ?? true;
 
   @override
   void initState() {
@@ -53,6 +68,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _load() async {
     setState(() => _loadError = null);
+    _loadMethods();
     try {
       final results = await Future.wait([_api.me(), _api.sessions()]);
       if (!mounted) return;
@@ -66,6 +82,122 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) setState(() => _loadError = e.message);
     }
   }
+
+  Future<void> _loadMethods() async {
+    final sso = SsoApi.instance;
+    sso.providers().then((p) {
+      if (mounted) setState(() => _providers = p);
+    }, onError: (_) {});
+    try {
+      final m = await sso.methods();
+      if (mounted) {
+        setState(() {
+          _methods = m;
+          _methodsError = null;
+        });
+      }
+    } on ApiException catch (_) {
+      if (mounted) setState(() => _methodsError = SsoStrings.methodsFailed);
+    }
+  }
+
+  Future<void> _linkGithub() async {
+    setState(() => _methodBusy = SsoProviderIds.github);
+    try {
+      final r = await showGithubDeviceSheet(
+        context,
+        title: SsoStrings.linkTitle,
+        start: SsoApi.instance.startGithubLink,
+        poll: SsoApi.instance.pollGithubLink,
+      );
+      if (r == null || !mounted) return;
+      _snack(SsoStrings.linked);
+      // The same grant also connected GitHub.
+      ConnectionsController.instance.refresh();
+      await _loadMethods();
+    } finally {
+      if (mounted) setState(() => _methodBusy = null);
+    }
+  }
+
+  Future<void> _linkGoogle() async {
+    final clientId = _providers?.googleWebClientId;
+    if (clientId == null) return;
+    setState(() => _methodBusy = SsoProviderIds.google);
+    try {
+      final token = await GoogleAuth.idToken(clientId);
+      if (token == null) return;
+      await SsoApi.instance.linkGoogle(token);
+      Haptics.received();
+      if (!mounted) return;
+      _snack(SsoStrings.linked);
+      await _loadMethods();
+    } on ApiException catch (e) {
+      Haptics.error();
+      if (mounted) _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _methodBusy = null);
+    }
+  }
+
+  Future<void> _unlink(LinkedIdentity i) async {
+    final name = i.provider == SsoProviderIds.github
+        ? SsoStrings.githubLabel
+        : SsoStrings.googleLabel;
+    final p = context.palette;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: p.surface,
+        title: Text(SsoStrings.unlinkTitle(name), style: context.text.title),
+        content: Text(
+          SsoStrings.unlinkBody(name),
+          style: context.text.bodySmall,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              SsoStrings.keep,
+              style: context.text.button.copyWith(color: p.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              SsoStrings.unlink,
+              style: context.text.button.copyWith(color: p.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _methodBusy = i.id);
+    try {
+      await SsoApi.instance.unlink(i.id);
+      Haptics.received();
+      if (!mounted) return;
+      _snack(SsoStrings.unlinked);
+      await _loadMethods();
+    } on ApiException catch (e) {
+      Haptics.error();
+      if (mounted) _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _methodBusy = null);
+    }
+  }
+
+  void _openPasswordSheet() => _openSheet(
+    _PasswordSheet(
+      api: _api,
+      hasPassword: _hasPassword,
+      onDone: (message) {
+        _snack(message);
+        _load();
+      },
+    ),
+  );
 
   void _snack(String text) {
     ScaffoldMessenger.of(context)
@@ -273,15 +405,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _nameEditor(context),
                 SectionHeader(ProfileStrings.usage, icon: AuthIcons.usage),
                 _UsageCard(info: _info),
+                const SectionHeader(SsoStrings.methods, icon: SsoIcons.methods),
+                ..._methodRows(),
                 const SectionHeader(
                   ProfileStrings.security,
                   icon: AuthIcons.security,
                 ),
                 _OutlinePill(
-                  label: ProfileStrings.changePassword,
+                  label: _hasPassword
+                      ? ProfileStrings.changePassword
+                      : SsoStrings.setPassword,
                   icon: AuthIcons.password,
-                  onTap: () =>
-                      _openSheet(_PasswordSheet(api: _api, onDone: _snack)),
+                  onTap: _openPasswordSheet,
                 ),
                 const SectionHeader(
                   ProfileStrings.sessions,
@@ -300,7 +435,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: ProfileStrings.deleteAccount,
                     icon: AuthIcons.delete,
                     destructive: true,
-                    onTap: () => _openSheet(_DeleteSheet(api: _api)),
+                    onTap: () => _openSheet(
+                      _DeleteSheet(api: _api, hasPassword: _hasPassword),
+                    ),
                   ),
                 ],
               ],
@@ -386,6 +523,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+
+  List<Widget> _methodRows() {
+    final m = _methods;
+    if (m == null) {
+      return [
+        if (_methodsError != null)
+          _LoadError(message: _methodsError!, onRetry: _loadMethods)
+        else
+          const _Skeleton(),
+      ];
+    }
+    return [
+      SignInMethodsList(
+        email: _auth.user?.email ?? '',
+        methods: m,
+        providers: _providers,
+        busy: _methodBusy,
+        onSetPassword: _openPasswordSheet,
+        onLinkGithub: _linkGithub,
+        onLinkGoogle: _linkGoogle,
+        onUnlink: _unlink,
+      ),
+    ];
   }
 
   List<Widget> _sessionRows(BuildContext context) {
@@ -643,9 +804,16 @@ class _SheetBody extends StatelessWidget {
 // ---- change password ----------------------------------------------------
 
 class _PasswordSheet extends StatefulWidget {
-  const _PasswordSheet({required this.api, required this.onDone});
+  const _PasswordSheet({
+    required this.api,
+    required this.hasPassword,
+    required this.onDone,
+  });
 
   final AccountApi api;
+
+  /// False: SET PASSWORD for a GitHub/Google account (no current password).
+  final bool hasPassword;
   final ValueChanged<String> onDone;
 
   @override
@@ -676,11 +844,18 @@ class _PasswordSheetState extends State<_PasswordSheet> {
       _error = null;
     });
     try {
-      await widget.api.changePassword(_current.text, _next.text);
+      await widget.api.changePassword(
+        widget.hasPassword ? _current.text : null,
+        _next.text,
+      );
       Haptics.received();
       if (!mounted) return;
       Navigator.pop(context);
-      widget.onDone(ProfileStrings.passwordChanged);
+      widget.onDone(
+        widget.hasPassword
+            ? ProfileStrings.passwordChanged
+            : SsoStrings.passwordSet,
+      );
     } on ApiException catch (e) {
       Haptics.error();
       if (mounted) setState(() => _error = e.message);
@@ -691,17 +866,23 @@ class _PasswordSheetState extends State<_PasswordSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final set = !widget.hasPassword;
+    final title = set ? SsoStrings.setPassword : ProfileStrings.changePassword;
     return _SheetBody(
-      title: ProfileStrings.changePassword,
+      title: title,
       children: [
-        AuthField(
-          label: ProfileStrings.currentPassword,
-          controller: _current,
-          icon: AuthIcons.password,
-          obscure: true,
-          enabled: !_loading,
-          autofillHints: const [AutofillHints.password],
-        ),
+        if (set) ...[
+          Text(SsoStrings.setPasswordHint, style: context.text.bodySmall),
+          const SizedBox(height: AppSpacing.xl),
+        ] else
+          AuthField(
+            label: ProfileStrings.currentPassword,
+            controller: _current,
+            icon: AuthIcons.password,
+            obscure: true,
+            enabled: !_loading,
+            autofillHints: const [AutofillHints.password],
+          ),
         AuthField(
           label: ProfileStrings.newPassword,
           hint: AuthStrings.passwordHint,
@@ -717,11 +898,7 @@ class _PasswordSheetState extends State<_PasswordSheet> {
         ),
         if (_next.text.isNotEmpty) StrengthHint(password: _next.text),
         FormError(_error),
-        PillButton(
-          label: ProfileStrings.changePassword,
-          loading: _loading,
-          onPressed: _submit,
-        ),
+        PillButton(label: title, loading: _loading, onPressed: _submit),
       ],
     );
   }
@@ -730,9 +907,12 @@ class _PasswordSheetState extends State<_PasswordSheet> {
 // ---- delete account -----------------------------------------------------
 
 class _DeleteSheet extends StatefulWidget {
-  const _DeleteSheet({required this.api});
+  const _DeleteSheet({required this.api, required this.hasPassword});
 
   final AccountApi api;
+
+  /// False for GitHub/Google accounts: the signed-in session is the proof.
+  final bool hasPassword;
 
   @override
   State<_DeleteSheet> createState() => _DeleteSheetState();
@@ -753,7 +933,7 @@ class _DeleteSheetState extends State<_DeleteSheet> {
 
   bool get _ready =>
       _word.text.trim() == ProfileStrings.deleteWord &&
-      _password.text.isNotEmpty;
+      (!widget.hasPassword || _password.text.isNotEmpty);
 
   Future<void> _submit() async {
     if (!_ready) return;
@@ -763,7 +943,9 @@ class _DeleteSheetState extends State<_DeleteSheet> {
       _error = null;
     });
     try {
-      await widget.api.deleteAccount(_password.text);
+      await widget.api.deleteAccount(
+        widget.hasPassword ? _password.text : null,
+      );
       Haptics.received();
       if (mounted) Navigator.pop(context);
       await AuthController.instance.signOut(callServer: false);
@@ -795,17 +977,18 @@ class _DeleteSheetState extends State<_DeleteSheet> {
           textCapitalization: TextCapitalization.characters,
           onChanged: (_) => setState(() {}),
         ),
-        AuthField(
-          label: AuthStrings.password,
-          hint: ProfileStrings.deletePassword,
-          controller: _password,
-          icon: AuthIcons.password,
-          obscure: true,
-          enabled: !_loading,
-          textInputAction: TextInputAction.done,
-          onChanged: (_) => setState(() {}),
-          onSubmitted: (_) => _submit(),
-        ),
+        if (widget.hasPassword)
+          AuthField(
+            label: AuthStrings.password,
+            hint: ProfileStrings.deletePassword,
+            controller: _password,
+            icon: AuthIcons.password,
+            obscure: true,
+            enabled: !_loading,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _submit(),
+          ),
         FormError(_error),
         PillButton(
           label: ProfileStrings.deleteAccount,

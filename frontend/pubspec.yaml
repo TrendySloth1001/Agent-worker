@@ -56,6 +56,10 @@ flutter:
     - assets/illustrations/github.svg
     - assets/illustrations/empty_knowledge.svg
     - assets/illustrations/empty_history.svg
+    # Sign-in buttons: GitHub mark and Google "G" (bundled, they show before
+    # sign-in when the backend icon proxy is not reachable yet).
+    - assets/brand/sso/github_mark.svg
+    - assets/brand/sso/google_g.svg
 
   fonts:
     - family: Doto

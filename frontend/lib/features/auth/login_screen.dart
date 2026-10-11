@@ -7,6 +7,7 @@ import '../../data/chat_api.dart';
 import 'auth_controller.dart';
 import 'register_screen.dart';
 import 'widgets/auth_widgets.dart';
+import 'widgets/sso_buttons.dart';
 
 final _emailRe = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
@@ -117,6 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
           loading: _loading,
           onPressed: _submit,
         ),
+        SsoSection(enabled: !_loading),
         SwitchPrompt(
           question: AuthStrings.noAccount,
           action: AuthStrings.toRegister,

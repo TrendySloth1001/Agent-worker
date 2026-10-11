@@ -42,6 +42,9 @@ class AuthController extends ChangeNotifier {
 
   Uri _uri(String path) => Uri.parse('${AppConfig.apiBaseUrl}/auth$path');
 
+  /// This device's label for the sessions list (also sent by GitHub sign-in).
+  static String get device => _device;
+
   static String get _device {
     final os = Platform.operatingSystem;
     final version = Platform.operatingSystemVersion.split(' ').take(3);
@@ -93,6 +96,20 @@ class AuthController extends ChangeNotifier {
         // Proves the owner when registering the server's OWNER_EMAIL.
         if (AppConfig.apiToken.isNotEmpty) 'ownerToken': AppConfig.apiToken,
       });
+
+  /// "Continue with Google": [idToken] from Google Sign-In, checked by the
+  /// server, which signs in, links by verified email, or creates the account.
+  Future<void> signInWithGoogle(String idToken) =>
+      _start('/google', {'idToken': idToken, 'device': _device});
+
+  /// "Continue with GitHub": the session from a finished device flow, stored
+  /// exactly like a password sign-in.
+  Future<void> signInWithSession(Map<String, dynamic> session) async {
+    await _apply(session);
+    notice = null;
+    status = AuthStatus.signedIn;
+    notifyListeners();
+  }
 
   Future<void> _start(String path, Map<String, dynamic> body) async {
     final http.Response res;

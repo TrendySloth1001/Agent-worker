@@ -155,6 +155,15 @@ Source object:
 The app polls `GET /knowledge/sources` every 2 s while any source is `queued|running`.
 
 ---------------------------------------------------------------------------
+### 2.7 GitHub / Google sign-in (`/auth`, see backend/src/auth/{sso,githubSso,google}.ts)
+
+Public (no session): `GET /auth/providers` -> `{"github":bool,"google":{"webClientId":"..."}|null}` (the app hides unconfigured buttons; no rebuild when GOOGLE_WEB_CLIENT_ID is added).
+`POST /auth/github/device {device?}` -> `{flowId,userCode,verificationUri,verificationUriComplete,expiresIn,interval}` (10/min/IP);
+`POST /auth/github/device/:flowId/poll` -> `{status:"pending"|"slow_down"|"expired"|"denied",interval,expiresIn}` | `{status:"error",code,error}` | `{status:"ok",outcome,session:<login response>}` (session handed out once). Scopes `repo read:user user:email read:org`; the grant is also saved as the user's GitHub connection.
+`POST /auth/google {idToken,device?}` -> login response + `outcome` (10/min/IP). The ID token comes from Android Credential Manager (native, MainActivity channel `app/auth`) with serverClientId = GOOGLE_WEB_CLIENT_ID; verified with google-auth-library (signature, aud, iss, exp).
+Account resolution (table `auth_identities`): linked identity -> sign in; else same email AND provider-verified -> link + sign in; else create a passwordless account (owner rule as register, but a verified provider email is the proof). Unverified email with an existing account -> 409 `email_in_use_link_from_profile`.
+Signed in: `GET /auth/identities` -> `{hasPassword,identities:[{id,provider,email,login,createdAt}]}`; `POST /auth/identities/github/device` + `POST .../:flowId/poll` (link); `POST /auth/identities/google {idToken}`; `DELETE /auth/identities/:id` (409 `last_sign_in_method`). `POST /auth/password` takes no `current` while the account has no password; `DELETE /auth/me` needs no password then. Password login of a passwordless account -> 401 `password_not_set`.
+
 ## 3. Database and Docker
 
 `/Users/nick/Agent-worker/docker-compose.yml`:

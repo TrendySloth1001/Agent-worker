@@ -8,10 +8,9 @@ import '../../../../core/constants/widget_github.dart';
 import '../../../../core/haptics.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/copy_action.dart';
-import '../../../../core/widgets/dot_meter.dart';
 import '../../../../core/widgets/illustration.dart';
 import '../../../connections/connections_controller.dart';
+import '../../../connections/widgets/device_code_panel.dart';
 import '../open_url.dart';
 import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
@@ -195,8 +194,11 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
           onConnect: _connect,
         );
       case GithubPhase.waiting:
-        return _Waiting(
-          controller: _c,
+        return DeviceCodePanel(
+          title: ConnectStrings.title,
+          code: _c.flow?.userCode ?? '',
+          secondsLeft: _c.secondsLeft,
+          fraction: _c.timeLeftFraction,
           onOpen: _openGithub,
           onCancel: _c.cancelFlow,
         );
@@ -212,29 +214,6 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
           onRetry: _connect,
         );
     }
-  }
-}
-
-/// Mark + title on one line.
-class _Heading extends StatelessWidget {
-  const _Heading(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return Row(
-      children: [
-        Octicon(
-          GithubOcticons.mark,
-          size: ConnectSizes.markSize,
-          color: p.textPrimary,
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(child: Text(title, style: context.text.title)),
-      ],
-    );
   }
 }
 
@@ -262,7 +241,7 @@ class _Intro extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        const _Heading(ConnectStrings.title),
+        const GithubHeading(ConnectStrings.title),
         const SizedBox(height: AppSpacing.xs),
         Text(ConnectStrings.pitch, style: context.text.bodySmall),
         const SizedBox(height: AppSpacing.lg),
@@ -275,140 +254,6 @@ class _Intro extends StatelessWidget {
           onTap: onConnect,
         ),
       ],
-    );
-  }
-}
-
-class _Waiting extends StatelessWidget {
-  const _Waiting({
-    required this.controller,
-    required this.onOpen,
-    required this.onCancel,
-  });
-
-  final ConnectionsController controller;
-  final VoidCallback onOpen, onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
-    final code = controller.flow?.userCode ?? '';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _Heading(ConnectStrings.title),
-        const SizedBox(height: AppSpacing.md),
-        Text(ConnectStrings.enterCode, style: t.caption),
-        const SizedBox(height: AppSpacing.sm),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: ConnectSizes.codePadV,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            border: Border.all(color: p.borderStrong, width: AppBorder.thin),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: SelectableText(
-                    code,
-                    maxLines: 1,
-                    style: t.label.copyWith(
-                      fontSize: ConnectSizes.codeFont,
-                      letterSpacing: ConnectSizes.codeSpacing,
-                      fontWeight: FontWeight.w700,
-                      color: p.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              CopyAction(text: code),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            Expanded(
-              child: PlayfulButton(
-                label: ConnectStrings.openGithub,
-                icon: ConnectIcons.open,
-                primary: true,
-                expand: true,
-                onTap: onOpen,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            PlayfulButton(label: ConnectStrings.cancel, onTap: onCancel),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Row(
-          children: [
-            const _PulseDot(),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: Text(ConnectStrings.waiting, style: t.caption)),
-            Text(
-              ConnectStrings.countdown(controller.secondsLeft),
-              style: t.caption.copyWith(color: p.textSecondary),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        DotMeter(fraction: controller.timeLeftFraction),
-      ],
-    );
-  }
-}
-
-/// Accent dot that breathes while waiting for GitHub.
-class _PulseDot extends StatefulWidget {
-  const _PulseDot();
-
-  @override
-  State<_PulseDot> createState() => _PulseDotState();
-}
-
-class _PulseDotState extends State<_PulseDot>
-    with SingleTickerProviderStateMixin {
-  late final _ctl = AnimationController(
-    vsync: this,
-    duration: ConnectDurations.pulse,
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _ctl.value = 1;
-    } else if (!_ctl.isAnimating) {
-      _ctl.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = context.palette.accent;
-    return FadeTransition(
-      opacity: Tween(begin: ConnectSizes.pulseMinAlpha, end: 1.0).animate(_ctl),
-      child: Container(
-        width: ConnectSizes.pulseDot,
-        height: ConnectSizes.pulseDot,
-        decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-      ),
     );
   }
 }
@@ -537,7 +382,7 @@ class _Problem extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _Heading(ConnectStrings.title),
+        const GithubHeading(ConnectStrings.title),
         const SizedBox(height: AppSpacing.md),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -583,7 +428,7 @@ class _Setup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _Heading(ConnectStrings.setupTitle),
+        const GithubHeading(ConnectStrings.setupTitle),
         const SizedBox(height: AppSpacing.sm),
         Text(ConnectStrings.setupIntro, style: t.bodySmall),
         const SizedBox(height: AppSpacing.md),

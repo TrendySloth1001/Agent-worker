@@ -1,1 +1,6 @@
 .env
+
+# OAuth client secret downloads (Google Cloud, etc.)
+client_secret*.json
+*.apps.googleusercontent.com.json
+google-services.json

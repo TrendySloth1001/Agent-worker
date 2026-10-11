@@ -7,6 +7,7 @@ import '../../data/chat_api.dart';
 import 'auth_controller.dart';
 import 'login_screen.dart';
 import 'widgets/auth_widgets.dart';
+import 'widgets/sso_buttons.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, this.initialEmail = ''});
@@ -148,6 +149,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           loading: _loading,
           onPressed: _submit,
         ),
+        SsoSection(enabled: !_loading),
         SwitchPrompt(
           question: AuthStrings.haveAccount,
           action: AuthStrings.toLogin,

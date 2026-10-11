@@ -62,8 +62,9 @@ class AccountApi {
     return AuthUser.fromJson(_json(r)['user'] as Map<String, dynamic>);
   }
 
-  Future<void> changePassword(String current, String next) =>
-      _send('POST', '/password', body: {'current': current, 'next': next});
+  /// [current] is null when the account has no password yet (GitHub/Google).
+  Future<void> changePassword(String? current, String next) =>
+      _send('POST', '/password', body: {'current': ?current, 'next': next});
 
   Future<List<DeviceSession>> sessions() async {
     final list = _json(await _send('GET', '/sessions'))['sessions'] as List;
@@ -75,6 +76,7 @@ class AccountApi {
 
   Future<void> revokeSession(String id) => _send('DELETE', '/sessions/$id');
 
-  Future<void> deleteAccount(String password) =>
-      _send('DELETE', '/me', body: {'password': password});
+  /// [password] is null for accounts without one (GitHub/Google).
+  Future<void> deleteAccount(String? password) =>
+      _send('DELETE', '/me', body: {'password': ?password});
 }

@@ -11,15 +11,29 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Base64
 import androidx.core.content.FileProvider
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
+import androidx.lifecycle.lifecycleScope
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlinx.coroutines.launch
 
 class MainActivity : FlutterActivity() {
     private val channelName = "app/browsers"
+    private val authChannelName = "app/auth"
     private val iconPx = 96
     private val maxDataUrlChars = 100_000
 
@@ -35,6 +49,76 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result -> handle(call, result) }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, authChannelName)
+            .setMethodCallHandler { call, result -> handleAuth(call, result) }
+    }
+
+    // ---- "Continue with Google" (Credential Manager) ----------------------
+
+    private fun handleAuth(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "googleIdToken" -> {
+                val clientId = call.argument<String>("serverClientId")
+                if (clientId.isNullOrEmpty()) {
+                    result.error("bad_request", "serverClientId is required", null)
+                    return
+                }
+                googleIdToken(clientId, call.argument<String>("mode") == "auto", result)
+            }
+            "googleSignOut" -> lifecycleScope.launch {
+                try {
+                    CredentialManager.create(this@MainActivity)
+                        .clearCredentialState(ClearCredentialStateRequest())
+                } catch (e: Exception) {
+                    // Nothing to clear is fine.
+                }
+                result.success(null)
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * An ID token for [serverClientId] (the server's WEB client id).
+     * Button: the system "Sign in with Google" sheet (any account on the
+     * device, can add one). Auto: only accounts that already authorized this
+     * app, picked silently when there is exactly one.
+     */
+    private fun googleIdToken(serverClientId: String, auto: Boolean, result: MethodChannel.Result) {
+        val option = if (auto) {
+            GetGoogleIdOption.Builder()
+                .setServerClientId(serverClientId)
+                .setFilterByAuthorizedAccounts(true)
+                .setAutoSelectEnabled(true)
+                .build()
+        } else {
+            GetSignInWithGoogleOption.Builder(serverClientId).build()
+        }
+        val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+        lifecycleScope.launch {
+            try {
+                val response = CredentialManager.create(this@MainActivity)
+                    .getCredential(this@MainActivity, request)
+                val credential = response.credential
+                if (credential is CustomCredential &&
+                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                ) {
+                    result.success(GoogleIdTokenCredential.createFrom(credential.data).idToken)
+                } else {
+                    result.error("failed", "Unexpected credential type", null)
+                }
+            } catch (e: GetCredentialCancellationException) {
+                result.error("cancelled", e.message, null)
+            } catch (e: NoCredentialException) {
+                result.error("no_account", e.message, null)
+            } catch (e: GoogleIdTokenParsingException) {
+                result.error("failed", "Google returned an unreadable credential", null)
+            } catch (e: GetCredentialException) {
+                result.error("failed", "${e.type}: ${e.message ?: ""}".take(300), null)
+            } catch (e: Exception) {
+                result.error("failed", (e.message ?: e.toString()).take(300), null)
+            }
+        }
     }
 
     private fun handle(call: MethodCall, result: MethodChannel.Result) {

@@ -7,6 +7,11 @@ import { rateLimit } from "../util/rateLimit.js";
 import { deleteFile, INFO_SELECT, toFileRow } from "../files/store.js";
 import { userOf } from "../auth/context.js";
 import { limitsFor, resetsAt, usageFor } from "../auth/limits.js";
+import { config } from "../config.js";
+import { notConfigured, type CorePoll } from "../connections/deviceFlow.js";
+import { githubSso, type GithubSsoResult } from "../auth/githubSso.js";
+import { verifyGoogleIdToken } from "../auth/google.js";
+import { linkIdentity, signInMethods, ssoSignIn, unlinkIdentity } from "../auth/sso.js";
 import {
   BAD_LOGIN,
   checkPassword,
@@ -27,7 +32,7 @@ import {
   type UserRow,
 } from "../auth/service.js";
 
-/** Routes that need no session: register, login, refresh, logout. */
+/** Routes that need no session: register, login, refresh, logout, GitHub/Google sign-in. */
 export const authPublicRouter = Router();
 /** Routes for the signed-in user (mounted behind requireUser). */
 export const authRouter = Router();
@@ -88,6 +93,65 @@ authPublicRouter.post("/refresh", async (req, res) => {
   res.json(session(user, tokens));
 });
 
+// ---- GitHub / Google sign-in ----------------------------------------------
+
+// Which "Continue with ..." buttons to show; the app reads it before sign-in,
+// so adding GOOGLE_WEB_CLIENT_ID needs only a backend restart, no app rebuild.
+authPublicRouter.get("/providers", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const webClientId = config.google.webClientId;
+  res.json({ github: !!config.githubOAuth.clientId, google: webClientId ? { webClientId } : null });
+});
+
+authPublicRouter.post("/github/device", rateLimit(10, 60_000));
+authPublicRouter.post("/github/device/:flowId/poll", rateLimit(60, 60_000));
+authPublicRouter.post("/google", rateLimit(10, 60_000));
+
+const deviceBody = z.object({ device }).passthrough();
+const flowId = (req: Request) => {
+  const id = String(req.params.flowId);
+  if (!z.string().uuid().safeParse(id).success) throw new AppError(404, "not_found", "Sign-in attempt not found; start again");
+  return id;
+};
+
+/** A device-flow poll as the app sees it; flow errors come back as status "error" with the code. */
+function pollView(r: CorePoll<GithubSsoResult>) {
+  const base = { interval: r.interval, expiresIn: r.expiresIn };
+  if (r.status === "done") return null;
+  if (r.status === "error") return { status: "error", code: r.errorCode ?? "sso_failed", error: r.error ?? "Could not sign in with GitHub", ...base };
+  return { status: r.status, ...base };
+}
+
+authPublicRouter.post("/github/device", async (req, res) => {
+  if (!config.githubOAuth.clientId) throw notConfigured();
+  const body = deviceBody.parse(req.body ?? {});
+  res.setHeader("Cache-Control", "no-store");
+  res.json(await githubSso.start(null, { device: deviceLabel(req, body) }));
+});
+
+authPublicRouter.post("/github/device/:flowId/poll", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const r = await githubSso.poll(null, flowId(req));
+  const view = pollView(r);
+  if (view) return void res.json(view);
+  const out = r.result;
+  if (out?.kind !== "session") throw new AppError(500, "internal", "Unexpected sign-in result");
+  log.info("signed in with github", { outcome: out.outcome, role: out.user.role });
+  res.json({ status: "ok", outcome: out.outcome, session: session(out.user, out.tokens) });
+});
+
+const googleBody = z.object({ idToken: z.string().min(20).max(8000), device });
+
+authPublicRouter.post("/google", async (req, res) => {
+  if (!config.google.webClientId) throw new AppError(503, "google_not_configured", "Google sign-in is not set up on this server (GOOGLE_WEB_CLIENT_ID)");
+  const parsed = googleBody.safeParse(req.body ?? {});
+  if (!parsed.success) throw new AppError(400, "bad_request", "Missing Google ID token");
+  const profile = await verifyGoogleIdToken(parsed.data.idToken);
+  const { user, tokens, outcome } = await ssoSignIn(profile, deviceLabel(req, parsed.data));
+  log.info("signed in with google", { outcome, role: user.role });
+  res.json({ ...session(user, tokens), outcome });
+});
+
 // Ends the session of the given refresh token. Always 204, so it reveals nothing.
 authPublicRouter.post("/logout", async (req, res) => {
   const token = typeof req.body?.refreshToken === "string" ? req.body.refreshToken : "";
@@ -133,13 +197,16 @@ authRouter.patch("/me", async (req, res) => {
   res.json({ user: publicUser(updated) });
 });
 
-const passwordBody = z.object({ current: z.string().max(PASSWORD_MAX), next: password });
+const passwordBody = z.object({ current: z.string().max(PASSWORD_MAX).optional(), next: password });
 
-// Changing the password signs out every other device.
+// Changing the password signs out every other device. Accounts made with
+// GitHub/Google have none yet: they set one without `current`.
 authRouter.post("/password", async (req, res) => {
   const user = await me(req);
   const b = passwordBody.parse(req.body ?? {});
-  if (!(await checkPassword(user.passwordHash, b.current))) throw new AppError(400, "wrong_password", "Current password is wrong");
+  if (user.passwordHash !== null && !(await checkPassword(user.passwordHash, b.current ?? ""))) {
+    throw new AppError(400, "wrong_password", "Current password is wrong");
+  }
   await db().user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(b.next) } });
   await revokeOthers(user.id, userOf(req).sid);
   res.status(204).end();
@@ -159,14 +226,57 @@ authRouter.delete("/sessions/:id", async (req, res) => {
   res.status(204).end();
 });
 
-const deleteBody = z.object({ password: z.string().max(PASSWORD_MAX) });
+// ---- linked sign-in methods ------------------------------------------------
+
+authRouter.get("/identities", async (req, res) => {
+  const user = await me(req);
+  res.json(await signInMethods(user.id));
+});
+
+authRouter.post("/identities/github/device", rateLimit(10, 60_000));
+
+authRouter.post("/identities/github/device", async (req, res) => {
+  if (!config.githubOAuth.clientId) throw notConfigured();
+  const user = await me(req);
+  res.json(await githubSso.start(user.id, { device: null }));
+});
+
+authRouter.post("/identities/github/device/:flowId/poll", async (req, res) => {
+  const user = await me(req);
+  const r = await githubSso.poll(user.id, flowId(req));
+  const view = pollView(r);
+  if (view) return void res.json(view);
+  if (r.result?.kind !== "linked") throw new AppError(500, "internal", "Unexpected link result");
+  res.json({ status: "ok", identity: r.result.identity });
+});
+
+authRouter.post("/identities/google", rateLimit(10, 60_000));
+
+authRouter.post("/identities/google", async (req, res) => {
+  const user = await me(req);
+  const parsed = googleBody.safeParse(req.body ?? {});
+  if (!parsed.success) throw new AppError(400, "bad_request", "Missing Google ID token");
+  const profile = await verifyGoogleIdToken(parsed.data.idToken);
+  res.json({ identity: await linkIdentity(user.id, profile) });
+});
+
+authRouter.delete("/identities/:id", async (req, res) => {
+  const user = await me(req);
+  const id = String(req.params.id);
+  if (!z.string().uuid().safeParse(id).success) throw new AppError(404, "not_found", "Sign-in method not found");
+  await unlinkIdentity(user.id, id);
+  res.status(204).end();
+});
+
+const deleteBody = z.object({ password: z.string().max(PASSWORD_MAX).optional() });
 
 // Deletes the account and everything it owns, including stored files.
 authRouter.delete("/me", async (req, res) => {
   const user = await me(req);
   if (user.role === "owner") throw new AppError(403, "owner_cannot_delete", "The owner account cannot be deleted");
   const b = deleteBody.safeParse(req.body ?? {});
-  if (!b.success || !(await checkPassword(user.passwordHash, b.data.password))) {
+  // Without a password (GitHub/Google account) the signed-in session is the proof.
+  if (!b.success || (user.passwordHash !== null && !(await checkPassword(user.passwordHash, b.data.password ?? "")))) {
     throw new AppError(400, "wrong_password", "Password is wrong");
   }
   const files = (await db().storedFile.findMany({ where: { userId: user.id }, select: INFO_SELECT })).map(toFileRow);

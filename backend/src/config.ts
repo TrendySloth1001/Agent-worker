@@ -23,6 +23,8 @@ const schema = z.object({
   GITHUB_OAUTH_CLIENT_ID: str,
   GITHUB_OAUTH_CLIENT_SECRET: str,
   CONNECTIONS_KEY: str,
+  GOOGLE_WEB_CLIENT_ID: str,
+  GOOGLE_WEB_CLIENT_SECRET: str,
   STACKEXCHANGE_KEY: str,
   OLLAMA_MONTHLY_REQUEST_BUDGET: optInt,
   API_TOKEN: str,
@@ -64,6 +66,12 @@ export const config = {
   /** Per-user GitHub connections (OAuth device flow); see src/connections. */
   githubOAuth: { clientId: env.GITHUB_OAUTH_CLIENT_ID, clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET },
   connectionsKey: env.CONNECTIONS_KEY,
+  /**
+   * "Continue with Google": the app gets an ID token for this Web client id
+   * (serverClientId) and the server checks it is the token's audience. The
+   * secret is optional, reserved for later server-side Drive access.
+   */
+  google: { webClientId: env.GOOGLE_WEB_CLIENT_ID?.trim(), webClientSecret: env.GOOGLE_WEB_CLIENT_SECRET },
   stackExchangeKey: env.STACKEXCHANGE_KEY,
   ollamaMonthlyBudget: env.OLLAMA_MONTHLY_REQUEST_BUDGET,
   apiToken: env.API_TOKEN,
