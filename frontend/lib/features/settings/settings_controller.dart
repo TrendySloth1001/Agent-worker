@@ -13,6 +13,7 @@ class SettingsController extends ChangeNotifier {
     defaultWebSearch = _prefs?.getBool(AppPrefs.defaultWebSearch) ?? false;
     defaultKnowledge = _prefs?.getBool(AppPrefs.defaultKnowledge) ?? false;
     defaultRoundTable = _prefs?.getBool(AppPrefs.defaultRoundTable) ?? false;
+    notifyRoundTable = _prefs?.getBool(AppPrefs.notifyRoundTable) ?? true;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
     role = _prefs?.getString(AppPrefs.profileRole) ?? '';
@@ -58,6 +59,9 @@ class SettingsController extends ChangeNotifier {
   late bool defaultWebSearch;
   late bool defaultKnowledge;
   late bool defaultRoundTable;
+
+  /// System notification when a round table finishes in the background.
+  late bool notifyRoundTable;
   late String mode;
 
   // Personalization. Empty string means not set; [tone] '' means no tone.
@@ -107,6 +111,12 @@ class SettingsController extends ChangeNotifier {
   void setDefaultRoundTable(bool value) {
     defaultRoundTable = value;
     _prefs?.setBool(AppPrefs.defaultRoundTable, value);
+    notifyListeners();
+  }
+
+  void setNotifyRoundTable(bool value) {
+    notifyRoundTable = value;
+    _prefs?.setBool(AppPrefs.notifyRoundTable, value);
     notifyListeners();
   }
 

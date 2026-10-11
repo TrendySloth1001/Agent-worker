@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'core/app_scope.dart';
 import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
+import 'core/notifications.dart';
 import 'core/theme/app_theme.dart';
 import 'data/chat_api.dart';
 import 'data/usage_api.dart';
@@ -13,6 +14,7 @@ import 'features/settings/usage_controller.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsController.load();
+  await AppNotifications.instance.init();
   runApp(App(settings: settings));
 }
 

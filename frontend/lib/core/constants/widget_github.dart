@@ -1,0 +1,220 @@
+import 'package:hugeicons/hugeicons.dart';
+
+import 'app_icons.dart';
+
+/// Fenced languages of the live GitHub widgets.
+abstract final class GithubLang {
+  static const repo = 'github-repo';
+  static const search = 'github-search';
+  static const commits = 'github-commits';
+  static const tree = 'github-tree';
+  static const compare = 'github-compare';
+  static const prs = 'github-prs';
+  static const issues = 'github-issues';
+}
+
+abstract final class GithubStrings {
+  static const repo = 'GITHUB REPO';
+  static const search = 'GITHUB SEARCH';
+  static const commits = 'COMMITS';
+  static const tree = 'FILES';
+  static const compare = 'COMPARE';
+  static const prs = 'PULL REQUESTS';
+  static const issues = 'ISSUES';
+
+  static const visit = 'VISIT';
+  static const open = 'OPEN';
+  static const copy = 'COPY';
+  static const retry = 'RETRY';
+  static const loadMore = 'SHOW MORE';
+  static const showLess = 'SHOW LESS';
+  static const stars = 'STARS';
+  static const forks = 'FORKS';
+  static const issuesShort = 'ISSUES';
+  static const watchers = 'WATCHING';
+  static const languages = 'LANGUAGES';
+  static const topics = 'TOPICS';
+  static const latestRelease = 'LATEST RELEASE';
+  static const license = 'LICENSE';
+  static const archived = 'ARCHIVED';
+  static const readme = 'README';
+  static const files = 'FILES CHANGED';
+  static const commitsShort = 'COMMITS';
+  static const ahead = 'AHEAD';
+  static const behind = 'BEHIND';
+  static const changed = 'CHANGED';
+  static const noResults = 'Nothing found.';
+  static const noPatch = 'No text diff (binary or too large).';
+  static const patchTruncated = '…diff truncated';
+  static const filesTruncated = 'More files on GitHub.';
+  static const binaryFile = 'Binary file, open it on GitHub.';
+  static const largeFile = 'File too large to preview, open it on GitHub.';
+  static const fileTruncated = '…file truncated';
+  static const treeTruncated = 'Listing truncated.';
+  static const emptyBody = 'No description.';
+  static const badSpec = 'Expected owner/repo';
+  static const badCompare = 'Expected owner/repo base...head';
+  static const badSearch = 'Expected a search query';
+  static const loadFailed = 'Could not load from GitHub.';
+  static const root = 'ROOT';
+  static const up = '..';
+  static const by = 'by';
+  static const into = '→';
+  static const prerelease = 'PRE';
+  static const total = 'RESULTS';
+  static const typeRepos = 'repos';
+  static const typeCode = 'code';
+  static const typeIssues = 'issues';
+  static const typeCommits = 'commits';
+
+  static const stateOpen = 'open';
+  static const stateClosed = 'closed';
+  static const stateAll = 'all';
+  static const stateMerged = 'merged';
+  static const stateDraft = 'draft';
+
+  static const keyType = 'type';
+  static const keyQuery = 'q';
+  static const keyQueryLong = 'query';
+  static const keySort = 'sort';
+  static const keyState = 'state';
+
+  static String titled(String base, String detail) => '$base / $detail';
+  static String countOf(int n) => n >= 1000000
+      ? '${(n / 1000000).toStringAsFixed(1)}M'
+      : n >= 10000
+      ? '${(n / 1000).round()}k'
+      : n >= 1000
+      ? '${(n / 1000).toStringAsFixed(1)}k'
+      : '$n';
+  static String plus(int n) => '+$n';
+  static String minus(int n) => '−$n';
+  static String issueNumber(int n) => '#$n';
+  static String commentsCount(int n) => '$n';
+  static String pct(double v) => '${v.toStringAsFixed(v >= 10 ? 0 : 1)}%';
+  static String bytes(int b) => b >= 1048576
+      ? '${(b / 1048576).toStringAsFixed(1)} MB'
+      : b >= 1024
+      ? '${(b / 1024).toStringAsFixed(1)} KB'
+      : '$b B';
+
+  /// Compact age, e.g. `3H`, `2D`, `5MO`.
+  static String ago(DateTime? at) {
+    if (at == null) return '';
+    final d = DateTime.now().difference(at);
+    if (d.inMinutes < 1) return 'NOW';
+    if (d.inHours < 1) return '${d.inMinutes}M';
+    if (d.inDays < 1) return '${d.inHours}H';
+    if (d.inDays < 30) return '${d.inDays}D';
+    if (d.inDays < 365) return '${d.inDays ~/ 30}MO';
+    return '${d.inDays ~/ 365}Y';
+  }
+
+  static String preparing(String name) => 'PREPARING $name…';
+}
+
+/// Iconify `octicon:` ids (GitHub's own glyphs), drawn via InlineIcon.
+abstract final class GithubOcticons {
+  static const set = 'octicon';
+  static const mark = 'mark-github-16';
+  static const repo = 'repo-16';
+  static const star = 'star-16';
+  static const fork = 'repo-forked-16';
+  static const eye = 'eye-16';
+  static const issueOpen = 'issue-opened-16';
+  static const issueClosed = 'issue-closed-16';
+  static const issueSkipped = 'skip-16';
+  static const commit = 'git-commit-16';
+  static const branch = 'git-branch-16';
+  static const pr = 'git-pull-request-16';
+  static const prClosed = 'git-pull-request-closed-16';
+  static const prDraft = 'git-pull-request-draft-16';
+  static const merged = 'git-merge-16';
+  static const compare = 'git-compare-16';
+  static const fileCode = 'file-code-16';
+  static const file = 'file-16';
+  static const dir = 'file-directory-fill-16';
+  static const dirOpen = 'file-directory-open-fill-16';
+  static const submodule = 'file-submodule-16';
+  static const symlink = 'file-symlink-file-16';
+  static const added = 'diff-added-16';
+  static const removed = 'diff-removed-16';
+  static const modified = 'diff-modified-16';
+  static const renamed = 'diff-renamed-16';
+  static const law = 'law-16';
+  static const tag = 'tag-16';
+  static const search = 'search-16';
+  static const code = 'code-16';
+  static const comment = 'comment-16';
+  static const people = 'people-16';
+}
+
+/// Hugeicons for actions and chrome around the GitHub widgets.
+abstract final class GithubIcons {
+  static const github = HugeIcons.strokeRoundedGithub;
+  static const branch = HugeIcons.strokeRoundedGitBranch;
+  static const commit = HugeIcons.strokeRoundedGitCommit;
+  static const pr = HugeIcons.strokeRoundedGitPullRequest;
+  static const compare = HugeIcons.strokeRoundedGitCompare;
+  static const fork = HugeIcons.strokeRoundedGitFork;
+  static const merge = HugeIcons.strokeRoundedGitMerge;
+  static const star = HugeIcons.strokeRoundedStar;
+  static const folder = HugeIcons.strokeRoundedFolder01;
+  static const file = HugeIcons.strokeRoundedFile01;
+  static const code = HugeIcons.strokeRoundedSourceCode;
+  static const tag = HugeIcons.strokeRoundedTag01;
+  static const visit = AppIcons.visit;
+  static const open = AppIcons.openExternal;
+  static const copy = AppIcons.copy;
+  static const retry = AppIcons.regenerate;
+  static const expand = AppIcons.expand;
+  static const collapse = AppIcons.collapse;
+  static const back = AppIcons.back;
+  static const search = AppIcons.search;
+}
+
+abstract final class GithubSizes {
+  static const pad = 12.0;
+  static const rowGap = 8.0;
+  static const avatar = 28.0;
+  static const avatarSmall = 18.0;
+  static const avatarLarge = 40.0;
+  static const octicon = 14.0;
+  static const octiconSmall = 12.0;
+  static const langBar = 6.0;
+  static const langGap = 1.0;
+  static const chipHeight = 22.0;
+  static const chipPadH = 8.0;
+  static const labelDot = 8.0;
+  static const skeletonBar = 10.0;
+  static const skeletonRows = 3;
+  static const skeletonWidths = [0.9, 0.6, 0.75];
+  static const codeMaxHeight = 420.0;
+  static const treeIndent = 14.0;
+  static const treeMaxHeight = 420.0;
+  static const listMaxHeight = 520.0;
+  static const fragmentLines = 6;
+  static const descriptionLines = 3;
+  static const bodyLines = 12;
+  static const shaWidth = 64.0;
+
+  /// Alpha steps for the monochrome language bar (largest first).
+  static const langAlphas = [0.9, 0.6, 0.42, 0.3, 0.2, 0.14, 0.1, 0.07];
+  static const labelAlpha = 0.14;
+  static const skeletonAlpha = 0.5;
+}
+
+abstract final class GithubLimits {
+  static const pageRepos = 8;
+  static const pageCommits = 15;
+  static const pageItems = 15;
+  static const initialVisible = 6;
+  static const topics = 8;
+  static const languages = 6;
+  static const filesVisible = 8;
+}
+
+abstract final class GithubDurations {
+  static const timeout = Duration(seconds: 25);
+  static const expand = Duration(milliseconds: 200);
+}

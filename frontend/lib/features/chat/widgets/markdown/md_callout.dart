@@ -25,6 +25,7 @@ class MdCallout extends StatelessWidget {
     ),
     CalloutKind.warning => (AppStrings.calloutWarning, AppIcons.alert, true),
     CalloutKind.caution => (AppStrings.calloutCaution, AppIcons.alert, true),
+    CalloutKind.summary => (AppStrings.calloutSummary, AppIcons.ok, false),
   };
 
   @override

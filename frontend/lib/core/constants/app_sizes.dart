@@ -18,6 +18,9 @@ abstract final class AppRadius {
   static const md = 12.0;
   static const lg = 20.0;
   static const pill = 999.0;
+
+  /// Text fields: a pill at one line, a rounded box when multi-line.
+  static const field = 24.0;
 }
 
 abstract final class AppFontSize {
@@ -207,4 +210,30 @@ abstract final class TableSizes {
   static const summaryLines = 1;
   static const pulse = Duration(milliseconds: 900);
   static const pulseMinOpacity = 0.25;
+}
+
+/// AI tidy-up in the personalization editors.
+abstract final class ProfileAiSizes {
+  /// The FORMAT WITH AI button shows from this many characters.
+  static const minChars = 40;
+  static const buttonHeight = 32.0;
+}
+
+/// Round Table progress meter, research chips and drafts.
+abstract final class TableMeterSizes {
+  /// One dot of the dot-matrix progress bar.
+  static const cell = 5.0;
+  static const cellGap = 3.0;
+  static const queryChipMaxWidth = 260.0;
+  static const actionHeight = 32.0;
+
+  /// Drafts longer than this start collapsed.
+  static const draftPeekChars = 420;
+  static const draftPeekHeight = 140.0;
+
+  /// Refresh of the elapsed clock and estimate.
+  static const tick = Duration(seconds: 1);
+  static const blink = Duration(milliseconds: 700);
+  static const notifyBodyMax = 140;
+  static const titleMax = 48;
 }

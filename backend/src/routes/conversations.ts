@@ -53,7 +53,7 @@ const tableSchema = z
     unresolved: z.array(z.string().max(500)).max(12).default([]),
   })
   .passthrough()
-  .refine((t) => JSON.stringify(t).length <= 40_000, "table transcript too large");
+  .refine((t) => JSON.stringify(t).length <= 60_000, "table transcript too large");
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant", "context"]),

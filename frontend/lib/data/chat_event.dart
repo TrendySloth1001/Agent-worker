@@ -280,6 +280,8 @@ class TableSeat {
     this.status = 'working',
     this.summary = '',
     this.draft = '',
+    this.queries = const [],
+    this.sources = const [],
   });
 
   final String seat;
@@ -290,6 +292,12 @@ class TableSeat {
   String status;
   String summary;
   String draft;
+
+  /// What this seat searched the web for.
+  List<String> queries;
+
+  /// Citation tags its draft cites, e.g. `W3`.
+  List<String> sources;
 
   /// Live only: review points raised against this seat's draft.
   int objections = 0;
@@ -303,6 +311,8 @@ class TableSeat {
     'status': status,
     'summary': summary,
     'draft': draft,
+    if (queries.isNotEmpty) 'queries': queries,
+    if (sources.isNotEmpty) 'sources': sources,
   };
 
   factory TableSeat.fromJson(Map<String, dynamic> j) => TableSeat(
@@ -312,8 +322,15 @@ class TableSeat {
     status: j['status'] as String? ?? 'done',
     summary: j['summary'] as String? ?? '',
     draft: j['draft'] as String? ?? '',
+    queries: _strings(j['queries']),
+    sources: _strings(j['sources']),
   );
 }
+
+List<String> _strings(Object? raw) => [
+  for (final s in raw as List? ?? const [])
+    if (s is String) s,
+];
 
 /// What one seat found reviewing the other drafts.
 class TableReview {
@@ -405,9 +422,13 @@ class TableEvent extends ChatEvent {
     this.summary,
     this.points = const [],
     this.transcript,
+    this.elapsedMs,
+    this.etaMs,
+    this.research = const {},
   });
 
-  /// seating, drafting, checking, reviewing, synthesizing or done.
+  /// researching, seating, drafting, checking, reviewing, synthesizing or
+  /// done.
   final String phase;
   final List<TableSeat> seats;
   final String? seat;
@@ -416,6 +437,14 @@ class TableEvent extends ChatEvent {
   final String? summary;
   final List<TablePoint> points;
   final TableTranscript? transcript;
+
+  /// Time since the request started, and the server's estimate of what is
+  /// left until the answer is complete.
+  final int? elapsedMs;
+  final int? etaMs;
+
+  /// Planned web searches per seat letter (researching phase).
+  final Map<String, List<String>> research;
 
   factory TableEvent.fromJson(Map<String, dynamic> j) => TableEvent(
     phase: j['phase'] as String? ?? '',
@@ -428,5 +457,12 @@ class TableEvent extends ChatEvent {
     transcript: j['transcript'] is Map<String, dynamic>
         ? TableTranscript.fromJson(j['transcript'] as Map<String, dynamic>)
         : null,
+    elapsedMs: (j['elapsedMs'] as num?)?.toInt(),
+    etaMs: (j['etaMs'] as num?)?.toInt(),
+    research: {
+      for (final r in j['research'] as List? ?? const [])
+        if (r is Map<String, dynamic> && r['seat'] is String)
+          r['seat'] as String: _strings(r['queries']),
+    },
   );
 }

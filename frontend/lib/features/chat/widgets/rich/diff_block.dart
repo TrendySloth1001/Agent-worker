@@ -15,6 +15,23 @@ class DiffBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return RichCard(
+      title: RichStrings.diff,
+      trailing: CopyAction(text: code),
+      child: DiffLines(code: code),
+    );
+  }
+}
+
+/// The diff body alone (no card): gutter, tinted rows, horizontal scroll.
+/// Shared with the GitHub commit / compare widgets.
+class DiffLines extends StatelessWidget {
+  const DiffLines({super.key, required this.code});
+
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
     final p = context.palette;
     final t = context.text;
     final lines = code.split('\n');
@@ -60,17 +77,13 @@ class DiffBlock extends StatelessWidget {
         ),
       );
     }
-    return RichCard(
-      title: RichStrings.diff,
-      trailing: CopyAction(text: code),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: IntrinsicWidth(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: rows,
-          ),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: rows,
         ),
       ),
     );

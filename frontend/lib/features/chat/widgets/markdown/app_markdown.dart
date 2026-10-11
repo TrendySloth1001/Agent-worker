@@ -9,12 +9,14 @@ import '../open_url.dart';
 import 'citation_chip.dart';
 import 'citation_syntax.dart';
 import 'evidence_sheet.dart';
+import 'highlight_syntax.dart';
 import 'code_block_builder.dart';
 import 'emoji_icons.dart';
 import 'inline_icon.dart';
 import 'inline_image.dart';
 import 'md_blocks.dart';
 import 'md_callout.dart';
+import 'md_heading.dart';
 import 'math_syntax.dart';
 import 'math_view.dart';
 import 'md_table.dart';
@@ -84,6 +86,7 @@ class AppMarkdown extends StatelessWidget {
       tableBody: t.bodySmall.copyWith(color: p.textPrimary),
       tableBorder: TableBorder.all(color: p.border, width: AppBorder.thin),
       tableCellsPadding: const EdgeInsets.all(AppSpacing.sm),
+      blockSpacing: AppSpacing.md,
     );
   }
 }
@@ -128,10 +131,20 @@ class _Flow extends StatelessWidget {
     final children = <Widget>[];
     for (final b in blocks) {
       if (children.isNotEmpty) {
-        children.add(const SizedBox(height: AppSpacing.sm));
+        // Sections breathe: more room above a heading than between blocks.
+        children.add(
+          SizedBox(
+            height: b is MdHeadingBlock ? MdSizes.headingGap : AppSpacing.md,
+          ),
+        );
       }
       children.add(switch (b) {
         MdText() => _markdown(context, b.text),
+        MdHeadingBlock() => MdHeading(
+          block: b,
+          first: children.isEmpty,
+          renderText: (t, style) => _markdown(context, t, textStyle: style),
+        ),
         MdListBlock() => TimelineList(
           list: b.list,
           renderText: (t) => _inline(context, t),
@@ -156,8 +169,20 @@ class _Flow extends StatelessWidget {
     );
   }
 
-  Widget _markdown(BuildContext context, String text, {bool? cell}) {
+  Widget _markdown(
+    BuildContext context,
+    String text, {
+    bool? cell,
+    TextStyle? textStyle,
+  }) {
     var sheet = AppMarkdown.styleSheet(context);
+    if (textStyle != null) {
+      sheet = sheet.copyWith(
+        p: textStyle,
+        strong: textStyle,
+        em: textStyle.copyWith(fontStyle: FontStyle.italic),
+      );
+    }
     if (cell != null) {
       final p = context.palette;
       final t = context.text;
@@ -172,19 +197,33 @@ class _Flow extends StatelessWidget {
         ),
       );
     }
+    // In a cell, "> 30 years" or "- 5" is text, not a quote or a list.
+    final data = cell == null
+        ? text
+        : text.replaceFirstMapped(RegExp(r'^(\s*)([>#+\-*]|\d+[.)])(?=\s)'), (
+            m,
+          ) {
+            final mark = m[2]!;
+            // Escape the punctuation: `1\.` (a backslash before a digit
+            // does nothing), `\>`, `\-`.
+            return '${m[1]}${mark.substring(0, mark.length - 1)}'
+                '\\${mark[mark.length - 1]}';
+          });
     return MarkdownBody(
-      data: prepareCitations(text, citations),
+      data: prepareCitations(data, citations),
       selectable: false,
       styleSheet: sheet,
       inlineSyntaxes: [
         MathSyntax(),
         CitationSyntax(),
         IconSyntax(),
+        HighlightSyntax(),
         StrayImageSyntax(),
       ],
       builders: {
         'pre': CodeBlockBuilder(streaming: streaming),
         'icon': IconBuilder(),
+        'mark': HighlightBuilder(),
         'math': MathBuilder(inTable: cell != null),
         'cite': CitationBuilder(
           citations: citations,

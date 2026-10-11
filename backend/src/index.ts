@@ -16,6 +16,7 @@ import { imagesRouter } from "./routes/images.js";
 import { iconsRouter } from "./routes/icons.js";
 import { assistRouter } from "./routes/assist.js";
 import { filesRouter } from "./routes/files.js";
+import { githubRouter } from "./routes/github.js";
 import { failInterrupted } from "./files/process.js";
 
 const app = express();
@@ -46,6 +47,7 @@ app.use("/images", imagesRouter);
 app.use("/icons", iconsRouter);
 app.use("/assist", assistRouter);
 app.use("/files", filesRouter);
+app.use("/github", githubRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));
 app.use(errorMiddleware);

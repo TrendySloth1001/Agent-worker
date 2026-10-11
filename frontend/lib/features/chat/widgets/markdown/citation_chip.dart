@@ -44,8 +44,10 @@ String _clip(String s) => s.length <= MdSizes.citeNameMaxChars
     ? s
     : s.substring(0, MdSizes.citeNameMaxChars);
 
-final _run = RegExp(r'\[[KW]\d{1,2}\](?!\()(?:[ \t,]*\[[KW]\d{1,2}\](?!\())*');
-final _tag = RegExp(r'\[([KW]\d{1,2})\]');
+final _run = RegExp(
+  r'\[[KWG]\d{1,2}\](?!\()(?:[ \t,]*\[[KWG]\d{1,2}\](?!\())*',
+);
+final _tag = RegExp(r'\[([KWG]\d{1,2})\]');
 final _fence = RegExp(r'^\s*(```|~~~)');
 
 /// Collapses runs of citation tags that point at the same site into one tag

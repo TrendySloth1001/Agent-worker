@@ -61,6 +61,21 @@ class ChatMessage {
   /// Live Round Table phase (not saved).
   String? tablePhase;
 
+  /// Live Round Table timing (not saved): elapsed and estimated time left
+  /// as of [tableStamp], when the last table event arrived.
+  int tableElapsedMs = 0;
+  int? tableEtaMs;
+  DateTime? tableStamp;
+
+  /// Live planned searches per seat letter (not saved).
+  Map<String, List<String>> tableResearch = const {};
+
+  /// Phases this table went through, for the progress meter (not saved).
+  Set<String> tableSeen = {};
+
+  /// The user asked to be notified when this reply is ready (not saved).
+  bool notifyWhenDone = false;
+
   Map<String, dynamic> toJson() => {
     'role': role.name,
     'content': content,

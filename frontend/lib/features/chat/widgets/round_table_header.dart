@@ -7,14 +7,23 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/chat_event.dart';
+import 'markdown/app_markdown.dart';
 import 'round_table_panel.dart';
+import 'source_chips.dart';
 
 /// "ROUND TABLE · 3 MODELS · AGREED" above a reply the table wrote.
 /// Expands to each seat's draft, the review points and open questions.
 class RoundTableHeader extends StatefulWidget {
-  const RoundTableHeader({super.key, required this.table});
+  const RoundTableHeader({
+    super.key,
+    required this.table,
+    this.citations = const [],
+  });
 
   final TableTranscript table;
+
+  /// The reply's sources; seat drafts cite the same tags.
+  final List<Citation> citations;
 
   @override
   State<RoundTableHeader> createState() => _RoundTableHeaderState();
@@ -113,15 +122,12 @@ class _RoundTableHeaderState extends State<RoundTableHeader> {
         children: [
           for (final seat in table.seats) ...[
             TableSeatRow(seat: seat, live: false),
-            if (seat.draft.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Padding(
-                padding: const EdgeInsets.only(
-                  left: TableSizes.statusIcon + AppSpacing.sm,
-                ),
-                child: _Draft(text: _withoutTldr(seat.draft)),
+            Padding(
+              padding: const EdgeInsets.only(
+                left: TableSizes.statusIcon + AppSpacing.sm,
               ),
-            ],
+              child: _SeatDetails(seat: seat, citations: widget.citations),
+            ),
             const SizedBox(height: AppSpacing.md),
           ],
           if (reviewed) ...[
@@ -155,11 +161,51 @@ class _RoundTableHeaderState extends State<RoundTableHeader> {
   }
 }
 
-/// A seat's draft: four lines, tap to show all.
+/// Under a seat: what it searched, its draft with citation chips, and the
+/// sources it cited.
+class _SeatDetails extends StatelessWidget {
+  const _SeatDetails({required this.seat, required this.citations});
+
+  final TableSeat seat;
+  final List<Citation> citations;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    final byId = {for (final c in citations) c.id: c};
+    final cited = [
+      for (final tag in seat.sources)
+        if (byId[tag] != null) byId[tag]!,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (seat.queries.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          QueryChips(queries: seat.queries),
+        ],
+        if (seat.draft.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          _Draft(text: _withoutTldr(seat.draft), citations: citations),
+        ],
+        if (cited.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(TableWaitStrings.sources, style: t.caption),
+          const SizedBox(height: AppSpacing.xs),
+          SourceChips(citations: cited, used: const {}),
+        ],
+      ],
+    );
+  }
+}
+
+/// A seat's draft as markdown with citation chips; long drafts start
+/// collapsed with a SHOW ALL toggle.
 class _Draft extends StatefulWidget {
-  const _Draft({required this.text});
+  const _Draft({required this.text, required this.citations});
 
   final String text;
+  final List<Citation> citations;
 
   @override
   State<_Draft> createState() => _DraftState();
@@ -170,22 +216,47 @@ class _DraftState extends State<_Draft> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Haptics.tap();
-        setState(() => _open = !_open);
-      },
-      child: AnimatedSize(
-        duration: AppDurations.fast,
-        alignment: Alignment.topCenter,
-        child: Text(
-          widget.text,
-          maxLines: _open ? null : TableSizes.draftPeekLines,
-          overflow: _open ? TextOverflow.visible : TextOverflow.ellipsis,
-          style: context.text.bodySmall,
+    final p = context.palette;
+    final long = widget.text.length > TableMeterSizes.draftPeekChars;
+    final body = AppMarkdown(
+      data: widget.text,
+      citations: widget.citations,
+      streaming: false,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AnimatedSize(
+          duration: AppDurations.fast,
+          alignment: Alignment.topCenter,
+          child: !long || _open
+              ? body
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxHeight: TableMeterSizes.draftPeekHeight,
+                  ),
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: body,
+                  ),
+                ),
         ),
-      ),
+        if (long)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              Haptics.tap();
+              setState(() => _open = !_open);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: Text(
+                _open ? TableWaitStrings.showLess : TableWaitStrings.showAll,
+                style: context.text.caption.copyWith(color: p.textTertiary),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

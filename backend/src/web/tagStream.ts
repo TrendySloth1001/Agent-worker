@@ -32,7 +32,7 @@ export class TagStream {
 }
 
 function normalize(s: string): string {
-  return s.replace(/\[([KWD]\d+(?:\s*[,;]\s*[KWD]\d+)+)\]/g, (_m, list: string) =>
+  return s.replace(/\[([KWDG]\d+(?:\s*[,;]\s*[KWDG]\d+)+)\]/g, (_m, list: string) =>
     list
       .split(/\s*[,;]\s*/)
       .map((t) => `[${t}]`)

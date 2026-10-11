@@ -53,11 +53,33 @@ async function ollamaPost(path: "web_search" | "web_fetch", body: object, signal
 
 const clip = (s: unknown, n: number) => (typeof s === "string" ? s.slice(0, n) : "");
 
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(t), reject(signal.reason)), { once: true });
+  });
+
+const isRateLimit = (e: unknown) => e instanceof AppError && /\(429\)/.test(e.message);
+
+/** Ollama web search; on a rate limit (429) backs off and retries twice. */
 export async function webSearch(query: string, signal?: AbortSignal): Promise<WebResult[]> {
   const key = `s:${query.toLowerCase()}`;
   const cached = cacheGet(key);
   if (cached) return cached;
-  const data = await ollamaPost("web_search", { query, max_results: 5 }, signal);
+  let data: any;
+  try {
+    data = await ollamaPost("web_search", { query, max_results: 5 }, signal);
+  } catch (e) {
+    if (!isRateLimit(e)) throw e;
+    try {
+      await sleep(1200 + Math.random() * 800, signal);
+      data = await ollamaPost("web_search", { query, max_results: 5 }, signal);
+    } catch (e2) {
+      if (!isRateLimit(e2)) throw e2;
+      await sleep(2500 + Math.random() * 1000, signal);
+      data = await ollamaPost("web_search", { query, max_results: 5 }, signal);
+    }
+  }
   const results: WebResult[] = (Array.isArray(data?.results) ? data.results : [])
     .filter((r: any) => typeof r?.url === "string")
     .slice(0, 5)

@@ -9,6 +9,8 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/icon_label.dart';
 import '../../../core/widgets/segmented.dart';
+import '../../../data/assist_api.dart';
+import '../../../data/chat_api.dart';
 import '../settings_controller.dart';
 
 /// Rows for the PERSONALIZATION section of Settings.
@@ -52,6 +54,7 @@ class PersonalizationRows extends StatelessWidget {
           hint: AppStrings.aboutHint,
           max: AppSizes.profileAboutMax,
           multiline: true,
+          aiField: ProfileAiStrings.fieldAbout,
           onSave: s.setAbout,
         ),
         _FieldRow(
@@ -69,6 +72,7 @@ class PersonalizationRows extends StatelessWidget {
           hint: AppStrings.instructionsHint,
           max: AppSizes.profileInstructionsMax,
           multiline: true,
+          aiField: ProfileAiStrings.fieldInstructions,
           onSave: s.setCustomInstructions,
         ),
         _FieldRow(
@@ -153,12 +157,16 @@ class _FieldRow extends StatelessWidget {
     required this.max,
     required this.onSave,
     this.multiline = false,
+    this.aiField,
   });
 
   final String label, value, hint;
   final AppIconData icon;
   final int max;
   final bool multiline;
+
+  /// Set for fields the AI can tidy up (see [ProfileAiStrings]).
+  final String? aiField;
   final ValueChanged<String> onSave;
 
   @override
@@ -221,6 +229,7 @@ class _FieldRow extends StatelessWidget {
         initial: value,
         max: max,
         multiline: multiline,
+        aiField: aiField,
         onSave: onSave,
       ),
     );
@@ -235,11 +244,13 @@ class _EditorSheet extends StatefulWidget {
     required this.max,
     required this.multiline,
     required this.onSave,
+    this.aiField,
   });
 
   final String title, hint, initial;
   final int max;
   final bool multiline;
+  final String? aiField;
   final ValueChanged<String> onSave;
 
   @override
@@ -247,12 +258,59 @@ class _EditorSheet extends StatefulWidget {
 }
 
 class _EditorSheetState extends State<_EditorSheet> {
-  late final _input = TextEditingController(text: widget.initial);
+  late final _input = TextEditingController(text: widget.initial)
+    ..addListener(_onChanged);
+  bool _formatting = false;
+
+  /// Text before the last AI format, for UNDO.
+  String? _before;
 
   @override
   void dispose() {
     _input.dispose();
     super.dispose();
+  }
+
+  bool get _canFormat =>
+      widget.aiField != null &&
+      _input.text.trim().length >= ProfileAiSizes.minChars;
+
+  void _onChanged() => setState(() {});
+
+  Future<void> _format() async {
+    Haptics.tap();
+    final before = _input.text;
+    setState(() => _formatting = true);
+    try {
+      final text = await AssistApi.formatProfile(
+        field: widget.aiField!,
+        text: before.trim(),
+        max: widget.max,
+      );
+      if (!mounted) return;
+      if (text.trim().isNotEmpty) {
+        _before = before;
+        _input.text = text;
+        Haptics.received();
+      }
+    } on ApiException {
+      Haptics.error();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(ProfileAiStrings.failed)));
+      }
+    } finally {
+      if (mounted) setState(() => _formatting = false);
+    }
+  }
+
+  void _undo() {
+    Haptics.tap();
+    final before = _before;
+    if (before == null) return;
+    _before = null;
+    _input.text = before;
   }
 
   void _save(String value) {
@@ -307,6 +365,28 @@ class _EditorSheetState extends State<_EditorSheet> {
                     ),
                 decoration: InputDecoration(hintText: widget.hint),
               ),
+              if (_canFormat || _before != null || _formatting) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    if (_before != null && !_formatting)
+                      _AiChip(
+                        icon: AppIcons.undo,
+                        label: ProfileAiStrings.undo,
+                        onTap: _undo,
+                      ),
+                    const Spacer(),
+                    _AiChip(
+                      icon: AppIcons.aiFormat,
+                      label: _formatting
+                          ? ProfileAiStrings.formatting
+                          : ProfileAiStrings.format,
+                      busy: _formatting,
+                      onTap: _formatting || !_canFormat ? null : _format,
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
@@ -325,6 +405,59 @@ class _EditorSheetState extends State<_EditorSheet> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small outlined pill used for FORMAT WITH AI and UNDO.
+class _AiChip extends StatelessWidget {
+  const _AiChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.busy = false,
+  });
+
+  final AppIconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final color = onTap == null && !busy ? p.textTertiary : p.textPrimary;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: ProfileAiSizes.buttonHeight,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: busy ? p.accent : p.borderStrong,
+            width: AppBorder.thin,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (busy)
+              SizedBox.square(
+                dimension: AppIconSize.sm,
+                child: CircularProgressIndicator(
+                  strokeWidth: AppBorder.thick,
+                  color: p.accent,
+                ),
+              )
+            else
+              AppIcon(icon, size: AppIconSize.sm, color: color),
+            const SizedBox(width: AppSpacing.sm),
+            Text(label, style: context.text.caption.copyWith(color: color)),
+          ],
         ),
       ),
     );

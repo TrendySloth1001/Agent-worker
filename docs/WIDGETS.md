@@ -89,6 +89,19 @@ title: Packing list
 ```
 Tap toggles (haptic tick), progress `3/8` + 2px bar, auto strike-through, at 100% a brief accent flash and "ALL DONE" mono label. Actions: COPY (markdown checkboxes), SEND PROGRESS (latest reply only: sends remaining items to chat). Caps 40 items. Local state only.
 
+### 9. GitHub live cards  (```github-*; fetch through backend `/github`)
+Unlike the others, these blocks carry only a reference; the card loads LIVE data from the backend (`frontend/lib/data/github_api.dart` -> `backend/src/routes/github.ts`, token `GITHUB_TOKEN`, 5 min server cache). Every card: RichCard frame, skeleton while loading, error + RETRY, VISIT (browser picker via `visitUrl`) and COPY actions, octicons via `InlineIcon` (`octicon:*-16`), monochrome with the red accent only for removals/merged/closed. Constants: `lib/core/constants/widget_github.dart`. Code: `lib/features/chat/widgets/github/`.
+| Block | Body | Card |
+|---|---|---|
+| `github-repo` | `owner/repo` (or a github.com URL) | avatar, name, description, stars/forks/watching/issues, license, default branch, last push, language bar, topics, latest release |
+| `github-search` | `type: repos\|code\|issues\|commits` + `q: <GitHub search syntax>` (`sort: stars` optional; a lone line = repo query) | total + result rows; tap to expand (repo details, code fragments, issue body, commit body) |
+| `github-commits` | `owner/repo[@branch][:path]` | commit rail (avatar, message, sha chip, author, age, +/-); tap -> body + changed files, each file expands to a diff (`DiffLines`, shared with ```diff) |
+| `github-tree` | `owner/repo[@ref][:path]` | collapsible lazy tree (dirs first, sizes); tap a file -> highlighted viewer (`CodeBlock`), back arrow |
+| `github-compare` | `owner/repo base...head` | refs, commits/changed/ahead/behind, +/-, commit rail, file diffs |
+| `github-prs` / `github-issues` | `owner/repo [open\|closed\|all]` | OPEN/CLOSED/ALL switch, state octicons, labels (color dot), comments; tap -> body, VISIT, (PR) FILES with diffs |
+
+Grounding: when the user's message is about GitHub (github.com link, `owner/repo` next to repo words, "find a repo/library for X"), `backend/src/github/grounding.ts` adds live data as `[G#]` sources (`<github>` context block, chips with site github.com) and a one-line hint suggesting the matching block. Unrelated questions never call GitHub.
+
 ### Cut on purpose
 Kanban/board, drawing canvas, polls with persistence, map, audio player, code sandbox with JS execution, mini-games (cannot be built robustly in one pass; html widget covers interactive one-offs). Chart types heatmap/candlestick/sankey cut. Persistence of widget state across app restarts cut.
 

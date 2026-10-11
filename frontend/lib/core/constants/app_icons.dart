@@ -35,6 +35,8 @@ abstract final class AppIcons {
   static const merge = HugeIcons.strokeRoundedGitMerge;
   static const roundTable = HugeIcons.strokeRoundedUserGroup;
   static const visit = HugeIcons.strokeRoundedGlobe02;
+  static const aiFormat = HugeIcons.strokeRoundedAiMagic;
+  static const undo = HugeIcons.strokeRoundedUndo02;
   static const openExternal = HugeIcons.strokeRoundedLinkSquare02;
   static const browser = HugeIcons.strokeRoundedBrowser;
   static const link = HugeIcons.strokeRoundedLink01;
@@ -157,4 +159,11 @@ abstract final class AppIcons {
     'openrouter' => openrouter,
     _ => models,
   };
+}
+
+/// Round Table waiting and research.
+abstract final class TableIcons {
+  static const notify = HugeIcons.strokeRoundedNotification01;
+  static const answerFast = HugeIcons.strokeRoundedFlash;
+  static const query = HugeIcons.strokeRoundedSearch01;
 }

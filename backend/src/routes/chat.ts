@@ -9,6 +9,7 @@ import { pickCandidates, preferForPrompt, runChat, ChatFailure } from "../llm/ro
 import { webSearch, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
+import { githubGround } from "../github/grounding.js";
 import { decideSearch } from "../web/searchDecision.js";
 import { findImages, type ImageResult } from "../web/images.js";
 import { intentHint } from "../prompts/intent.js";
@@ -17,7 +18,9 @@ import { retrieve, type KbHit } from "../retrieval/search.js";
 import { embeddingsHealthy } from "../embeddings/index.js";
 import type { Message } from "../providers.js";
 import { ATTACH_PLACEHOLDER, loadRows, prepareMessages, waitForFiles } from "../files/context.js";
-import { isTrivialTurn, runRoundTable, UnresolvedFilter, type TableRun } from "../table/roundTable.js";
+import { initialEtaMs, isTrivialTurn, runRoundTable, UnresolvedFilter, type SeatResearchInput, type TableRun } from "../table/roundTable.js";
+import { planQueries, runSeatResearch, type SeatResearch } from "../table/research.js";
+import { recordLatency } from "../table/latency.js";
 
 // Vision-capable models, best first. Auto uses only these when a request has images or video frames.
 const VISION_MODELS = [
@@ -88,6 +91,8 @@ const hostOf = (url: string) => {
   }
 };
 const snippet = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 200);
+/** URL identity for merging search results (no scheme, www, fragment or trailing slash). */
+const urlKey = (url: string) => url.replace(/^https?:\/\/(www\.)?/i, "").replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
 
 function retrievalQuery(messages: Message[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content.trim() ?? "";
@@ -161,6 +166,9 @@ chatRouter.post("/", async (req, res) => {
     // ---- context: knowledge base + web (parallel, non-fatal) -------------
     const kbItems: ContextItem[] = [];
     const webItems: ContextItem[] = [];
+    // Live GitHub data as [G#] sources, only when the message is about GitHub.
+    const githubItems: ContextItem[] = [];
+    let githubHint: string | null = null;
 
     // A question about attached files is answered from the files, not the web
     // or the knowledge base (which only add unrelated sources).
@@ -200,13 +208,39 @@ chatRouter.post("/", async (req, res) => {
     const searching = decision.search;
     if (searching) log.info("web search", { requestId, reason: decision.reason });
 
+    // Round Table with web research: each seat also searches its own angle.
+    const tableWanted = body.roundTable && !(isTrivialTurn(lastUserText) && !(lastUserMsg?.attachments?.length ?? 0));
+    const seatResearch: SeatResearchInput[] = [];
+    const sharedWebIds = new Set<string>();
+    const researchTask = async (): Promise<SeatResearch[]> => {
+      if (!tableWanted || !searching || !lastUserText) return [];
+      const at = Date.now();
+      const eta = () => Math.round(Math.max(initialEtaMs(true) - (Date.now() - at), 0));
+      sse.send("table", { phase: "researching", elapsedMs: Date.now() - started, etaMs: eta() });
+      try {
+        const queries = await planQueries(lastUserText, searchQuery(decision.query || lastUser), ctl.signal);
+        if (queries.length === 0) return [];
+        sse.send("table", {
+          phase: "researching",
+          research: queries.map((q, i) => ({ seat: "ABC"[i], queries: [q] })),
+          elapsedMs: Date.now() - started,
+          etaMs: eta(),
+        });
+        return await runSeatResearch(queries, ctl.signal);
+      } catch (e) {
+        log.warn("table research failed", { requestId, message: (e as Error).message?.slice(0, 120) });
+        return [];
+      }
+    };
+
     const webTask = async () => {
       const urlMatch = lastUser.match(URL_RE);
       if (!searching && !urlMatch) return;
       if (searching) sse.send("status", { phase: "searching" });
-      const [search, fetched] = await Promise.allSettled([
+      const [search, fetched, research] = await Promise.allSettled([
         searching ? webSearch(searchQuery(decision.query || lastUser), ctl.signal) : Promise.resolve([]),
         urlMatch ? webFetch(urlMatch[0].replace(/[.,;:]+$/, ""), ctl.signal) : Promise.resolve(null),
+        researchTask(),
       ]);
       const results = search.status === "fulfilled" ? [...search.value] : [];
       if (fetched.status === "fulfilled" && fetched.value) results.unshift(fetched.value);
@@ -218,10 +252,45 @@ chatRouter.post("/", async (req, res) => {
         const id = `W${i + 1}`;
         webItems.push({ id, title: r.title, url: r.url, text: r.content, full: r.full });
         citations.push({ id, kind: "web", title: r.title, url: r.url, snippet: snippet(r.content), site: hostOf(r.url) });
+        sharedWebIds.add(id);
       });
+      // Seat results join the one citation list (deduped by URL, ids continue);
+      // a seat sees the shared sources plus every result it found itself.
+      const byUrl = new Map(webItems.map((w) => [urlKey(w.url), w.id]));
+      for (const r of research.status === "fulfilled" ? research.value : []) {
+        const own: SeatResearchInput = { seat: r.seat, queries: r.queries, items: [], tags: [] };
+        for (const w of r.results) {
+          let id = byUrl.get(urlKey(w.url));
+          if (!id) {
+            id = `W${webItems.length + 1}`;
+            byUrl.set(urlKey(w.url), id);
+            webItems.push({ id, title: w.title, url: w.url, text: w.content, full: w.full });
+            citations.push({ id, kind: "web", title: w.title, url: w.url, snippet: snippet(w.content), site: hostOf(w.url) });
+          }
+          if (own.tags.includes(id)) continue;
+          own.tags.push(id);
+          const item = webItems.find((x) => x.id === id);
+          if (item && !sharedWebIds.has(id)) own.items.push({ id, title: item.title, url: item.url, text: item.text });
+        }
+        seatResearch.push(own);
+      }
+      if (seatResearch.length) log.info("table research", { requestId, seats: seatResearch.map((r) => `${r.seat}:${r.tags.length}`).join(" ") });
     };
 
-    await Promise.all([kbTask(), webTask()]);
+    const githubTask = async () => {
+      if (aboutAttachments || !lastUserText) return;
+      try {
+        const g = await githubGround(lastUserText, ctl.signal);
+        if (!g) return;
+        githubItems.push(...g.items);
+        githubHint = g.hint;
+        for (const i of g.items) citations.push({ id: i.id, kind: "web", title: i.title, url: i.url, snippet: snippet(i.text), site: "github.com" });
+      } catch (e) {
+        log.warn("github grounding failed", { requestId, message: (e as Error).message?.slice(0, 120) });
+      }
+    };
+
+    await Promise.all([kbTask(), webTask(), githubTask()]);
     if (ctl.signal.aborted) return;
     const rank = { kb: 0, web: 1, file: 2 } as const;
     citations.sort((a, b) => rank[a.kind] - rank[b.kind]);
@@ -245,10 +314,11 @@ chatRouter.post("/", async (req, res) => {
         content: `Background the user merged in from earlier conversations (a summary, not the full chats; use it as shared context):\n\n${body.context.trim()}`,
       });
     }
-    const context = buildContextMessage(kbItems, webItems, docItems);
+    const context = buildContextMessage(kbItems, webItems, docItems, githubItems);
     if (context) prompt.push({ role: "system", content: context });
     const hint = lastUserText ? intentHint(lastUserText) : null;
     if (hint) prompt.push({ role: "system", content: hint });
+    if (githubHint) prompt.push({ role: "system", content: githubHint });
     prompt.push(...prepared.messages);
 
     const promptChars = prompt.reduce((n, m) => n + m.content.length + (m.images?.length ?? 0) * 1500, 0);
@@ -256,14 +326,22 @@ chatRouter.post("/", async (req, res) => {
     // ---- round table (optional): drafts + cross-review, then the chair ----
     let table: TableRun | null = null;
     if (body.roundTable) {
-      if (isTrivialTurn(lastUserText) && !(lastUserMsg?.attachments?.length ?? 0)) {
+      if (!tableWanted) {
         sse.send("notice", { code: "round_table_skipped", message: "Short message, answering without the round table." });
       } else {
         sse.send("status", { phase: "round_table" });
-        const shared = prompt.slice(1, prompt.length - prepared.messages.length).filter((m) => m.content !== hint);
+        // With seat research, seats share only the main sources; each adds its own.
+        const tableContext = seatResearch.length ? buildContextMessage(kbItems, webItems.filter((w) => sharedWebIds.has(w.id)), docItems, githubItems) : context;
+        const shared = prompt
+          .slice(1, prompt.length - prepared.messages.length)
+          .filter((m) => m.content !== hint)
+          .map((m) => (m.content === context ? tableContext : m.content))
+          .filter((c): c is string => !!c);
         table = await runRoundTable({
           history: prepared.messages,
-          context: shared.map((m) => m.content).join("\n\n") || null,
+          context: shared.join("\n\n") || null,
+          research: seatResearch,
+          startedAt: started,
           question: lastUserText,
           preamble: buildSystemPrompt(body.mode as never, body.profile).split("\n\n").filter((p) => /^(Today's date|Language:)/.test(p)).join("\n\n"),
           promptChars,
@@ -280,6 +358,10 @@ chatRouter.post("/", async (req, res) => {
     sse.send("status", { phase: "generating" });
     let text = "";
     const tags = new TagStream();
+    // The chair only keeps tags that exist in the citation list.
+    const validTags = new Set(citations.map((c) => c.id));
+    const keepValid = (s: string) => (table ? s.replace(/\[([KWD]\d+)\]/g, (m, id: string) => (validTags.has(id) ? m : "")) : s);
+    const chairAt = Date.now();
     const result = await runChat(
       table ? table.candidates : auto ? preferForPrompt(candidates, promptChars) : candidates,
       table ? [...prompt, table.chairMessage] : prompt,
@@ -293,7 +375,7 @@ chatRouter.post("/", async (req, res) => {
         onDelta: (chunk) => {
           const raw = table ? unresolved.push(chunk) : chunk;
           if (!raw) return;
-          const t = tags.push(raw);
+          const t = keepValid(tags.push(raw));
           if (!t) return;
           text += t;
           sse.send("delta", { text: t });
@@ -311,13 +393,13 @@ chatRouter.post("/", async (req, res) => {
 
     const held = table ? unresolved.flush() : "";
     if (held) {
-      const t = tags.push(held);
+      const t = keepValid(tags.push(held));
       if (t) {
         text += t;
         sse.send("delta", { text: t });
       }
     }
-    const tail = tags.flush();
+    const tail = keepValid(tags.flush());
     if (tail) {
       text += tail;
       sse.send("delta", { text: tail });
@@ -327,11 +409,11 @@ chatRouter.post("/", async (req, res) => {
     const strip = await Promise.race([imagesTask, new Promise<ImageResult[]>((r) => setTimeout(() => r([]), 1_500))]);
     if (strip.length > 0 && !/\{\{image:/.test(text)) sse.send("images", { images: strip });
     const sent = new Set(citations.map((c) => c.id));
-    const used = [...new Set([...text.matchAll(/\[([KWD]\d+)\]/g)].map((m) => m[1]))].filter((id) => sent.has(id));
+    const used = [...new Set([...text.matchAll(/\[([KWDG]\d+)\]/g)].map((m) => m[1]))].filter((id) => sent.has(id));
     try {
       const evidence = computeEvidence(
         text,
-        [...kbItems, ...webItems, ...docItems].filter((i) => sent.has(i.id)).map((i) => ({ id: i.id, text: i.full ?? i.text })),
+        [...kbItems, ...webItems, ...docItems, ...githubItems].filter((i) => sent.has(i.id)).map((i) => ({ id: i.id, text: i.full ?? i.text })),
       );
       if (evidence.length > 0) sse.send("evidence", { items: evidence });
     } catch (e) {
@@ -339,7 +421,10 @@ chatRouter.post("/", async (req, res) => {
     }
     sse.send("usage", { promptTokens: result.promptTokens, completionTokens: result.completionTokens });
     const latencyMs = Date.now() - started;
-    if (table) table.finish(result.model, chairCalls, unresolved.items());
+    if (table) {
+      recordLatency("chair", result.model, Date.now() - chairAt);
+      table.finish(result.model, chairCalls, unresolved.items());
+    }
     sse.send("done", { model: result.model, used, finishReason: result.finishReason, latencyMs, ...(table ? { table: true } : {}) });
     log.info("chat", { requestId, model: result.model, latencyMs, status: 200 });
   } catch (e) {

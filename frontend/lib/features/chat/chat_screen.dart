@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/haptics.dart';
+import '../../core/notifications.dart';
 import '../../core/app_scope.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
@@ -56,10 +57,29 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.addListener(() {
       _showScrollButton.value = _scroll.offset > AppSizes.scrollButtonThreshold;
     });
+    AppNotifications.instance.opened.addListener(_onNotificationOpened);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _onNotificationOpened(),
+    );
+  }
+
+  /// A tapped notification opens its chat.
+  void _onNotificationOpened() {
+    final id = AppNotifications.instance.opened.value;
+    if (id == null || !mounted) return;
+    AppNotifications.instance.opened.value = null;
+    _openChat(id);
+  }
+
+  Future<void> _notifyMe(ChatMessage message) async {
+    final ok = await _controller.notifyWhenDone(message);
+    if (!mounted) return;
+    _toast(ok ? TableWaitStrings.notifyOn : TableWaitStrings.notifyBlocked);
   }
 
   @override
   void dispose() {
+    AppNotifications.instance.opened.removeListener(_onNotificationOpened);
     _controller.dispose();
     _scroll.dispose();
     _showScrollButton.dispose();
@@ -238,6 +258,8 @@ class _ChatScreenState extends State<ChatScreen> {
             onRegenerate: isLast && message.role == Role.assistant
                 ? _controller.regenerate
                 : null,
+            onAnswerFast: message.isStreaming ? _controller.answerFast : null,
+            onNotify: message.isStreaming ? () => _notifyMe(message) : null,
           );
         },
       ),

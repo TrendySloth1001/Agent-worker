@@ -8,7 +8,7 @@ import 'citation_chip.dart';
 /// Turns `[K1]` / `[W2]` into a `cite` element. A following `(` means it is
 /// a normal markdown link, so it is left alone.
 class CitationSyntax extends md.InlineSyntax {
-  CitationSyntax() : super(r'\[([KWD]\d{1,2})\](?!\()');
+  CitationSyntax() : super(r'\[([KWDG]\d{1,2})\](?!\()');
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {

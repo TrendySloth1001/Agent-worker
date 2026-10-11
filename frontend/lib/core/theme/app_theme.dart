@@ -88,7 +88,7 @@ abstract final class AppTheme {
   }
 
   static OutlineInputBorder _outline(Color color) => OutlineInputBorder(
-    borderRadius: BorderRadius.circular(AppRadius.pill),
+    borderRadius: BorderRadius.circular(AppRadius.field),
     borderSide: BorderSide(color: color, width: AppBorder.thin),
   );
 }

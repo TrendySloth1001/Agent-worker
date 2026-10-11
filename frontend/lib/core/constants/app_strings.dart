@@ -25,6 +25,7 @@ abstract final class AppStrings {
   static const calloutImportant = 'IMPORTANT';
   static const calloutWarning = 'WARNING';
   static const calloutCaution = 'CAUTION';
+  static const calloutSummary = 'BOTTOM LINE';
   static const scrollToBottom = 'Scroll to bottom';
 
   // Errors
@@ -419,4 +420,79 @@ abstract final class TableStrings {
 
   /// "3 MODELS" style count.
   static String modelCount(int n) => '$n $models';
+}
+
+/// AI tidy-up in the personalization editors.
+abstract final class ProfileAiStrings {
+  static const format = 'FORMAT WITH AI';
+  static const formatting = 'FORMATTING';
+  static const undo = 'UNDO';
+  static const failed = 'Could not format right now.';
+  static const fieldAbout = 'about';
+  static const fieldInstructions = 'instructions';
+}
+
+/// Round Table waiting: progress meter, actions, per-seat research and
+/// system notifications.
+abstract final class TableWaitStrings {
+  static const researching = 'RESEARCHING';
+  static const stepResearch = 'RESEARCH';
+  static const stepSeat = 'SEAT';
+  static const stepDraft = 'DRAFT';
+  static const stepCheck = 'CHECK';
+  static const stepReview = 'REVIEW';
+  static const stepChair = 'CHAIR';
+  static const almostDone = 'ALMOST DONE';
+  static const intro =
+      'Several models research, draft and check each other, then a chair '
+      'writes the answer. Wait, answer fast, or get notified.';
+  static const answerFast = 'ANSWER FAST INSTEAD';
+  static const notifyMe = 'NOTIFY ME';
+  static const willNotify = 'WILL NOTIFY';
+  static const notifyOn = "You can leave. We'll notify you when it's ready.";
+  static const notifyBlocked =
+      'Notifications are off for this app. Turn them on in system settings.';
+  static const sources = 'SOURCES';
+  static const showAll = 'SHOW ALL';
+  static const showLess = 'SHOW LESS';
+  static const notifySetting = 'NOTIFY WHEN ROUND TABLE FINISHES';
+
+  // System notifications.
+  static const progressChannel = 'Round table progress';
+  static const progressChannelInfo =
+      'Ongoing progress while a round table works in the background.';
+  static const doneChannel = 'Round table finished';
+  static const doneChannelInfo = 'Sent when a round table answer is ready.';
+  static const progressTitle = 'Round table working';
+  static const doneTitle = 'Round table finished';
+  static const failedTitle = 'Round table stopped';
+  static const untitled = 'New chat';
+
+  /// Caption for a live Round Table phase.
+  static String phase(String? phase) => switch (phase) {
+    'researching' => researching,
+    'seating' => TableStrings.seating,
+    'drafting' => TableStrings.drafting,
+    'checking' => TableStrings.checking,
+    'reviewing' => TableStrings.reviewing,
+    'synthesizing' => TableStrings.synthesizing,
+    _ => TableStrings.status,
+  };
+
+  /// "≈ 40S LEFT".
+  static String left(int seconds) => '≈ ${seconds}S LEFT';
+
+  /// "≈ 40s left" for notification text.
+  static String leftLower(int seconds) => '≈ ${seconds}s left';
+
+  /// "Round table finished · Sodium limits".
+  static String doneFor(String title) =>
+      '$doneTitle${TableStrings.separator}$title';
+
+  /// "00:23".
+  static String clock(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
 }

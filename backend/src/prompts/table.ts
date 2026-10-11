@@ -31,3 +31,17 @@ export const CHAIR_PROMPT =
   "Do not mention the table, experts or drafts. After the answer, write <unresolved> with one bullet per question " +
   "the table could not settle (or nothing) then </unresolved>. " +
   "Only list real factual disagreements between the experts that the sources and reviews could not settle, not general caveats or open research questions.";
+
+// ---- per-seat web research ---------------------------------------------------
+
+/** Planner: one search angle per seat. */
+export const RESEARCH_PLAN_PROMPT =
+  "You plan web research for a round table of three experts who will each search the web once before answering. " +
+  "Write 3 distinct web search queries of 3-10 words, each from a different angle: an official or primary source, " +
+  "the latest data or news, and independent analysis or a counter-view. Do not repeat the base query. " +
+  'Reply with JSON only: {"queries":["...","...","..."]}';
+
+/** Labels a seat's own search results inside its draft prompt. */
+export const seatResearchIntro = (queries: string[]) =>
+  `Your own web research for this question (you searched: ${queries.map((q) => `"${q}"`).join(", ")}). ` +
+  "These sources are only in front of you; cite them with their exact tags like the shared sources.";

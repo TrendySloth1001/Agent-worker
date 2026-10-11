@@ -1,6 +1,13 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../core/constants/widget_github.dart';
 import '../../../../core/constants/widget_kit.dart';
+import '../github/github_commits_card.dart';
+import '../github/github_compare_card.dart';
+import '../github/github_issues_card.dart';
+import '../github/github_repo_card.dart';
+import '../github/github_search_card.dart';
+import '../github/github_tree_card.dart';
 import 'ask_card.dart' show RichPlaceholder;
 import 'calc_card.dart';
 import 'chart_card.dart';
@@ -36,6 +43,29 @@ final Map<String, _Entry> _entries = {
   WidgetLang.checklist: _Entry(
     WidgetKitStrings.checklist,
     (s) => ChecklistCard(source: s),
+  ),
+  // Live GitHub cards (fetch through /github).
+  GithubLang.repo: _Entry(GithubStrings.repo, (s) => GithubRepoCard(source: s)),
+  GithubLang.search: _Entry(
+    GithubStrings.search,
+    (s) => GithubSearchCard(source: s),
+  ),
+  GithubLang.commits: _Entry(
+    GithubStrings.commits,
+    (s) => GithubCommitsCard(source: s),
+  ),
+  GithubLang.tree: _Entry(GithubStrings.tree, (s) => GithubTreeCard(source: s)),
+  GithubLang.compare: _Entry(
+    GithubStrings.compare,
+    (s) => GithubCompareCard(source: s),
+  ),
+  GithubLang.prs: _Entry(
+    GithubStrings.prs,
+    (s) => GithubIssuesCard(source: s, prs: true),
+  ),
+  GithubLang.issues: _Entry(
+    GithubStrings.issues,
+    (s) => GithubIssuesCard(source: s, prs: false),
   ),
 };
 

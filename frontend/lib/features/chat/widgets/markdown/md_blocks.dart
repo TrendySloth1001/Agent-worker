@@ -41,7 +41,18 @@ class MdMathBlock extends MdBlock {
   final String tex;
 }
 
-enum CalloutKind { note, tip, important, warning, caution }
+/// A section title: `## text`, or a line that is only bold text (the model's
+/// "pseudo heading"), optionally led by an `{{icon:…}}`.
+class MdHeadingBlock extends MdBlock {
+  const MdHeadingBlock(this.level, this.text, {this.icon});
+  final int level;
+  final String text;
+
+  /// `set:name` of a leading icon, if any.
+  final String? icon;
+}
+
+enum CalloutKind { note, tip, important, warning, caution, summary }
 
 class MdCalloutBlock extends MdBlock {
   const MdCalloutBlock(this.kind, this.body);
@@ -58,8 +69,9 @@ class MdList {
   bool get hasIcons => items.any((i) => i.icon != null);
 }
 
+// The model sometimes wraps the icon in emphasis: `**{{icon:…}}** text`.
 final _leadIconRe = RegExp(
-  r'^\{\{icon:([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:-[a-z0-9]+)*)\}\}\s*',
+  r'^(?:\*\*|__|\*|_)?\{\{icon:([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:-[a-z0-9]+)*)\}\}(?:\*\*|__|\*|_)?\s*',
 );
 
 class MdItem {
@@ -127,10 +139,42 @@ final _hrRe = RegExp(r'^\s{0,3}([-*_])(?:\s*\1){2,}\s*$');
 final _taskRe = RegExp(r'^\[( |x|X)\]\s+');
 final _breakRe = RegExp(r'^\s{0,1}(#{1,6}\s|>)');
 final _calloutRe = RegExp(
-  r'^\s{0,3}>\s?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$',
+  r'^\s{0,3}>\s?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|SUMMARY)\]\s*(.*)$',
   caseSensitive: false,
 );
 final _quoteRe = RegExp(r'^\s{0,3}>\s?');
+final _headingRe = RegExp(r'^\s{0,3}(#{1,4})\s+(.+?)\s*#*\s*$');
+final _boldLineRe = RegExp(r'^\s{0,3}\*\*([^*\n]{2,80})\*\*\s*:?\s*$');
+
+/// A heading line, or a whole-line bold title, as a block; null otherwise.
+MdHeadingBlock? _tryHeading(String line) {
+  var rest = line.trim();
+  String? icon;
+  final h = _headingRe.firstMatch(line);
+  var level = 3;
+  if (h != null) {
+    level = h[1]!.length;
+    rest = h[2]!.trim();
+  }
+  final lead = _leadIconRe.firstMatch(rest);
+  if (lead != null) {
+    icon = '${lead[1]}:${lead[2]}';
+    rest = rest.substring(lead.end).trim();
+  }
+  if (h == null) {
+    final b = _boldLineRe.firstMatch(rest);
+    if (b == null) return null;
+    rest = b[1]!.trim();
+  } else {
+    // "## **Title**" reads the same as "## Title".
+    final b = _boldLineRe.firstMatch(rest);
+    if (b != null) rest = b[1]!.trim();
+  }
+  rest = rest.replaceFirst(RegExp(r':$'), '');
+  if (rest.isEmpty) return null;
+  return MdHeadingBlock(level, rest, icon: icon);
+}
+
 final _delimCellRe = RegExp(r'^\s*:?-+:?\s*$');
 
 int _indentOf(String line) {
@@ -251,6 +295,14 @@ List<MdBlock> parseBlocks(String src) {
           body.join('\n').trim(),
         ),
       );
+      continue;
+    }
+
+    final heading = _tryHeading(line);
+    if (heading != null) {
+      flush();
+      out.add(heading);
+      i++;
       continue;
     }
 

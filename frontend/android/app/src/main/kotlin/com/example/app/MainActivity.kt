@@ -23,6 +23,14 @@ class MainActivity : FlutterActivity() {
     private val iconPx = 96
     private val maxDataUrlChars = 100_000
 
+    // Back on the last screen sends the app to the background instead of
+    // finishing the activity, so a running answer (e.g. a round table) keeps
+    // streaming and can notify when done.
+    override fun popSystemNavigator(): Boolean {
+        moveTaskToBack(true)
+        return true
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)

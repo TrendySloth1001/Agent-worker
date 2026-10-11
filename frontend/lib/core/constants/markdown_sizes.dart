@@ -1,6 +1,19 @@
 /// Sizes for rich reply rendering: citation chips, timeline lists, tables and
 /// callouts.
 abstract final class MdSizes {
+  // ==highlight== background strength.
+  static const markAlpha = 0.28;
+
+  // Section headings: h1/h2 large with a rule above, h3+ smaller.
+  static const h2FontSize = 21.0;
+  static const h3FontSize = 18.0;
+  static const headingGap = 28.0;
+  static const headingIconScale = 0.85;
+
+  // Icon that opens a line: drawn in a circular avatar.
+  static const iconAvatarScale = 1.75;
+  static const iconAvatarGlyphScale = 0.95;
+
   // Inline citation chip
   static const citeFavicon = 12.0;
   static const citeChipHeight = 18.0;

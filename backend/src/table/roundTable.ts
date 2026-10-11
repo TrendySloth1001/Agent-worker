@@ -3,7 +3,8 @@ import type { Message } from "../providers.js";
 import { ask } from "../llm/ask.js";
 import { pickCandidates, preferForPrompt } from "../llm/router.js";
 import { log } from "../util/logger.js";
-import { CHAIR_PROMPT, DRAFT_NO_SOURCES, DRAFT_PROMPT, JUDGE_PROMPT, REVIEW_PROMPT } from "../prompts/table.js";
+import { CHAIR_PROMPT, DRAFT_NO_SOURCES, DRAFT_PROMPT, JUDGE_PROMPT, REVIEW_PROMPT, seatResearchIntro } from "../prompts/table.js";
+import { expectedMs, recordLatency, type StepKind } from "./latency.js";
 
 // ---- configuration ---------------------------------------------------------
 
@@ -39,16 +40,32 @@ const BUDGET_MS = 90_000;
 const MIN_REVIEW_MS = 6_000;
 const QUORUM = 2;
 const SUMMARY_MAX = 160;
-const TRANSCRIPT_DRAFT_MAX = 1_500;
+const TRANSCRIPT_DRAFT_MAX = 3_000;
 const MAX_POINTS = 6;
+// ETA: share of runs expected to need cross-review, and the floor for a step
+// that is already over its usual time.
+const REVIEW_LIKELIHOOD = 0.6;
+const MIN_LEFT_MS = 2_000;
+const DIGEST_SNIPPET = 300;
 
 // ---- types -----------------------------------------------------------------
 
 export type SeatId = (typeof SEAT_IDS)[number];
 export type SeatStatus = "working" | "done" | "failed" | "agreed" | "disputed";
-export type TablePhase = "seating" | "drafting" | "checking" | "reviewing" | "synthesizing" | "done";
+export type TablePhase = "researching" | "seating" | "drafting" | "checking" | "reviewing" | "synthesizing" | "done";
 export type ReviewPoint = { seat: string; kind: "error" | "disagree" | "missing"; claim: string; detail: string; sources: string[] };
-export type TableSeat = { seat: SeatId; model: string; name: string; status: "done" | "failed"; summary: string; draft: string };
+export type TableSeat = {
+  seat: SeatId;
+  model: string;
+  name: string;
+  status: "done" | "failed";
+  summary: string;
+  draft: string;
+  /** Citation tags the draft cites, in order. */
+  sources: string[];
+  /** What this seat searched the web for. */
+  queries: string[];
+};
 export type TableReview = { seat: SeatId; model: string; verdict: "agree" | "minor" | "major" | "unknown"; points: ReviewPoint[] };
 export type TableTranscript = {
   seats: TableSeat[];
@@ -61,7 +78,7 @@ export type TableTranscript = {
 };
 export type TableEvent = {
   phase: TablePhase;
-  seats?: { seat: SeatId; model: string; name: string }[];
+  seats?: { seat: SeatId; model: string; name: string; queries?: string[] }[];
   seat?: SeatId;
   model?: string;
   status?: SeatStatus;
@@ -69,6 +86,10 @@ export type TableEvent = {
   points?: ReviewPoint[];
   conflicts?: string[];
   transcript?: TableTranscript;
+  /** Since the request started. */
+  elapsedMs?: number;
+  /** Estimated time until the answer is complete. */
+  etaMs?: number;
 };
 
 type Plan = { seat: SeatId; models: string[] };
@@ -87,7 +108,13 @@ export type TableInput = {
   vision: string[] | null;
   signal: AbortSignal;
   emit: (e: TableEvent) => void;
+  /** Per-seat web research: the queries, results only that seat sees, and every tag it may cite. */
+  research?: SeatResearchInput[];
+  /** When the request started, for elapsed time. */
+  startedAt?: number;
 };
+
+export type SeatResearchInput = { seat: SeatId; queries: string[]; items: { id: string; title: string; url: string; text: string }[]; tags: string[] };
 
 export type TableRun = {
   /** System message for the chair, appended after the normal prompt. */
@@ -175,6 +202,39 @@ function draftsBlock(drafts: Draft[]): string {
 /** Removes citation tags that are not in `valid` (models copy example tags or invent them). */
 const stripTags = (text: string, valid: Set<string>) =>
   text.replace(/[\[【]([KWD]\d+)[\]】]/g, (m, tag: string) => (valid.has(tag) ? m : "")).replace(/ +([.,;:])/g, "$1");
+
+/** Tags a text cites, first use first. */
+const citedTags = (text: string) => [...new Set([...text.matchAll(/\[([KWDG]\d+)\]/g)].map((m) => m[1]))];
+
+/** A seat's own search results as a system message for its draft. */
+function researchMessage(r: SeatResearchInput): Message | null {
+  if (r.items.length === 0) return null;
+  const safe = (t: string) => t.replace(/<\/web_results>/gi, "<\\/web_results>");
+  const items = r.items.map((i) => `[${i.id}] ${i.title} - ${i.url}\n${safe(i.text)}`).join("\n\n");
+  return { role: "system", content: `${seatResearchIntro(r.queries)}\n<web_results>\n${items}\n</web_results>` };
+}
+
+/** Short list of every seat's own sources, for the reviewers. */
+function researchDigest(research: SeatResearchInput[]): Message | null {
+  const items = research.flatMap((r) => r.items);
+  if (items.length === 0) return null;
+  return {
+    role: "system",
+    content: `More sources the experts found (excerpts):\n${items.map((i) => `[${i.id}] ${i.title} - ${i.url}\n${clip(i.text.replace(/\s+/g, " "), DIGEST_SNIPPET)}`).join("\n\n")}`,
+  };
+}
+
+/** Whole-table estimate before seating, from the usual first models. */
+export function initialEtaMs(withResearch: boolean): number {
+  const seatMax = (kind: StepKind) => Math.max(...SEAT_IDS.map((s) => expectedMs(kind, FAMILIES[s][0])));
+  return (
+    (withResearch ? expectedMs("research", "plan") + expectedMs("research", "search") : 0) +
+    seatMax("draft") +
+    expectedMs("judge", JUDGE_MODELS[0]) +
+    REVIEW_LIKELIHOOD * seatMax("review") +
+    expectedMs("chair", FAMILIES.A[0])
+  );
+}
 
 const withoutImages = (msgs: Message[]): Message[] => msgs.map((m) => (m.images?.length ? { role: m.role, content: m.content } : m));
 
@@ -266,37 +326,95 @@ export class UnresolvedFilter {
 export async function runRoundTable(input: TableInput): Promise<TableRun | null> {
   const started = Date.now();
   const deadline = started + BUDGET_MS;
-  const { signal, emit } = input;
+  const { signal } = input;
   let calls = 0;
 
+  // ---- progress estimate ----------------------------------------------------
+  const t0 = input.startedAt ?? started;
+  let phase: TablePhase = "seating";
+  let phaseAt = Date.now();
+  let seatModels: string[] = [];
+  let chairModel: string = FAMILIES.A[0];
+  let reviewShare = REVIEW_LIKELIHOOD;
+  /** Steps in flight: seat -> model and start time. */
+  const inFlight = new Map<SeatId, { model: string; at: number }>();
+  const seatMax = (kind: StepKind) => (seatModels.length ? Math.max(...seatModels.map((m) => expectedMs(kind, m))) : expectedMs(kind));
+  const stepLeft = (kind: StepKind) => {
+    const now = Date.now();
+    const left = inFlight.size
+      ? Math.max(...[...inFlight.values()].map((w) => expectedMs(kind, w.model) - (now - w.at)))
+      : seatMax(kind) - (now - phaseAt);
+    return Math.max(left, MIN_LEFT_MS);
+  };
+  const etaMs = (): number => {
+    const judge = expectedMs("judge", JUDGE_MODELS[0]);
+    const chair = expectedMs("chair", chairModel);
+    switch (phase) {
+      case "seating":
+        return seatMax("draft") + judge + reviewShare * seatMax("review") + chair;
+      case "drafting":
+        return stepLeft("draft") + judge + reviewShare * seatMax("review") + chair;
+      case "checking":
+        return Math.max(judge - (Date.now() - phaseAt), MIN_LEFT_MS) + reviewShare * seatMax("review") + chair;
+      case "reviewing":
+        return stepLeft("review") + chair;
+      case "synthesizing":
+        return chair;
+      default:
+        return 0;
+    }
+  };
+  const emit = (e: TableEvent) => {
+    if (e.phase !== phase) {
+      phase = e.phase;
+      phaseAt = Date.now();
+      inFlight.clear();
+    }
+    if (e.seat && e.model && e.status === "working") inFlight.set(e.seat, { model: e.model, at: Date.now() });
+    else if (e.seat && e.status) inFlight.delete(e.seat);
+    input.emit({ ...e, elapsedMs: Date.now() - t0, etaMs: Math.round(etaMs()) });
+  };
+
+  const research = new Map((input.research ?? []).map((r) => [r.seat, r]));
   const plans = await seat(input.promptChars, input.vision);
   if (plans.length < QUORUM) return null;
-  emit({ phase: "seating", seats: plans.map((p) => ({ seat: p.seat, model: p.models[0], name: nameOf(p.models[0]) })) });
+  seatModels = plans.map((p) => p.models[0]);
+  chairModel = plans.find((p) => p.seat === "A")?.models[0] ?? seatModels[0];
+  emit({ phase: "seating", seats: plans.map((p) => ({ seat: p.seat, model: p.models[0], name: nameOf(p.models[0]), queries: research.get(p.seat)?.queries ?? [] })) });
 
   // ---- round 1: drafts ----------------------------------------------------
   emit({ phase: "drafting" });
   const tags = new Set([...(input.context ?? "").matchAll(/^\[([KWD]\d+)\]/gm)].map((m) => m[1]));
-  const draftPrompt = tags.size > 0 ? DRAFT_PROMPT : `${DRAFT_PROMPT} ${DRAFT_NO_SOURCES}`;
-  const draftMsgs: Message[] = [
-    { role: "system", content: `${draftPrompt}\n\n${input.preamble}`.trim() },
-    ...(input.context ? [{ role: "system" as const, content: input.context }] : []),
-    ...input.history,
-  ];
   const seats: TableSeat[] = [];
   const drafts: Draft[] = [];
   await Promise.allSettled(
     plans.map(async (p) => {
+      // Each seat sees the shared sources plus its own research.
+      const own = research.get(p.seat);
+      const valid = new Set([...tags, ...(own?.tags ?? [])]);
+      const ownMsg = own ? researchMessage(own) : null;
+      const draftPrompt = valid.size > 0 ? DRAFT_PROMPT : `${DRAFT_PROMPT} ${DRAFT_NO_SOURCES}`;
+      const draftMsgs: Message[] = [
+        { role: "system", content: `${draftPrompt}\n\n${input.preamble}`.trim() },
+        ...(input.context ? [{ role: "system" as const, content: input.context }] : []),
+        ...(ownMsg ? [ownMsg] : []),
+        ...input.history,
+      ];
+      const queries = own?.queries ?? [];
       for (const model of p.models) {
         const left = deadline - Date.now() - MIN_REVIEW_MS;
         if (left < 5_000 || signal.aborted) break;
         emit({ phase: "drafting", seat: p.seat, model, status: "working" });
         calls++;
+        const at = Date.now();
         try {
           const raw = await ask(model, draftMsgs, { timeoutMs: Math.min(DRAFT_MS, left), maxTokens: DRAFT_TOKENS, maxChars: DRAFT_MAX_CHARS, signal });
-          const text = stripTags(raw, tags);
+          recordLatency("draft", model, Date.now() - at);
+          const text = stripTags(raw.replace(/【/g, "[").replace(/】/g, "]"), valid);
           const summary = summaryOf(text);
+          const sources = citedTags(text);
           drafts.push({ seat: p.seat, model, text });
-          seats.push({ seat: p.seat, model, name: nameOf(model), status: "done", summary, draft: clip(text.trim(), TRANSCRIPT_DRAFT_MAX) });
+          seats.push({ seat: p.seat, model, name: nameOf(model), status: "done", summary, draft: clip(text.trim(), TRANSCRIPT_DRAFT_MAX), sources, queries });
           emit({ phase: "drafting", seat: p.seat, model, status: "done", summary });
           return;
         } catch (e) {
@@ -305,7 +423,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
         }
       }
       const model = p.models[p.models.length - 1];
-      seats.push({ seat: p.seat, model, name: nameOf(model), status: "failed", summary: "", draft: "" });
+      seats.push({ seat: p.seat, model, name: nameOf(model), status: "failed", summary: "", draft: "", sources: [], queries });
       emit({ phase: "drafting", seat: p.seat, model, status: "failed" });
     }),
   );
@@ -326,8 +444,10 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
   for (const model of JUDGE_MODELS.filter((id) => judges.includes(id))) {
     if (signal.aborted) break;
     calls++;
+    const at = Date.now();
     try {
       const parsed = parseJson(await ask(model, judgeMsgs, { timeoutMs: JUDGE_MS, signal }), "agree");
+      recordLatency("judge", model, Date.now() - at);
       conflicts = Array.isArray(parsed.conflicts) ? parsed.conflicts.filter((c: unknown): c is string => typeof c === "string" && !!c.trim()).map((c: string) => clip(c.trim(), 140)).slice(0, 5) : [];
       agreed = parsed.agree === true && conflicts.length === 0;
       break;
@@ -337,15 +457,17 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
     }
   }
   if (signal.aborted) throw new DOMException("aborted", "AbortError");
-  emit({ phase: "checking", status: agreed ? "agreed" : "disputed", conflicts });
-
   // ---- round 2: cross-review ----------------------------------------------
   const reviews: TableReview[] = [];
   const reviewMs = Math.min(REVIEW_MS, deadline - Date.now());
+  reviewShare = !agreed && reviewMs >= MIN_REVIEW_MS ? 1 : 0;
+  emit({ phase: "checking", status: agreed ? "agreed" : "disputed", conflicts });
+
   if (!agreed && reviewMs >= MIN_REVIEW_MS) {
     emit({ phase: "reviewing" });
     const textHistory = withoutImages(input.history);
     const valid = new Set(drafts.map((d) => d.seat));
+    const digest = researchDigest(input.research ?? []);
     await Promise.allSettled(
       drafts.map(async (own) => {
         const others = drafts.filter((d) => d !== own);
@@ -353,6 +475,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
         const msgs: Message[] = [
           { role: "system", content: REVIEW_PROMPT },
           ...(input.context ? [{ role: "system" as const, content: input.context }] : []),
+          ...(digest ? [digest] : []),
           ...textHistory,
           {
             role: "user",
@@ -361,8 +484,10 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
         ];
         calls++;
         let review: TableReview = { seat: own.seat, model: own.model, verdict: "unknown", points: [] };
+        const at = Date.now();
         try {
           const parsed = parseJson(await ask(own.model, msgs, { timeoutMs: reviewMs, maxTokens: REVIEW_TOKENS, signal }), "verdict");
+          recordLatency("review", own.model, Date.now() - at);
           const points = parsePoints(parsed.points, valid).filter((p) => p.seat !== own.seat);
           const verdict = ["agree", "minor", "major"].includes(parsed.verdict) ? parsed.verdict : points.length ? "minor" : "agree";
           review = { seat: own.seat, model: own.model, verdict, points: verdict === "agree" ? [] : points };
@@ -403,6 +528,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
 
   const auto = input.vision ?? preferForPrompt(await pickCandidates(undefined), input.promptChars + chairMessage.content.length);
   const candidates = [...new Set([chairSeat.model, ...drafts.filter((d) => d !== chairSeat).map((d) => d.model), ...auto])];
+  chairModel = chairSeat.model;
   emit({ phase: "synthesizing", seat: chairSeat.seat, model: chairSeat.model });
   const tableCalls = calls;
 

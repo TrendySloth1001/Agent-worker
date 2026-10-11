@@ -125,6 +125,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: scope.settings.defaultRoundTable,
                   onChanged: scope.settings.setDefaultRoundTable,
                 ),
+                ToggleRow(
+                  label: TableWaitStrings.notifySetting,
+                  icon: TableIcons.notify,
+                  value: scope.settings.notifyRoundTable,
+                  onChanged: scope.settings.setNotifyRoundTable,
+                ),
                 if (Browsers.supported) _browserRow(context, scope),
                 const SizedBox(height: AppSpacing.sm),
                 _modeChips(context, scope),

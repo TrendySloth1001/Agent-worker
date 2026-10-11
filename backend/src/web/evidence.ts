@@ -20,7 +20,7 @@ export function splitSentences(input: string): string[] {
   const out: string[] = [];
   let start = 0;
   // Boundary: .!? (optionally followed by closing quotes/brackets/tags) + space + uppercase/digit/quote.
-  const re = /[.!?]+["')\]]*(?:\s*\[[KWD]\d+\])*\s+(?=["'(\[]?[A-Z0-9])/g;
+  const re = /[.!?]+["')\]]*(?:\s*\[[KWDG]\d+\])*\s+(?=["'(\[]?[A-Z0-9])/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const before = text.slice(start, m.index + 1);
@@ -62,7 +62,7 @@ function stem(t: string): string {
 function cleanClaim(s: string): string {
   return s
     .replace(/\{\{icon:[^}]*\}\}\s*/g, "")
-    .replace(/\s*\[[KWD]\d+\]/g, "")
+    .replace(/\s*\[[KWDG]\d+\]/g, "")
     .replace(/^\s*\|/, "")
     .replace(/\s*\|\s*/g, " \u2013 ")
     .replace(/\u2013\s*$/, "")
@@ -153,7 +153,7 @@ export function computeEvidence(answer: string, sources: EvidenceSource[], minSc
     .split(/\n+/)
     .flatMap((line) => splitSentences(line));
   for (const sentence of sentences) {
-    const tags = [...new Set([...sentence.matchAll(/\[([KWD]\d+)\]/g)].map((m) => m[1]))];
+    const tags = [...new Set([...sentence.matchAll(/\[([KWDG]\d+)\]/g)].map((m) => m[1]))];
     if (tags.length === 0) continue;
     const claim = cleanClaim(sentence);
     if (claim.length < 8) continue;

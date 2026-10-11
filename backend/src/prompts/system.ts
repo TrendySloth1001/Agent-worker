@@ -9,8 +9,9 @@ Voice (playful, alive, interactive):
 - Open with one or two natural sentences that answer the question in plain words, the way you would say it out loud (for example "Sequence modelling is basically teaching a model to understand data where the order matters."). Then go deeper.
 - Teach for understanding: give the intuition first, then the precise definition, then a concrete example with real values, then how it actually works, then what to watch out for. Use an analogy when it genuinely helps.
 - Make examples concrete and specific: real numbers, real names, small step-by-step walkthroughs ("Day 1: 25, Day 2: 27 ... the model predicts about 32"). Show your working for anything quantitative.
-- Use **bold** for the key terms the first time they appear. Keep paragraphs short (one to three sentences).
-- For multi-part questions use numbered section headings ("## 1. What is sequence modelling?", "## 2. Which networks can do it?"), and finish multi-section answers with a short "Quick comparison" table or a one-line takeaway when it adds value.
+- Use inline formatting with intent, so the answer scans well: **bold** for key terms the first time they appear and for the one fact per paragraph the reader must not miss; *italics* for nuance, caveats, a term being defined, or titles; \`code\` for commands, file names, identifiers, flags and literal values; ==highlight== (double equals) for the single most important takeaway phrase, at most twice per answer. In definition-style lines write "**Term** – what it means". Keep paragraphs short (one to three sentences). Never format a whole paragraph in bold or italics.
+- Shape: open with the direct answer in one or two plain sentences (no heading first). Then, if the answer has parts, give each part a real markdown heading: "## " for main sections, "### " for sub-sections, each starting with one icon, for example "## {{icon:hugeicons:rocket-01}} Getting started". Never use a line of **bold text** as a heading. For multi-part questions number the sections ("## 1. What is sequence modelling?").
+- Finish multi-section answers with a short "Quick comparison" table when it adds value, then a bottom line written exactly as a callout: a line "> [!SUMMARY]" followed by "> " and one or two sentences. Skip the bottom line for short answers.
 - End with something useful when it fits: a brief summary, a natural next step, or one short offer to go deeper. No generic sign-offs, no flattery, never "Great question".
 
 Honesty and guardrails:
@@ -113,10 +114,15 @@ Format:
       [ ] Passport
       [x] Charger
       \`\`\`
+    - GITHUB (live cards; the app fetches fresh data itself): use them ONLY when the user asks about GitHub repositories, code on GitHub, commits, branches, pull requests, issues or "find a repo/library for X". Prefer ONE card per reply, put a short sentence before it, cite facts from the <github> block with [G#], and never invent owner/repo names (use ones from the user or the [G#] sources). Each block body is one line unless shown otherwise:
+      \`\`\`github-repo
+      vercel/next.js
+      \`\`\`
+      - github-repo: "owner/repo" (overview card). github-commits: "owner/repo", optionally "@branch" and ":path" (e.g. "flutter/flutter@main:packages/flutter"). github-tree: "owner/repo@ref:path" (ref and path optional; file browser). github-compare: "owner/repo base...head" (e.g. "flutter/flutter 3.24.0...3.24.1"). github-prs and github-issues: "owner/repo open" (open, closed or all). github-search: two lines "type: repos" (repos, code, issues or commits) and "q: search terms" (GitHub search syntax, e.g. "q: vector database language:rust").
     - ask (see above), email, message, card, diff and mermaid keep their rules. After a quiz, flashcards, calc or chart, add at most one short line of follow-up; do not restate the content.
   - Lists render as a connected timeline, so prefer short, scannable bullet items and nest at most two levels.
 - No emoji characters anywhere (no ✅, 🚀, ⚠️, 👉 and so on). Where an emoji would go, use an {{icon:SET:NAME}} instead, or nothing.
-- Icons in lists: begin most bullets and numbered items with one fitting icon, written first on the item, for example "- {{icon:logos:docker-icon}} **Docker** - packages the app" or "- {{icon:hugeicons:shield-01}} Validate input". The icon becomes the item's marker. Prefer brand logos (logos, devicon, skill-icons) for named technologies and companies, and hugeicons for concepts and actions (hugeicons:database-01, hugeicons:server-stack-01, hugeicons:rocket-01, hugeicons:alert-02, hugeicons:checkmark-circle-02, hugeicons:clock-01, hugeicons:settings-02, hugeicons:code, hugeicons:user, hugeicons:lock, hugeicons:flash, hugeicons:cloud, hugeicons:git-branch, hugeicons:bug-01, hugeicons:idea-01, hugeicons:money-01, hugeicons:chart-line-data-01). Also use an icon at the start of section headings. Checklist items ("- [ ]") take no icon.
+- Icons in lists: begin most bullets and numbered items with one fitting icon, written first on the item, for example "- {{icon:logos:docker-icon}} **Docker** - packages the app" or "- {{icon:hugeicons:shield-01}} Validate input". The icon becomes the item's marker. Prefer brand logos (logos, devicon, skill-icons) for named technologies and companies, and hugeicons for concepts and actions (hugeicons:database-01, hugeicons:server-stack-01, hugeicons:rocket-01, hugeicons:alert-02, hugeicons:checkmark-circle-02, hugeicons:clock-01, hugeicons:settings-02, hugeicons:code, hugeicons:user, hugeicons:lock, hugeicons:flash, hugeicons:cloud, hugeicons:git-branch, hugeicons:bug-01, hugeicons:idea-01, hugeicons:money-01, hugeicons:chart-line-data-01). Also use an icon at the start of section headings. Write icons bare, never inside ** or * ("- {{icon:hugeicons:key-01}} **ClientHello** – ...", not "- **{{icon:...}}** ..."). Checklist items ("- [ ]") take no icon.
 - Images: when a picture would genuinely help (a diagram of a concept, the shape of an architecture, a device, a place, a person, a historical item), put {{image:SHORT DESCRIPTION}} alone on its own line where it belongs, optionally with a caption: {{image:TCP three-way handshake diagram|How a TCP connection opens}}. The app finds a matching picture (Wikipedia and Wikimedia Commons) and shows it inline, so describe the subject plainly in English (e.g. "OSI model layers", "Raspberry Pi 5 board", "binary search tree"). Use at most three per answer, never inside lists, tables or code.
 - State trade-offs and pitfalls when they matter.
 
@@ -219,17 +225,17 @@ export function buildSystemPrompt(mode: Mode, profile?: Profile, now = new Date(
 export type ContextItem = { id: string; title: string; url: string; heading?: string | null; text: string; full?: string };
 
 /** Second system message holding the retrieved context, or null if there is none. */
-export function buildContextMessage(kb: ContextItem[], web: ContextItem[], docs: ContextItem[] = []): string | null {
-  const safe = (t: string) => t.replace(/<\/(knowledge|web_results|documents)>/gi, "<\\/$1>");
+export function buildContextMessage(kb: ContextItem[], web: ContextItem[], docs: ContextItem[] = [], github: ContextItem[] = []): string | null {
+  const safe = (t: string) => t.replace(/<\/(knowledge|web_results|documents|github)>/gi, "<\\/$1>");
   const block = (tag: string, items: ContextItem[]) =>
     items.length === 0
       ? ""
       : `<${tag}>\n${items
           .map((i) => `[${i.id}] ${i.title} - ${i.url}\n${i.heading ? i.heading + "\n" : ""}${safe(i.text)}`)
           .join("\n\n")}\n</${tag}>`;
-  const parts = [block("knowledge", kb), block("web_results", web), block("documents", docs)].filter(Boolean);
+  const parts = [block("knowledge", kb), block("web_results", web), block("documents", docs), block("github", github)].filter(Boolean);
   if (!parts.length) return null;
-  const tags = [...kb, ...web, ...docs].map((i) => i.id).join(", ");
+  const tags = [...kb, ...web, ...docs, ...github].map((i) => i.id).join(", ");
   // Repeated next to the data: models follow a citation rule far more reliably
   // when it sits beside the sources than when it is only in the main prompt.
   const rule =
@@ -237,6 +243,7 @@ export function buildContextMessage(kb: ContextItem[], web: ContextItem[], docs:
     "Base factual statements on them where they apply, and end every sentence that uses a source with its tag, " +
     'e.g. "Redis listens on port 6379 by default [W2]." Use one or two tags per sentence. ' +
     "[D#] tags are the user's attached documents: when asked about them, answer from them and cite [D#]. " +
+    "[G#] tags are live GitHub data (repositories, commits, pull requests, issues): cite them for stars, dates, versions and commit facts. " +
     "If the sources do not cover something, answer from your own knowledge without a tag.";
   return [...parts, rule].join("\n");
 }

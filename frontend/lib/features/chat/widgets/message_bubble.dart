@@ -31,9 +31,15 @@ class MessageBubble extends StatelessWidget {
     this.question,
     this.conversationId,
     this.onFork,
+    this.onAnswerFast,
+    this.onNotify,
   });
 
   final ChatMessage message;
+
+  /// Live Round Table: answer with one model instead / notify when done.
+  final VoidCallback? onAnswerFast;
+  final VoidCallback? onNotify;
 
   /// Shown above AI replies: the model's name.
   final String label;
@@ -133,13 +139,17 @@ class MessageBubble extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         if (message.table != null && !message.isError) ...[
-          RoundTableHeader(table: message.table!),
+          RoundTableHeader(table: message.table!, citations: message.citations),
           const SizedBox(height: AppSpacing.md),
         ],
         if (message.isError)
           Text(message.content, style: t.body.copyWith(color: p.accent))
-        else if (waiting && message.liveSeats.isNotEmpty)
-          RoundTablePanel(seats: message.liveSeats, phase: message.tablePhase)
+        else if (waiting && message.tablePhase != null)
+          RoundTablePanel(
+            message: message,
+            onAnswerFast: onAnswerFast,
+            onNotify: onNotify,
+          )
         else if (waiting)
           ThinkingIndicator(label: _statusLabel())
         else

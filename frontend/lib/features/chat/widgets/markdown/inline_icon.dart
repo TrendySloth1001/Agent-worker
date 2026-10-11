@@ -8,6 +8,7 @@ import 'package:markdown/markdown.dart' as md;
 
 import '../../../../core/constants/app_config.dart';
 import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/constants/markdown_sizes.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../data/chat_api.dart';
 
@@ -25,8 +26,19 @@ class IconSyntax extends md.InlineSyntax {
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
-    parser.addNode(md.Element.text('icon', '${match[1]}:${match[2]}'));
+    final icon = md.Element.text('icon', '${match[1]}:${match[2]}');
+    if (_opensLine(parser.source, match.start)) icon.attributes['lead'] = '1';
+    parser.addNode(icon);
     return true;
+  }
+
+  /// Only whitespace or emphasis marks before it on its line.
+  static bool _opensLine(String source, int at) {
+    final lineStart = at == 0 ? 0 : source.lastIndexOf('\n', at - 1) + 1;
+    return source
+        .substring(lineStart, at)
+        .replaceAll(RegExp(r'[\s*_]'), '')
+        .isEmpty;
   }
 }
 
@@ -40,6 +52,16 @@ class IconBuilder extends MarkdownElementBuilder {
   ) {
     final parts = element.textContent.split(':');
     final style = parentStyle ?? context.text.body;
+    final fontSize = style.fontSize ?? AppIconSize.md;
+    final lead = element.attributes['lead'] == '1';
+    final icon = InlineIcon(
+      set: parts.first,
+      name: parts.last,
+      size:
+          fontSize *
+          (lead ? MdSizes.iconAvatarGlyphScale : AppSizes.inlineIconScale),
+      color: style.color,
+    );
     // A Text.rich holding a WidgetSpan is merged into the surrounding
     // paragraph, so the icon sits in the line instead of wrapping alone.
     return Text.rich(
@@ -48,15 +70,41 @@ class IconBuilder extends MarkdownElementBuilder {
         children: [
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
-            child: InlineIcon(
-              set: parts.first,
-              name: parts.last,
-              size:
-                  (style.fontSize ?? AppIconSize.md) * AppSizes.inlineIconScale,
-              color: style.color,
-            ),
+            child: lead
+                ? IconAvatar(
+                    size: fontSize * MdSizes.iconAvatarScale,
+                    child: icon,
+                  )
+                : icon,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Circle behind an icon that opens a line, like a heading badge.
+class IconAvatar extends StatelessWidget {
+  const IconAvatar({super.key, required this.size, required this.child});
+
+  final double size;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.xxs),
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: p.surfaceRaised,
+          border: Border.all(color: p.border, width: AppBorder.thin),
+        ),
+        child: child,
       ),
     );
   }
