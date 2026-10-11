@@ -31,11 +31,141 @@ abstract final class HtmlDoc {
   );
   static final _tag = RegExp(r'<[a-zA-Z!][^>]*>');
 
-  /// Removes an accidental markdown fence the model left inside the block.
+  static final _fenceLine = RegExp(
+    r'^[ \t]*```[a-zA-Z]*[ \t]*$',
+    multiLine: true,
+  );
+  static final _docStart = RegExp(
+    r'<!doctype|<html[\s>]',
+    caseSensitive: false,
+  );
+  static final _htmlClose = RegExp(r'</html\s*>', caseSensitive: false);
+  static final _textIcon = RegExp(r'\{\{icon:([\w-]+:[\w-]+)\}\}');
+  static final _raw = RegExp(
+    r'<(script|style|pre|code|textarea)\b[\s\S]*?</\1\s*>',
+    caseSensitive: false,
+  );
+  static final _mdBold = RegExp(r'\*\*([^*<>\n]{1,120}?)\*\*');
+  static final _extScript = RegExp(
+    r'''<script\b[^>]*\bsrc\s*=\s*["']?(?:https?:)?//([^/"'\s>]+)[^>]*>[\s\S]*?</script\s*>''',
+    caseSensitive: false,
+  );
+  static final _extLink = RegExp(
+    r'''<link\b[^>]*\bhref\s*=\s*["']?(?:https?:)?//([^/"'\s>]+)[^>]*>''',
+    caseSensitive: false,
+  );
+  static final _fontImport = RegExp(
+    r'''@import\s+url\(\s*["']?https?://fonts\.googleapis\.com[^)]*\)\s*;?''',
+    caseSensitive: false,
+  );
+
+  /// Model output -> renderable page: drops markdown fences and prose around
+  /// the document, turns `{{icon:..}}` and `**bold**` that leaked in from
+  /// chat markdown into HTML, removes scripts/stylesheets from hosts the CSP
+  /// blocks, and repairs a cut-off ending (see [isTruncated]).
   static String clean(String source) {
     final m = _fence.firstMatch(source);
-    return (m != null ? m.group(1)! : source).trim();
+    var html = (m != null ? m.group(1)! : source).replaceAll(_fenceLine, '');
+
+    final start = _docStart.firstMatch(html);
+    if (start != null) html = html.substring(start.start);
+    final end = _htmlClose.allMatches(html).lastOrNull;
+    if (end != null) html = html.substring(0, end.end);
+
+    html = html.replaceAllMapped(
+      _textIcon,
+      (m) =>
+          '<${HtmlWeb.iconifyTag} icon="${m.group(1)}"></${HtmlWeb.iconifyTag}>',
+    );
+    html = _outsideRaw(
+      html,
+      (s) =>
+          s.replaceAllMapped(_mdBold, (m) => '<strong>${m.group(1)}</strong>'),
+    );
+    html = html
+        .replaceAllMapped(
+          _extScript,
+          (m) => _allowed(m.group(1)!) ? m.group(0)! : '',
+        )
+        .replaceAllMapped(_extLink, (m) {
+          final tag = m.group(0)!.toLowerCase();
+          final sheet = tag.contains('stylesheet');
+          return sheet && _allowed(m.group(1)!) ? m.group(0)! : '';
+        })
+        .replaceAll(_fontImport, '');
+    return _repair(html).trim();
   }
+
+  static bool _allowed(String host) =>
+      HtmlWeb.allowedHosts.contains(host.toLowerCase());
+
+  static String _outsideRaw(String html, String Function(String) f) {
+    final out = StringBuffer();
+    var at = 0;
+    for (final m in _raw.allMatches(html)) {
+      out
+        ..write(f(html.substring(at, m.start)))
+        ..write(m.group(0));
+      at = m.end;
+    }
+    out.write(f(html.substring(at)));
+    return out.toString();
+  }
+
+  static final _partialTag = RegExp(r'<[^<>]*$');
+
+  /// Cuts what a truncated reply leaves broken: a half-written tag, and an
+  /// unclosed comment, script or style (which would swallow the rest).
+  /// The browser closes ordinary elements by itself.
+  static String _repair(String html) {
+    var out = html.replaceFirst(_partialTag, '');
+    for (final open in const ['<!--', '<script', '<style']) {
+      final close = open == '<!--' ? '-->' : '</${open.substring(1)}';
+      final lower = out.toLowerCase();
+      final o = lower.lastIndexOf(open);
+      if (o >= 0 && lower.indexOf(close, o) < 0) out = out.substring(0, o);
+    }
+    return out;
+  }
+
+  static final _bodyOpen = RegExp(r'<(html|body)[\s>]', caseSensitive: false);
+  static final _docEnd = RegExp(r'</(html|body)\s*>', caseSensitive: false);
+
+  /// True when the reply ended mid-document (output cap or dropped stream).
+  static bool isTruncated(String source) {
+    final m = _fence.firstMatch(source);
+    final html = (m != null ? m.group(1)! : source).trim();
+    if (html.isEmpty) return false;
+    if (_partialTag.hasMatch(html)) return true;
+    final lower = html.toLowerCase();
+    for (final (open, close) in const [
+      ('<!--', '-->'),
+      ('<script', '</script'),
+      ('<style', '</style'),
+    ]) {
+      final o = lower.lastIndexOf(open);
+      if (o >= 0 && lower.indexOf(close, o) < 0) return true;
+    }
+    return _bodyOpen.hasMatch(html) && !_docEnd.hasMatch(html);
+  }
+
+  static final _vh = RegExp(r'(\d+(?:\.\d+)?)[dsl]?vh\b');
+  static final _styleBlock = RegExp(
+    r'<style\b[\s\S]*?</style\s*>|\bstyle\s*=\s*"[^"]*"',
+    caseSensitive: false,
+  );
+
+  /// In-app only: viewport heights become fixed pixels (the WebView is sized
+  /// to its content, so `100vh` would grow it forever).
+  static String _fixedVh(String html) => html.replaceAllMapped(
+    _styleBlock,
+    (m) => m
+        .group(0)!
+        .replaceAllMapped(
+          _vh,
+          (v) => '${(double.parse(v.group(1)!) * HtmlSizes.vhPx).round()}px',
+        ),
+  );
 
   /// Document title, or null when there is none.
   static String? title(String html) {
@@ -70,7 +200,9 @@ abstract final class HtmlDoc {
       '${web ? '<meta http-equiv="Content-Security-Policy" content="${HtmlWeb.csp}">' : ''}'
       '${web ? '' : HtmlWeb.exportFonts}'
       '<style>${web ? kit.web : kit.export}</style>'
+      '${web ? '<style>${HtmlWeb.webStyle}</style>' : ''}'
       '<script>${HtmlWeb.themeScript(dark)}</script>'
+      '<script>${HtmlWeb.guardScript()}</script>'
       '${web ? '<script>${HtmlWeb.script}</script>' : ''}';
 
   /// ... and after it: the enforcement rules and cleaners.
@@ -120,7 +252,7 @@ abstract final class HtmlDoc {
   /// the source has.
   static String prepare(String source, HtmlTheme theme, HtmlKit kit) =>
       _assemble(
-        source,
+        _fixedVh(clean(source)),
         _head(kit, theme.dark, web: true),
         (html) => _tail(kit, html),
       );

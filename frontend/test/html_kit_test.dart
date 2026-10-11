@@ -8,6 +8,33 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('clean repairs what models get wrong', () {
+    const messy =
+        'Here you go:\n```html\n<!doctype html><html><head>'
+        '<script src="https://cdn.tailwindcss.com"></script>'
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>'
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=X">'
+        '</head><body><h1>{{icon:hugeicons:home-01}} Hi</h1>'
+        '<p>**bold** text</p><script>const a=2**3;</script></body></html>\n```\nEnjoy!';
+    final out = HtmlDoc.clean(messy);
+    expect(out, startsWith('<!doctype html>'));
+    expect(out, endsWith('</html>'));
+    expect(out, isNot(contains('```')));
+    expect(out, isNot(contains('tailwind')));
+    expect(out, contains('chart.js'));
+    expect(out, isNot(contains('fonts.googleapis')));
+    expect(out, contains('<iconify-icon icon="hugeicons:home-01">'));
+    expect(out, contains('<strong>bold</strong>'));
+    expect(out, contains('a=2**3'));
+    expect(HtmlDoc.isTruncated(messy), isFalse);
+
+    const cut = '<!doctype html><html><body><h1>T</h1><script>const x=[1,2';
+    expect(HtmlDoc.isTruncated(cut), isTrue);
+    expect(HtmlDoc.clean(cut), isNot(contains('<script')));
+    expect(HtmlDoc.isTruncated('<html><body><td class="x'), isTrue);
+    expect(HtmlDoc.isTruncated('<h1>fragment</h1><p>ok</p>'), isFalse);
+  });
+
   test('kit wraps pages for the app and the browser', () async {
     final kit = await HtmlKit.load();
     expect(kit.web, contains('data:font/ttf;base64,'));
@@ -44,20 +71,11 @@ void main() {
         final html = f.readAsStringSync();
         for (final dark in [true, false]) {
           final tag = dark ? 'dark' : 'light';
-          final web =
-              HtmlDoc.prepare(
-                    html,
-                    HtmlTheme(bg: const Color(0xFF000000), dark: dark),
-                    kit,
-                  )
-                  .replaceAll(
-                    RegExp(r'<meta http-equiv="Content-Security[^>]*>'),
-                    '',
-                  )
-                  .replaceFirst(
-                    'window.FlutterHtml',
-                    '({postMessage:function(){}})',
-                  );
+          final web = HtmlDoc.prepare(
+            html,
+            HtmlTheme(bg: const Color(0xFF000000), dark: dark),
+            kit,
+          ).replaceFirst('window.FlutterHtml', '({postMessage:function(){}})');
           File('$dir/$name-$tag.html').writeAsStringSync(web);
           File(
             '$dir/$name-$tag-export.html',

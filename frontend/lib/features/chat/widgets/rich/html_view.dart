@@ -68,7 +68,8 @@ class _HtmlWebViewState extends State<HtmlWebView> {
           if (h != null && mounted) widget.onHeight?.call(h);
         },
       );
-    if (widget.zoom) _controller.enableZoom(true);
+    // Pinch zoom only in fullscreen; the inline card is a fixed layout.
+    _controller.enableZoom(widget.zoom);
   }
 
   NavigationDecision _onNavigation(NavigationRequest r) {

@@ -30,6 +30,7 @@ class HtmlCard extends StatefulWidget {
 
 class _HtmlCardState extends State<HtmlCard> {
   late final String _html = HtmlDoc.clean(widget.source);
+  late final bool _cut = HtmlDoc.isTruncated(widget.source);
   double _content = 0;
   bool _showSource = false;
   bool _expanded = false;
@@ -38,6 +39,11 @@ class _HtmlCardState extends State<HtmlCard> {
   bool get _tooLarge => _html.length > HtmlSizes.maxSourceChars;
   bool get _renderable => HtmlDoc.isRenderable(_html);
   bool get _overflows => _content > HtmlSizes.maxHeight;
+
+  /// Taller than even the expanded card: only then does the page scroll
+  /// inside the card (collapsed pages never do, so there is one scroller).
+  bool get _scrollsInside =>
+      _expanded && _content > HtmlSizes.expandedMaxHeight;
 
   double get _height {
     if (_content <= 0) return HtmlSizes.minHeight;
@@ -153,57 +159,106 @@ class _HtmlCardState extends State<HtmlCard> {
             onTap: _browser,
           ),
       ],
-      child: showSource
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (sourceOnly)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.md,
-                      AppSpacing.sm,
-                      AppSpacing.md,
-                      0,
-                    ),
-                    child: Text(
-                      _tooLarge ? HtmlStrings.tooLarge : HtmlStrings.failed,
-                      style: t.caption.copyWith(color: p.accent),
-                    ),
-                  ),
-                HtmlSourceView(
-                  source: _html,
-                  maxHeight: HtmlSizes.sourceMaxHeight,
-                ),
-              ],
-            )
-          : AnimatedContainer(
-              duration: AppDurations.normal,
-              curve: Curves.easeOut,
-              height: _height,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: HtmlWebView(
-                      source: _html,
-                      onHeight: _onHeight,
-                      onFailed: () => setState(() => _failed = true),
-                      captureVerticalDrag: _overflows && !_expanded,
-                    ),
-                  ),
-                  if (_content <= 0)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: 0,
-                      child: LinearProgressIndicator(
-                        minHeight: HtmlSizes.progressHeight,
-                        color: p.accent,
-                        backgroundColor: p.border,
-                      ),
-                    ),
-                ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_cut && !sourceOnly)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                AppSpacing.sm,
+              ),
+              child: Text(
+                HtmlStrings.truncated,
+                style: t.caption.copyWith(color: p.accent),
               ),
             ),
+          _body(context, showSource: showSource, sourceOnly: sourceOnly),
+        ],
+      ),
     );
+  }
+
+  Widget _body(
+    BuildContext context, {
+    required bool showSource,
+    required bool sourceOnly,
+  }) {
+    final p = context.palette;
+    final t = context.text;
+    return showSource
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (sourceOnly)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                    0,
+                  ),
+                  child: Text(
+                    _tooLarge ? HtmlStrings.tooLarge : HtmlStrings.failed,
+                    style: t.caption.copyWith(color: p.accent),
+                  ),
+                ),
+              HtmlSourceView(
+                source: _html,
+                maxHeight: HtmlSizes.sourceMaxHeight,
+              ),
+            ],
+          )
+        : AnimatedContainer(
+            duration: AppDurations.normal,
+            curve: Curves.easeOut,
+            height: _height,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: HtmlWebView(
+                    source: _html,
+                    onHeight: _onHeight,
+                    onFailed: () => setState(() => _failed = true),
+                    captureVerticalDrag: _scrollsInside,
+                  ),
+                ),
+                if (_overflows && !_expanded)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: HtmlSizes.fadeHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              p.background.withValues(alpha: 0),
+                              p.background,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_content <= 0)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: LinearProgressIndicator(
+                      minHeight: HtmlSizes.progressHeight,
+                      color: p.accent,
+                      backgroundColor: p.border,
+                    ),
+                  ),
+              ],
+            ),
+          );
   }
 }

@@ -1,3 +1,4 @@
+import { HTML_RULE } from "./html.js";
 export type Mode = "default" | "debug" | "review" | "design" | "explain";
 export const MODES: Mode[] = ["default", "debug", "review", "design", "explain"];
 
@@ -67,10 +68,7 @@ Format:
       \`\`\`chart
       {"type":"bar","title":"Monthly sales","x":["Jan","Feb","Mar"],"series":[{"name":"2025","data":[12,18,15]},{"name":"2026","data":[14,22,25]}],"unit":"k USD"}
       \`\`\`
-    - html (the user asks to build/make/show a page, reference, cheat sheet, demo, mockup, landing page, animation or interactive UI): ONE complete document with <title>, mobile-first. The app injects its design kit (Nothing-style: monochrome, one red accent, Space Grotesk and Space Mono fonts, dark and light themes), so write plain semantic HTML and use the kit; do NOT set your own colors, fonts, backgrounds, gradients or shadows (the kit overrides them anyway; CSS for layout only: flex/grid, widths, gaps), and never use emoji: for icons use <iconify-icon icon="hugeicons:name-01"></iconify-icon> (e.g. home-01, search-01, copy-01, tick-02, arrow-right-01). Use the CSS variables for anything else: --bg --surface --surface-2 --text --text-2 --text-3 --border --accent --radius --space-1..6. Kit classes: .card .grid (responsive) .stack .row .label (mono caps) .tag .tag.accent .btn .btn.primary .stat (> .n a short number only + .label) .muted .accent .callout .kbd .divider .chip-list. Plain h1-h4, p, ul/ol, table, pre/code, details, input, button are already styled. Put .grid/.stack on a wrapper div, never on body; .tag is only for short badges, .callout for notes. JS only for interactivity. Keep it under about 150 lines. Do not paste the same code in a second block.
-      \`\`\`html
-      <!doctype html><html><head><title>Tip calculator</title></head><body><h1>Tip</h1><div class="card stack"><label class="label" for="a">Bill</label><input id="a" type="number" value="50" oninput="r.textContent=(a.value*1.15).toFixed(2)"><div class="stat"><div class="n" id="r">57.50</div><div class="label">Total with 15% tip</div></div></div></body></html>
-      \`\`\`
+${HTML_RULE}
     - quiz (test/quiz me): "title:", then repeating "q:", 3-6 "a:" options with "*" before the one correct option, and "why:". 5-8 questions.
       \`\`\`quiz
       title: Capitals

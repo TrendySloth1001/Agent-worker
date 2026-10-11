@@ -7,7 +7,17 @@ type Rule = { re: RegExp; hint: string };
 
 // Only explicit asks trigger a hint: loose words ("trend", "how does X work")
 // do not, so ordinary questions get ordinary answers.
+const HTML_HINT =
+  "The user wants an HTML page: one ```html block after a one-line intro, following the html contract exactly (start from the skeleton, kit classes only, no colors/fonts/external resources of your own, single mobile column, interactive lists start with 3 real items, finish with </html>). Write nothing after the block.";
+
 const RULES: Rule[] = [
+  // "html ..." names the format, so it beats the timeline/checklist/chart
+  // widgets ("html timeline", "interactive html todo list"); questions about
+  // HTML itself do not match.
+  {
+    re: /^(?!\s*(what|why|how|when|where|which|who|explain|is|are|does|do|can|should|difference)\b)(?=[\s\S]*\bhtml\b(?!\s*(vs\.?|versus|or|and|is|are|tags?|elements?|attributes?|entities|email|parser|parsing|validation|semantics)\b))/i,
+    hint: HTML_HINT,
+  },
   {
     re: /\b(quiz me|test me|test my knowledge|give me a (quiz|test)|make (me )?a quiz|quiz on|mcqs?)\b/i,
     hint: "The user asked to be quizzed: a short intro line, then a ```quiz block (4-8 questions, one * correct answer each, a why: line each).",
@@ -22,7 +32,7 @@ const RULES: Rule[] = [
   },
   {
     re: /\b(build|make|create|generate|design|code)\b[^.?!\n]{0,60}\b(html|web ?page|page|website|landing page|cheat ?sheet|reference (page|sheet|card)|dashboard|demo|mock-?up|prototype|simulation)\b/i,
-    hint: "The user wants something built and shown: one complete ```html block (mobile-first, with a <title>) after a one-line intro. Use the app's design kit: semantic HTML plus kit classes (.card .grid .stack .row .label .tag .btn .btn.primary .stat .callout .chip-list) and CSS variables (--bg --surface --text --text-2 --border --accent); no custom colors, fonts, backgrounds, gradients, shadows or emoji (layout CSS is fine); icons via <iconify-icon icon='hugeicons:...'>; JS only for interactivity. Do not paste the same code again in another block.",
+    hint: HTML_HINT,
   },
   {
     re: /\b(calculator|calculate (my|the)|what if i|loan|mortgage|emi|bmi|compound interest|split the bill|savings plan)\b/i,
