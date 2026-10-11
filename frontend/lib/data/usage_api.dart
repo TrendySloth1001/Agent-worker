@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../core/constants/app_sizes.dart';
 import 'chat_api.dart';
 import 'usage.dart';
+import 'api_client.dart';
 
 /// Read-only calls used by the settings screen. All throw on failure.
 class UsageApi {
@@ -13,7 +12,7 @@ class UsageApi {
   final String baseUrl;
 
   Future<Map<String, dynamic>> _get(String path) async {
-    final response = await http
+    final response = await apiHttp
         .get(Uri.parse('$baseUrl$path'), headers: apiHeaders())
         .timeout(AppDurations.usageTimeout);
     if (response.statusCode >= 400) {

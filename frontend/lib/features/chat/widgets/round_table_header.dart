@@ -9,6 +9,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../data/chat_event.dart';
 import 'markdown/app_markdown.dart';
 import 'round_table_panel.dart';
+import 'round_table_support.dart';
 import 'source_chips.dart';
 
 /// "ROUND TABLE · 3 MODELS · AGREED" above a reply the table wrote.
@@ -31,6 +32,9 @@ class RoundTableHeader extends StatefulWidget {
 
 class _RoundTableHeaderState extends State<RoundTableHeader> {
   bool _expanded = false;
+
+  /// WHO AGREED: which seats back each sentence of the answer.
+  bool _who = false;
 
   void _toggle() {
     Haptics.tap();
@@ -84,6 +88,14 @@ class _RoundTableHeaderState extends State<RoundTableHeader> {
                       style: t.caption.copyWith(color: tone),
                     ),
                   ),
+                  if (table.support.isNotEmpty) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    WhoAgreedToggle(
+                      on: _who,
+                      onTap: () => setState(() => _who = !_who),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
                   AppIcon(
                     _expanded ? AppIcons.collapse : AppIcons.expand,
                     size: AppIconSize.sm,
@@ -93,6 +105,7 @@ class _RoundTableHeaderState extends State<RoundTableHeader> {
               ),
             ),
           ),
+          if (_who && table.support.isNotEmpty) WhoAgreedList(table: table),
           if (_expanded) _details(context),
         ],
       ),

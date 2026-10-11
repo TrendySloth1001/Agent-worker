@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/share_export.dart';
 import '../../core/haptics.dart';
 import '../../core/notifications.dart';
 import '../../core/app_scope.dart';
@@ -12,14 +13,18 @@ import '../../core/widgets/glass.dart';
 import '../../core/widgets/size_reporter.dart';
 import '../../data/chat_message.dart';
 import '../../data/conversations_api.dart';
+import '../../data/files_api.dart';
 import 'chat_actions.dart';
 import 'chat_controller.dart';
+import 'share/chat_export.dart';
 import 'widgets/app_drawer.dart';
+import 'widgets/background_table_chip.dart';
 import 'widgets/chat_input.dart';
 import 'widgets/empty_state.dart';
 import 'widgets/context_card.dart';
 import 'widgets/lineage_banner.dart';
 import 'widgets/message_bubble.dart';
+import 'widgets/message_editor.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/icon_label.dart';
@@ -38,6 +43,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _drawer = GlobalKey<AppDrawerState>();
   final _showScrollButton = ValueNotifier(false);
 
+  /// The user message being edited in place, if any.
+  ChatMessage? _editing;
+
   /// Height of the floating input, which grows with its chips and text.
   final _inputHeight = ValueNotifier(AppSizes.bottomInset);
 
@@ -53,6 +61,10 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.loadModels();
     _controller.addListener(() {
       if (_controller.messages.isEmpty) _showScrollButton.value = false;
+      // Another chat opened, or the message was replaced.
+      if (_editing != null && !_controller.messages.contains(_editing)) {
+        _editing = null;
+      }
     });
     _scroll.addListener(() {
       _showScrollButton.value = _scroll.offset > AppSizes.scrollButtonThreshold;
@@ -114,6 +126,26 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Sends an edited message; the reply after it is asked for again.
+  void _submitEdit(ChatMessage at, String text, List<FileInfo> files) {
+    if (!_controller.edit(at, text, attachments: files)) {
+      Haptics.error();
+      _toast(EditStrings.busy);
+      return;
+    }
+    setState(() => _editing = null);
+  }
+
+  void _export() {
+    Haptics.tap();
+    exportChat(
+      context,
+      title: _controller.title,
+      load: () async => List.of(_controller.messages),
+      modelName: _controller.modelName,
+    );
+  }
+
   void _scrollToBottom() {
     Haptics.tap();
     _scroll.animateTo(
@@ -162,6 +194,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: _TopBar(
                     controller: _controller,
                     onMenu: () => _scaffold.currentState?.openDrawer(),
+                    onExport: _controller.isSending ? null : _export,
                   ),
                 ),
                 Positioned(
@@ -246,6 +279,14 @@ class _ChatScreenState extends State<ChatScreen> {
               !message.isError &&
               message.error == null;
           final isLast = index == 0 && !_controller.isSending;
+          if (identical(message, _editing)) {
+            return MessageEditor(
+              key: ObjectKey(message),
+              message: message,
+              onCancel: () => setState(() => _editing = null),
+              onSend: (text, files) => _submitEdit(message, text, files),
+            );
+          }
           return MessageBubble(
             key: ObjectKey(message),
             message: message,
@@ -260,6 +301,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 : null,
             onAnswerFast: message.isStreaming ? _controller.answerFast : null,
             onNotify: message.isStreaming ? () => _notifyMe(message) : null,
+            onEdit: message.role == Role.user && !_controller.isSending
+                ? () => setState(() => _editing = message)
+                : null,
           );
         },
       ),
@@ -303,10 +347,17 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.controller, required this.onMenu});
+  const _TopBar({
+    required this.controller,
+    required this.onMenu,
+    this.onExport,
+  });
 
   final ChatController controller;
   final VoidCallback onMenu;
+
+  /// EXPORT for the open chat; null while a reply streams.
+  final VoidCallback? onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -333,19 +384,31 @@ class _TopBar extends StatelessWidget {
               },
               child: AnimatedSwitcher(
                 duration: AppDurations.normal,
-                child: Text(
-                  title == null ? '' : title.toUpperCase(),
-                  key: ValueKey(title),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.text.caption.copyWith(
-                    color: context.palette.textSecondary,
-                  ),
-                ),
+                // A round table still running in another chat.
+                child: controller.backgroundTable != null
+                    ? BackgroundTableChip(
+                        key: const ValueKey(BackgroundTableChip),
+                        onTap: controller.openBackground,
+                      )
+                    : Text(
+                        title == null ? '' : title.toUpperCase(),
+                        key: ValueKey(title),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.caption.copyWith(
+                          color: context.palette.textSecondary,
+                        ),
+                      ),
               ),
             ),
           ),
+          if (canReset)
+            _BarIcon(
+              icon: ShareIcons.export,
+              label: ShareStrings.export,
+              onTap: onExport,
+            ),
           const SizedBox(width: AppSpacing.sm),
           _NewChatPill(
             onTap: canReset

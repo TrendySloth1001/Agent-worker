@@ -5,7 +5,9 @@ import '../../../../core/constants/widget_kit.dart';
 import '../github/github_commits_card.dart';
 import '../github/github_compare_card.dart';
 import '../github/github_issues_card.dart';
+import '../github/github_my_repos_card.dart';
 import '../github/github_repo_card.dart';
+import '../github/github_review_card.dart';
 import '../github/github_search_card.dart';
 import '../github/github_tree_card.dart';
 import 'ask_card.dart' show RichPlaceholder;
@@ -66,6 +68,14 @@ final Map<String, _Entry> _entries = {
   GithubLang.issues: _Entry(
     GithubStrings.issues,
     (s) => GithubIssuesCard(source: s, prs: false),
+  ),
+  GithubLangExtra.review: _Entry(
+    GithubReviewStrings.title,
+    (s) => GithubReviewCard(source: s),
+  ),
+  GithubLangExtra.myRepos: _Entry(
+    GithubReviewStrings.myRepos,
+    (s) => GithubMyReposCard(source: s),
   ),
 };
 

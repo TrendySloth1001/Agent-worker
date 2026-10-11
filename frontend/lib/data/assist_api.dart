@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../core/constants/app_config.dart';
 import '../features/chat/widgets/rich/rich_parsers.dart';
 import 'chat_api.dart';
+import 'api_client.dart';
 
 /// Client for POST /assist/email (AI rewrite of an email draft).
 class AssistApi {
@@ -19,7 +20,7 @@ class AssistApi {
   }) async {
     final http.Response response;
     try {
-      response = await http
+      response = await apiHttp
           .post(
             Uri.parse('${AppConfig.apiBaseUrl}/assist/profile'),
             headers: apiHeaders(json: true),
@@ -50,7 +51,7 @@ class AssistApi {
   }) async {
     final http.Response response;
     try {
-      response = await http
+      response = await apiHttp
           .post(
             Uri.parse('${AppConfig.apiBaseUrl}/assist/email'),
             headers: apiHeaders(json: true),

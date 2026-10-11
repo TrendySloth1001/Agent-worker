@@ -6,6 +6,7 @@ import '../core/constants/app_sizes.dart';
 import '../core/constants/app_strings.dart';
 import 'chat_api.dart';
 import 'kb_source.dart';
+import 'api_client.dart';
 
 /// Calls under /knowledge. All throw [ApiException] on failure.
 class KnowledgeApi {
@@ -24,7 +25,7 @@ class KnowledgeApi {
     final http.Response response;
     try {
       response = await http.Response.fromStream(
-        await request.send().timeout(AppDurations.kbRequestTimeout),
+        await apiHttp.send(request).timeout(AppDurations.kbRequestTimeout),
       );
     } catch (_) {
       throw const ApiException(AppStrings.errorNetwork);

@@ -8,6 +8,7 @@ import 'package:http_parser/http_parser.dart';
 import '../core/constants/app_config.dart';
 import '../core/constants/app_files.dart';
 import 'chat_api.dart';
+import 'api_client.dart';
 
 enum FileKind { image, document, video, audio }
 
@@ -173,11 +174,17 @@ class FilesApi {
   FilesApi._();
   static final instance = FilesApi._();
 
-  final _client = http.Client();
+  final _client = AuthClient();
   final _cache = <String, (DateTime, FileInfo)>{};
   final _inflight = <String, Future<FileInfo>>{};
 
   Uri _uri(String path) => Uri.parse('${AppConfig.apiBaseUrl}$path');
+
+  /// Forgets signed URLs; called on sign-out so no user sees another's files.
+  void clearCache() {
+    _cache.clear();
+    _inflight.clear();
+  }
 
   /// Multipart upload with byte progress (0..1).
   Future<FileInfo> upload(
@@ -219,7 +226,7 @@ class FilesApi {
       cancelOnError: true,
     );
 
-    final client = http.Client();
+    final client = AuthClient();
     cancel?._client = client;
     try {
       final streamed = await client
@@ -227,8 +234,11 @@ class FilesApi {
           .timeout(AppFiles.uploadTimeout);
       final text = await streamed.stream.bytesToString();
       if (streamed.statusCode >= 400) {
+        final message = errorMessage(text, streamed.statusCode);
         throw ApiException(
-          errorMessage(text, streamed.statusCode),
+          streamed.statusCode == 429 && errorCode(text) == 'daily_limit'
+              ? dailyLimitMessage(message)
+              : message,
           status: streamed.statusCode,
         );
       }

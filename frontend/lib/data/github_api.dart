@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../core/constants/app_config.dart';
 import '../core/constants/widget_github.dart';
 import 'chat_api.dart';
+import 'api_client.dart';
 
 // ---- models ----------------------------------------------------------------
 
@@ -53,6 +52,7 @@ class GhRepo {
       license = j['license'] as String?,
       defaultBranch = _s(j['defaultBranch']),
       archived = j['archived'] == true,
+      isPrivate = j['private'] == true,
       pushedAt = _date(j['pushedAt']),
       languages = [
         for (final l in _list(j['languages']))
@@ -68,7 +68,7 @@ class GhRepo {
   final int stars, forks, openIssues;
   final int? watchers;
   final List<String> topics;
-  final bool archived;
+  final bool archived, isPrivate;
   final DateTime? pushedAt;
   final List<(String, double)> languages;
   final GhRelease? latestRelease;
@@ -236,6 +236,81 @@ class GhCodeHit {
   final List<String> fragments;
 }
 
+/// One finding of an AI pull request review.
+class GhReviewComment {
+  GhReviewComment(Map<String, dynamic> j)
+    : file = _s(j['file']),
+      line = _iOrNull(j['line']),
+      severity = _s(j['severity']),
+      title = _s(j['title']),
+      body = _s(j['body']),
+      suggestion = j['suggestion'] as String?;
+
+  final String file, severity, title, body;
+  final int? line;
+  final String? suggestion;
+}
+
+/// AI review of a pull request (`POST /pulls/:n/review`).
+class GhReview {
+  GhReview(Map<String, dynamic> j)
+    : owner = _s(j['owner']),
+      repo = _s(j['repo']),
+      number = _i(j['number']),
+      title = _s(j['title']),
+      author = GhUser.fromJson(j['author']),
+      url = _s(j['url']),
+      state = _s(j['state']),
+      head = _s(j['head']),
+      base = _s(j['base']),
+      additions = _i(j['additions']),
+      deletions = _i(j['deletions']),
+      changedFiles = _i(j['changedFiles']),
+      summary = _s(j['summary']),
+      verdict = _s(j['verdict']),
+      risk = _s(j['risk']),
+      comments = [for (final c in _list(j['comments'])) GhReviewComment(c)],
+      tests = [for (final t in (j['tests'] as List? ?? const [])) '$t'],
+      skippedFiles = [
+        for (final f in (j['skippedFiles'] as List? ?? const [])) '$f',
+      ],
+      files = [for (final f in _list(j['files'])) GhFile(f)],
+      model = _s(j['model']),
+      cached = j['cached'] == true;
+
+  final String owner, repo, title, url, state, head, base;
+  final String summary, verdict, risk, model;
+  final int number, additions, deletions, changedFiles;
+  final GhUser? author;
+  final List<GhReviewComment> comments;
+  final List<String> tests, skippedFiles;
+  final List<GhFile> files;
+  final bool cached;
+
+  GhFile? fileFor(String name) =>
+      files.where((f) => f.filename == name).firstOrNull;
+}
+
+/// The account the backend's token belongs to.
+class GhMe {
+  GhMe(Map<String, dynamic> j)
+    : login = _s(j['login']),
+      avatar = _s(j['avatar']),
+      url = _s(j['url']),
+      publicRepos = _i(j['publicRepos']),
+      privateRepos = _iOrNull(j['privateRepos']),
+      scopes = j['scopes'] is List
+          ? [for (final s in j['scopes'] as List) '$s']
+          : null,
+      canReadPrivate = j['canReadPrivate'] == true;
+
+  final String login, avatar, url;
+  final int publicRepos;
+  final int? privateRepos;
+  final List<String>? scopes;
+  final bool canReadPrivate;
+}
+
 class GhSearch<T> {
   const GhSearch(this.total, this.items);
   final int total;
@@ -249,7 +324,7 @@ class GithubApi {
   GithubApi._();
   static final instance = GithubApi._();
 
-  final _client = http.Client();
+  final _client = AuthClient();
 
   Future<Map<String, dynamic>> _get(
     String path, [
@@ -273,6 +348,44 @@ class GithubApi {
       );
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> _post(String path, Duration timeout) async {
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/github$path');
+    final res = await _client.post(uri, headers: apiHeaders()).timeout(timeout);
+    if (res.statusCode >= 400) {
+      throw ApiException(
+        errorMessage(res.body, res.statusCode),
+        status: res.statusCode,
+      );
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// Reviews pull request [number] with a strong model (slow, cached per
+  /// head commit on the server).
+  Future<GhReview> review(
+    String owner,
+    String repo,
+    int number, {
+    bool fresh = false,
+  }) async => GhReview(
+    await _post(
+      '${_repo(owner, repo)}/pulls/$number/review${fresh ? '?fresh=1' : ''}',
+      GithubReviewDurations.reviewTimeout,
+    ),
+  );
+
+  Future<GhMe> me() async => GhMe(await _get('/me'));
+
+  /// The token owner's repositories ([visibility]: all, private or public).
+  Future<List<GhRepo>> myRepos({String visibility = 'all'}) async {
+    final j = await _get('/my/repos', {
+      'visibility': visibility,
+      'sort': 'updated',
+      'per_page': '${GithubReviewLimits.pageMyRepos}',
+    });
+    return [for (final r in _list(j['items'])) GhRepo(r)];
   }
 
   String _repo(String owner, String repo) =>

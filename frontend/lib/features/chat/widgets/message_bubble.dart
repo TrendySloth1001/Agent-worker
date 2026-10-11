@@ -5,12 +5,14 @@ import '../../../data/chat_api.dart';
 import '../../../data/knowledge_api.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/appear.dart';
 import '../../../core/widgets/copy_action.dart';
 import '../../../data/chat_message.dart';
 import '../chat_actions.dart';
+import '../share/reply_share.dart';
 import 'markdown/app_markdown.dart';
 import 'message_sheet.dart';
 import 'attachment_views.dart';
@@ -33,6 +35,7 @@ class MessageBubble extends StatelessWidget {
     this.onFork,
     this.onAnswerFast,
     this.onNotify,
+    this.onEdit,
   });
 
   final ChatMessage message;
@@ -54,6 +57,9 @@ class MessageBubble extends StatelessWidget {
   /// Reply: fork up to and including it. User message: fork from just
   /// before it (long-press menu). Null while sending.
   final VoidCallback? onFork;
+
+  /// User message: edit it in place (long-press menu). Null while sending.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +94,7 @@ class MessageBubble extends StatelessWidget {
         context,
         text: message.content,
         onForkHere: onFork,
+        onEdit: onEdit,
       ),
       child: box,
     );
@@ -180,10 +187,20 @@ class MessageBubble extends StatelessWidget {
         ],
         if (!message.isStreaming) ...[
           const SizedBox(height: AppSpacing.sm),
-          Row(
+          // Wraps on narrow screens rather than overflowing.
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: AppSpacing.xs,
             children: [
               if (!message.isError) ...[
                 CopyAction(text: message.content),
+                const SizedBox(width: AppSpacing.lg),
+                _TextAction(
+                  icon: ShareIcons.share,
+                  label: ShareStrings.share,
+                  onTap: () =>
+                      showReplyShare(context, message: message, model: label),
+                ),
                 const SizedBox(width: AppSpacing.lg),
                 _SaveAction(
                   content: message.content,

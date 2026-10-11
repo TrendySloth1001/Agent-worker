@@ -237,3 +237,20 @@ abstract final class TableMeterSizes {
   static const notifyBodyMax = 140;
   static const titleMax = 48;
 }
+
+/// Round Table "WHO AGREED": seat dots per answer sentence.
+abstract final class TableSupportSizes {
+  static const dot = 16.0;
+  static const dotGap = 4.0;
+  static const sentenceLines = 3;
+  static const toggleHeight = 22.0;
+  static const togglePadH = 8.0;
+  static const maxHeight = 420.0;
+}
+
+/// The "1 ROUND TABLE RUNNING" chip in the top bar.
+abstract final class BackgroundTableSizes {
+  static const chipHeight = 24.0;
+  static const chipPadH = 10.0;
+  static const dot = 6.0;
+}

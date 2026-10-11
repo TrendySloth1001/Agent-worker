@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 
 import '../core/constants/app_config.dart';
 import '../core/constants/app_sizes.dart';
+import '../features/auth/auth_controller.dart';
+import 'api_client.dart';
 import 'ai_model.dart';
 import 'chat_event.dart';
 import 'chat_message.dart';
@@ -19,11 +21,40 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-Map<String, String> apiHeaders({bool json = false}) => {
-  if (json) 'Content-Type': 'application/json',
-  if (AppConfig.apiToken.isNotEmpty)
-    'Authorization': 'Bearer ${AppConfig.apiToken}',
-};
+/// Headers for backend calls, with the signed-in user's access token.
+/// Send through [AuthClient] (or `apiHttp`), which also refreshes on a 401.
+/// The dart-define API_TOKEN is no longer sent: only for owner sign-up.
+Map<String, String> apiHeaders({bool json = false}) {
+  final token = AuthController.instance.accessToken;
+  return {
+    if (json) 'Content-Type': 'application/json',
+    if (token != null) 'Authorization': 'Bearer $token',
+  };
+}
+
+/// Code of a `{"error":{"code":...}}` body, e.g. `daily_limit`.
+String? errorCode(String body) {
+  try {
+    final e = (jsonDecode(body) as Map<String, dynamic>)['error'];
+    if (e is Map<String, dynamic> && e['code'] is String) {
+      return e['code'] as String;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/// A daily-limit message with the reset time in local time.
+String dailyLimitMessage(String serverMessage) {
+  final now = DateTime.now().toUtc();
+  final reset = DateTime.utc(now.year, now.month, now.day + 1).toLocal();
+  final hh = reset.hour.toString().padLeft(2, '0');
+  final mm = reset.minute.toString().padLeft(2, '0');
+  final base = serverMessage.replaceAll(
+    RegExp(r'\s*Your limit resets at .*$'),
+    '',
+  );
+  return 'Daily limit reached. $base Resets at $hh:$mm.';
+}
 
 /// Reads `{"error":{"message":...}}` from a failed response.
 String errorMessage(String body, int status) {
@@ -37,7 +68,7 @@ String errorMessage(String body, int status) {
 }
 
 class ChatApi {
-  final _client = http.Client();
+  final _client = AuthClient();
 
   Future<List<AiModel>> fetchModels() async {
     final response = await _client.get(
@@ -85,12 +116,20 @@ class ChatApi {
             if (roundTable) 'roundTable': true,
           });
 
-    final response = await client
-        .send(request)
-        .timeout(AppDurations.streamIdle);
+    // [client] stays the caller's (closing it stops the stream); the
+    // wrapper adds the access token and retries once after a refresh.
+    final response = await AuthClient(
+      client,
+    ).send(request).timeout(AppDurations.streamIdle);
     if (response.statusCode != 200) {
       final body = await response.stream.bytesToString();
-      throw ApiException(errorMessage(body, response.statusCode));
+      final message = errorMessage(body, response.statusCode);
+      throw ApiException(
+        response.statusCode == 429 && errorCode(body) == 'daily_limit'
+            ? dailyLimitMessage(message)
+            : message,
+        status: response.statusCode,
+      );
     }
 
     final lines = response.stream

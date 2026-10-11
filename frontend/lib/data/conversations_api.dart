@@ -8,6 +8,7 @@ import '../core/constants/app_strings.dart';
 import 'chat_api.dart';
 import 'chat_message.dart';
 import 'conversation.dart';
+import 'api_client.dart';
 
 /// Calls under /conversations. All throw [ApiException] on failure.
 class ConversationsApi {
@@ -38,7 +39,7 @@ class ConversationsApi {
     final http.Response response;
     try {
       response = await http.Response.fromStream(
-        await request.send().timeout(timeout),
+        await apiHttp.send(request).timeout(timeout),
       );
     } catch (_) {
       throw const ApiException(AppStrings.errorNetwork);

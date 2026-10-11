@@ -363,6 +363,46 @@ class TableReview {
   );
 }
 
+/// Which seats' drafts back one sentence of the chair's answer.
+class TableSupport {
+  const TableSupport({
+    required this.sentence,
+    this.paragraph = 0,
+    this.seats = const [],
+    this.disputed = false,
+    this.excerpts = const {},
+  });
+
+  final String sentence;
+  final int paragraph;
+  final List<String> seats;
+  final bool disputed;
+
+  /// Seat letter to the matching passage of its draft.
+  final Map<String, String> excerpts;
+
+  Map<String, dynamic> toJson() => {
+    'sentence': sentence,
+    'paragraph': paragraph,
+    'seats': seats,
+    if (disputed) 'disputed': true,
+    'excerpts': excerpts,
+  };
+
+  factory TableSupport.fromJson(Map<String, dynamic> j) => TableSupport(
+    sentence: j['sentence'] as String? ?? '',
+    paragraph: (j['paragraph'] as num?)?.toInt() ?? 0,
+    seats: _strings(j['seats']),
+    disputed: j['disputed'] == true,
+    excerpts: {
+      if (j['excerpts'] is Map)
+        for (final e in (j['excerpts'] as Map).entries)
+          if (e.key is String && e.value is String)
+            e.key as String: e.value as String,
+    },
+  );
+}
+
 /// The record of a finished round table, saved with the reply.
 class TableTranscript {
   const TableTranscript({
@@ -373,6 +413,7 @@ class TableTranscript {
     this.chair = '',
     this.calls = 0,
     this.ms = 0,
+    this.support = const [],
   });
 
   final List<TableSeat> seats;
@@ -387,6 +428,9 @@ class TableTranscript {
 
   bool get disputed => consensus == 'disputed';
 
+  /// Per answer sentence: the seats whose drafts back it.
+  final List<TableSupport> support;
+
   Map<String, dynamic> toJson() => {
     'seats': [for (final s in seats) s.toJson()],
     'reviews': [for (final r in reviews) r.toJson()],
@@ -395,6 +439,7 @@ class TableTranscript {
     'chair': chair,
     'calls': calls,
     'ms': ms,
+    if (support.isNotEmpty) 'support': [for (final x in support) x.toJson()],
   };
 
   factory TableTranscript.fromJson(Map<String, dynamic> j) => TableTranscript(
@@ -408,6 +453,7 @@ class TableTranscript {
     chair: j['chair'] as String? ?? '',
     calls: (j['calls'] as num?)?.toInt() ?? 0,
     ms: (j['ms'] as num?)?.toInt() ?? 0,
+    support: _list(j['support'], TableSupport.fromJson),
   );
 }
 

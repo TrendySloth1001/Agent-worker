@@ -13,8 +13,11 @@ import '../../history/history_controller.dart';
 import '../../history/widgets/chat_actions.dart';
 import '../../history/widgets/conversation_list.dart';
 import '../../knowledge/knowledge_screen.dart';
+import '../../profile/profile_screen.dart';
+import '../../profile/widgets/account_row.dart';
 import '../../settings/settings_screen.dart';
 import '../chat_controller.dart';
+import '../share/chat_export.dart';
 
 /// Left sidebar: new chat, search, conversations, knowledge and settings.
 class AppDrawer extends StatefulWidget {
@@ -162,6 +165,14 @@ class AppDrawerState extends State<AppDrawer> {
                       onDeleted: (id) =>
                           widget.chat.onConversationChanged(id, deleted: true),
                       onFork: _forkChat,
+                      onExport: (chat) => exportSavedChat(
+                        context,
+                        id: chat.id,
+                        title: chat.title,
+                        openId: widget.chat.conversationId,
+                        openMessages: widget.chat.messages,
+                        modelName: widget.chat.modelName,
+                      ),
                       onMerge: (id, otherId) =>
                           widget.chat.mergeWith(otherId, baseId: id),
                       onMerged: (ok) {
@@ -207,7 +218,7 @@ class AppDrawerState extends State<AppDrawer> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(AppStrings.appName.toUpperCase(), style: context.text.label),
+          AccountRow(onTap: () => _push(const ProfileScreen())),
           const SizedBox(height: AppSpacing.md),
           Semantics(
             button: true,

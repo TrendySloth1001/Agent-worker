@@ -80,6 +80,32 @@ class ChatController extends ChangeNotifier {
   late (bool, bool) _lastDefaults;
   late bool _lastRoundTableDefault;
 
+  // ---- background round table ----------------------------------------------
+
+  /// A round table that keeps running after the user switched chats; at
+  /// most one. Its events still land in its own message list.
+  _BackgroundTable? _background;
+
+  /// Session of the foreground run's stream (its closure's id).
+  int? _runSession;
+
+  /// (stream session, screen session) of a background table brought back.
+  (int, int)? _alias;
+
+  /// Chat the last background table saved, so opening it waits for the save.
+  String? _backgroundSavedId;
+
+  /// The reply of the round table running in the background, if any.
+  ChatMessage? get backgroundTable => _background?.reply;
+
+  /// Its chat's title, when the server named it.
+  String? get backgroundTitle => _background?.title;
+
+  /// Shows the background table's chat again (live).
+  void openBackground() {
+    if (_background != null) _reattach();
+  }
+
   String modelName(String? id) =>
       models.where((m) => m.id == id).firstOrNull?.name ?? AppStrings.assistant;
 
@@ -121,6 +147,7 @@ class ChatController extends ChangeNotifier {
   }
 
   void newChat() {
+    _detachTable();
     _session++;
     _teardown();
     messages.clear();
@@ -135,6 +162,11 @@ class ChatController extends ChangeNotifier {
 
   /// Replaces the screen with a saved chat. Returns false if it failed.
   Future<bool> open(String id) async {
+    if (_background?.id == id) {
+      _reattach();
+      return true;
+    }
+    if (id == _backgroundSavedId) await _saving;
     try {
       final (summary, saved) = await _conversations.get(id);
       adopt(summary, saved);
@@ -146,6 +178,7 @@ class ChatController extends ChangeNotifier {
 
   /// Shows a chat the server just returned (opened, forked or merged).
   void adopt(ConversationSummary summary, List<ChatMessage> saved) {
+    _detachTable();
     _session++;
     _teardown();
     isSending = false;
@@ -247,6 +280,15 @@ class ChatController extends ChangeNotifier {
 
   /// Called when history renames or deletes the open chat.
   void onConversationChanged(String id, {String? title, bool deleted = false}) {
+    final bg = _background;
+    if (bg != null && bg.id == id) {
+      if (deleted) {
+        _dropBackground();
+      } else {
+        bg.title = title;
+      }
+      notifyListeners();
+    }
     if (id != conversationId) return;
     if (deleted) {
       newChat();
@@ -315,6 +357,31 @@ class ChatController extends ChangeNotifier {
     _run();
   }
 
+  /// Replaces the user message [at] with [text] and [attachments], drops
+  /// everything after it and asks again. Returns false when nothing changed.
+  bool edit(
+    ChatMessage at,
+    String text, {
+    List<FileInfo> attachments = const [],
+  }) {
+    final content = text.trim();
+    if (isSending || at.role != Role.user) return false;
+    if (content.isEmpty && attachments.isEmpty) return false;
+    final index = messages.indexOf(at);
+    if (index < 0) return false;
+    messages
+      ..removeRange(index, messages.length)
+      ..add(
+        ChatMessage(
+          role: Role.user,
+          content: content,
+          attachments: List.of(attachments),
+        ),
+      );
+    _run();
+    return true;
+  }
+
   void send(String text, {List<FileInfo> attachments = const []}) {
     final content = text.trim();
     if ((content.isEmpty && attachments.isEmpty) || isSending) return;
@@ -336,13 +403,20 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
 
     final session = ++_session;
+    _runSession = session;
     final client = http.Client();
     _client = client;
 
-    bool alive() => session == _session;
+    // Shown on screen (also after coming back from the background).
+    bool foreground() => session == _session || _alias == (session, _session);
+    bool alive() => foreground() || _background?.session == session;
 
     void finish() {
       if (!alive()) return;
+      if (!foreground()) {
+        _finishBackground(message);
+        return;
+      }
       message.isStreaming = false;
       message.status = null;
       isSending = false;
@@ -390,7 +464,7 @@ class ChatController extends ChangeNotifier {
         case DeltaEvent(:final text):
           message.content += text;
           _scheduleNotify();
-          _tick();
+          if (foreground()) _tick();
         case ResetEvent():
           message.content = '';
           message.notice = null;
@@ -429,7 +503,7 @@ class ChatController extends ChangeNotifier {
           onEvent,
           onError: (Object error) => fail(_errorText(error)),
           onDone: () {
-            if (!alive() || !isSending) return;
+            if (!alive() || !message.isStreaming) return;
             // The stream closed without a done event.
             if (message.content.isEmpty) {
               fail(AppStrings.errorInterrupted);
@@ -495,37 +569,50 @@ class ChatController extends ChangeNotifier {
     if (m != null && (_settings.notifyRoundTable || m.notifyWhenDone)) {
       _postProgress(m);
     }
+    final bg = _background;
+    if (m == null &&
+        bg != null &&
+        (_settings.notifyRoundTable || bg.reply.notifyWhenDone)) {
+      _postProgress(bg.reply, id: bg.id);
+    }
   }
 
-  void _postProgress(ChatMessage m) {
+  void _postProgress(ChatMessage m, {String? id}) {
     final eta = m.tableEtaMs;
     final body = eta == null || eta <= 0
         ? TableWaitStrings.phase(m.tablePhase)
         : '${TableWaitStrings.phase(m.tablePhase)}${TableStrings.separator}'
               '${TableWaitStrings.leftLower((eta / 1000).ceil())}';
     _progressPosted = true;
-    unawaited(_notify.showProgress(body, payload: conversationId));
+    unawaited(_notify.showProgress(body, payload: id ?? conversationId));
   }
 
   void _clearProgress() {
     if (!_progressPosted) return;
+    // A table still running in the background keeps its service.
+    if (_background != null) return;
     _progressPosted = false;
     unawaited(_notify.cancelProgress());
   }
 
   /// After a round table reply ends: a system notification when the app is
   /// in the background or the user asked for one.
-  void _tableFinished(ChatMessage message) {
+  void _tableFinished(ChatMessage message, {_BackgroundTable? bg}) {
     final wasTable = message.tablePhase != null;
-    _clearProgress();
+    // A background table ending must not stop a foreground one's service.
+    if (bg == null || _runningTable == null) _clearProgress();
     if (!wasTable) return;
+    // A background table is out of sight even while the app is open.
     final wanted =
         message.notifyWhenDone ||
-        (_settings.notifyRoundTable && _notify.background.value);
+        (_settings.notifyRoundTable &&
+            (_notify.background.value || bg != null));
     if (!wanted) return;
     message.notifyWhenDone = false;
     final failed = message.isError || message.content.trim().isEmpty;
-    final name = _notificationTitle(message);
+    final name = bg == null
+        ? _notificationTitle(message)
+        : _notificationTitle(message, chat: bg.messages, chatTitle: bg.title);
     unawaited(
       _notify.showFinished(
         title: failed
@@ -535,17 +622,23 @@ class ChatController extends ChangeNotifier {
           failed ? (message.error ?? message.content) : _plain(message.content),
           TableMeterSizes.notifyBodyMax,
         ),
-        payload: conversationId,
+        payload: bg?.id ?? conversationId,
       ),
     );
   }
 
   /// The chat title, or the question while the server has not named it.
-  String _notificationTitle(ChatMessage reply) {
-    if (title != null && title!.trim().isNotEmpty) return title!;
-    final i = messages.indexOf(reply);
-    final question = i > 0 && messages[i - 1].role == Role.user
-        ? messages[i - 1].content.trim()
+  String _notificationTitle(
+    ChatMessage reply, {
+    List<ChatMessage>? chat,
+    String? chatTitle,
+  }) {
+    final list = chat ?? messages;
+    final name = chat == null ? title : chatTitle;
+    if (name != null && name.trim().isNotEmpty) return name;
+    final i = list.indexOf(reply);
+    final question = i > 0 && list[i - 1].role == Role.user
+        ? list[i - 1].content.trim()
         : '';
     return question.isEmpty
         ? TableWaitStrings.untitled
@@ -591,7 +684,11 @@ class ChatController extends ChangeNotifier {
         e.phase != 'done' &&
         _notify.background.value &&
         (_settings.notifyRoundTable || message.notifyWhenDone)) {
-      _postProgress(message);
+      final bg = _background;
+      _postProgress(
+        message,
+        id: bg != null && identical(bg.reply, message) ? bg.id : null,
+      );
     }
     if (e.phase == 'researching') {
       if (e.research.isNotEmpty) message.tableResearch = e.research;
@@ -705,12 +802,134 @@ class ChatController extends ChangeNotifier {
     return AppStrings.errorNetwork;
   }
 
+  // ---- background round table ----------------------------------------------
+
+  /// Leaving a chat while its round table works: the stream keeps running
+  /// detached and writes into its own copy of the chat.
+  void _detachTable() {
+    final reply = _runningTable;
+    final session = _runSession;
+    if (reply == null || session == null || _background != null) return;
+    _background = _BackgroundTable(
+      session: session,
+      id: conversationId ??= ConversationsApi.newId(),
+      title: title,
+      origin: origin,
+      parentId: parentId,
+      parentTitle: parentTitle,
+      messages: List.of(messages),
+      reply: reply,
+      sub: _sub,
+      client: _client,
+    );
+    // The stream now belongs to the background slot.
+    _sub = null;
+    _client = null;
+    _runSession = null;
+    _alias = null;
+  }
+
+  /// Puts the background table's chat back on screen, mid-stream.
+  void _reattach() {
+    final bg = _background;
+    if (bg == null) return;
+    _background = null;
+    // A table running here swaps into the background slot.
+    _detachTable();
+    _session++;
+    // Not _teardown(): the progress service stays for the running table.
+    _throttle?.cancel();
+    _throttle = null;
+    _pending = false;
+    _closeStream();
+    messages
+      ..clear()
+      ..addAll(bg.messages);
+    conversationId = bg.id;
+    title = bg.title;
+    origin = bg.origin;
+    parentId = bg.parentId;
+    parentTitle = bg.parentTitle;
+    _sub = bg.sub;
+    _client = bg.client;
+    _runSession = bg.session;
+    _alias = (bg.session, _session);
+    isSending = bg.reply.isStreaming;
+    notifyListeners();
+  }
+
+  /// The background table answered (or failed): save its chat and notify.
+  void _finishBackground(ChatMessage message) {
+    final bg = _background;
+    if (bg == null) return;
+    message.isStreaming = false;
+    message.status = null;
+    _background = null;
+    final sub = bg.sub;
+    if (sub != null) unawaited(sub.cancel().catchError((Object _) {}));
+    bg.client?.close();
+    final snapshot = bg.messages
+        .where(
+          (m) =>
+              !m.isStreaming &&
+              (m.content.trim().isNotEmpty || m.attachments.isNotEmpty),
+        )
+        .toList();
+    _backgroundSavedId = bg.id;
+    _saving = _saving.then((_) async {
+      try {
+        await _conversations.save(bg.id, snapshot);
+      } on ApiException {
+        // The answer is lost from history; the user can ask again.
+      }
+    });
+    _tableFinished(message, bg: bg);
+    notifyListeners();
+  }
+
+  /// Cancels the background table (its chat was deleted).
+  void _dropBackground() {
+    final bg = _background;
+    if (bg == null) return;
+    _background = null;
+    final sub = bg.sub;
+    if (sub != null) unawaited(sub.cancel().catchError((Object _) {}));
+    bg.client?.close();
+    if (_runningTable == null) _clearProgress();
+  }
+
   @override
   void dispose() {
     _settings.removeListener(_onSettings);
     _notify.background.removeListener(_onBackground);
+    _dropBackground();
     _teardown();
     draft.dispose();
     super.dispose();
   }
+}
+
+/// A round table streaming into a chat that is not on screen.
+class _BackgroundTable {
+  _BackgroundTable({
+    required this.session,
+    required this.id,
+    required this.title,
+    required this.origin,
+    required this.parentId,
+    required this.parentTitle,
+    required this.messages,
+    required this.reply,
+    required this.sub,
+    required this.client,
+  });
+
+  final int session;
+  final String id;
+  String? title;
+  final String? origin, parentId, parentTitle;
+  final List<ChatMessage> messages;
+  final ChatMessage reply;
+  final StreamSubscription<ChatEvent>? sub;
+  final http.Client? client;
 }

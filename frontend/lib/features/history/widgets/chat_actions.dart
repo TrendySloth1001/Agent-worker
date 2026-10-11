@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -16,7 +17,8 @@ import 'merge_picker.dart';
 /// delete. Calls [onRenamed] / [onDeleted] after the server accepted the
 /// change. [onFork] duplicates the chat and opens the copy. [onMerge] merges
 /// it with another and opens the result; [onMerged] gets its outcome once the
-/// progress dialog has closed.
+/// progress dialog has closed. [onExport] (when set) offers EXPORT as
+/// Markdown or PDF.
 Future<void> showChatActions(
   BuildContext context, {
   required ConversationSummary chat,
@@ -26,6 +28,7 @@ Future<void> showChatActions(
   required Future<bool> Function(ConversationSummary chat) onFork,
   required Future<bool> Function(String id, String otherId) onMerge,
   required ValueChanged<bool> onMerged,
+  Future<void> Function(ConversationSummary chat)? onExport,
 }) async {
   Haptics.tap();
   final p = context.palette;
@@ -64,6 +67,12 @@ Future<void> showChatActions(
             icon: AppIcons.merge,
             onTap: () => Navigator.pop(sheet, LineageStrings.mergeWith),
           ),
+          if (onExport != null)
+            _SheetRow(
+              label: ShareStrings.export,
+              icon: ShareIcons.export,
+              onTap: () => Navigator.pop(sheet, ShareStrings.export),
+            ),
           _SheetRow(
             label: AppStrings.rename,
             icon: AppIcons.edit,
@@ -96,6 +105,10 @@ Future<void> showChatActions(
   }
   if (action == LineageStrings.mergeWith) {
     await _merge(context, chat, controller, onMerge, onMerged);
+    return;
+  }
+  if (action == ShareStrings.export) {
+    await onExport?.call(chat);
     return;
   }
   if (action == AppStrings.rename) {

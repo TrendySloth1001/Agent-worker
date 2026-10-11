@@ -1,6 +1,6 @@
 /// All user-facing text. System labels are uppercase, Nothing-style.
 abstract final class AppStrings {
-  static const appName = 'AI Chat';
+  static const appName = 'sparky';
 
   // Chat
   static const newChat = 'NEW CHAT';
@@ -495,4 +495,33 @@ abstract final class TableWaitStrings {
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
   }
+}
+
+/// Round Table "WHO AGREED": which seats' drafts back each sentence.
+abstract final class TableSupportStrings {
+  static const toggle = 'WHO AGREED';
+  static const title = 'WHO AGREED';
+  static const hint =
+      'Dots mark the seats whose own draft makes the same '
+      'claim. Tap a dot to read that draft.';
+  static const noSeat = 'No draft states this directly.';
+  static const disputed = 'DISPUTED';
+  static const all = 'ALL SEATS';
+  static String seatOf(String seat, String name) => '$seat · $name';
+}
+
+/// A round table that keeps running after switching chats.
+abstract final class BackgroundTableStrings {
+  static String running(int n) =>
+      n == 1 ? '1 ROUND TABLE RUNNING' : '$n ROUND TABLES RUNNING';
+  static const open = 'Open the running round table';
+}
+
+/// Settings → GitHub token: who it is and what it may read.
+abstract final class GithubSettingsStrings {
+  static const connectedAs = 'CONNECTED AS';
+  static const scopes = 'SCOPES';
+  static const fineGrained = 'Fine-grained token';
+  static const noScopes = 'None';
+  static const privateRepos = 'PRIVATE REPOS';
 }

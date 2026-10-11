@@ -94,8 +94,22 @@ class GithubCard extends StatelessWidget {
           valueColor: g.keyHint == null ? p.accent : null,
           icon: AppIcons.key,
         ),
-        if (g.login != null)
-          InfoRow(AppStrings.account, '${AppStrings.handle}${g.login}'),
+        if (g.login != null) ...[
+          InfoRow(
+            GithubSettingsStrings.connectedAs,
+            '${AppStrings.handle}${g.login}',
+          ),
+          InfoRow(
+            GithubSettingsStrings.scopes,
+            g.scopes == null
+                ? GithubSettingsStrings.fineGrained
+                : g.scopes!.isEmpty
+                ? GithubSettingsStrings.noScopes
+                : g.scopes!.join(', '),
+          ),
+          if (g.privateRepos != null)
+            InfoRow(GithubSettingsStrings.privateRepos, '${g.privateRepos}'),
+        ],
         if (g.limit != null) ...[
           const SizedBox(height: AppSpacing.lg),
           Row(

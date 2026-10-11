@@ -231,10 +231,16 @@ class GithubService {
     this.resetsAt,
     this.error,
     this.limitLabel,
+    this.scopes,
+    this.privateRepos,
   });
 
   final bool configured;
   final String? keyHint, purpose, login, error, limitLabel;
+
+  /// Classic token scopes; null for a fine-grained token.
+  final List<String>? scopes;
+  final int? privateRepos;
   final int? limit, remaining;
   final DateTime? resetsAt;
 
@@ -254,6 +260,13 @@ class GithubService {
     resetsAt: _date(j['resetsAt']),
     error: _str(j['error']),
     limitLabel: _str(j['limitLabel']),
+    scopes: j['scopes'] is List
+        ? [
+            for (final s in j['scopes'] as List)
+              if (s is String) s,
+          ]
+        : null,
+    privateRepos: _int(j['privateRepos']),
   );
 }
 
