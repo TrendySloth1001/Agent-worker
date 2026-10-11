@@ -1,0 +1,59 @@
+# Coolify "Docker Compose" resource for sparky. Everything stays on its own
+# network; nothing binds a host port, so other apps on the server are
+# untouched. Coolify's proxy routes sparky.cloudnsofts.com to `api:3000`.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://sparky:${SPARKY_DB_PASSWORD}@db:5432/sparky
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET}
+      CONNECTIONS_KEY: ${CONNECTIONS_KEY}
+      GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID}
+      API_TOKEN: ${API_TOKEN}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      OWNER_EMAIL: ${OWNER_EMAIL}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sparky
+      POSTGRES_PASSWORD: ${SPARKY_DB_PASSWORD}
+      POSTGRES_DB: sparky
+    volumes:
+      - sparky-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparky -d sparky"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sparky-db:
