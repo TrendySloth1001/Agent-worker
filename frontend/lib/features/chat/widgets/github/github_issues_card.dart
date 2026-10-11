@@ -8,6 +8,7 @@ import '../../../../data/github_api.dart';
 import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
 import 'github_common.dart';
+import 'github_review_card.dart';
 
 /// ```github-prs / ```github-issues block (`owner/repo [open|closed|all]`):
 /// live list with state icons and labels; tap to read the body (and, for
@@ -235,6 +236,7 @@ class _IssueRow extends StatefulWidget {
 
 class _IssueRowState extends State<_IssueRow> {
   bool _files = false;
+  bool _review = false;
 
   @override
   Widget build(BuildContext context) {
@@ -354,11 +356,24 @@ class _IssueRowState extends State<_IssueRow> {
                               ],
                             ),
                           ),
+                        if (_review)
+                          GithubReviewInline(
+                            owner: widget.repo.owner,
+                            repo: widget.repo.repo,
+                            number: i.number,
+                          ),
                         const SizedBox(height: AppSpacing.sm),
                         Wrap(
                           spacing: AppSpacing.sm,
                           runSpacing: AppSpacing.xs,
                           children: [
+                            if (i.isPr && !_review)
+                              PlayfulButton(
+                                label: GithubReviewStrings.review,
+                                icon: GithubIcons.code,
+                                primary: true,
+                                onTap: () => setState(() => _review = true),
+                              ),
                             PlayfulButton(
                               label: GithubStrings.visit,
                               icon: GithubIcons.visit,

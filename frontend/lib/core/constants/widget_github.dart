@@ -218,3 +218,124 @@ abstract final class GithubDurations {
   static const timeout = Duration(seconds: 25);
   static const expand = Duration(milliseconds: 200);
 }
+
+// ---- PR review + my repositories ---------------------------------------------
+
+/// Fenced languages of the review and account widgets.
+abstract final class GithubLangExtra {
+  static const review = 'github-review';
+  static const myRepos = 'github-my-repos';
+}
+
+abstract final class GithubReviewStrings {
+  static const title = 'PR REVIEW';
+  static const myRepos = 'MY REPOS';
+  static const review = 'REVIEW';
+  static const reviewing = 'REVIEWING THE DIFF…';
+  static const reviewingHint =
+      'A large model reads every changed file. '
+      'This usually takes under a minute.';
+  static const rerun = 'RE-RUN';
+  static const copyAll = 'COPY';
+  static const badSpec = 'Expected owner/repo#123';
+  static const summary = 'SUMMARY';
+  static const tests = 'SUGGESTED TESTS';
+  static const comments = 'COMMENTS';
+  static const noComments = 'No problems found.';
+  static const suggestion = 'SUGGESTION';
+  static const risk = 'RISK';
+  static const hunkMissing = 'No diff hunk for this line.';
+  static const skipped = 'NOT REVIEWED';
+  static const cached = 'CACHED';
+  static const privateBadge = 'PRIVATE';
+  static const empty = 'No repositories.';
+
+  static const verdictApprove = 'APPROVE';
+  static const verdictComment = 'COMMENT';
+  static const verdictChanges = 'CHANGES REQUESTED';
+
+  static const sevBlocker = 'BLOCKER';
+  static const sevMajor = 'MAJOR';
+  static const sevMinor = 'MINOR';
+  static const sevNit = 'NIT';
+
+  static const riskLow = 'LOW';
+  static const riskMedium = 'MEDIUM';
+  static const riskHigh = 'HIGH';
+
+  static String verdict(String v) => switch (v) {
+    'approve' => verdictApprove,
+    'request_changes' => verdictChanges,
+    _ => verdictComment,
+  };
+
+  static String severity(String s) => switch (s) {
+    'blocker' => sevBlocker,
+    'major' => sevMajor,
+    'nit' => sevNit,
+    _ => sevMinor,
+  };
+
+  static String riskLabel(String r) => switch (r) {
+    'high' => riskHigh,
+    'low' => riskLow,
+    _ => riskMedium,
+  };
+
+  static String lineOf(int line) => 'L$line';
+  static String spec(String owner, String repo, int n) => '$owner/$repo#$n';
+  static String byAuthor(String login) => '@$login';
+  static String visibilityTitle(String v) =>
+      v == 'all' ? myRepos : '$myRepos / ${v.toUpperCase()}';
+
+  /// The whole review as markdown, for COPY.
+  static String markdownHeader(String title, String spec, String verdict) =>
+      '## Review: $title ($spec)\n\n**Verdict:** $verdict';
+}
+
+/// Octicons for review severities and verdicts.
+abstract final class GithubReviewOcticons {
+  static const blocker = 'stop-16';
+  static const major = 'alert-16';
+  static const minor = 'info-16';
+  static const nit = 'dot-16';
+  static const approve = 'check-circle-16';
+  static const changes = 'x-circle-16';
+  static const comment = 'comment-discussion-16';
+  static const shield = 'shield-16';
+  static const lock = 'lock-16';
+  static const beaker = 'beaker-16';
+  static const light = 'light-bulb-16';
+  static const person = 'person-16';
+
+  static String severity(String s) => switch (s) {
+    'blocker' => blocker,
+    'major' => major,
+    'nit' => nit,
+    _ => minor,
+  };
+
+  static String verdict(String v) => switch (v) {
+    'approve' => approve,
+    'request_changes' => changes,
+    _ => comment,
+  };
+}
+
+abstract final class GithubReviewSizes {
+  static const riskSegments = 3;
+  static const riskSegmentWidth = 14.0;
+  static const riskSegmentHeight = 6.0;
+  static const riskGap = 2.0;
+  static const hunkMaxHeight = 280.0;
+  static const commentIndent = GithubSizes.octicon + 8.0;
+  static const progressHeight = 2.0;
+}
+
+abstract final class GithubReviewLimits {
+  static const pageMyRepos = 30;
+}
+
+abstract final class GithubReviewDurations {
+  static const reviewTimeout = Duration(minutes: 4);
+}
