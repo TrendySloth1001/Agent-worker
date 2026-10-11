@@ -54,6 +54,7 @@ class MediaList extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
                   child: _MediaRow(
                     item: items[i],
+                    earlier: [for (final e in items.take(i)) e.query],
                     stacked: stacked,
                     renderText: renderText,
                     renderLine: renderLine,
@@ -77,12 +78,16 @@ class MediaList extends StatelessWidget {
 class _MediaRow extends StatelessWidget {
   const _MediaRow({
     required this.item,
+    required this.earlier,
     required this.stacked,
     required this.renderText,
     required this.renderLine,
   });
 
   final MdMediaItem item;
+
+  /// Image queries of the rows above, so this row picks a different picture.
+  final List<String?> earlier;
   final bool stacked;
   final Widget Function(String) renderText;
   final Widget Function(String, TextStyle) renderLine;
@@ -124,7 +129,11 @@ class _MediaRow extends StatelessWidget {
       ],
     );
 
-    final thumb = MediaThumb(query: item.query, caption: item.caption);
+    final thumb = MediaThumb(
+      query: item.query,
+      caption: item.caption,
+      earlier: earlier,
+    );
     if (stacked) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -157,10 +166,18 @@ class _MediaRow extends StatelessWidget {
 /// backdrop. A muted box while it loads, a dot grid with an icon when
 /// nothing matches. Tapping a found picture opens the full-screen viewer.
 class MediaThumb extends StatefulWidget {
-  const MediaThumb({super.key, required this.query, this.caption});
+  const MediaThumb({
+    super.key,
+    required this.query,
+    this.caption,
+    this.earlier = const [],
+  });
 
   final String? query;
   final String? caption;
+
+  /// Queries of earlier rows in the same list; their pictures are skipped.
+  final List<String?> earlier;
 
   @override
   State<MediaThumb> createState() => _MediaThumbState();
@@ -189,20 +206,30 @@ class _MediaThumbState extends State<MediaThumb> {
       _done = true;
       return;
     }
-    final cached = ImageQueryCache.peek(query);
-    if (cached != null) {
-      _image = cached.firstOrNull;
-      _done = true;
-      return;
-    }
     _done = false;
-    ImageQueryCache.load(query).then((images) {
+    _pick(query, widget.earlier).then((image) {
       if (!mounted || query != widget.query) return;
       setState(() {
-        _image = images.firstOrNull;
+        _image = image;
         _done = true;
       });
     });
+  }
+
+  /// First result for [query] that no earlier row already shows. Rows pick
+  /// in order (each earlier row takes its own first unused result), so the
+  /// choice is the same on every rebuild.
+  static Future<ImageRef?> _pick(String query, List<String?> earlier) async {
+    final taken = <String>{};
+    for (final q in earlier) {
+      if (q == null) continue;
+      final options = await ImageQueryCache.load(q);
+      final pick = options.where((o) => !taken.contains(o.url)).firstOrNull;
+      if (pick != null) taken.add(pick.url);
+    }
+    final options = await ImageQueryCache.load(query);
+    return options.where((o) => !taken.contains(o.url)).firstOrNull ??
+        options.firstOrNull;
   }
 
   @override
