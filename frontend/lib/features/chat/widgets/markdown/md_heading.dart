@@ -38,16 +38,20 @@ class MdHeading extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (icon != null) ...[
-          IconAvatar(
-            size: fontSize * MdSizes.iconAvatarScale,
-            child: InlineIcon(
-              set: icon.split(':').first,
-              name: icon.split(':').last,
-              size: fontSize * MdSizes.headingIconScale,
-              color: p.textPrimary,
+          // No badge (and no gap) when the icon doesn't exist.
+          InlineIcon(
+            set: icon.split(':').first,
+            name: icon.split(':').last,
+            size: fontSize * MdSizes.headingIconScale,
+            color: p.textPrimary,
+            frame: (glyph) => Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: IconAvatar(
+                size: fontSize * MdSizes.iconAvatarScale,
+                child: glyph,
+              ),
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
         ],
         // "2. Title" would otherwise parse as an ordered list item.
         Expanded(

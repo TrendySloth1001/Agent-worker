@@ -61,6 +61,12 @@ class IconBuilder extends MarkdownElementBuilder {
           fontSize *
           (lead ? MdSizes.iconAvatarGlyphScale : AppSizes.inlineIconScale),
       color: style.color,
+      frame: lead
+          ? (glyph) => IconAvatar(
+              size: fontSize * MdSizes.iconAvatarScale,
+              child: glyph,
+            )
+          : null,
     );
     // A Text.rich holding a WidgetSpan is merged into the surrounding
     // paragraph, so the icon sits in the line instead of wrapping alone.
@@ -68,15 +74,7 @@ class IconBuilder extends MarkdownElementBuilder {
       TextSpan(
         style: style,
         children: [
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: lead
-                ? IconAvatar(
-                    size: fontSize * MdSizes.iconAvatarScale,
-                    child: icon,
-                  )
-                : icon,
-          ),
+          WidgetSpan(alignment: PlaceholderAlignment.middle, child: icon),
         ],
       ),
     );
@@ -119,6 +117,7 @@ class InlineIcon extends StatefulWidget {
     required this.size,
     this.color,
     this.fallback,
+    this.frame,
   });
 
   final String set;
@@ -128,6 +127,10 @@ class InlineIcon extends StatefulWidget {
 
   /// Shown when no icon matches (instead of nothing).
   final Widget? fallback;
+
+  /// Wraps the icon (e.g. a badge); dropped entirely when no icon matches,
+  /// so a missing icon leaves no empty frame behind.
+  final Widget Function(Widget icon)? frame;
 
   @override
   State<InlineIcon> createState() => _InlineIconState();
@@ -161,9 +164,14 @@ class _InlineIconState extends State<InlineIcon> {
   @override
   Widget build(BuildContext context) {
     final icon = _icon;
-    if (icon != null && icon.svg.isEmpty && widget.fallback != null) {
-      return widget.fallback!;
-    }
+    final missing = icon != null && icon.svg.isEmpty;
+    if (missing && widget.fallback != null) return widget.fallback!;
+    final frame = widget.frame;
+    if (frame == null) return _glyph(context, icon);
+    return missing ? const SizedBox.shrink() : frame(_glyph(context, icon));
+  }
+
+  Widget _glyph(BuildContext context, ResolvedIcon? icon) {
     return SizedBox.square(
       dimension: widget.size,
       child: icon == null || icon.svg.isEmpty
