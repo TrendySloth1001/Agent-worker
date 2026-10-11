@@ -291,6 +291,51 @@ class GhReview {
       files.where((f) => f.filename == name).firstOrNull;
 }
 
+/// One commit of the git graph (`GET /repos/:o/:r/graph`).
+class GhGraphCommit {
+  GhGraphCommit(Map<String, dynamic> j)
+    : sha = _s(j['sha']),
+      parents = [for (final p in (j['parents'] as List? ?? const [])) '$p'],
+      subject = _s(j['subject']),
+      author = _s(j['author']),
+      authorAvatar = _s(j['authorAvatar']),
+      date = _date(j['date']),
+      refs = [for (final r in (j['refs'] as List? ?? const [])) '$r'];
+
+  final String sha, subject, author, authorAvatar;
+  final List<String> parents, refs;
+  final DateTime? date;
+
+  String get shortSha => sha.length > 7 ? sha.substring(0, 7) : sha;
+}
+
+class GhGraphBranch {
+  GhGraphBranch(Map<String, dynamic> j)
+    : name = _s(j['name']),
+      sha = _s(j['sha']),
+      isDefault = j['isDefault'] == true;
+  final String name, sha;
+  final bool isDefault;
+}
+
+/// Commit DAG of the default branch plus a few branches.
+class GhGraph {
+  GhGraph(Map<String, dynamic> j)
+    : repo = _s(j['repo']),
+      defaultBranch = _s(j['defaultBranch']),
+      branches = [for (final b in _list(j['branches'])) GhGraphBranch(b)],
+      commits = [for (final c in _list(j['commits'])) GhGraphCommit(c)],
+      truncated = j['truncated'] == true;
+
+  final String repo, defaultBranch;
+  final List<GhGraphBranch> branches;
+  final List<GhGraphCommit> commits;
+  final bool truncated;
+
+  String? get defaultHead =>
+      branches.where((b) => b.isDefault).firstOrNull?.sha;
+}
+
 /// The account the backend's token belongs to.
 class GhMe {
   GhMe(Map<String, dynamic> j)
@@ -408,6 +453,19 @@ class GithubApi {
     });
     return [for (final c in _list(j['items'])) GhCommit(c)];
   }
+
+  /// Commit graph; [branches] empty = the default and recently pushed ones.
+  Future<GhGraph> graph(
+    String owner,
+    String repo, {
+    List<String> branches = const [],
+    int limit = GithubGraphLimits.defaultLimit,
+  }) async => GhGraph(
+    await _get('${_repo(owner, repo)}/graph', {
+      'branches': branches.join(','),
+      'limit': '$limit',
+    }),
+  );
 
   Future<GhCommit> commit(String owner, String repo, String sha) async =>
       GhCommit(

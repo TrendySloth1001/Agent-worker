@@ -3,6 +3,7 @@ import { AppError } from "../util/errors.js";
 import { ghAuth, lastRate } from "../github/client.js";
 import * as svc from "../github/service.js";
 import { reviewPull } from "../github/review.js";
+import { graph } from "../github/graph.js";
 
 export const githubRouter = Router();
 
@@ -76,6 +77,15 @@ githubRouter.get("/repos/:owner/:repo/commits", async (req, res) => {
       }),
     },
   );
+});
+
+// Commit DAG of the default branch + recent (or named) branches for the git graph widget.
+githubRouter.get("/repos/:owner/:repo/graph", async (req, res) => {
+  const ctl = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) ctl.abort();
+  });
+  await send(res, await graph(req.params.owner, req.params.repo, { branches: req.query.branches, limit: req.query.limit }, ctl.signal));
 });
 
 githubRouter.get("/repos/:owner/:repo/commits/:sha", async (req, res) => {

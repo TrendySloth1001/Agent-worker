@@ -2,6 +2,7 @@ import type { ContextItem } from "../prompts/system.js";
 import { log } from "../util/logger.js";
 import { gh, ghAuth } from "./client.js";
 import * as svc from "./service.js";
+import { graph as commitGraph } from "./graph.js";
 
 /**
  * GitHub grounding for chat: when the user's message is clearly about GitHub
@@ -25,6 +26,8 @@ export type GithubIntent = {
   releases: boolean;
   contributors: boolean;
   tree: boolean;
+  /** "git graph", "branch history", "how did the branches merge". */
+  graph: boolean;
   /** "review this PR" with a PR link or owner/repo#n. */
   review: (RepoRef & { number: number }) | null;
   /** A pull request named by link or owner/repo#n (without a review ask). */
@@ -44,7 +47,7 @@ export type GithubIntent = {
 const URL_REF = /github\.com\/([A-Za-z0-9][\w-]{0,38})\/([\w.-]{1,100})/gi;
 const BARE_REF = /(?<![\w./@:-])([A-Za-z0-9][\w-]{0,38})\/([A-Za-z0-9_.-]{1,100})(?![\w/])/g;
 const GH_WORDS =
-  /\b(github|gh|repos?|repositor(?:y|ies)|commits?|commit history|pull requests?|prs?|issues?|releases?|branch(?:es)?|contributors?|maintainers?|stars?|forks?|source code|codebase|readme|file tree|changelog)\b/i;
+  /\b(github|gh|repos?|repositor(?:y|ies)|git graph|(?:branch|commit) graph|commits?|commit history|pull requests?|prs?|issues?|releases?|branch(?:es)?|contributors?|maintainers?|stars?|forks?|source code|codebase|readme|file tree|changelog)\b/i;
 const STRONG = /\b(github|repos?|repositor(?:y|ies)|open[- ]?source)\b/i;
 const FINDISH =
   /\b(find|search|look(?:ing)? for|recommend|suggest|show|list|discover|best|top|popular|good|alternatives?|which|what are|any)\b/i;
@@ -94,6 +97,8 @@ const CONNECT =
   /\b(?:re-?)?(?:connect|link|hook up|authori[sz]e|integrate|log ?in|sign ?in|set up|setup|add)\s+(?:(?:to|with|into)\s+)?(?:my\s+)?git ?hub(?:\s+account)?\b/i;
 const CONNECT_NOT =
   /^\s*(?:actions?|pages|copilot|codespaces?|webhooks?|apps?|packages|ci|repo|repository|repositories|cli|desktop|sso|oauth|ssh|keys?)\b|^\s*(?:to|with|into|and)\s+(?!(?:you|sparky|this app|the app|here|this chat|chat)\b)\w/i;
+const GRAPH =
+  /\b(git ?graph|(?:branch|commit|merge) (?:graph|history|tree)|branch(?:ing)? history|how (?:did|do|were|have) (?:the |its |these |those )?branch(?:es)? (?:get |been )?merg(?:e|ed|ing)|how (?:the )?branches merged?)\b/i;
 const TREE = /\b(file tree|folder structure|directory structure|project structure|files in|structure of|tree)\b/i;
 
 /** "connect my GitHub": show the connect card. */
@@ -188,6 +193,7 @@ export function githubIntent(text: string): GithubIntent | null {
     releases: RELEASES.test(t),
     contributors: CONTRIB.test(t),
     tree: TREE.test(t),
+    graph: GRAPH.test(t),
     review,
     pr: review ? null : pr,
     mine,
@@ -460,6 +466,22 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
         }),
       );
     }
+    if (intent.graph) {
+      extra.push(
+        commitGraph(o, r, { limit: 100 }, signal).then((g) => {
+          const merges = g.commits.filter((c) => c.parents.length > 1).slice(0, 8);
+          push(
+            `Branch graph of ${full}`,
+            `https://github.com/${full}/network`,
+            [
+              `Default branch: ${g.defaultBranch}. Branches shown: ${g.branches.map((b) => b.name).join(", ")}.`,
+              `Last ${g.commits.length} commits, ${g.commits.filter((c) => c.parents.length > 1).length} merge commits.`,
+              ...merges.map((c) => `merge ${c.sha.slice(0, 7)} ${day(c.date)} ${c.author}: ${c.subject}`),
+            ].join("\n"),
+          );
+        }),
+      );
+    }
     if (intent.contributors) {
       extra.push(
         svc.contributors(o, r, 10).then((p) => {
@@ -469,6 +491,7 @@ export async function githubGround(text: string, signal?: AbortSignal): Promise<
     }
     await Promise.allSettled(extra);
     if (intent.review && pr === intent.review) blocks.push(`\`\`\`github-review\n${full}#${intent.review.number}\n\`\`\``);
+    else if (intent.graph) blocks.push(`\`\`\`github-graph\n${full}\n\`\`\``);
     else if (intent.commits) blocks.push(`\`\`\`github-commits\n${full}\n\`\`\``);
     else if (intent.pulls) blocks.push(`\`\`\`github-prs\n${full} open\n\`\`\``);
     else if (intent.issues) blocks.push(`\`\`\`github-issues\n${full} open\n\`\`\``);

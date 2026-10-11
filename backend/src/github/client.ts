@@ -164,3 +164,51 @@ function mapError(status: number, message: string, rate: RateInfo | null): AppEr
 
 /** The server token is set (public GitHub features for everyone). */
 export const githubEnabled = () => !!config.githubToken;
+
+export type GqlOptions = { signal?: AbortSignal };
+
+/**
+ * POST a GitHub GraphQL query with the same token as gh() (GraphQL always
+ * needs one). Not cached here: callers cache the shaped result. A missing
+ * repository maps to 404; other GraphQL errors to 502.
+ */
+export async function ghGraphql<T = any>(query: string, variables: Record<string, unknown>, opts: GqlOptions = {}): Promise<T> {
+  const auth = await ghAuth();
+  if (!auth.token) throw new AppError(503, "github_disabled", "GitHub GraphQL needs a token");
+  const signals = [AbortSignal.timeout(TIMEOUT_MS * 2), ...(opts.signal ? [opts.signal] : [])];
+  let res: Response;
+  try {
+    res = await fetch(`${API}/graphql`, {
+      method: "POST",
+      headers: { ...headers("application/json", auth.token), "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.any(signals),
+    });
+  } catch (e) {
+    if (opts.signal?.aborted) throw e;
+    throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
+  }
+  const rate = readRate(res, auth.key);
+  if (!res.ok) {
+    if (res.status === 401 && auth.kind === "user" && auth.userId) {
+      await dropRevokedGithub(auth.userId);
+      throw new AppError(409, "github_not_connected", "GitHub access was revoked. Connect GitHub again.");
+    }
+    let message = "";
+    try {
+      message = ((await res.json()) as { message?: string })?.message ?? "";
+    } catch {
+      /* not JSON */
+    }
+    throw mapError(res.status, message, rate);
+  }
+  const body = (await res.json()) as { data?: T; errors?: { type?: string; message?: string }[] };
+  const errors = body.errors ?? [];
+  if (errors.some((e) => e.type === "NOT_FOUND")) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+  if (errors.some((e) => e.type === "RATE_LIMITED")) throw mapError(403, "rate limit", rate);
+  if (errors.length) {
+    log.warn("github graphql error", { message: String(errors[0]?.message ?? "").slice(0, 120) });
+    throw new AppError(502, "upstream_failed", "GitHub GraphQL error", true);
+  }
+  return body.data as T;
+}

@@ -238,7 +238,7 @@ class _CommitRow extends StatelessWidget {
                       duration: GithubDurations.expand,
                       alignment: Alignment.topCenter,
                       child: open
-                          ? _CommitDetail(repo: repo, commit: c)
+                          ? GhCommitDetail(repo: repo, sha: c.sha)
                           : const SizedBox(width: double.infinity),
                     ),
                   ],
@@ -252,18 +252,19 @@ class _CommitRow extends StatelessWidget {
   }
 }
 
-/// Body of the commit and its changed files.
-class _CommitDetail extends StatelessWidget {
-  const _CommitDetail({required this.repo, required this.commit});
+/// Body of the commit and its changed files (loaded on demand); shared with
+/// the git graph.
+class GhCommitDetail extends StatelessWidget {
+  const GhCommitDetail({super.key, required this.repo, required this.sha});
 
   final GhRef repo;
-  final GhCommit commit;
+  final String sha;
 
   @override
   Widget build(BuildContext context) {
     final t = context.text;
     return GhFuture<GhCommit>(
-      load: () => GithubApi.instance.commit(repo.owner, repo.repo, commit.sha),
+      load: () => GithubApi.instance.commit(repo.owner, repo.repo, sha),
       builder: (context, c) {
         final body = c.body
             .split('\n')

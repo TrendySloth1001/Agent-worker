@@ -6,6 +6,7 @@ import '../../../../core/constants/widget_kit.dart';
 import '../github/github_commits_card.dart';
 import '../github/github_compare_card.dart';
 import '../github/github_connect_card.dart';
+import '../github/github_graph_card.dart';
 import '../github/github_issues_card.dart';
 import '../github/github_my_repos_card.dart';
 import '../github/github_repo_card.dart';
@@ -70,6 +71,10 @@ final Map<String, _Entry> _entries = {
   GithubLang.issues: _Entry(
     GithubStrings.issues,
     (s) => GithubIssuesCard(source: s, prs: false),
+  ),
+  GithubGraphLang.graph: _Entry(
+    GithubGraphStrings.title,
+    (s) => GithubGraphCard(source: s),
   ),
   GithubLangExtra.review: _Entry(
     GithubReviewStrings.title,

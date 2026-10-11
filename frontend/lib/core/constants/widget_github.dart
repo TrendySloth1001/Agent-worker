@@ -1,5 +1,7 @@
+import 'package:flutter/painting.dart' show Color;
 import 'package:hugeicons/hugeicons.dart';
 
+import 'app_colors.dart';
 import 'app_icons.dart';
 
 /// Fenced languages of the live GitHub widgets.
@@ -171,6 +173,8 @@ abstract final class GithubIcons {
   static const collapse = AppIcons.collapse;
   static const back = AppIcons.back;
   static const search = AppIcons.search;
+  static const refresh = AppIcons.regenerate;
+  static const fullscreen = AppIcons.fullscreen;
 }
 
 abstract final class GithubSizes {
@@ -338,4 +342,110 @@ abstract final class GithubReviewLimits {
 
 abstract final class GithubReviewDurations {
   static const reviewTimeout = Duration(minutes: 4);
+}
+
+// ---- git graph (```github-graph) ---------------------------------------------
+
+/// Fenced language and block keys of the git graph widget.
+abstract final class GithubGraphLang {
+  static const graph = 'github-graph';
+  static const keyBranches = 'branches';
+  static const keyLimit = 'limit';
+}
+
+abstract final class GithubGraphStrings {
+  static const title = 'GIT GRAPH';
+  static const colGraph = 'GRAPH';
+  static const colSubject = 'DESCRIPTION';
+  static const colDate = 'DATE';
+  static const colAuthor = 'AUTHOR';
+  static const colSha = 'COMMIT';
+  static const refresh = 'REFRESH';
+  static const fullscreen = 'FULLSCREEN';
+  static const back = 'Back';
+  static const empty = 'No commits on these branches.';
+  static const notFound =
+      'Repository not found. Check owner/repo; '
+      'private repos need GitHub connected.';
+  static const truncated = 'OLDER HISTORY NOT LOADED';
+  static const overflow = 'MORE LANES';
+
+  static String commits(int n) => '$n COMMITS';
+  static String branches(int n) => n == 1 ? '1 BRANCH' : '$n BRANCHES';
+  static String moreRefs(int n) => '+$n';
+  static String webUrl(String repo) => 'https://github.com/$repo/network';
+
+  static String _pad2(int v) => v.toString().padLeft(2, '0');
+
+  /// `2026-10-11 16:40` in local time.
+  static String dateTime(DateTime? d) => d == null
+      ? ''
+      : '${d.year}-${_pad2(d.month)}-${_pad2(d.day)} ${_pad2(d.hour)}:${_pad2(d.minute)}';
+}
+
+/// Lane colors: distinguishable on both the light and the dark theme.
+/// Index 0 (the app's red) is reserved for the default branch.
+abstract final class GithubGraphColors {
+  static const defaultLane = 0;
+  static const lanes = <Color>[
+    AppColors.red,
+    Color(0xFF3D7EFF), // blue
+    Color(0xFF1FA35B), // green
+    Color(0xFFE09B12), // amber
+    Color(0xFF9B5DE5), // violet
+    Color(0xFF12A4B8), // cyan
+    Color(0xFFE0529C), // pink
+    Color(0xFF7C8BA1), // slate
+  ];
+
+  static Color lane(int i) => lanes[i % lanes.length];
+
+  /// Ref pill fill behind the lane-colored label.
+  static const pillFillAlpha = 0.14;
+
+  /// Stubs to parents outside the loaded history.
+  static const danglingAlpha = 0.35;
+
+  /// Text of merge rows.
+  static const mergeTextAlpha = 0.55;
+}
+
+abstract final class GithubGraphSizes {
+  static const rowHeight = 28.0;
+  static const laneWidth = 14.0;
+  static const graphPad = 10.0;
+  static const line = 2.0;
+  static const dot = 4.0;
+  static const mergeDotStroke = 2.0;
+  static const headRing = 2.5;
+
+  /// Curve control points as a share of the row gap (0.5 = smooth S).
+  static const curve = 0.6;
+  static const overflowDot = 1.5;
+  static const overflowGap = 4.0;
+
+  static const cardHeight = 480.0;
+  static const toolbarHeight = 40.0;
+  static const headerHeight = 24.0;
+  static const colGap = 8.0;
+  static const subjectMin = 240.0;
+  static const dateWidth = 118.0;
+  static const authorWidth = 104.0;
+  static const shaWidth = 78.0;
+  static const pillHeight = 16.0;
+  static const pillPadH = 5.0;
+  static const pillMaxWidth = 140.0;
+  static const chipDot = 8.0;
+  static const fullscreenPad = 12.0;
+  static const skeletonRows = 10;
+}
+
+abstract final class GithubGraphLimits {
+  static const defaultLimit = 150;
+  static const maxLimit = 300;
+  static const minLimit = 10;
+
+  /// Lanes drawn side by side; more collapse into the last one.
+  static const maxLanes = 8;
+  static const refsShown = 2;
 }
