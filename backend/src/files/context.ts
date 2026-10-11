@@ -16,7 +16,11 @@ const MAX_FULL_FOR_EVIDENCE = 150_000;
 
 export type AttachedMessage = { role: "user" | "assistant"; content: string; attachments?: string[] };
 
-export async function loadRows(ids: string[]): Promise<Map<string, FileRow>> {
+/**
+ * The caller's files by id. Ids in [required] must exist (404 otherwise);
+ * others may be missing (deleted from storage) and are left out of the map.
+ */
+export async function loadRows(ids: string[], required: string[] = ids): Promise<Map<string, FileRow>> {
   if (ids.length === 0) return new Map();
   // Another user's file id reads as not found.
   const [unscoped, uid] = ownerFilter();
@@ -25,16 +29,16 @@ export async function loadRows(ids: string[]): Promise<Map<string, FileRow>> {
     select: INFO_SELECT,
   });
   const map = new Map(rows.map((r) => [r.id, toFileRow(r)]));
-  const missing = ids.find((id) => !map.has(id));
+  const missing = required.find((id) => !map.has(id));
   if (missing) throw new AppError(404, "not_found", `Attachment not found: ${missing}`);
   return map;
 }
 
 /** Polls until no listed file is processing. Returns the fresh rows. */
-export async function waitForFiles(ids: string[], signal: AbortSignal, timeoutMs = 90_000): Promise<Map<string, FileRow>> {
+export async function waitForFiles(ids: string[], signal: AbortSignal, timeoutMs = 90_000, required: string[] = ids): Promise<Map<string, FileRow>> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const rows = await loadRows(ids);
+    const rows = await loadRows(ids, required);
     const pending = [...rows.values()].some((r) => r.status === "processing");
     if (!pending || Date.now() >= deadline) {
       // Still processing after the deadline: treat as failed for this request.
@@ -118,7 +122,11 @@ export async function prepareMessages(messages: AttachedMessage[], rows: Map<str
     const lines: string[] = [m.content.trim() || ATTACH_PLACEHOLDER];
     const images: string[] = [];
     for (const id of ids) {
-      const r = rows.get(id)!;
+      const r = rows.get(id);
+      if (!r) {
+        lines.push("[an earlier attachment was deleted by the user and is no longer available]");
+        continue;
+      }
       if (r.status !== "ready") {
         failed.push(r.name);
         lines.push(`[attachment "${r.name}" could not be processed: ${r.error ?? "unknown error"}]`);

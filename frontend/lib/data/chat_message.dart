@@ -1,3 +1,4 @@
+import '../core/constants/app_files.dart';
 import 'chat_event.dart';
 import 'files_api.dart';
 
@@ -76,12 +77,19 @@ class ChatMessage {
   /// The user asked to be notified when this reply is ready (not saved).
   bool notifyWhenDone = false;
 
-  Map<String, dynamic> toJson() => {
-    'role': role.name,
-    'content': content,
-    if (role == Role.user && attachments.isNotEmpty)
-      'attachments': [for (final a in attachments) a.id],
-  };
+  Map<String, dynamic> toJson() {
+    final live = [
+      for (final a in attachments)
+        if (!a.deleted) a.id,
+    ];
+    // Only deleted files and no text: the server needs some content.
+    final gone = content.isEmpty && attachments.isNotEmpty && live.isEmpty;
+    return {
+      'role': role.name,
+      'content': gone ? AppFiles.deletedHistoryText : content,
+      if (role == Role.user && live.isNotEmpty) 'attachments': live,
+    };
+  }
 
   /// Everything needed to restore the message from saved history.
   Map<String, dynamic> toStorageJson() => {

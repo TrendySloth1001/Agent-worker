@@ -85,7 +85,7 @@ export async function checkUpload(user: AuthUser, size: number): Promise<void> {
   if (used.uploads >= limits.uploads) throw limitError("uploads", limits.uploads);
   if (used.storageBytes + size > limits.storageBytes) {
     const mb = Math.round(limits.storageBytes / 1024 / 1024);
-    throw new AppError(429, "storage_limit", `Your files would exceed your ${mb} MB of storage. Delete some chats with attachments to free space.`);
+    throw new AppError(429, "storage_limit", `Your files would exceed your ${mb} MB of storage. Free space in Settings → Storage.`);
   }
 }
 

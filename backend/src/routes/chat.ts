@@ -126,7 +126,9 @@ chatRouter.post("/", async (req, res) => {
 
   const attachmentIds = [...new Set(body.messages.flatMap((m) => (m.role === "user" ? (m.attachments ?? []).map((a) => a.toLowerCase()) : [])))];
   for (const m of body.messages) m.attachments = m.attachments?.map((a) => a.toLowerCase());
-  let fileRows = await loadRows(attachmentIds);
+  // Files of the newest user message must exist; older ones may have been deleted since (placeholders).
+  const latestIds = [...body.messages].reverse().find((m) => m.role === "user")?.attachments ?? [];
+  let fileRows = await loadRows(attachmentIds, latestIds);
   const wantsVision = [...fileRows.values()].some((r) => r.kind === "image" || r.kind === "video");
   let candidates = await pickCandidates(requested);
   let visionSwitched = false;
@@ -156,7 +158,7 @@ chatRouter.post("/", async (req, res) => {
     // ---- attachments: wait for processing, then resolve ---------------------
     if ([...fileRows.values()].some((r) => r.status === "processing")) {
       sse.send("status", { phase: "processing_files" });
-      fileRows = await waitForFiles(attachmentIds, ctl.signal);
+      fileRows = await waitForFiles(attachmentIds, ctl.signal, undefined, latestIds);
     }
     const prepared = await prepareMessages(body.messages, fileRows, retrievalQuery(body.messages.map((m) => ({ role: m.role, content: m.content }))));
     if (prepared.failed.length > 0) {

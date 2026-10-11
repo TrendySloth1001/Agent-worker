@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -28,6 +29,10 @@ class FileInfo {
     this.thumbUrl,
     this.meta = const {},
     this.localPath,
+    this.deleted = false,
+    this.createdAt,
+    this.conversationId,
+    this.conversationTitle,
   });
 
   final String id;
@@ -44,6 +49,16 @@ class FileInfo {
   /// Picked file on this phone; never sent or saved. Shows a preview before
   /// the server URLs are fetched.
   final String? localPath;
+
+  /// Removed from storage (Storage screen or another device). Saved chats
+  /// keep the entry as a "file deleted" placeholder.
+  final bool deleted;
+
+  final DateTime? createdAt;
+
+  /// The chat the file is attached in (GET /files only).
+  final String? conversationId;
+  final String? conversationTitle;
 
   int? get pages => _int(meta['pages']);
   int? get width => _int(meta['width']);
@@ -65,20 +80,27 @@ class FileInfo {
     orElse: () => FileStatus.processing,
   );
 
-  factory FileInfo.fromJson(Map<String, dynamic> j) => FileInfo(
-    id: j['id']?.toString() ?? '',
-    name: j['name'] as String? ?? '',
-    mime: j['mime'] as String? ?? '',
-    size: (j['size'] as num?)?.toInt() ?? 0,
-    kind: _kind(j['kind']),
-    status: _status(j['status']),
-    error: j['error'] as String?,
-    url: j['url'] as String?,
-    thumbUrl: j['thumbUrl'] as String?,
-    meta: j['meta'] is Map<String, dynamic>
-        ? j['meta'] as Map<String, dynamic>
-        : const {},
-  );
+  factory FileInfo.fromJson(Map<String, dynamic> j) {
+    final conv = j['conversation'];
+    return FileInfo(
+      id: j['id']?.toString() ?? '',
+      name: j['name'] as String? ?? '',
+      mime: j['mime'] as String? ?? '',
+      size: (j['size'] as num?)?.toInt() ?? 0,
+      kind: _kind(j['kind']),
+      status: _status(j['status']),
+      error: j['error'] as String?,
+      url: j['url'] as String?,
+      thumbUrl: j['thumbUrl'] as String?,
+      meta: j['meta'] is Map<String, dynamic>
+          ? j['meta'] as Map<String, dynamic>
+          : const {},
+      deleted: j['deleted'] == true || j['status'] == AppFiles.deletedStatus,
+      createdAt: DateTime.tryParse(j['createdAt'] as String? ?? '')?.toLocal(),
+      conversationId: conv is Map ? conv['id']?.toString() : null,
+      conversationTitle: conv is Map ? conv['title'] as String? : null,
+    );
+  }
 
   /// Saved form: no signed URLs, they expire.
   Map<String, dynamic> toStorageJson() => {
@@ -90,6 +112,7 @@ class FileInfo {
     'status': status.name,
     'error': error,
     'meta': meta,
+    if (deleted) 'deleted': true,
   };
 
   FileInfo withFresh(FileInfo fresh) => FileInfo(
@@ -104,6 +127,41 @@ class FileInfo {
     thumbUrl: fresh.thumbUrl,
     meta: fresh.meta.isEmpty ? meta : fresh.meta,
     localPath: localPath,
+    deleted: fresh.deleted,
+    createdAt: fresh.createdAt ?? createdAt,
+    conversationId: fresh.conversationId ?? conversationId,
+    conversationTitle: fresh.conversationTitle ?? conversationTitle,
+  );
+
+  /// The placeholder kept once the file is gone from storage.
+  FileInfo asDeleted() => FileInfo(
+    id: id,
+    name: name,
+    mime: mime,
+    size: size,
+    kind: kind,
+    status: status,
+    meta: meta,
+    deleted: true,
+    createdAt: createdAt,
+  );
+
+  FileInfo renamed(String newName) => FileInfo(
+    id: id,
+    name: newName,
+    mime: mime,
+    size: size,
+    kind: kind,
+    status: status,
+    error: error,
+    url: url,
+    thumbUrl: thumbUrl,
+    meta: meta,
+    localPath: localPath,
+    deleted: deleted,
+    createdAt: createdAt,
+    conversationId: conversationId,
+    conversationTitle: conversationTitle,
   );
 
   FileInfo withLocalPath(String? path) => FileInfo(
@@ -118,6 +176,10 @@ class FileInfo {
     thumbUrl: thumbUrl,
     meta: meta,
     localPath: path,
+    deleted: deleted,
+    createdAt: createdAt,
+    conversationId: conversationId,
+    conversationTitle: conversationTitle,
   );
 }
 
@@ -176,6 +238,10 @@ class FilesApi {
 
   final _client = AuthClient();
   final _cache = <String, (DateTime, FileInfo)>{};
+
+  /// Bumped after files are deleted or renamed, so open chats refresh
+  /// their attachment tiles.
+  final changes = ValueNotifier<int>(0);
   final _inflight = <String, Future<FileInfo>>{};
 
   Uri _uri(String path) => Uri.parse('${AppConfig.apiBaseUrl}$path');
@@ -265,10 +331,12 @@ class FilesApi {
   /// Fresh signed URLs; cached for most of an hour.
   Future<FileInfo> get(String id, {bool force = false}) {
     final hit = _cache[id];
+    // A file still processing gets its poster and duration later: refetch.
     if (!force &&
         hit != null &&
         DateTime.now().difference(hit.$1) < AppFiles.urlTtl &&
-        hit.$2.url != null) {
+        hit.$2.url != null &&
+        hit.$2.status != FileStatus.processing) {
       return Future.value(hit.$2);
     }
     return _inflight[id] ??= _fetch(id).whenComplete(() {
@@ -315,6 +383,117 @@ class FilesApi {
     );
   }
 
+  Never _fail(http.Response r) => throw ApiException(
+    errorMessage(r.body, r.statusCode),
+    status: r.statusCode,
+  );
+
+  /// One page of the user's files (Storage screen).
+  Future<FilePage> list({
+    FileKind? kind,
+    String query = '',
+    StorageSort sort = StorageSort.newest,
+    String? cursor,
+  }) async {
+    final uri = _uri('/files').replace(
+      queryParameters: {
+        'kind': ?kind?.name,
+        if (query.trim().isNotEmpty) 'q': query.trim(),
+        'sort': sort.name,
+        'cursor': ?cursor,
+        'limit': '${AppFiles.listPageSize}',
+      },
+    );
+    final r = await _client
+        .get(uri, headers: apiHeaders())
+        .timeout(AppFiles.requestTimeout);
+    if (r.statusCode >= 400) _fail(r);
+    final j = jsonDecode(r.body);
+    if (j is! Map<String, dynamic>) throw const ApiException('Bad response');
+    final files = [
+      for (final f in j['files'] as List? ?? const [])
+        if (f is Map<String, dynamic>) FileInfo.fromJson(f),
+    ];
+    final now = DateTime.now();
+    for (final f in files) {
+      _cache[f.id] = (now, f);
+    }
+    return FilePage(files: files, nextCursor: j['nextCursor'] as String?);
+  }
+
+  /// Stored bytes per kind against the account limit (GET /files/usage).
+  Future<StorageUsage> usage() async {
+    final r = await _client
+        .get(_uri('/files/usage'), headers: apiHeaders())
+        .timeout(AppFiles.requestTimeout);
+    if (r.statusCode >= 400) _fail(r);
+    final j = jsonDecode(r.body);
+    if (j is! Map<String, dynamic>) throw const ApiException('Bad response');
+    return StorageUsage.fromJson(j);
+  }
+
+  /// Deletes several files; returns how many the server removed.
+  Future<int> bulkDelete(List<String> ids) async {
+    for (final id in ids) {
+      _cache.remove(id);
+    }
+    final r = await _client
+        .post(
+          _uri('/files/bulk-delete'),
+          headers: apiHeaders(json: true),
+          body: jsonEncode({'ids': ids}),
+        )
+        .timeout(AppFiles.requestTimeout);
+    if (r.statusCode >= 400) _fail(r);
+    changes.value++;
+    final j = jsonDecode(r.body);
+    return j is Map<String, dynamic> ? (j['deleted'] as num?)?.toInt() ?? 0 : 0;
+  }
+
+  /// Renames a file (the server keeps its extension). Returns the new info.
+  Future<FileInfo> rename(String id, String name) async {
+    final r = await _client
+        .patch(
+          _uri('/files/$id'),
+          headers: apiHeaders(json: true),
+          body: jsonEncode({'name': name}),
+        )
+        .timeout(AppFiles.requestTimeout);
+    if (r.statusCode >= 400) _fail(r);
+    final info = _parse(r.body);
+    _cache[id] = (DateTime.now(), info);
+    changes.value++;
+    return info;
+  }
+
+  /// Downloads the original into [dir] (fresh signed URL; no app token is
+  /// sent to the storage host). Returns the written file.
+  Future<File> download(FileInfo f, Directory dir) async {
+    final local = f.localPath;
+    final target = File(
+      '${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}',
+    );
+    if (local != null && File(local).existsSync()) {
+      return File(local).copy(target.path);
+    }
+    final url = (await get(f.id)).url;
+    if (url == null) throw const ApiException('No link');
+    final client = http.Client();
+    try {
+      final r = await client
+          .send(http.Request('GET', Uri.parse(url)))
+          .timeout(AppFiles.requestTimeout);
+      if (r.statusCode >= 400) {
+        throw ApiException('Download failed', status: r.statusCode);
+      }
+      final sink = target.openWrite();
+      await r.stream.pipe(sink);
+      return target;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> delete(String id) async {
     _cache.remove(id);
     final response = await _client
@@ -326,5 +505,78 @@ class FilesApi {
         status: response.statusCode,
       );
     }
+    changes.value++;
   }
+}
+
+/// Sort orders of GET /files (names match the server).
+enum StorageSort { newest, largest, name }
+
+class FilePage {
+  const FilePage({required this.files, this.nextCursor});
+  final List<FileInfo> files;
+  final String? nextCursor;
+}
+
+/// GET /files/usage. [limitBytes] / [uploadsPerDay] are null when unlimited.
+class StorageUsage {
+  const StorageUsage({
+    required this.totalBytes,
+    required this.count,
+    required this.byKind,
+    this.limitBytes,
+    this.uploadsPerDay,
+    this.uploadsToday = 0,
+    this.bytesToday = 0,
+  });
+
+  final int totalBytes;
+  final int count;
+  final Map<FileKind, ({int count, int bytes})> byKind;
+  final int? limitBytes;
+  final int? uploadsPerDay;
+  final int uploadsToday;
+  final int bytesToday;
+
+  double get fraction {
+    final l = limitBytes;
+    return l == null || l <= 0 ? 0 : (totalBytes / l).clamp(0.0, 1.0);
+  }
+
+  bool get full => limitBytes != null && totalBytes >= limitBytes!;
+
+  static int _n(Object? v) => (v as num?)?.toInt() ?? 0;
+
+  factory StorageUsage.fromJson(Map<String, dynamic> j) {
+    final kinds = j['byKind'] is Map ? j['byKind'] as Map : const {};
+    final limits = j['limits'] is Map ? j['limits'] as Map : const {};
+    final today = j['today'] is Map ? j['today'] as Map : const {};
+    return StorageUsage(
+      totalBytes: _n(j['totalBytes']),
+      count: _n(j['count']),
+      byKind: {
+        for (final k in FileKind.values)
+          k: (
+            count: _n((kinds[k.name] as Map?)?['count']),
+            bytes: _n((kinds[k.name] as Map?)?['bytes']),
+          ),
+      },
+      limitBytes: (limits['storageBytes'] as num?)?.toInt(),
+      uploadsPerDay: (limits['uploadsPerDay'] as num?)?.toInt(),
+      uploadsToday: _n(today['uploads']),
+      bytesToday: _n(today['bytes']),
+    );
+  }
+}
+
+/// A file name safe to write on the phone (no path parts or reserved marks).
+String safeFileName(String name) {
+  final cleaned = name
+      .split(RegExp(r'[\\/]'))
+      .last
+      .replaceAll(RegExp(r'[\x00-\x1f<>:"|?*]'), '_')
+      .trim();
+  return cleaned.isEmpty || cleaned == '.' || cleaned == '..'
+      ? AppFiles.fallbackName
+      : cleaned;
 }

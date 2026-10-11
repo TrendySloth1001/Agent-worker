@@ -69,7 +69,7 @@ const messageSchema = z.object({
   usedIds: z.array(z.string()).max(50).default([]),
   images: z.array(imageSchema).max(12).default([]),
   evidence: z.array(evidenceSchema).max(200).default([]),
-  attachments: z.array(attachmentSchema).max(6).default([]),
+  attachments: z.array(attachmentSchema).max(10).default([]),
   isError: z.boolean().default(false),
   table: tableSchema.nullish(),
 });

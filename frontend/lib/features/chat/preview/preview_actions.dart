@@ -11,14 +11,16 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/files_api.dart';
 
-/// Fresh signed URL for a file: the one we hold, else GET /files/:id.
+/// Fresh signed URL for a file. Signed URLs expire after an hour, so a
+/// server file always goes through GET /files/:id (cached while valid); the
+/// URL we hold is only a fallback.
 Future<String?> resolveFileUrl(FileInfo f, {bool force = false}) async {
-  if (!force && f.url != null) return f.url;
-  if (f.id.isEmpty) return null;
+  if (f.deleted) return null;
+  if (f.id.isEmpty) return f.url;
   try {
     return (await FilesApi.instance.get(f.id, force: force)).url;
   } catch (_) {
-    return null;
+    return force ? null : f.url;
   }
 }
 

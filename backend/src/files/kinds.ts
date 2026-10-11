@@ -22,14 +22,16 @@ add("document", {
   sql: "text/plain", sh: "text/x-shellscript", c: "text/plain", h: "text/plain", cpp: "text/plain", cs: "text/plain",
   rb: "text/plain", php: "text/plain", swift: "text/plain", log: "text/plain", ini: "text/plain", env: "text/plain",
 });
-add("video", { mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska" });
-add("audio", { mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg" });
+add("video", { mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska", m4v: "video/x-m4v", "3gp": "video/3gpp" });
+add("audio", { mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", opus: "audio/opus", aac: "audio/aac", flac: "audio/flac" });
 
 const MIME_KIND: Record<string, FileKind> = {
   "image/jpeg": "image", "image/png": "image", "image/webp": "image", "image/gif": "image", "image/heic": "image", "image/heif": "image",
   "application/pdf": "document", "text/plain": "document", "text/markdown": "document", "text/csv": "document", "application/json": "document",
   "video/mp4": "video", "video/quicktime": "video", "video/webm": "video", "video/x-matroska": "video",
+  "video/x-m4v": "video", "video/3gpp": "video",
   "audio/mpeg": "audio", "audio/mp4": "audio", "audio/x-m4a": "audio", "audio/wav": "audio", "audio/x-wav": "audio", "audio/ogg": "audio",
+  "audio/opus": "audio", "audio/aac": "audio", "audio/flac": "audio", "audio/x-flac": "audio",
 };
 
 export const extOf = (name: string) => (name.includes(".") ? name.split(".").pop()!.toLowerCase() : "");

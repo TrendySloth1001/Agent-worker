@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -76,15 +76,20 @@ export type Probe = { durationS: number; hasAudio: boolean; hasVideo: boolean; w
 
 export async function probe(file: string): Promise<Probe> {
   const { stdout } = await run(FFPROBE, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], 60_000);
-  const j = JSON.parse(stdout) as { format?: { duration?: string }; streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }> };
-  const v = j.streams?.find((s) => s.codec_type === "video");
+  const j = JSON.parse(stdout) as {
+    format?: { duration?: string };
+    streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string; tags?: { rotate?: string }; side_data_list?: Array<{ rotation?: number }> }>;
+  };
+  const v = j.streams?.find((s) => s.codec_type === "video" && s.width);
+  // Phones store portrait video as landscape plus a rotation; report what is shown.
+  const rot = Math.abs(Number(v?.side_data_list?.find((d) => d.rotation != null)?.rotation ?? v?.tags?.rotate ?? 0)) % 180;
   const dur = Number(j.format?.duration ?? v?.duration ?? j.streams?.find((s) => s.codec_type === "audio")?.duration ?? 0);
   return {
     durationS: Number.isFinite(dur) ? dur : 0,
     hasAudio: !!j.streams?.some((s) => s.codec_type === "audio"),
     hasVideo: !!v,
-    width: v?.width ?? 0,
-    height: v?.height ?? 0,
+    width: (rot === 90 ? v?.height : v?.width) ?? 0,
+    height: (rot === 90 ? v?.width : v?.height) ?? 0,
   };
 }
 
@@ -103,6 +108,55 @@ export async function extractFrames(file: string, dir: string, durationS: number
     }
   }
   return out;
+}
+
+const AUDIO_KBPS = 96;
+const MAX_VIDEO_KBPS = 4000;
+const MIN_VIDEO_KBPS = 200;
+
+/**
+ * Video bitrate (kbit/s) that keeps a [durationS] clip under [maxBytes]
+ * with AAC audio and ~8% container headroom; null when even the minimum
+ * quality would not fit.
+ */
+export function fitBitrate(durationS: number, maxBytes: number): number | null {
+  if (!(durationS > 0)) return null;
+  const totalKbps = (maxBytes * 8 * 0.92) / durationS / 1000;
+  const video = Math.floor(Math.min(MAX_VIDEO_KBPS, totalKbps - AUDIO_KBPS));
+  return video >= MIN_VIDEO_KBPS ? video : null;
+}
+
+/**
+ * Re-encodes a video too large for storage as H.264/AAC MP4 (at most 1280px,
+ * moov first so players can start before the end arrives). Returns the
+ * path of a file of at most [maxBytes].
+ */
+export async function fitVideo(file: string, dir: string, durationS: number, maxBytes: number): Promise<string> {
+  let kbps = fitBitrate(durationS, maxBytes);
+  if (kbps == null) {
+    throw new Error(`Video is too long to store (about ${Math.max(1, Math.floor(((maxBytes * 8 * 0.92) / ((MIN_VIDEO_KBPS + AUDIO_KBPS) * 1000)) / 60))} minutes at most)`);
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const out = path.join(dir, `fit${attempt}.mp4`);
+    await run(
+      FFMPEG,
+      [
+        "-y", "-i", file,
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-vf", "scale=w='min(1280,iw)':h='min(1280,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        "-b:v", `${kbps}k`, "-maxrate", `${Math.round(kbps * 1.2)}k`, "-bufsize", `${kbps * 2}k`,
+        "-c:a", "aac", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
+        "-movflags", "+faststart",
+        out,
+      ],
+      15 * 60_000,
+    );
+    if ((await stat(out)).size <= maxBytes) return out;
+    kbps = Math.floor(kbps * 0.7);
+    if (kbps < MIN_VIDEO_KBPS) break;
+  }
+  throw new Error("Video could not be compressed enough to store");
 }
 
 const SEGMENT_S = 600;

@@ -33,13 +33,15 @@ const schema = z.object({
   S3_ACCESS_KEY_ID: str,
   S3_SECRET_ACCESS_KEY: str,
   S3_BUCKET: str,
+  /** Largest object the storage accepts (Supabase Free: 50 MiB). Bigger videos are transcoded to fit. */
+  S3_MAX_OBJECT_BYTES: num(50 * 1024 * 1024),
   // ---- accounts ----
   AUTH_JWT_SECRET: str,
   OWNER_EMAIL: str,
   LIMIT_CHAT_PER_DAY: num(200),
   LIMIT_TABLE_PER_DAY: num(20),
   LIMIT_UPLOADS_PER_DAY: num(30),
-  LIMIT_STORAGE_MB: num(500),
+  LIMIT_STORAGE_MB: num(1024),
   LIMIT_DOCS_PER_DAY: num(5),
 });
 
@@ -82,6 +84,7 @@ export const config = {
     accessKeyId: env.S3_ACCESS_KEY_ID,
     secretAccessKey: env.S3_SECRET_ACCESS_KEY,
     bucket: env.S3_BUCKET ?? "attachments",
+    maxObjectBytes: env.S3_MAX_OBJECT_BYTES,
   },
   auth: {
     jwtSecret: env.AUTH_JWT_SECRET,

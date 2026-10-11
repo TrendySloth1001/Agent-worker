@@ -21,14 +21,21 @@ Future<void> openFilePreview(
   FileInfo file,
 ) async {
   Haptics.tap();
+  if (file.deleted) {
+    _notice(context, AppStrings.attachDeleted);
+    return;
+  }
   final nav = Navigator.of(context);
   switch (file.kind) {
     case FileKind.image:
-      final images = siblings.where((f) => f.kind == FileKind.image).toList();
-      // Fresh signed URLs for images that only have an id (cached usually).
+      final images = siblings
+          .where((f) => f.kind == FileKind.image && !f.deleted)
+          .toList();
+      // Signed URLs expire after an hour: refresh every server image
+      // (cached while valid), keep the old one if that fails.
       final fresh = await Future.wait([
         for (final i in images)
-          if (i.url == null && i.localPath == null && i.id.isNotEmpty)
+          if (i.localPath == null && i.id.isNotEmpty)
             FilesApi.instance
                 .get(i.id)
                 .then<FileInfo>(i.withFresh)
@@ -81,9 +88,12 @@ Future<void> openFilePreview(
   }
 }
 
-void _failed(BuildContext context) {
+void _failed(BuildContext context) =>
+    _notice(context, AppStrings.attachOpenFailed);
+
+void _notice(BuildContext context, String text) {
   Haptics.error();
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(AppStrings.attachOpenFailed)));
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
 }

@@ -95,7 +95,13 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
   }
 
   void _tick() {
-    if (mounted && !_dragging) setState(() {});
+    if (!mounted) return;
+    // A playback error after start (lost connection, expired link).
+    if (_video?.value.hasError ?? false) {
+      if (!_failed) setState(() => _failed = true);
+      return;
+    }
+    if (!_dragging) setState(() {});
   }
 
   @override
@@ -145,21 +151,23 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
-      child: Container(
-        alignment: Alignment.center,
-        child: _failed
-            ? _error(p)
-            : Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (ready)
-                    AspectRatio(
+      child: _failed
+          ? Center(child: _error(p))
+          // Expanded stack: the poster fills the screen while loading.
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                if (ready)
+                  Center(
+                    child: AspectRatio(
                       aspectRatio: c.value.aspectRatio,
                       child: VideoPlayer(c),
-                    )
-                  else ...[
-                    Positioned.fill(child: _poster()),
-                    SizedBox(
+                    ),
+                  )
+                else ...[
+                  _poster(),
+                  Center(
+                    child: SizedBox(
                       width: AppIconSize.md,
                       height: AppIconSize.md,
                       child: CircularProgressIndicator(
@@ -167,16 +175,18 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                         color: p.accent,
                       ),
                     ),
-                  ],
-                  if (ready && !c.value.isPlaying)
-                    AppIcon(
+                  ),
+                ],
+                if (ready && !c.value.isPlaying)
+                  Center(
+                    child: AppIcon(
                       AppIcons.play,
                       size: AppSizes.previewAudioIcon,
                       color: p.textPrimary,
                     ),
-                ],
-              ),
-      ),
+                  ),
+              ],
+            ),
     );
   }
 
@@ -236,6 +246,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
       TextButton(
         onPressed: () {
           Haptics.tap();
+          _video?.removeListener(_tick);
           _video?.dispose();
           setState(() {
             _video = null;

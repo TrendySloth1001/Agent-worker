@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import pLimit from "p-limit";
 import { db, Prisma } from "../db/prisma.js";
@@ -9,12 +9,14 @@ import { getObject, putObject } from "../storage/s3.js";
 import { log } from "../util/logger.js";
 import { extractText } from "./extract.js";
 import type { FileKind } from "./kinds.js";
-import { extractFrames, imageSize, probe, toJpeg, transcribe, withTmp } from "./media.js";
+import { config } from "../config.js";
+import { extractFrames, fitVideo, imageSize, probe, toJpeg, transcribe, withTmp } from "./media.js";
 
 const limit = pLimit(2);
 export const CHUNK_THRESHOLD = 12_000;
 
-type Target = { id: string; name: string; kind: FileKind; s3Key: string };
+/** [transcode]: the upload is larger than storage accepts and is not stored yet (videos only). */
+type Target = { id: string; name: string; kind: FileKind; s3Key: string; transcode?: boolean };
 
 async function setResult(id: string, patch: { status: "ready" | "failed"; error?: string; thumbKey?: string | null; meta?: Record<string, unknown>; text?: string | null }) {
   // Raw: `meta || patch` merges JSON in the database (Prisma can only replace the whole value).
@@ -67,6 +69,14 @@ async function processMedia(t: Target, buf: Buffer) {
     const info = await probe(src);
     const meta: Record<string, unknown> = { durationS: Math.round(info.durationS * 10) / 10, hasAudio: info.hasAudio };
     let thumbKey: string | null = null;
+
+    if (t.transcode) {
+      if (!info.hasVideo) throw new Error("No video stream found");
+      const fitted = await readFile(await fitVideo(src, dir, info.durationS, config.s3.maxObjectBytes));
+      await putObject(t.s3Key, fitted, "video/mp4");
+      await db().storedFile.update({ where: { id: t.id }, data: { size: fitted.length, mime: "video/mp4" } });
+      Object.assign(meta, { transcoded: true, originalSize: buf.length });
+    }
 
     if (t.kind === "video") {
       if (info.width) Object.assign(meta, { width: info.width, height: info.height });

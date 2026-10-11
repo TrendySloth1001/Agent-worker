@@ -3,6 +3,7 @@ abstract final class AppFiles {
   static const maxPerMessage = 10;
   static const kb = 1024;
   static const mb = 1024 * 1024;
+  static const gb = 1024 * 1024 * 1024;
 
   static const imageMax = 15 * 1024 * 1024;
   static const documentMax = 25 * 1024 * 1024;
@@ -67,6 +68,18 @@ abstract final class AppFiles {
 
   static const fallbackMime = 'application/octet-stream';
 
+  /// Status the server writes into saved attachments of a deleted file.
+  static const deletedStatus = 'deleted';
+
+  /// Sent as the text of an old message whose only files were deleted.
+  static const deletedHistoryText = '(attachment deleted)';
+
+  /// Files per page of the Storage screen (server caps at 100).
+  static const listPageSize = 40;
+
+  /// Name used when a file name has nothing usable left.
+  static const fallbackName = 'file';
+
   static const mimeByExtension = <String, String>{
     'jpg': 'image/jpeg',
     'jpeg': 'image/jpeg',
@@ -99,10 +112,15 @@ abstract final class AppFiles {
     'mov': 'video/quicktime',
     'webm': 'video/webm',
     'mkv': 'video/x-matroska',
+    'm4v': 'video/x-m4v',
+    '3gp': 'video/3gpp',
     'mp3': 'audio/mpeg',
     'm4a': 'audio/mp4',
     'wav': 'audio/wav',
     'ogg': 'audio/ogg',
+    'opus': 'audio/opus',
+    'aac': 'audio/aac',
+    'flac': 'audio/flac',
   };
 
   static const imageExtensions = {
@@ -114,6 +132,14 @@ abstract final class AppFiles {
     'heic',
     'heif',
   };
-  static const videoExtensions = {'mp4', 'mov', 'webm', 'mkv'};
-  static const audioExtensions = {'mp3', 'm4a', 'wav', 'ogg'};
+  static const videoExtensions = {'mp4', 'mov', 'webm', 'mkv', 'm4v', '3gp'};
+  static const audioExtensions = {
+    'mp3',
+    'm4a',
+    'wav',
+    'ogg',
+    'opus',
+    'aac',
+    'flac',
+  };
 }

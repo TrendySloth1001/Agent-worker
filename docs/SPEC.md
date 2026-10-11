@@ -45,7 +45,7 @@ OWNER_EMAIL=                   # the account registering with this email (plus o
 LIMIT_CHAT_PER_DAY=200         # per-user daily limits; the owner is unlimited; per-user overrides in users.limits jsonb
 LIMIT_TABLE_PER_DAY=20
 LIMIT_UPLOADS_PER_DAY=30
-LIMIT_STORAGE_MB=500
+LIMIT_STORAGE_MB=1024
 ```
 Compose reads `/Users/nick/Agent-worker/.env` (root, new, gitignore-style, not committed): `POSTGRES_USER=agent`, `POSTGRES_DB=agentworker`, `POSTGRES_PASSWORD=<same password as in DATABASE_URL>`. B1 generates a random password and writes it consistently into root `.env` and `backend/.env`; example files use `CHANGE_ME`. Also create `/Users/nick/Agent-worker/.env.example`.
 

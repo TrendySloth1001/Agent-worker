@@ -8,6 +8,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/app_files.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../data/chat_api.dart';
 import '../../../data/files_api.dart';
 import 'image_strip.dart';
 import '../preview/file_preview.dart';
@@ -22,7 +23,10 @@ AppIconData fileIcon(FileKind kind) => switch (kind) {
 String formatBytes(int bytes) {
   if (bytes < AppFiles.kb) return '$bytes B';
   if (bytes < AppFiles.mb) return '${(bytes / AppFiles.kb).round()} KB';
-  return '${(bytes / AppFiles.mb).toStringAsFixed(1)} MB';
+  if (bytes < AppFiles.gb) {
+    return '${(bytes / AppFiles.mb).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / AppFiles.gb).toStringAsFixed(2)} GB';
 }
 
 String formatDuration(double seconds) {
@@ -65,27 +69,68 @@ class _MessageAttachmentsState extends State<MessageAttachments> {
   void initState() {
     super.initState();
     _refresh();
+    FilesApi.instance.changes.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    FilesApi.instance.changes.removeListener(_refresh);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(MessageAttachments old) {
+    super.didUpdateWidget(old);
+    // The element can be reused for another message (chat switched).
+    if (!_sameIds(old.files, widget.files)) {
+      _files = widget.files;
+      _refresh();
+    }
+  }
+
+  static bool _sameIds(List<FileInfo> a, List<FileInfo> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
   }
 
   Future<void> _refresh() async {
+    final files = widget.files;
     final fresh = await Future.wait([
-      for (final f in widget.files)
-        FilesApi.instance.get(f.id).then<FileInfo>(f.withFresh).catchError((
-          Object _,
-        ) {
-          return f;
-        }),
+      for (final f in files)
+        if (f.deleted || f.id.isEmpty)
+          Future.value(f)
+        else
+          FilesApi.instance.get(f.id).then<FileInfo>(f.withFresh).catchError((
+            Object e,
+          ) {
+            // Gone from storage: show the placeholder, not an error.
+            return e is ApiException && e.status == 404 ? f.asDeleted() : f;
+          }),
     ]);
-    if (mounted) setState(() => _files = fresh);
+    if (mounted && identical(files, widget.files)) {
+      setState(() => _files = fresh);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final media = _files
-        .where((f) => f.kind == FileKind.image || f.kind == FileKind.video)
+        .where(
+          (f) =>
+              !f.deleted &&
+              (f.kind == FileKind.image || f.kind == FileKind.video),
+        )
         .toList();
     final cards = _files
-        .where((f) => f.kind == FileKind.document || f.kind == FileKind.audio)
+        .where(
+          (f) =>
+              f.deleted ||
+              f.kind == FileKind.document ||
+              f.kind == FileKind.audio,
+        )
         .toList();
     final cols = media.length.clamp(1, AppSizes.attachGridColumns);
     final width =
@@ -116,10 +161,13 @@ class _MessageAttachmentsState extends State<MessageAttachments> {
           ),
         for (final f in cards) ...[
           const SizedBox(height: AppSizes.attachGap),
-          GestureDetector(
-            onTap: () => openFilePreview(context, _files, f),
-            child: _FileCard(file: f),
-          ),
+          if (f.deleted)
+            DeletedFileTile(file: f)
+          else
+            GestureDetector(
+              onTap: () => openFilePreview(context, _files, f),
+              child: _FileCard(file: f),
+            ),
         ],
       ],
     );
@@ -260,6 +308,64 @@ class _FileCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Placeholder for an attachment whose file was deleted from storage.
+class DeletedFileTile extends StatelessWidget {
+  const DeletedFileTile({super.key, required this.file});
+
+  final FileInfo file;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = context.text;
+    return Semantics(
+      label: '${AppStrings.attachDeleted} ${file.name}',
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: AppSizes.attachCardWidth),
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: p.border, width: AppBorder.thin),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(
+              AppIcons.fileDeleted,
+              size: AppIconSize.md,
+              color: p.textTertiary,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    AppStrings.attachDeleted,
+                    style: t.caption.copyWith(color: p.textSecondary),
+                  ),
+                  if (file.name.isNotEmpty)
+                    Text(
+                      file.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.caption.copyWith(
+                        color: p.textTertiary,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: p.textTertiary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

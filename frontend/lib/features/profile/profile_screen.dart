@@ -26,6 +26,8 @@ import '../auth/widgets/github_device_sheet.dart';
 import '../connections/connections_controller.dart';
 import '../settings/format.dart';
 import '../settings/widgets/section_header.dart';
+import '../storage/storage_screen.dart';
+import '../../core/constants/storage.dart';
 import 'widgets/sign_in_methods.dart';
 
 /// Account: name and photo, today's usage, sign-in methods, password,
@@ -405,6 +407,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _nameEditor(context),
                 SectionHeader(ProfileStrings.usage, icon: AuthIcons.usage),
                 _UsageCard(info: _info),
+                const SizedBox(height: AppSpacing.md),
+                _OutlinePill(
+                  label: StorageStrings.manage,
+                  icon: StorageIcons.section,
+                  onTap: () => StorageScreen.open(context),
+                ),
                 const SectionHeader(SsoStrings.methods, icon: SsoIcons.methods),
                 ..._methodRows(),
                 const SectionHeader(
