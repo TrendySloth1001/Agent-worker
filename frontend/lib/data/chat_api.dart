@@ -103,6 +103,7 @@ class ChatApi {
     bool smartSuggestions = true,
     Set<SuggestKind> suppressSuggest = const {},
     List<Map<String, String>> apps = const [],
+    Map<String, Object>? screen,
   }) async* {
     final request =
         http.Request('POST', Uri.parse('${AppConfig.apiBaseUrl}/chat'))
@@ -125,6 +126,8 @@ class ChatApi {
             if (suppressSuggest.isNotEmpty)
               'suppressSuggest': [for (final k in suppressSuggest) k.name],
             if (apps.isNotEmpty) 'apps': apps,
+            // Assistant overlay: the screen the user chose to share.
+            'screen': ?screen,
           });
 
     // [client] stays the caller's (closing it stops the stream); the
