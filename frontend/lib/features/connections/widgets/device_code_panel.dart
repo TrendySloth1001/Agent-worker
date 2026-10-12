@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/connections.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/copy_action.dart';
+import '../../../core/haptics.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/dot_meter.dart';
-import '../../chat/widgets/rich/playful_common.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 
 /// GitHub device-flow waiting state: the big code with COPY, OPEN GITHUB and
 /// CANCEL, a pulse while waiting and a dot meter counting the code down.
@@ -31,24 +35,29 @@ class DeviceCodePanel extends StatelessWidget {
   final VoidCallback onOpen, onCancel;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      M3Themed(child: Builder(builder: _panel));
+
+  Widget _panel(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final muted = tt.bodySmall!.copyWith(color: scheme.onSurfaceVariant);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GithubHeading(title),
         const SizedBox(height: AppSpacing.md),
-        Text(ConnectStrings.enterCode, style: t.caption),
+        Text(ConnectCopy.enterCode, style: muted),
         const SizedBox(height: AppSpacing.sm),
         Container(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
+            horizontal: AppSpacing.lg,
             vertical: ConnectSizes.codePadV,
           ),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            border: Border.all(color: p.borderStrong, width: AppBorder.thin),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            color: scheme.surfaceContainerHigh,
           ),
           child: Row(
             children: [
@@ -59,7 +68,7 @@ class DeviceCodePanel extends StatelessWidget {
                   child: SelectableText(
                     code,
                     maxLines: 1,
-                    style: t.label.copyWith(
+                    style: AppTextStyles.caption.copyWith(
                       fontSize: ConnectSizes.codeFont,
                       letterSpacing: ConnectSizes.codeSpacing,
                       fontWeight: FontWeight.w700,
@@ -77,16 +86,27 @@ class DeviceCodePanel extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: PlayfulButton(
-                label: ConnectStrings.openGithub,
-                icon: ConnectIcons.open,
-                primary: true,
-                expand: true,
-                onTap: onOpen,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: p.accent,
+                  foregroundColor: p.textInverse,
+                ),
+                onPressed: () {
+                  Haptics.tap();
+                  onOpen();
+                },
+                icon: const AppIcon(ConnectIcons.open, size: AppIconSize.sm),
+                label: const Text(ConnectCopy.openGithub),
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
-            PlayfulButton(label: ConnectStrings.cancel, onTap: onCancel),
+            TextButton(
+              onPressed: () {
+                Haptics.tap();
+                onCancel();
+              },
+              child: const Text(ConnectCopy.cancel),
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -94,11 +114,8 @@ class DeviceCodePanel extends StatelessWidget {
           children: [
             const PulseDot(),
             const SizedBox(width: AppSpacing.sm),
-            Expanded(child: Text(ConnectStrings.waiting, style: t.caption)),
-            Text(
-              ConnectStrings.countdown(secondsLeft),
-              style: t.caption.copyWith(color: p.textSecondary),
-            ),
+            Expanded(child: Text(ConnectCopy.waiting, style: muted)),
+            Text(ConnectStrings.countdown(secondsLeft), style: muted),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -123,7 +140,9 @@ class GithubHeading extends StatelessWidget {
           color: context.palette.textPrimary,
         ),
         const SizedBox(width: AppSpacing.sm),
-        Expanded(child: Text(title, style: context.text.title)),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+        ),
       ],
     );
   }

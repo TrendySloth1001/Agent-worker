@@ -9,6 +9,7 @@ import '../../../data/files_api.dart';
 import '../../chat/widgets/attachment_views.dart';
 import '../../chat/widgets/image_strip.dart';
 import '../../settings/format.dart';
+import '../../settings/widgets/settings_kit.dart';
 import '../storage_actions.dart';
 
 /// Filter pill: filled when active.
@@ -27,29 +28,18 @@ class StorageChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    return Semantics(
-      button: true,
+    final scheme = Theme.of(context).colorScheme;
+    return FilterChip(
+      label: Text(label),
       selected: active,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            color: active ? p.textPrimary : Colors.transparent,
-            border: Border.all(
-              color: active ? p.textPrimary : p.borderStrong,
-              width: AppBorder.thin,
-            ),
-          ),
-          child: Text(
-            label,
-            style: context.text.caption.copyWith(
-              color: active ? p.textInverse : p.textSecondary,
-            ),
-          ),
-        ),
+      onSelected: (_) => onTap(),
+      showCheckmark: false,
+      shape: const StadiumBorder(),
+      side: BorderSide(color: active ? Colors.transparent : p.borderStrong),
+      backgroundColor: Colors.transparent,
+      selectedColor: p.textPrimary,
+      labelStyle: Theme.of(context).textTheme.labelLarge!.copyWith(
+        color: active ? p.textInverse : scheme.onSurface,
       ),
     );
   }
@@ -159,7 +149,7 @@ class StorageGridTile extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: p.surfaceHigh,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
               color: selected ? p.accent : p.border,
               width: selected ? AppBorder.thick : AppBorder.thin,
@@ -243,7 +233,6 @@ class StorageListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
     final created = file.createdAt;
     final sub = [
       storageSubtitle(file),
@@ -254,81 +243,39 @@ class StorageListRow extends StatelessWidget {
         : (file.conversationTitle?.trim().isNotEmpty ?? false)
         ? file.conversationTitle!.trim()
         : StorageStrings.untitledChat;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Semantics(
       selected: selected,
-      child: InkWell(
+      child: ListTile(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Container(
-          height: StorageSizes.rowHeight,
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: p.border)),
-          ),
-          child: Row(
-            children: [
-              if (selecting) ...[
-                _SelectMark(selected: selected),
-                const SizedBox(width: AppSpacing.md),
-              ],
-              Container(
-                width: StorageSizes.rowThumb,
-                height: StorageSizes.rowThumb,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: p.surfaceHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(color: p.border, width: AppBorder.thin),
-                ),
-                child: AppIcon(
-                  fileIcon(file.kind),
-                  size: AppIconSize.md,
-                  color: p.textSecondary,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      file.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: t.bodySmall.copyWith(color: p.textPrimary),
-                    ),
-                    Text(
-                      sub,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: t.caption.copyWith(
-                        color: file.status == FileStatus.failed
-                            ? p.error
-                            : p.textTertiary,
-                      ),
-                    ),
-                    Text(
-                      chat,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: t.caption,
-                    ),
-                  ],
-                ),
-              ),
-              if (!selecting)
-                IconButton(
-                  icon: AppIcon(
-                    StorageIcons.more,
-                    size: AppIconSize.md,
-                    color: p.textTertiary,
-                  ),
-                  tooltip: StorageStrings.actionOpen,
-                  onPressed: onMore,
-                ),
-            ],
+        selected: selected,
+        leading: selecting
+            ? _SelectMark(selected: selected)
+            : SettingsIconCircle(fileIcon(file.kind)),
+        title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '$sub${StorageStrings.separator}$chat',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: tt.bodySmall!.copyWith(
+            color: file.status == FileStatus.failed
+                ? p.error
+                : scheme.onSurfaceVariant,
           ),
         ),
+        trailing: selecting
+            ? null
+            : IconButton(
+                icon: AppIcon(
+                  StorageIcons.more,
+                  size: AppIconSize.md,
+                  color: scheme.onSurfaceVariant,
+                ),
+                tooltip: StorageStrings.actionOpen,
+                onPressed: onMore,
+              ),
       ),
     );
   }

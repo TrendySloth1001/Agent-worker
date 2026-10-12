@@ -7,12 +7,12 @@ import 'app_icons.dart';
 
 abstract final class MemoryStrings {
   static const section = 'MEMORY';
-  static const title = 'MEMORY';
-  static const toggle = 'REMEMBER THINGS ABOUT ME';
+  static const title = 'Memory';
+  static const toggle = 'Remember things about me';
   static const toggleHint =
       'Sparky saves lasting facts and preferences from your chats and uses '
       'them in new ones. You can also say "remember ..." or "forget ...".';
-  static const recallToggle = 'RECALL PAST CHATS';
+  static const recallToggle = 'Recall past chats';
   static const recallHint =
       'Lets Sparky look through your other chats when you ask "did we talk '
       'about this before?" or when one is clearly related. Only your own '
@@ -20,26 +20,26 @@ abstract final class MemoryStrings {
   static const entry = 'WHAT SPARKY REMEMBERS';
   static const searchHint = 'Search memories';
   static const addHint = 'Something to remember';
-  static const add = 'ADD';
-  static const addTitle = 'ADD A MEMORY';
-  static const editTitle = 'EDIT MEMORY';
-  static const pinned = 'PINNED';
-  static const pin = 'PIN';
-  static const unpin = 'UNPIN';
-  static const edit = 'EDIT';
-  static const delete = 'DELETE';
-  static const clearAll = 'CLEAR ALL';
-  static const clearTitle = 'CLEAR ALL MEMORY?';
+  static const add = 'Add';
+  static const addTitle = 'Add a memory';
+  static const editTitle = 'Edit memory';
+  static const pinned = 'Pinned';
+  static const pin = 'Pin';
+  static const unpin = 'Unpin';
+  static const edit = 'Edit';
+  static const delete = 'Delete';
+  static const clearAll = 'Clear all';
+  static const clearTitle = 'Clear all memory?';
   static const clearBody =
       'Everything Sparky remembers about you is deleted for good. '
       'Your chats are not affected.';
-  static const empty = 'NOTHING REMEMBERED YET';
+  static const empty = 'Nothing remembered yet';
   static const emptyHint =
       'Facts and preferences from your chats show up here. '
       'Try: "Remember that I use Neovim".';
-  static const emptyOff = 'MEMORY IS OFF';
+  static const emptyOff = 'Memory is off';
   static const emptyOffHint = 'Turn it on above to let Sparky remember.';
-  static const noMatch = 'NO MATCHING MEMORIES';
+  static const noMatch = 'No matching memories';
   static const loadFailed = 'Could not load your memories.';
   static const saveFailed = 'Could not save. Try again.';
   static const deleteFailed = 'Could not delete. Try again.';

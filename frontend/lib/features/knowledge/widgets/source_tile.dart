@@ -1,24 +1,25 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/constants/app_sizes.dart';
-import '../../../core/constants/app_strings.dart';
-import '../../../core/theme/app_palette.dart';
-import '../../../data/kb_source.dart';
 import '../../../core/constants/app_icons.dart';
-import '../../../core/widgets/icon_label.dart';
+import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/m3_copy.dart';
+import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
+import '../../../data/kb_source.dart';
+import '../../settings/widgets/settings_kit.dart';
 
 String kindLabel(String type) => switch (type) {
-  'github' => AppStrings.kindGithub,
-  'stackoverflow' => AppStrings.kindStack,
-  'reddit' => AppStrings.kindReddit,
-  'hackernews' => AppStrings.kindHn,
-  'note' => AppStrings.kindNote,
-  'file' => AppStrings.kindFile,
-  'doc' => AppStrings.kindDoc,
-  _ => AppStrings.kindWeb,
+  'github' => KnowledgeCopy.kindGithub,
+  'stackoverflow' => KnowledgeCopy.kindStack,
+  'reddit' => KnowledgeCopy.kindReddit,
+  'hackernews' => KnowledgeCopy.kindHn,
+  'note' => KnowledgeCopy.kindNote,
+  'file' => KnowledgeCopy.kindFile,
+  'doc' => KnowledgeCopy.kindDoc,
+  _ => KnowledgeCopy.kindWeb,
 };
 
-/// One flat row: kind and status on top, title, address, counts.
+/// One grouped row: kind icon, title, address, counts and a status chip.
 class SourceTile extends StatelessWidget {
   const SourceTile({
     super.key,
@@ -40,68 +41,61 @@ class SourceTile extends StatelessWidget {
       case 'running':
         final done = source.progressDone;
         final total = source.progressTotal;
-        if (done == null) return AppStrings.running;
+        if (done == null) return KnowledgeCopy.running;
         return total == null
-            ? '${AppStrings.running} $done'
-            : '${AppStrings.running} $done/$total';
+            ? '${KnowledgeCopy.running} $done'
+            : '${KnowledgeCopy.running} $done/$total';
       case 'ready':
-        return source.chunkCount == 0 ? AppStrings.empty : AppStrings.ready;
+        return source.chunkCount == 0
+            ? KnowledgeCopy.empty
+            : KnowledgeCopy.ready;
       case 'failed':
-        return AppStrings.failed;
+        return KnowledgeCopy.failed;
       default:
-        return AppStrings.queued;
+        return KnowledgeCopy.queued;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final muted = tt.bodySmall!.copyWith(color: scheme.onSurfaceVariant);
     final failed = source.status == 'failed';
-    final statusColor = failed || source.isActive ? p.accent : p.textSecondary;
     final canRefresh =
         source.type != 'note' && (source.status == 'ready' || failed);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    final hasTitle = source.title?.isNotEmpty == true;
+    return ListTile(
       onLongPress: onLongPress,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        decoration: BoxDecoration(
-          color: p.background,
-          border: Border(bottom: BorderSide(color: p.border)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                IconLabel(
-                  icon: AppIcons.sourceKind(source.type),
-                  text: kindLabel(source.type),
-                  style: t.caption,
-                ),
-                const Spacer(),
-                Text(_status(), style: t.caption.copyWith(color: statusColor)),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
+      leading: SettingsIconCircle(AppIcons.sourceKind(source.type)),
+      title: Text(
+        hasTitle ? source.title! : source.uri,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasTitle && !_hasInternalUri)
             Text(
-              source.title?.isNotEmpty == true ? source.title! : source.uri,
+              source.uri,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: t.body,
+              style: muted,
             ),
-            if (source.title?.isNotEmpty == true && !_hasInternalUri)
-              Text(
-                source.uri,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: t.caption,
-              ),
-            if (source.status == 'running') ...[
-              const SizedBox(height: AppSpacing.sm),
-              LinearProgressIndicator(
-                minHeight: AppBorder.thick,
+          Text(
+            '${kindLabel(source.type)} · ${source.docCount} '
+            '${KnowledgeCopy.docs} · ${source.chunkCount} '
+            '${KnowledgeCopy.chunks}',
+            style: muted,
+          ),
+          if (source.status == 'running') ...[
+            const SizedBox(height: AppSpacing.sm),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: LinearProgressIndicator(
+                minHeight: KnowledgeSizes.progressHeight,
                 value:
                     source.progressTotal != null &&
                         source.progressTotal! > 0 &&
@@ -109,47 +103,41 @@ class SourceTile extends StatelessWidget {
                     ? source.progressDone! / source.progressTotal!
                     : null,
                 color: p.accent,
-                backgroundColor: p.border,
+                backgroundColor: scheme.surfaceContainerHighest,
               ),
-            ],
-            if (failed && source.error != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
+            ),
+          ],
+          if (failed && source.error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Text(
                 source.error!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: t.caption.copyWith(color: p.accent),
+                style: muted.copyWith(color: p.accent),
               ),
-            ],
-            const SizedBox(height: AppSpacing.xs),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${source.docCount} ${AppStrings.documents} · '
-                    '${source.chunkCount} ${AppStrings.chunksShort}',
-                    style: t.caption,
-                  ),
-                ),
-                if (canRefresh)
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onRefresh,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xs,
-                      ),
-                      child: Text(
-                        failed ? AppStrings.retry : AppStrings.refresh,
-                        style: t.caption.copyWith(color: p.textSecondary),
-                      ),
-                    ),
-                  ),
-              ],
             ),
-          ],
-        ),
+          if (canRefresh)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: onRefresh,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(
+                    0,
+                    AppSizes.rowHeight - AppSpacing.xl,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  failed ? KnowledgeCopy.retry : KnowledgeCopy.refresh,
+                ),
+              ),
+            ),
+        ],
       ),
+      trailing: M3Tag(_status(), accent: failed || source.isActive),
     );
   }
 }

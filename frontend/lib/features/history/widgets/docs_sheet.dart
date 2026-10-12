@@ -1,30 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/history.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../data/doc_models.dart';
 import '../../../data/docs_api.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
+import '../../settings/widgets/settings_kit.dart';
 import '../history_grouping.dart';
 
 /// Bottom sheet listing the user's documents, newest first. Pops with the
 /// tapped [Doc], or null.
 Future<Doc?> showDocsSheet(BuildContext context, {DocsApi? api}) {
   Haptics.tap();
-  final p = context.palette;
-  return showModalBottomSheet<Doc>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<Doc>(
+    context,
     builder: (_) => _DocsSheet(api: api ?? DocsApi()),
   );
 }
@@ -53,25 +47,13 @@ class _DocsSheetState extends State<_DocsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
     return SafeArea(
+      top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.screenPadding,
-              AppSpacing.lg,
-              AppSpacing.screenPadding,
-              AppSpacing.sm,
-            ),
-            child: Semantics(
-              header: true,
-              child: Text(HistoryStrings.docsTitle, style: t.caption),
-            ),
-          ),
+          Semantics(header: true, child: const M3SheetTitle(DocsCopy.title)),
           Flexible(
             child: FutureBuilder<List<Doc>>(
               future: _docs,
@@ -92,49 +74,37 @@ class _DocsSheetState extends State<_DocsSheet> {
                 final now = DateTime.now();
                 return ListView.builder(
                   shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.screenPadding,
+                  ),
                   itemCount: docs.length,
                   itemBuilder: (context, i) {
                     final d = docs[i];
                     final at = d.updatedAt ?? d.createdAt;
-                    return InkWell(
-                      onTap: () {
-                        Haptics.tap();
-                        Navigator.pop(context, d);
-                      },
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          minHeight: HistorySizes.rowHeight,
+                    return M3Cell(
+                      index: i,
+                      count: docs.length,
+                      child: ListTile(
+                        onTap: () {
+                          Haptics.tap();
+                          Navigator.pop(context, d);
+                        },
+                        leading: const SettingsIconCircle(AppIcons.doc),
+                        title: Text(
+                          d.title.isEmpty
+                              ? HistoryStrings.docUntitled
+                              : d.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.screenPadding,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  d.title.isEmpty
-                                      ? HistoryStrings.docUntitled
-                                      : d.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: t.body,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              if (d.isRunning)
-                                Text(
-                                  HistoryStrings.docWriting,
-                                  style: t.caption.copyWith(color: p.accent),
-                                )
-                              else if (at != null)
-                                Text(
-                                  historyTime(at.toLocal(), now),
-                                  style: t.caption,
-                                ),
-                            ],
-                          ),
-                        ),
+                        trailing: d.isRunning
+                            ? const M3Tag(
+                                HistoryStrings.docWriting,
+                                accent: true,
+                              )
+                            : at == null
+                            ? null
+                            : M3Tag(historyTime(at.toLocal(), now)),
                       ),
                     );
                   },
@@ -159,6 +129,7 @@ class _Note extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Center(
@@ -166,8 +137,8 @@ class _Note extends StatelessWidget {
             ? SizedBox.square(
                 dimension: AppIconSize.md,
                 child: CircularProgressIndicator(
-                  strokeWidth: AppBorder.thin,
-                  color: p.textTertiary,
+                  strokeWidth: AppBorder.thick,
+                  color: p.accent,
                 ),
               )
             : Column(
@@ -176,7 +147,9 @@ class _Note extends StatelessWidget {
                   Text(
                     text ?? '',
                     textAlign: TextAlign.center,
-                    style: context.text.bodySmall,
+                    style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                   if (onRetry != null)
                     TextButton(
@@ -184,10 +157,7 @@ class _Note extends StatelessWidget {
                         Haptics.tap();
                         onRetry!();
                       },
-                      child: Text(
-                        AppStrings.retry,
-                        style: context.text.caption.copyWith(color: p.accent),
-                      ),
+                      child: const Text(AppStrings.retry),
                     ),
                 ],
               ),

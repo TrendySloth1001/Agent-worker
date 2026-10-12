@@ -11,6 +11,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/dot_meter.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/chat_event.dart';
 import '../../data/doc_models.dart';
 import '../chat/share/share_sheet.dart';
@@ -454,47 +455,38 @@ class _TopBar extends StatelessWidget {
   final int notes;
 
   @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
+  Widget build(BuildContext context) => M3Themed(child: Builder(builder: _bar));
+
+  Widget _bar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     Widget icon(AppIconData data, String label, VoidCallback? onTap) =>
-        Semantics(
-          button: true,
-          label: label,
-          excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap == null
-                ? null
-                : () {
-                    Haptics.tap();
-                    onTap();
-                  },
-            child: SizedBox.square(
-              dimension: DocSizes.topBar,
-              child: AppIcon(
-                data,
-                size: AppIconSize.lg,
-                color: onTap == null ? p.textTertiary : p.textPrimary,
-              ),
-            ),
+        IconButton(
+          tooltip: label,
+          onPressed: onTap == null
+              ? null
+              : () {
+                  Haptics.tap();
+                  onTap();
+                },
+          icon: AppIcon(
+            data,
+            size: AppIconSize.lg,
+            color: onTap == null ? scheme.outline : scheme.onSurface,
           ),
         );
     return Container(
       height: DocSizes.topBar,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: p.border)),
-      ),
+      color: scheme.surface,
       child: Row(
         children: [
           icon(DocIcons.back, AppStrings.back, onBack),
           Expanded(
             child: Text(
-              (title.isEmpty ? DocStrings.card : title).toUpperCase(),
+              title.isEmpty ? DocStrings.card : title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: context.text.caption.copyWith(color: p.textSecondary),
+              style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
           if (onToc != null) icon(DocIcons.toc, DocStrings.tocOpen, onToc),

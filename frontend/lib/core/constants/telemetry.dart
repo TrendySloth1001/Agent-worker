@@ -160,18 +160,18 @@ abstract final class TelemetrySizes {
   static const chartBottomAxis = 18.0;
   static const chartXLabels = 4;
   static const chartYTicks = 3;
-  static const chartLineWidth = 1.5;
-  static const chartBarRadius = 1.0;
+  static const chartLineWidth = 2.5;
+  static const chartBarRadius = 3.0;
   static const chartBarFill = 0.7;
   static const chartBarMin = 1.0;
   static const chartBarMax = 10.0;
   static const chartGridAlpha = 0.5;
-  static const gridDash = [2, 3];
+  static const gridDash = [1, 5];
   static const lineDash = [4, 3];
 
   /// Line charts draw point dots up to this many buckets.
   static const dotsMaxPoints = 24;
-  static const chipHeight = 28.0;
+  static const chipHeight = 40.0;
   static const liveDot = 8.0;
   static const liveDotMinOpacity = 0.2;
   static const eventRowHeight = 44.0;

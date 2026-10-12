@@ -6,6 +6,7 @@ import '../../core/constants/docs.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/doc_models.dart';
 import '../chat/share/share_sheet.dart';
 import 'doc_controller.dart';
@@ -135,17 +136,8 @@ Future<String?> showDocTextPrompt(
   String? quote,
   bool allowEmpty = false,
 }) {
-  final p = context.palette;
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<String>(
+    context,
     builder: (sheet) => _TextPrompt(
       title: title,
       hint: hint,
@@ -158,17 +150,8 @@ Future<String?> showDocTextPrompt(
 
 /// Heading and optional goal for a new section; null when cancelled.
 Future<(String, String)?> showDocAddSection(BuildContext context) {
-  final p = context.palette;
-  return showModalBottomSheet<(String, String)>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<(String, String)>(
+    context,
     builder: (sheet) => const _AddSection(),
   );
 }
@@ -565,17 +548,8 @@ Future<void> showDocVersions(
   DocController controller,
   DocSection section,
 ) {
-  final p = context.palette;
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<void>(
+    context,
     builder: (sheet) => _Versions(controller: controller, section: section),
   );
 }

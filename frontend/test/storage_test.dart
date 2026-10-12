@@ -2,6 +2,7 @@ import 'package:app/core/constants/app_files.dart';
 import 'package:app/core/constants/app_strings.dart';
 import 'package:app/core/constants/storage.dart';
 import 'package:app/core/theme/app_theme.dart';
+import 'package:app/core/widgets/dot_meter.dart';
 import 'package:app/data/chat_message.dart';
 import 'package:app/data/files_api.dart';
 import 'package:app/features/chat/widgets/attachment_views.dart';
@@ -112,7 +113,7 @@ void main() {
     testWidgets('storage screen: filter, select, bulk delete ($name)', (
       tester,
     ) async {
-      tester.view.physicalSize = const Size(360, 780);
+      tester.view.physicalSize = const Size(360, 1800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final api = _FakeFiles();
@@ -129,7 +130,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(StorageGridTile), findsNWidgets(4));
       expect(find.byType(StorageListRow), findsNWidgets(2));
-      expect(find.text('Planning'), findsOneWidget);
+      expect(find.textContaining('Planning'), findsOneWidget);
 
       // Documents only: the grid goes away.
       await tester.tap(chip(StorageStrings.documents));
@@ -190,6 +191,23 @@ void main() {
       expect(find.text(StorageStrings.unlimited), findsNothing);
     });
 
+    testWidgets('usage hero shows dot bar and kinds ($name)', (tester) async {
+      final u = StorageUsage.fromJson({
+        'totalBytes': 1024 * 1024,
+        'count': 1,
+        'byKind': {
+          'video': {'count': 1, 'bytes': 1024 * 1024},
+        },
+        'limits': {'storageBytes': 100 * 1024 * 1024, 'uploadsPerDay': 20},
+      });
+      await tester.pumpWidget(wrap(StorageHero(usage: u)));
+      expect(find.byType(DotMeter), findsOneWidget);
+      expect(find.text('1.0 MB'), findsWidgets);
+      expect(find.text(StorageStrings.videos), findsOneWidget);
+      expect(find.text(StorageStrings.uploadsToday), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('grid tile and list row ($name)', (tester) async {
       var taps = 0;
       await tester.pumpWidget(
@@ -232,7 +250,7 @@ void main() {
       expect(find.text('1:05'), findsOneWidget);
       expect(find.text('notes.pdf'), findsOneWidget);
       expect(find.textContaining(StorageStrings.failed), findsOneWidget);
-      expect(find.text(StorageStrings.notInChat), findsOneWidget);
+      expect(find.textContaining(StorageStrings.notInChat), findsOneWidget);
       await tester.tap(find.byType(StorageGridTile));
       expect(taps, 1);
     });

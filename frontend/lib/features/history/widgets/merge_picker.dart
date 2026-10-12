@@ -8,6 +8,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/conversation.dart';
 
@@ -18,17 +19,8 @@ Future<ConversationSummary?> showMergePicker(
   required String exclude,
   required Future<List<ConversationSummary>> Function(String query) search,
 }) {
-  final p = context.palette;
-  return showModalBottomSheet<ConversationSummary>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<ConversationSummary>(
+    context,
     builder: (_) => _MergePicker(exclude: exclude, search: search),
   );
 }

@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/connections.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/constants/sso_constants.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../chat/widgets/rich/playful_common.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 import 'device_code_panel.dart';
 
 /// One-tap GitHub waiting state: "Waiting for GitHub…", where it opened
@@ -33,9 +34,14 @@ class GithubWebPanel extends StatelessWidget {
   final VoidCallback? onOpenAgain, onUseCode;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      M3Themed(child: Builder(builder: _panel));
+
+  Widget _panel(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final muted = tt.bodySmall!.copyWith(color: scheme.onSurfaceVariant);
     final busy = busyLabel != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -49,17 +55,14 @@ class GithubWebPanel extends StatelessWidget {
                 dimension: AppIconSize.sm,
                 child: CircularProgressIndicator(
                   strokeWidth: AppBorder.thick,
-                  color: p.textPrimary,
+                  color: p.accent,
                 ),
               )
             else
               const PulseDot(),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
-              child: Text(
-                busyLabel ?? GithubWebStrings.waiting,
-                style: t.caption,
-              ),
+              child: Text(busyLabel ?? ConnectCopy.webWaiting, style: muted),
             ),
           ],
         ),
@@ -67,7 +70,7 @@ class GithubWebPanel extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             openedInApp ? GithubWebStrings.inApp : GithubWebStrings.inBrowser,
-            style: t.bodySmall.copyWith(color: p.textSecondary),
+            style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
         const SizedBox(height: AppSpacing.md),
@@ -75,26 +78,28 @@ class GithubWebPanel extends StatelessWidget {
           children: [
             if (onOpenAgain != null && !busy) ...[
               Expanded(
-                child: PlayfulButton(
-                  label: GithubWebStrings.openAgain,
-                  icon: ConnectIcons.open,
-                  primary: true,
-                  expand: true,
-                  onTap: () {
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: p.accent,
+                    foregroundColor: p.textInverse,
+                  ),
+                  onPressed: () {
                     Haptics.tap();
                     onOpenAgain!();
                   },
+                  icon: const AppIcon(ConnectIcons.open, size: AppIconSize.sm),
+                  label: const Text(ConnectCopy.openAgain),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
             ] else
               const Spacer(),
-            PlayfulButton(
-              label: GithubWebStrings.cancel,
-              onTap: () {
+            TextButton(
+              onPressed: () {
                 Haptics.tap();
                 onCancel();
               },
+              child: const Text(ConnectCopy.cancel),
             ),
           ],
         ),
@@ -127,8 +132,10 @@ class UseCodeLink extends StatelessWidget {
         color: p.textSecondary,
       ),
       label: Text(
-        GithubWebStrings.useCode,
-        style: context.text.button.copyWith(color: p.textSecondary),
+        ConnectCopy.useCode,
+        style: Theme.of(
+          context,
+        ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
       ),
     );
   }

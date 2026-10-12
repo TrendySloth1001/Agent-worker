@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
@@ -7,10 +6,10 @@ import '../../core/constants/app_strings.dart';
 import '../../core/constants/memory.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/toggle_row.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/memory_api.dart';
+import '../settings/widgets/settings_kit.dart';
 import '../storage/storage_actions.dart';
 import '../storage/widgets/storage_tiles.dart';
 import 'memory_controller.dart';
@@ -18,7 +17,10 @@ import 'memory_controller.dart';
 /// What the assistant remembers about the user: switch, search, add, edit,
 /// pin, delete and clear all.
 class MemoryScreen extends StatefulWidget {
-  const MemoryScreen({super.key});
+  const MemoryScreen({super.key, this.controller});
+
+  /// Test seam; defaults to a controller on the real API.
+  final MemoryController? controller;
 
   static Future<void> open(BuildContext context) {
     Haptics.tap();
@@ -32,7 +34,7 @@ class MemoryScreen extends StatefulWidget {
 }
 
 class _MemoryScreenState extends State<MemoryScreen> {
-  final _c = MemoryController();
+  late final _c = widget.controller ?? MemoryController();
   final _search = TextEditingController();
 
   @override
@@ -49,25 +51,11 @@ class _MemoryScreenState extends State<MemoryScreen> {
   }
 
   Future<String?> _ask(String title, String confirm, String initial) async {
-    final field = TextEditingController(text: initial);
-    final text = await showDialog<String>(
-      context: context,
-      builder: (dialog) => StorageDialog(
-        title: title,
-        confirm: confirm,
-        onConfirm: () => Navigator.pop(dialog, field.text.trim()),
-        child: TextField(
-          controller: field,
-          autofocus: true,
-          minLines: 2,
-          maxLines: MemorySizes.textLines,
-          maxLength: MemorySizes.maxTextLength,
-          style: dialog.text.body,
-          decoration: const InputDecoration(hintText: MemoryStrings.addHint),
-        ),
-      ),
+    final text = await showM3Sheet<String>(
+      context,
+      builder: (_) =>
+          _MemoryEditSheet(title: title, confirm: confirm, initial: initial),
     );
-    field.dispose();
     return text == null || text.length < 2 ? null : text;
   }
 
@@ -137,130 +125,111 @@ class _MemoryScreenState extends State<MemoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayFor(context),
-      child: ListenableBuilder(
-        listenable: _c,
-        builder: (context, _) => Scaffold(
-          appBar: AppBar(
-            leading: IconButton(
-              icon: const AppIcon(AppIcons.back, size: AppIconSize.md),
-              tooltip: AppStrings.back,
-              onPressed: () {
-                Haptics.tap();
-                Navigator.pop(context);
-              },
-            ),
-            title: const Text(MemoryStrings.title),
-            actions: [
-              IconButton(
-                icon: const AppIcon(MemoryIcons.add, size: AppIconSize.md),
-                tooltip: MemoryStrings.add,
-                onPressed: () {
-                  Haptics.tap();
-                  _add();
-                },
+    return ListenableBuilder(
+      listenable: _c,
+      builder: (context, _) => M3Page(
+        title: MemoryStrings.title,
+        onRefresh: _c.reload,
+        actions: [_clearAction()],
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () {
+            Haptics.tap();
+            _add();
+          },
+          icon: const AppIcon(MemoryIcons.add, size: AppIconSize.md),
+          label: const Text(MemoryStrings.add),
+        ),
+        slivers: [
+          M3Body(
+            children: [
+              SettingsGroup(
+                entries: [
+                  GroupEntry(
+                    SettingsSwitchTile(
+                      icon: MemoryIcons.section,
+                      title: MemoryStrings.toggle,
+                      summary: MemoryStrings.toggleHint,
+                      value: _c.enabled,
+                      onChanged: _toggle,
+                    ),
+                  ),
+                  GroupEntry(
+                    SettingsSwitchTile(
+                      icon: AppIcons.chat,
+                      title: MemoryStrings.recallToggle,
+                      summary: MemoryStrings.recallHint,
+                      value: _c.chatRecall,
+                      onChanged: _toggleRecall,
+                    ),
+                  ),
+                ],
               ),
-              IconButton(
-                icon: AppIcon(
-                  MemoryIcons.delete,
-                  size: AppIconSize.md,
-                  color: _c.total == 0 ? p.disabled : p.accent,
-                ),
-                tooltip: MemoryStrings.clearAll,
-                onPressed: _c.total == 0
-                    ? null
-                    : () {
-                        Haptics.tap();
-                        _clear();
-                      },
-              ),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(AppBorder.thin),
-              child: Divider(color: p.border),
-            ),
-          ),
-          body: RefreshIndicator(
-            color: p.accent,
-            backgroundColor: p.surface,
-            onRefresh: _c.reload,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                AppSpacing.sm,
-                AppSpacing.screenPadding,
-                MediaQuery.paddingOf(context).bottom + AppSpacing.xl,
-              ),
-              children: [
-                ToggleRow(
-                  label: MemoryStrings.toggle,
-                  icon: MemoryIcons.section,
-                  value: _c.enabled,
-                  onChanged: _toggle,
-                ),
-                Text(MemoryStrings.toggleHint, style: context.text.caption),
-                const SizedBox(height: AppSpacing.md),
-                ToggleRow(
-                  label: MemoryStrings.recallToggle,
-                  icon: AppIcons.chat,
-                  value: _c.chatRecall,
-                  onChanged: _toggleRecall,
-                ),
-                Text(MemoryStrings.recallHint, style: context.text.caption),
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
+              const SizedBox(height: AppSpacing.lg),
+              Builder(
+                builder: (context) => SearchBar(
                   controller: _search,
                   onChanged: _c.setQuery,
-                  style: context.text.body,
+                  hintText: MemoryStrings.searchHint,
                   textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: MemoryStrings.searchHint,
-                    prefixIcon: AppIcon(
-                      AppIcons.search,
-                      size: AppIconSize.md,
-                      color: p.textTertiary,
-                    ),
+                  leading: AppIcon(
+                    AppIcons.search,
+                    size: AppIconSize.md,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                if (_c.items.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: Text(
-                      MemoryStrings.count(_c.total),
-                      style: context.text.caption,
-                    ),
-                  ),
-                for (final m in _c.items)
-                  _MemoryRow(
-                    key: ValueKey(m.id),
-                    item: m,
-                    onEdit: () {
-                      Haptics.tap();
-                      _edit(m);
-                    },
-                    onPin: () {
-                      Haptics.tap();
-                      _c.togglePin(m);
-                    },
-                    onDelete: () => _delete(m),
-                  ),
-                _footer(context, p),
+              ),
+              if (_c.items.isNotEmpty) ...[
+                SettingsGroupHeader(MemoryStrings.count(_c.total)),
+                SettingsGroup(
+                  entries: [
+                    for (final m in _c.items)
+                      GroupEntry(
+                        _MemoryRow(
+                          key: ValueKey(m.id),
+                          item: m,
+                          onEdit: () {
+                            Haptics.tap();
+                            _edit(m);
+                          },
+                          onPin: () {
+                            Haptics.tap();
+                            _c.togglePin(m);
+                          },
+                          onDelete: () => _delete(m),
+                        ),
+                      ),
+                  ],
+                ),
               ],
-            ),
+              Builder(builder: _footer),
+            ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _footer(BuildContext context, AppPalette p) {
-    final t = context.text;
+  Widget _clearAction() => Builder(
+    builder: (context) => IconButton(
+      icon: AppIcon(
+        MemoryIcons.delete,
+        size: AppIconSize.md,
+        color: _c.total == 0
+            ? context.palette.disabled
+            : Theme.of(context).colorScheme.onSurface,
+      ),
+      tooltip: MemoryStrings.clearAll,
+      onPressed: _c.total == 0
+          ? null
+          : () {
+              Haptics.tap();
+              _clear();
+            },
+    ),
+  );
+
+  Widget _footer(BuildContext context) {
+    final p = context.palette;
     if (_c.items.isNotEmpty) return const SizedBox.shrink();
     if (_c.loading) {
       return const Padding(
@@ -276,49 +245,117 @@ class _MemoryScreenState extends State<MemoryScreen> {
             Text(
               _c.error!,
               textAlign: TextAlign.center,
-              style: t.label.copyWith(color: p.error),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium!.copyWith(color: p.error),
             ),
             TextButton(
               onPressed: () {
                 Haptics.tap();
                 _c.reload();
               },
-              child: Text(
-                AppStrings.retry,
-                style: t.label.copyWith(color: p.accent),
-              ),
+              child: const Text(AppStrings.retry),
             ),
           ],
         ),
       );
     }
     final searching = _c.query.trim().isNotEmpty;
-    final title = searching
-        ? MemoryStrings.noMatch
-        : _c.enabled
-        ? MemoryStrings.empty
-        : MemoryStrings.emptyOff;
-    final hint = searching
-        ? null
-        : _c.enabled
-        ? MemoryStrings.emptyHint
-        : MemoryStrings.emptyOffHint;
+    return M3Empty(
+      icon: MemoryIcons.empty,
+      title: searching
+          ? MemoryStrings.noMatch
+          : _c.enabled
+          ? MemoryStrings.empty
+          : MemoryStrings.emptyOff,
+      hint: searching
+          ? null
+          : _c.enabled
+          ? MemoryStrings.emptyHint
+          : MemoryStrings.emptyOffHint,
+    );
+  }
+}
+
+/// Add / edit form in a modal bottom sheet.
+class _MemoryEditSheet extends StatefulWidget {
+  const _MemoryEditSheet({
+    required this.title,
+    required this.confirm,
+    required this.initial,
+  });
+
+  final String title, confirm, initial;
+
+  @override
+  State<_MemoryEditSheet> createState() => _MemoryEditSheetState();
+}
+
+class _MemoryEditSheetState extends State<_MemoryEditSheet> {
+  late final _field = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(AppSpacing.xxl),
-      child: Column(
-        children: [
-          AppIcon(
-            MemoryIcons.empty,
-            size: AppIconSize.empty,
-            color: p.textTertiary,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              M3SheetTitle(widget.title),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                child: TextField(
+                  controller: _field,
+                  autofocus: true,
+                  minLines: 2,
+                  maxLines: MemorySizes.textLines,
+                  maxLength: MemorySizes.maxTextLength,
+                  decoration: const InputDecoration(
+                    hintText: MemoryStrings.addHint,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl,
+                  AppSpacing.sm,
+                  AppSpacing.xl,
+                  AppSpacing.lg,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Haptics.tap();
+                        Navigator.pop(context);
+                      },
+                      child: const Text(AppStrings.cancel),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    FilledButton(
+                      onPressed: () {
+                        Haptics.tap();
+                        Navigator.pop(context, _field.text.trim());
+                      },
+                      child: Text(widget.confirm),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text(title, style: t.label),
-          if (hint != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(hint, textAlign: TextAlign.center, style: t.caption),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -339,59 +376,43 @@ class _MemoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
-    return InkWell(
-      onTap: onEdit,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: p.border)),
+    final scheme = Theme.of(context).colorScheme;
+    return Dismissible(
+      key: ValueKey('dismiss-${item.id}'),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => onDelete(),
+      background: Container(
+        color: scheme.errorContainer,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: AppSpacing.xl),
+        child: AppIcon(
+          MemoryIcons.delete,
+          size: AppIconSize.md,
+          color: p.error,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.pinned
-                        ? '${MemoryStrings.kind(item.kind)}'
-                              '${MemoryStrings.separator}${MemoryStrings.pinned}'
-                        : MemoryStrings.kind(item.kind),
-                    style: t.caption.copyWith(
-                      color: item.pinned ? p.accent : p.textTertiary,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(item.text, style: t.body),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            InkResponse(
-              onTap: onPin,
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                child: AppIcon(
-                  item.pinned ? MemoryIcons.unpin : MemoryIcons.pin,
-                  size: AppIconSize.sm,
-                  color: item.pinned ? p.accent : p.textSecondary,
-                ),
-              ),
-            ),
-            InkResponse(
-              onTap: onDelete,
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                child: AppIcon(
-                  MemoryIcons.delete,
-                  size: AppIconSize.sm,
-                  color: p.textSecondary,
-                ),
-              ),
-            ),
-          ],
+      ),
+      child: ListTile(
+        onTap: onEdit,
+        title: Text(item.text),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
+          child: Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              M3Tag(MemoryStrings.kind(item.kind)),
+              if (item.pinned) const M3Tag(MemoryStrings.pinned, accent: true),
+            ],
+          ),
+        ),
+        trailing: IconButton(
+          tooltip: item.pinned ? MemoryStrings.unpin : MemoryStrings.pin,
+          onPressed: onPin,
+          icon: AppIcon(
+            item.pinned ? MemoryIcons.unpin : MemoryIcons.pin,
+            size: AppIconSize.sm,
+            color: item.pinned ? p.accent : scheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

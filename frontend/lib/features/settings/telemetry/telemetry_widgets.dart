@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/constants/telemetry.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/dot_meter.dart';
 import '../../../core/widgets/icon_label.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/telemetry.dart';
 import '../format.dart';
 import '../widgets/section_header.dart';
@@ -65,23 +68,34 @@ class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
             : Border.all(color: p.textTertiary, width: AppSizes.statusRing),
       ),
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        on ? FadeTransition(opacity: _c, child: dot) : dot,
-        const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
-        Text(
-          label,
-          style: context.text.caption.copyWith(
-            color: on ? p.accent : p.textTertiary,
+    return Container(
+      margin: const EdgeInsets.only(right: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          on ? FadeTransition(opacity: _c, child: dot) : dot,
+          const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              color: on ? p.accent : p.textTertiary,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// One big number with a mono caption above it.
+/// One big Space Grotesk number with a tiny mono caption above it.
 class StatTile extends StatelessWidget {
   const StatTile(
     this.label,
@@ -97,25 +111,35 @@ class StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.text;
     final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: t.caption, maxLines: 1),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(color: scheme.onSurfaceVariant),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: AppSpacing.xs),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
             value,
-            style: t.metric.copyWith(color: alert ? p.accent : null),
+            style: tt.headlineSmall!.copyWith(
+              color: alert ? p.accent : scheme.onSurface,
+            ),
           ),
         ),
         if (sub != null)
           Text(
             sub!,
-            style: t.caption.copyWith(color: alert ? p.accent : null),
+            style: tt.bodySmall!.copyWith(
+              color: alert ? p.accent : scheme.onSurfaceVariant,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -124,31 +148,51 @@ class StatTile extends StatelessWidget {
   }
 }
 
-/// Tiles in a fixed number of columns, wrapping on narrow screens.
+/// Tiles in rounded tonal containers, in a fixed number of columns, wrapping
+/// on narrow screens.
 class StatGrid extends StatelessWidget {
-  const StatGrid({super.key, required this.tiles});
+  const StatGrid({super.key, required this.tiles, this.color});
 
   final List<Widget> tiles;
 
+  /// Tile background; defaults to the grouped container tone.
+  final Color? color;
+
   @override
   Widget build(BuildContext context) {
+    final bg = color ?? Theme.of(context).colorScheme.surfaceContainer;
     return LayoutBuilder(
       builder: (context, c) {
         final cols = (c.maxWidth / TelemetrySizes.statTileMinWidth)
             .floor()
             .clamp(1, TelemetrySizes.statColumns);
-        final w = (c.maxWidth - AppSpacing.md * (cols - 1)) / cols;
+        final w = (c.maxWidth - AppSpacing.sm * (cols - 1)) / cols;
         return Wrap(
-          spacing: AppSpacing.md,
-          runSpacing: AppSpacing.lg,
-          children: [for (final t in tiles) SizedBox(width: w, child: t)],
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            for (final t in tiles)
+              SizedBox(
+                width: w,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: t,
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
   }
 }
 
-/// Mono pill that inverts when selected.
+/// M3 filter chip that inverts when selected.
 class TelemetryChip extends StatelessWidget {
   const TelemetryChip({
     super.key,
@@ -167,39 +211,31 @@ class TelemetryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final fg = selected ? p.textInverse : (alert ? p.accent : p.textSecondary);
-    return GestureDetector(
-      onTap: () {
+    final fg = selected
+        ? p.textInverse
+        : (alert ? p.accent : Theme.of(context).colorScheme.onSurface);
+    final fill = alert ? p.accent : p.textPrimary;
+    return FilterChip(
+      label: Text(label),
+      avatar: icon == null
+          ? null
+          : AppIcon(icon!, size: AppIconSize.sm, color: fg),
+      selected: selected,
+      showCheckmark: false,
+      shape: const StadiumBorder(),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      side: BorderSide(
+        color: selected
+            ? Colors.transparent
+            : (alert ? p.accent : p.borderStrong),
+      ),
+      backgroundColor: Colors.transparent,
+      selectedColor: fill,
+      labelStyle: Theme.of(context).textTheme.labelLarge!.copyWith(color: fg),
+      onSelected: (_) {
         Haptics.tap();
         onTap();
       },
-      child: Container(
-        height: TelemetrySizes.chipHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.chipHorizontalPadding,
-        ),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          color: selected
-              ? (alert ? p.accent : p.textPrimary)
-              : Colors.transparent,
-          border: Border.all(
-            color: selected
-                ? (alert ? p.accent : p.textPrimary)
-                : (alert ? p.accent : p.borderStrong),
-            width: AppBorder.thin,
-          ),
-        ),
-        child: icon == null
-            ? Text(label, style: context.text.caption.copyWith(color: fg))
-            : IconLabel(
-                icon: icon!,
-                text: label,
-                style: context.text.caption,
-                color: fg,
-              ),
-      ),
     );
   }
 }
@@ -228,10 +264,17 @@ class ChipRow extends StatelessWidget {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          Center(child: Text(label, style: context.text.caption)),
+          Center(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge!.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           const SizedBox(width: AppSpacing.sm),
           TelemetryChip(
-            label: TelemetryStrings.filterAll,
+            label: TelemetryCopy.filterAll,
             selected: selected == null,
             onTap: () => onSelect(null),
           ),
@@ -302,7 +345,8 @@ class _ModelRowState extends State<ModelRow> {
     final t = context.text;
     final cd = m.cooldownLeft(widget.now);
     final failing = a.failed > 0;
-    return FlatCard(
+    return M3Card(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       onTap: () {
         Haptics.tap();
         setState(() => _open = !_open);
@@ -349,6 +393,7 @@ class _ModelRowState extends State<ModelRow> {
           ),
           const SizedBox(height: AppSpacing.md),
           StatGrid(
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
             tiles: [
               StatTile(TelemetryStrings.requests, grouped(a.requests)),
               StatTile(
@@ -470,7 +515,7 @@ class _ModelRowState extends State<ModelRow> {
         Align(
           alignment: Alignment.centerRight,
           child: TelemetryChip(
-            label: TelemetryStrings.openDetail,
+            label: TelemetryCopy.openDetail,
             icon: TelemetryIcons.chevron,
             selected: false,
             onTap: widget.onOpen,
@@ -509,17 +554,15 @@ class EventRow extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           border: Border(
-            bottom: BorderSide(color: p.border, width: AppBorder.thin),
             left: BorderSide(
               color: e.ok ? Colors.transparent : p.accent,
               width: AppBorder.thick,
             ),
           ),
-          color: fresh ? p.surfaceRaised : Colors.transparent,
         ),
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.sm,
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -659,31 +702,41 @@ class AggLine extends StatelessWidget {
     final p = context.palette;
     final t = context.text;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Row(
         children: [
           if (icon != null) ...[
-            AppIcon(icon!, size: AppIconSize.xs, color: p.textSecondary),
-            const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
+            AppIcon(icon!, size: AppIconSize.sm, color: p.textSecondary),
+            const SizedBox(width: AppSpacing.md),
           ],
           Expanded(
             child: Text(
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: t.caption.copyWith(color: p.textPrimary),
+              style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
-          Text(
-            [
-              grouped(agg.requests),
-              if (agg.failed > 0)
-                '${agg.failed} ${TelemetryStrings.statusFailed}',
-              '${compact(agg.tokens)} ${TelemetryStrings.tokensShort}',
-              ms(agg.latencyP50),
-            ].join(TelemetryStrings.separator),
-            style: t.caption.copyWith(
-              color: agg.failed > 0 ? p.accent : p.textSecondary,
+          const SizedBox(width: AppSpacing.sm),
+          Flexible(
+            flex: 2,
+            child: Text(
+              [
+                grouped(agg.requests),
+                if (agg.failed > 0)
+                  '${agg.failed} ${TelemetryStrings.statusFailed}',
+                '${compact(agg.tokens)} ${TelemetryStrings.tokensShort}',
+                ms(agg.latencyP50),
+              ].join(TelemetryStrings.separator),
+              textAlign: TextAlign.end,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: t.caption.copyWith(
+                color: agg.failed > 0 ? p.accent : p.textSecondary,
+              ),
             ),
           ),
         ],
@@ -704,7 +757,10 @@ class UserLine extends StatelessWidget {
     final t = context.text;
     final p = context.palette;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -758,7 +814,10 @@ class ErrorLine extends StatelessWidget {
     final t = context.text;
     final p = context.palette;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -766,9 +825,14 @@ class ErrorLine extends StatelessWidget {
             children: [
               AppIcon(AppIcons.alert, size: AppIconSize.xs, color: p.accent),
               const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
-              Text(
-                (e.code ?? TelemetryStrings.statusFailed).toUpperCase(),
-                style: t.caption.copyWith(color: p.accent),
+              Flexible(
+                flex: 2,
+                child: Text(
+                  (e.code ?? TelemetryStrings.statusFailed).toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.caption.copyWith(color: p.accent),
+                ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(

@@ -1,4 +1,5 @@
 import 'package:app/core/constants/app_strings.dart';
+import 'package:app/core/widgets/m3_kit_extras.dart';
 import 'package:app/core/constants/history.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/data/chat_api.dart';
@@ -231,9 +232,9 @@ void main() {
       AppStrings.archiveChat,
       AppStrings.deleteChat,
     ]) {
-      expect(find.text(label), findsOneWidget);
+      expect(find.text(sentenceCase(label)), findsOneWidget);
     }
-    await tester.tap(find.text(AppStrings.rename));
+    await tester.tap(find.text(sentenceCase(AppStrings.rename)));
     await tester.pumpAndSettle();
     final field = find.widgetWithText(TextField, 'Budget plan');
     expect(field, findsOneWidget);

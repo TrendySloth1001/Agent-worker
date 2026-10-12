@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../core/constants/app_icons.dart';
-import '../../core/constants/app_sizes.dart';
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/storage.dart';
 import '../../core/haptics.dart';
 import '../../core/notifications.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/widgets/app_icon.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/files_api.dart';
 import '../chat/preview/file_preview.dart';
+import '../settings/widgets/settings_kit.dart';
 import '../chat/widgets/attachment_views.dart';
 import 'storage_controller.dart';
 
@@ -34,67 +34,41 @@ Future<void> showStorageActions(
   FileInfo file,
 ) async {
   Haptics.tap();
-  final p = context.palette;
-  final action = await showModalBottomSheet<StorageAction>(
-    context: context,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
-    builder: (sheet) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.screenPadding,
-              AppSpacing.lg,
-              AppSpacing.screenPadding,
-              AppSpacing.sm,
-            ),
-            child: Text(
-              file.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: sheet.text.label,
-            ),
+  final action = await showM3Sheet<StorageAction>(
+    context,
+    builder: (sheet) => M3ActionSheet(
+      title: file.name,
+      rows: [
+        for (final (a, icon, label) in [
+          (StorageAction.open, StorageIcons.open, StorageStrings.actionOpen),
+          (StorageAction.share, StorageIcons.share, StorageStrings.share),
+          (
+            StorageAction.download,
+            StorageIcons.download,
+            StorageStrings.download,
           ),
-          Divider(color: p.border),
-          for (final (a, icon, label) in [
-            (StorageAction.open, StorageIcons.open, StorageStrings.actionOpen),
-            (StorageAction.share, StorageIcons.share, StorageStrings.share),
+          if (file.conversationId != null)
             (
-              StorageAction.download,
-              StorageIcons.download,
-              StorageStrings.download,
+              StorageAction.openChat,
+              StorageIcons.openChat,
+              StorageStrings.openChat,
             ),
-            if (file.conversationId != null)
-              (
-                StorageAction.openChat,
-                StorageIcons.openChat,
-                StorageStrings.openChat,
-              ),
-            (StorageAction.select, StorageIcons.select, StorageStrings.select),
-            (StorageAction.rename, StorageIcons.rename, StorageStrings.rename),
-          ])
-            _SheetRow(
-              icon: icon,
-              label: label,
-              onTap: () => Navigator.pop(sheet, a),
-            ),
-          Divider(color: p.border),
-          _SheetRow(
-            icon: StorageIcons.delete,
-            label: StorageStrings.delete,
-            color: p.accent,
-            onTap: () => Navigator.pop(sheet, StorageAction.delete),
+          (StorageAction.select, StorageIcons.select, StorageStrings.select),
+          (StorageAction.rename, StorageIcons.rename, StorageStrings.rename),
+        ])
+          SettingsTile(
+            icon: icon,
+            title: label,
+            onTap: () => Navigator.pop(sheet, a),
           ),
-        ],
-      ),
+        SettingsTile(
+          icon: StorageIcons.delete,
+          title: StorageStrings.delete,
+          iconColor: sheet.palette.accent,
+          titleColor: sheet.palette.accent,
+          onTap: () => Navigator.pop(sheet, StorageAction.delete),
+        ),
+      ],
     ),
   );
   if (action == null || !context.mounted) return;
@@ -276,78 +250,37 @@ class StorageDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AlertDialog(
-      backgroundColor: p.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        side: BorderSide(color: p.border),
-      ),
-      title: Text(title, style: context.text.label),
-      content: child,
-      actions: [
-        TextButton(
-          onPressed: () {
-            Haptics.tap();
-            Navigator.pop(context);
-          },
-          child: Text(AppStrings.cancel, style: context.text.caption),
-        ),
-        TextButton(
-          onPressed: () {
-            Haptics.tap();
-            onConfirm();
-          },
-          child: Text(
-            confirm,
-            style: context.text.caption.copyWith(
-              color: destructive ? p.accent : p.textPrimary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SheetRow extends StatelessWidget {
-  const _SheetRow({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.color,
-  });
-
-  final AppIconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return InkWell(
-      onTap: () {
-        Haptics.tap();
-        onTap();
-      },
-      child: Container(
-        height: AppSizes.sheetOptionHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.screenPadding,
-        ),
-        child: Row(
-          children: [
-            AppIcon(
-              icon,
-              size: AppIconSize.md,
-              color: color ?? p.textSecondary,
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Text(label, style: context.text.label.copyWith(color: color)),
-          ],
-        ),
+    return M3Themed(
+      child: Builder(
+        builder: (context) {
+          final p = context.palette;
+          return AlertDialog(
+            title: Text(title),
+            content: child,
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Haptics.tap();
+                  Navigator.pop(context);
+                },
+                child: const Text(AppStrings.cancel),
+              ),
+              FilledButton(
+                style: destructive
+                    ? FilledButton.styleFrom(
+                        backgroundColor: p.accent,
+                        foregroundColor: AppColors.white,
+                      )
+                    : null,
+                onPressed: () {
+                  Haptics.tap();
+                  onConfirm();
+                },
+                child: Text(confirm),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

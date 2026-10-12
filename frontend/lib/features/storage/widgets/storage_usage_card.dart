@@ -10,7 +10,9 @@ import '../../../core/widgets/dot_meter.dart';
 import '../../../core/widgets/icon_label.dart';
 import '../../../data/files_api.dart';
 import '../../chat/widgets/attachment_views.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 import '../../settings/widgets/section_header.dart';
+import '../../settings/widgets/settings_kit.dart';
 
 String kindLabel(FileKind? k) => switch (k) {
   null => StorageStrings.all,
@@ -130,6 +132,123 @@ class StorageUsageCard extends StatelessWidget {
     final n = v?.count ?? 0;
     return '$n ${n == 1 ? StorageStrings.file : StorageStrings.files}'
         '${StorageStrings.separator}${formatBytes(v?.bytes ?? 0)}';
+  }
+}
+
+/// Hero card of the Storage screen: big used figure, dot-matrix usage bar
+/// and a per-kind breakdown, in a rounded tonal container.
+class StorageHero extends StatelessWidget {
+  const StorageHero({super.key, required this.usage, this.loading = false});
+
+  final StorageUsage? usage;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final u = usage;
+    final limit = u?.limitBytes;
+    final full = u?.full ?? false;
+    final muted = tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant);
+    return M3Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SettingsIconCircle(StorageIcons.section),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text(StorageStrings.title, style: tt.titleMedium),
+              ),
+              if (u != null && limit == null)
+                const M3Tag(StorageStrings.unlimited, accent: true)
+              else if (full)
+                const M3Tag(StorageStrings.full, accent: true),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    u == null ? AppStrings.dash : formatBytes(u.totalBytes),
+                    style: tt.displaySmall!.copyWith(
+                      fontVariations: const [FontVariation.weight(600)],
+                      color: u == null ? scheme.onSurfaceVariant : null,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: Text(
+                  limit == null
+                      ? StorageStrings.used
+                      : '${StorageStrings.of} ${formatBytes(limit)}',
+                  style: muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          M3DotBar(
+            fraction: u?.fraction ?? 0,
+            color: full ? p.error : p.accent,
+          ),
+          if (u != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            for (final k in FileKind.values)
+              if ((u.byKind[k]?.count ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Row(
+                    children: [
+                      AppIcon(
+                        fileIcon(k),
+                        size: AppIconSize.sm,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(kindLabel(k), style: tt.bodyMedium),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(
+                          StorageUsageCard._kindValue(u.byKind[k]),
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(StorageStrings.uploadsToday, style: muted),
+                ),
+                Text(
+                  u.uploadsPerDay == null
+                      ? '${u.uploadsToday}'
+                      : '${u.uploadsToday} / ${u.uploadsPerDay}',
+                  style: muted,
+                ),
+              ],
+            ),
+          ] else if (loading)
+            const SizedBox(height: AppSpacing.lg),
+        ],
+      ),
+    );
   }
 }
 

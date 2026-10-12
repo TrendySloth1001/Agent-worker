@@ -6,6 +6,7 @@ import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/glass.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/doc_models.dart';
 import 'doc_progress.dart';
 
@@ -220,17 +221,8 @@ Future<void> showDocToc(
   required int current,
   required ValueChanged<int> onJump,
 }) {
-  final p = context.palette;
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<void>(
+    context,
     builder: (sheet) => SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(

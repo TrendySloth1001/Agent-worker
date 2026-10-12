@@ -8,6 +8,7 @@ import '../../core/notifications.dart';
 import '../../core/app_scope.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../core/widgets/dot_grid_background.dart';
 import '../../core/widgets/glass.dart';
 import '../../core/widgets/size_reporter.dart';
@@ -31,7 +32,6 @@ import 'widgets/message_bubble.dart';
 import 'widgets/message_editor.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/icon_label.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -405,7 +405,10 @@ class _TopBar extends StatelessWidget {
   final VoidCallback? onExport;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      M3Themed(child: Builder(builder: _bar));
+
+  Widget _bar(BuildContext context) {
     final canReset = controller.messages.isNotEmpty;
     final title = controller.title;
     return SizedBox(
@@ -439,14 +442,12 @@ class _TopBar extends StatelessWidget {
                     : DocBackgroundChip(
                         key: const ValueKey(DocBackgroundChip),
                         fallback: Text(
-                          title == null ? '' : title.toUpperCase(),
+                          title ?? '',
                           key: ValueKey(title),
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: context.text.caption.copyWith(
-                            color: context.palette.textSecondary,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
               ),
@@ -473,7 +474,7 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// Compact bordered pill: new-chat icon plus CHAT.
+/// Tonal new-chat button: icon plus CHAT.
 class _NewChatPill extends StatelessWidget {
   const _NewChatPill({this.onTap});
 
@@ -481,36 +482,22 @@ class _NewChatPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final color = onTap == null ? p.textTertiary : p.textPrimary;
     return Semantics(
       button: true,
       label: AppStrings.newChat,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Center(
-          child: Container(
-            height: AppSizes.chipHeight,
+      child: Center(
+        child: FilledButton.tonalIcon(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, AppSizes.chipHeight + AppSpacing.sm),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSizes.chipHorizontalPadding,
             ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              border: Border.all(
-                color: onTap == null ? p.border : p.borderStrong,
-                width: AppBorder.thin,
-              ),
-            ),
-            child: IconLabel(
-              icon: AppIcons.newChat,
-              text: AppStrings.chatPill,
-              style: context.text.caption,
-              color: color,
-              iconSize: AppIconSize.sm,
-            ),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
+          onPressed: onTap,
+          icon: const AppIcon(AppIcons.newChat, size: AppIconSize.sm),
+          label: Text(sentenceCase(AppStrings.chatPill)),
         ),
       ),
     );
@@ -526,18 +513,19 @@ class _BarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox.square(
-        dimension: AppSizes.topBar,
-        child: AppIcon(
-          icon,
-          size: AppIconSize.lg,
-          semanticLabel: label,
-          color: onTap == null ? p.textTertiary : p.textPrimary,
-        ),
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      onPressed: onTap,
+      tooltip: label,
+      constraints: const BoxConstraints.tightFor(
+        width: AppSizes.topBar,
+        height: AppSizes.topBar,
+      ),
+      icon: AppIcon(
+        icon,
+        size: AppIconSize.lg,
+        semanticLabel: label,
+        color: onTap == null ? scheme.outline : scheme.onSurface,
       ),
     );
   }
