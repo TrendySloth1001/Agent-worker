@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../core/constants/app_config.dart';
 import '../core/constants/notify_copy.dart';
 import '../core/constants/widget_github.dart';
@@ -424,6 +426,7 @@ class GhRepoSearch {
 class GhMe {
   GhMe(Map<String, dynamic> j)
     : login = _s(j['login']),
+      name = _s(j['name']),
       avatar = _s(j['avatar']),
       url = _s(j['url']),
       publicRepos = _i(j['publicRepos']),
@@ -433,7 +436,7 @@ class GhMe {
           : null,
       canReadPrivate = j['canReadPrivate'] == true;
 
-  final String login, avatar, url;
+  final String login, name, avatar, url;
   final int publicRepos;
   final int? privateRepos;
   final List<String>? scopes;
@@ -451,7 +454,12 @@ class GhSearch<T> {
 /// Live GitHub data through the backend's `/github` routes.
 class GithubApi {
   GithubApi._();
-  static final instance = GithubApi._();
+
+  /// For test doubles that override every method they use.
+  @visibleForTesting
+  GithubApi.fake();
+
+  static GithubApi instance = GithubApi._();
 
   final _client = AuthClient();
 
@@ -750,6 +758,29 @@ class GithubApi {
     final j = await _get('/search/commits', {
       'q': q,
       'per_page': '${GithubLimits.pageRepos}',
+    });
+    return GhSearch(_i(j['total']), [
+      for (final r in _list(j['items'])) GhCommit(r),
+    ]);
+  }
+
+  /// Open pull requests that involve [login] (author, assignee, review
+  /// requested or mentioned), most recently updated first.
+  Future<GhSearch<GhIssue>> involvedPulls(String login) => searchIssues(
+    'is:pr is:open involves:$login sort:updated-desc archived:false',
+  );
+
+  /// Open issues assigned to or created by [login].
+  Future<GhSearch<GhIssue>> involvedIssues(String login) => searchIssues(
+    'is:issue is:open involves:$login sort:updated-desc archived:false',
+  );
+
+  /// The latest commits [login] authored across repositories.
+  Future<GhSearch<GhCommit>> activity(String login) async {
+    final j = await _get('/search/commits', {
+      'q': 'author:$login',
+      'sort': 'author-date',
+      'per_page': '${GithubLimits.pageActivity}',
     });
     return GhSearch(_i(j['total']), [
       for (final r in _list(j['items'])) GhCommit(r),

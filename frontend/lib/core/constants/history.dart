@@ -58,7 +58,7 @@ abstract final class HistoryStrings {
   static const loadMoreFailed = 'Could not load more.';
 
   // Footer
-  static const knowledge = 'Knowledge';
+  static const apps = 'Apps';
   static const docs = 'Docs';
   static const storage = 'Storage';
   static const archived = 'Archived';

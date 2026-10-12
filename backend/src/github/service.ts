@@ -203,9 +203,12 @@ export async function searchIssues(q: string, perPage?: unknown) {
   };
 }
 
-export async function searchCommits(q: string, perPage?: unknown) {
+const COMMIT_SORTS = new Set(["author-date", "committer-date"]);
+
+export async function searchCommits(q: string, perPage?: unknown, sort?: string) {
   const n = clampInt(perPage, 10, 1, 30);
-  const d = await gh(`/search/commits?q=${enc(redactForExternal(q))}&per_page=${n}`);
+  const order = sort && COMMIT_SORTS.has(sort) ? `&sort=${sort}&order=desc` : "";
+  const d = await gh(`/search/commits?q=${enc(redactForExternal(q))}${order}&per_page=${n}`);
   if (await publicOnly()) d.items = (d.items ?? []).filter((c: any) => c.repository?.private === false);
   return {
     total: d.total_count ?? 0,

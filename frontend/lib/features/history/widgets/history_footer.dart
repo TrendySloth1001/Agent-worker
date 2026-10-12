@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
+import '../../../core/constants/apps.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/auth_constants.dart';
 import '../../../core/constants/history.dart';
@@ -14,7 +15,7 @@ import '../../auth/auth_controller.dart';
 import '../../settings/widgets/settings_kit.dart';
 import 'history_header.dart';
 
-/// Bottom of the sidebar: Material 3 destinations (Knowledge, Docs, Storage,
+/// Bottom of the sidebar: Material 3 destinations (Apps, Docs, Storage,
 /// Archived) as tonal pills, then the account card as Settings draws it, with
 /// a settings button.
 class HistoryFooter extends StatelessWidget {
@@ -22,7 +23,7 @@ class HistoryFooter extends StatelessWidget {
     super.key,
     required this.archivedActive,
     required this.compact,
-    required this.onKnowledge,
+    required this.onApps,
     required this.onDocs,
     required this.onStorage,
     required this.onArchived,
@@ -34,7 +35,7 @@ class HistoryFooter extends StatelessWidget {
 
   /// Icons only, in one row, for short (landscape) screens.
   final bool compact;
-  final VoidCallback onKnowledge;
+  final VoidCallback onApps;
   final VoidCallback onDocs;
   final VoidCallback onStorage;
   final VoidCallback onArchived;
@@ -45,10 +46,10 @@ class HistoryFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final tiles = [
       _Destination(
-        icon: AppIcons.knowledge,
-        label: HistoryStrings.knowledge,
+        icon: AppsIcons.hub,
+        label: HistoryStrings.apps,
         compact: compact,
-        onTap: onKnowledge,
+        onTap: onApps,
       ),
       _Destination(
         icon: HistoryIcons.docs,
