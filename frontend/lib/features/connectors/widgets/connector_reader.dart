@@ -45,7 +45,6 @@ class ConnectorReader extends StatefulWidget {
   final Future<ReaderContent> Function() load;
   final String Function(String title) prompt;
 
-
   @override
   State<ConnectorReader> createState() => _ConnectorReaderState();
 }

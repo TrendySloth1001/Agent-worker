@@ -62,6 +62,9 @@ abstract final class ConnectorStrings {
   static const rateLimited = 'Too many requests. Wait a minute and retry.';
   static const retry = 'Retry';
   static const askSparky = 'Ask Sparky';
+
+  /// "4", or "30+" when the provider has more than one page of results.
+  static String count(int n, {bool more = false}) => more ? '$n+' : '$n';
   static const askSparkyHint = 'Start a chat about it';
   static const addToKb = 'Add to knowledge base';
   static const addToKbHint = 'Search it from any chat';
@@ -117,6 +120,18 @@ abstract final class DriveStrings {
   static const pick = 'Pick files from Drive';
   static const pickHint = 'Opens Google’s file picker';
   static const filesTitle = 'Files sparky can see';
+  static const browseTitle = 'Your Drive files';
+  static const recent = 'Recent';
+  static const filterAll = 'All';
+  static const filterDocs = 'Docs';
+  static const filterSheets = 'Sheets';
+  static const filterPdfs = 'PDFs';
+  static const filterOther = 'Other';
+  static const sortLabel = 'Sort';
+  static const sortRecent = 'Recent';
+  static const sortName = 'Name';
+  static const noFilterMatches = 'No files of this type';
+  static String fileCount(int n) => n == 1 ? '1 file' : '$n files';
   static const noFiles = 'No files yet';
   static const noFilesHint =
       'Pick files from Drive, or save a doc to Drive, and they show up here.';
@@ -174,6 +189,15 @@ abstract final class NotionStrings {
   static const perksTitle = 'What you get';
   static const search = 'Search shared pages';
   static const pagesTitle = 'Shared with sparky';
+  static const pagesSummary = 'Pages sparky can see';
+  static const browseTitle = 'Your Notion pages';
+  static const recent = 'Recent';
+  static const filterAll = 'All';
+  static const filterPages = 'Pages';
+  static const filterDatabases = 'Databases';
+  static const noFilterMatches = 'Nothing of this kind shared yet';
+  static String pageCount(int n, {bool more = false}) =>
+      '${more ? '$n+' : '$n'} ${n == 1 && !more ? 'item' : 'items'}';
   static const results = 'Results';
   static const noPages = 'No pages shared yet';
   static const noPagesHint =
@@ -249,6 +273,13 @@ abstract final class ConnectorSizes {
   static const readerMaxWidth = 720.0;
   static const skeletonRows = 5;
   static const searchPage = 30;
+
+  /// Recent items previewed on a connector screen (the rest are one tap away).
+  static const previewCount = 3;
+
+  /// Drive has one more row (Pick files), so it previews one item less and
+  /// the account actions stay on the first screen.
+  static const drivePreviewCount = 2;
 }
 
 abstract final class ConnectorDurations {

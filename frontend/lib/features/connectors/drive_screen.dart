@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/connectors.dart';
 import '../../core/haptics.dart';
-import '../../core/time_ago.dart';
-import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/connect_api.dart';
 import '../../data/connections_api.dart';
@@ -16,7 +13,7 @@ import 'connector_actions.dart';
 import 'connector_auth.dart';
 import 'connector_brand.dart';
 import 'connector_controllers.dart';
-import 'drive_file_screen.dart';
+import 'drive_browse_screen.dart';
 import 'widgets/connector_kit.dart';
 
 /// Google Drive with drive.file: who is connected, the files sparky can see
@@ -45,7 +42,6 @@ class _DriveScreenState extends State<DriveScreen> {
       widget.connections ?? ConnectionsController.instance;
   late final DriveController _drive = widget.controller ?? DriveController();
   late final ConnectorAuth _auth = widget.auth ?? ConnectorAuth.instance;
-  final _search = TextEditingController();
   String? _loadedFor;
 
   @override
@@ -60,7 +56,6 @@ class _DriveScreenState extends State<DriveScreen> {
   void dispose() {
     _conn.removeListener(_sync);
     if (widget.controller == null) _drive.dispose();
-    _search.dispose();
     super.dispose();
   }
 
@@ -125,12 +120,11 @@ class _DriveScreenState extends State<DriveScreen> {
     await _auth.connect(ConnectorIds.drive);
   }
 
-  void _open(DriveFile f) {
-    Haptics.tap();
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => DriveFileScreen(file: f)));
-  }
+  void _browse() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => DriveBrowseScreen(controller: _drive, now: widget.now),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +175,10 @@ class _DriveScreenState extends State<DriveScreen> {
   List<Widget> _connected(BuildContext context, Connection a) {
     final reauth = a.needsReauth || _drive.needsReauth;
     final picking = _auth.busyFor(ConnectorIds.drive, ConnectorFlow.picker);
+    final files = _drive.items;
+    final recent = (files ?? const <DriveFile>[])
+        .take(ConnectorSizes.drivePreviewCount)
+        .toList();
     return [
       ConnectorProfileCard(
         avatar: ConnectorAvatar(url: a.avatarUrl, brand: ConnectorBrand.drive),
@@ -199,9 +197,17 @@ class _DriveScreenState extends State<DriveScreen> {
           auth: _auth,
           onContinue: () => _reconnect(ask: false),
         )
-      else
+      else ...[
         M3Group(
           children: [
+            ConnectorSummaryTile(
+              icon: DriveIcons.fallback,
+              title: DriveStrings.filesTitle,
+              count: files == null
+                  ? null
+                  : ConnectorStrings.count(files.length),
+              onTap: _browse,
+            ),
             SettingsTile(
               icon: DriveIcons.pick,
               title: DriveStrings.pick,
@@ -223,21 +229,29 @@ class _DriveScreenState extends State<DriveScreen> {
             ),
           ],
         ),
-      if (!reauth && (_drive.offline || _drive.rateLimited)) ...[
-        const SizedBox(height: AppSpacing.md),
-        ConnectorBanner(
-          icon: _drive.offline
-              ? ConnectorIcons.offline
-              : ConnectorIcons.warning,
-          text: _drive.offline
-              ? ConnectorStrings.offline
-              : ConnectorStrings.rateLimited,
-          action: ConnectorStrings.retry,
-          onAction: _drive.load,
-        ),
+        if (_drive.offline || _drive.rateLimited) ...[
+          const SizedBox(height: AppSpacing.md),
+          ConnectorBanner(
+            icon: _drive.offline
+                ? ConnectorIcons.offline
+                : ConnectorIcons.warning,
+            text: _drive.offline
+                ? ConnectorStrings.offline
+                : ConnectorStrings.rateLimited,
+            action: ConnectorStrings.retry,
+            onAction: _drive.load,
+          ),
+        ],
+        if (recent.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          M3Group(
+            title: DriveStrings.recent,
+            children: [
+              for (final f in recent) DriveFileTile(file: f, now: widget.now),
+            ],
+          ),
+        ],
       ],
-      const SizedBox(height: AppSpacing.lg),
-      ..._files(context),
       const SizedBox(height: AppSpacing.lg),
       ConnectorAccountGroup(
         brand: ConnectorBrand.drive,
@@ -248,91 +262,4 @@ class _DriveScreenState extends State<DriveScreen> {
       ),
     ];
   }
-
-  List<Widget> _files(BuildContext context) {
-    final files = _drive.items;
-    final scheme = Theme.of(context).colorScheme;
-    if (files == null) {
-      if (_drive.error != null && !_drive.offline && !_drive.needsReauth) {
-        return [
-          M3Empty(
-            icon: DriveIcons.fallback,
-            title: ConnectorStrings.loadFailed,
-            hint: _drive.error!.message,
-            action: FilledButton.tonal(
-              onPressed: _drive.load,
-              child: const Text(ConnectorStrings.retry),
-            ),
-          ),
-        ];
-      }
-      if (_drive.needsReauth) return const [];
-      return const [GhSkeletonCells(count: ConnectorSizes.skeletonRows)];
-    }
-    final showSearch = files.isNotEmpty || _drive.query.isNotEmpty;
-    return [
-      if (showSearch) ...[
-        GhPillSearch(
-          hint: DriveStrings.filter,
-          controller: _search,
-          onChanged: _drive.setQuery,
-        ),
-        const SizedBox(height: AppSpacing.md),
-      ],
-      if (files.isEmpty)
-        M3Empty(
-          icon: DriveIcons.fallback,
-          title: _drive.query.isEmpty
-              ? DriveStrings.noFiles
-              : DriveStrings.noMatches,
-          hint: _drive.query.isEmpty ? DriveStrings.noFilesHint : null,
-        )
-      else
-        M3Group(
-          title: DriveStrings.filesTitle,
-          children: [
-            for (final f in files)
-              SettingsTile(
-                icon: driveIcon(f),
-                leading: ConnectorRowIcon(icon: driveIcon(f)),
-                title: f.name,
-                summary: _summary(f),
-                trailing: AppIcon(
-                  AppIcons.chevronRight,
-                  size: AppIconSize.sm,
-                  color: scheme.onSurfaceVariant,
-                ),
-                onTap: () => _open(f),
-              ),
-          ],
-        ),
-    ];
-  }
-
-  String _summary(DriveFile f) {
-    final kind = driveKindLabel(f);
-    final m = f.modified;
-    if (m == null) return kind;
-    return '$kind · ${timeAgo(m, widget.now ?? DateTime.now())}';
-  }
 }
-
-/// Icon of a Drive file by its type.
-AppIconData driveIcon(DriveFile f) => switch (f.mimeType) {
-  'application/vnd.google-apps.document' => DriveIcons.doc,
-  'application/vnd.google-apps.spreadsheet' => DriveIcons.sheet,
-  'application/vnd.google-apps.presentation' => DriveIcons.slides,
-  'application/pdf' => DriveIcons.pdf,
-  final m when m.startsWith('image/') => DriveIcons.image,
-  final m when m.startsWith('text/') => DriveIcons.text,
-  _ => DriveIcons.other,
-};
-
-String driveKindLabel(DriveFile f) => switch (f.mimeType) {
-  'application/vnd.google-apps.document' => DriveStrings.kindDoc,
-  'application/vnd.google-apps.spreadsheet' => DriveStrings.kindSheet,
-  'application/vnd.google-apps.presentation' => DriveStrings.kindSlides,
-  'application/pdf' => DriveStrings.kindPdf,
-  final m when m.startsWith('text/') => DriveStrings.kindText,
-  _ => DriveStrings.kindOther,
-};

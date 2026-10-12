@@ -501,3 +501,46 @@ class ConnectorPerks extends StatelessWidget {
     ],
   );
 }
+
+/// "Files sparky can see · 4 ›": opens the full browse page.
+class ConnectorSummaryTile extends StatelessWidget {
+  const ConnectorSummaryTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.count,
+    required this.onTap,
+  });
+
+  final AppIconData icon;
+  final String title;
+
+  /// Null while loading.
+  final String? count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsTile(
+      icon: icon,
+      title: title,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (count != null) M3Tag(count!),
+          const SizedBox(width: AppSpacing.sm),
+          AppIcon(
+            AppIcons.chevronRight,
+            size: AppIconSize.sm,
+            color: scheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+      onTap: () {
+        Haptics.tap();
+        onTap();
+      },
+    );
+  }
+}

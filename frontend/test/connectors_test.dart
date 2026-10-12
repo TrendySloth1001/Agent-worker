@@ -113,6 +113,21 @@ final _files = [
     'modifiedTime': _ago(const Duration(days: 30)),
     'kind': 'text',
   },
+  for (final (i, (name, mime, kind)) in const [
+    ('Hiring plan', 'application/vnd.google-apps.document', 'markdown'),
+    ('Invoices Q3', 'application/vnd.google-apps.spreadsheet', 'csv'),
+    ('Pitch deck', 'application/vnd.google-apps.presentation', 'text'),
+    ('Contract draft.pdf', 'application/pdf', 'pdf'),
+    ('Team photo.jpg', 'image/jpeg', 'none'),
+    ('Interview notes', 'application/vnd.google-apps.document', 'markdown'),
+  ].indexed)
+    {
+      'id': 'x$i',
+      'name': name,
+      'mimeType': mime,
+      'modifiedTime': _ago(Duration(days: 40 + i * 7)),
+      'kind': kind,
+    },
 ];
 
 final _pages = [
@@ -148,6 +163,24 @@ final _pages = [
     'url': 'https://www.notion.so/offsite',
     'lastEdited': _ago(const Duration(days: 12)),
   },
+  for (final (i, title) in const [
+    'Design principles',
+    'Q3 retro',
+    'Onboarding checklist',
+    'API conventions',
+    'Release process',
+    'Customer interviews',
+    'Hiring loop',
+    'Brand voice',
+  ].indexed)
+    {
+      'id': '5555555$i-5555-5555-5555-555555555555',
+      'object': 'page',
+      'title': title,
+      'icon': null,
+      'url': 'https://www.notion.so/p$i',
+      'lastEdited': _ago(Duration(days: 20 + i * 5)),
+    },
 ];
 
 const _pageBody = '''
@@ -318,6 +351,34 @@ void main() {
       expect(find.text(DriveStrings.pick), findsOneWidget);
       expect(find.text('Q4 roadmap'), findsOneWidget);
       expect(find.text('Google Doc · 3h ago'), findsOneWidget);
+      // Short screen: a count and the 3 most recent, never the whole list.
+      expect(find.text(DriveStrings.filesTitle), findsOneWidget);
+      expect(find.text('10'), findsOneWidget);
+      expect(find.text('Sodium limits study.pdf'), findsNothing);
+      expect(find.text(ConnectorStrings.disconnect), findsOneWidget);
+      // Open / Reconnect / Disconnect stay reachable after a short scroll.
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
+      await _settle(tester);
+      expect(
+        tester.getBottomLeft(find.text(ConnectorStrings.disconnect)).dy,
+        lessThan(915),
+      );
+    });
+
+    testWidgets('drive browse page ($name)', (tester) async {
+      _fakeState(drive: true);
+      await _pump(tester, DriveScreen(now: _now), dark: dark);
+      await tester.tap(find.text(DriveStrings.filesTitle));
+      await _settle(tester);
+      await _capture(tester, 'connectors_drive_browse_$name');
+      expect(find.text(DriveStrings.browseTitle), findsWidgets);
+      expect(find.text(DriveStrings.fileCount(10)), findsOneWidget);
+      await tester.ensureVisible(find.text(DriveStrings.filterPdfs));
+      await tester.tap(find.text(DriveStrings.filterPdfs));
+      await _settle(tester);
+      expect(find.text(DriveStrings.fileCount(2)), findsOneWidget);
+      expect(find.text('Contract draft.pdf'), findsOneWidget);
+      expect(find.text('Q4 roadmap'), findsNothing);
     });
 
     testWidgets('notion not connected ($name)', (tester) async {
@@ -335,6 +396,20 @@ void main() {
       expect(find.text('Rivera Studio'), findsOneWidget);
       expect(find.text('Product roadmap'), findsOneWidget);
       expect(find.text(NotionStrings.database), findsOneWidget);
+      expect(find.text(NotionStrings.pagesSummary), findsOneWidget);
+      expect(find.text('12'), findsOneWidget);
+      expect(find.text('Offsite plan'), findsNothing);
+      expect(find.text(ConnectorStrings.disconnect), findsOneWidget);
+    });
+
+    testWidgets('notion browse page ($name)', (tester) async {
+      _fakeState(notion: true);
+      await _pump(tester, NotionScreen(now: _now), dark: dark);
+      await tester.tap(find.text(NotionStrings.pagesSummary));
+      await _settle(tester);
+      await _capture(tester, 'connectors_notion_browse_$name');
+      expect(find.text(NotionStrings.browseTitle), findsWidgets);
+      expect(find.text('Offsite plan'), findsOneWidget);
     });
 
     testWidgets('notion page reader ($name)', (tester) async {
@@ -395,13 +470,15 @@ void main() {
   testWidgets('notion search filters the shared pages', (tester) async {
     _fakeState(notion: true);
     await _pump(tester, NotionScreen(now: _now));
+    await tester.tap(find.text(NotionStrings.pagesSummary));
+    await _settle(tester);
     await tester.enterText(find.byType(TextField), 'sync');
     await tester.pump(const Duration(milliseconds: 400));
     await _settle(tester);
     expect(api.calls, contains('notionSearch:sync'));
     expect(find.text('Weekly sync notes'), findsOneWidget);
     expect(find.text('Product roadmap'), findsNothing);
-    expect(find.text(NotionStrings.results), findsOneWidget);
+    expect(find.text(NotionStrings.pageCount(1)), findsOneWidget);
   });
 
   testWidgets('ask sparky starts a chat that carries the page', (tester) async {

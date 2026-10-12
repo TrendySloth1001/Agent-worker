@@ -1,21 +1,18 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/connectors.dart';
 import '../../core/haptics.dart';
-import '../../core/time_ago.dart';
-import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/connect_api.dart';
 import '../../data/connections_api.dart';
 import '../connections/connections_controller.dart';
 import '../github/widgets/gh_rows.dart';
-import '../settings/widgets/settings_kit.dart';
 import 'connector_actions.dart';
 import 'connector_auth.dart';
 import 'connector_brand.dart';
 import 'connector_controllers.dart';
+import 'notion_browse_screen.dart';
 import 'widgets/connector_kit.dart';
 import 'widgets/connector_reader.dart';
 
@@ -45,7 +42,6 @@ class _NotionScreenState extends State<NotionScreen> {
       widget.connections ?? ConnectionsController.instance;
   late final NotionController _notion = widget.controller ?? NotionController();
   late final ConnectorAuth _auth = widget.auth ?? ConnectorAuth.instance;
-  final _search = TextEditingController();
   String? _loadedFor;
 
   @override
@@ -60,7 +56,6 @@ class _NotionScreenState extends State<NotionScreen> {
   void dispose() {
     _conn.removeListener(_sync);
     if (widget.controller == null) _notion.dispose();
-    _search.dispose();
     super.dispose();
   }
 
@@ -125,12 +120,11 @@ class _NotionScreenState extends State<NotionScreen> {
     await _auth.connect(ConnectorIds.notion);
   }
 
-  void _open(NotionItem i) {
-    Haptics.tap();
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => NotionPageScreen(item: i)));
-  }
+  void _browse() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => NotionBrowseScreen(controller: _notion, now: widget.now),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -177,8 +171,11 @@ class _NotionScreenState extends State<NotionScreen> {
 
   List<Widget> _connected(BuildContext context, Connection a) {
     final reauth = a.needsReauth || _notion.needsReauth;
-    final workspace = a.workspaceName;
     final icon = a.workspaceIcon;
+    final items = _notion.items;
+    final recent = (items ?? const <NotionItem>[])
+        .take(ConnectorSizes.previewCount)
+        .toList();
     return [
       ConnectorProfileCard(
         avatar: ConnectorAvatar(
@@ -190,11 +187,11 @@ class _NotionScreenState extends State<NotionScreen> {
         ),
         name: a.accountName.isNotEmpty ? a.accountName : a.login,
         detail: a.accountEmail.isNotEmpty ? a.accountEmail : a.login,
-        extra: workspace,
+        extra: a.workspaceName,
         needsReauth: reauth,
       ),
       const SizedBox(height: AppSpacing.md),
-      if (reauth) ...[
+      if (reauth)
         ConnectorPermissionCard(
           provider: ConnectorIds.notion,
           brand: ConnectorBrand.notion,
@@ -203,16 +200,25 @@ class _NotionScreenState extends State<NotionScreen> {
           vendor: NotionStrings.vendor,
           auth: _auth,
           onContinue: () => _reconnect(ask: false),
+        )
+      else ...[
+        M3Group(
+          children: [
+            ConnectorSummaryTile(
+              icon: NotionIcons.page,
+              title: NotionStrings.pagesSummary,
+              count: items == null
+                  ? null
+                  : ConnectorStrings.count(
+                      items.length,
+                      more: items.length >= ConnectorSizes.searchPage,
+                    ),
+              onTap: _browse,
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-      ] else ...[
-        GhPillSearch(
-          hint: NotionStrings.search,
-          controller: _search,
-          onChanged: _notion.setQuery,
-        ),
-        const SizedBox(height: AppSpacing.md),
         if (_notion.offline || _notion.rateLimited) ...[
+          const SizedBox(height: AppSpacing.md),
           ConnectorBanner(
             icon: _notion.offline
                 ? ConnectorIcons.offline
@@ -223,11 +229,18 @@ class _NotionScreenState extends State<NotionScreen> {
             action: ConnectorStrings.retry,
             onAction: _notion.load,
           ),
-          const SizedBox(height: AppSpacing.md),
         ],
-        ..._pages(context),
-        const SizedBox(height: AppSpacing.lg),
+        if (recent.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          M3Group(
+            title: NotionStrings.recent,
+            children: [
+              for (final i in recent) NotionItemTile(item: i, now: widget.now),
+            ],
+          ),
+        ],
       ],
+      const SizedBox(height: AppSpacing.lg),
       ConnectorAccountGroup(
         brand: ConnectorBrand.notion,
         openLabel: NotionStrings.openInNotion,
@@ -237,72 +250,7 @@ class _NotionScreenState extends State<NotionScreen> {
       ),
     ];
   }
-
-  List<Widget> _pages(BuildContext context) {
-    final items = _notion.items;
-    final scheme = Theme.of(context).colorScheme;
-    if (items == null) {
-      if (_notion.error != null && !_notion.offline) {
-        return [
-          M3Empty(
-            icon: NotionIcons.fallback,
-            title: ConnectorStrings.loadFailed,
-            hint: _notion.error!.message,
-            action: FilledButton.tonal(
-              onPressed: _notion.load,
-              child: const Text(ConnectorStrings.retry),
-            ),
-          ),
-        ];
-      }
-      return const [GhSkeletonCells(count: ConnectorSizes.skeletonRows)];
-    }
-    if (items.isEmpty) {
-      final q = _notion.query;
-      return [
-        M3Empty(
-          icon: q.isEmpty ? NotionIcons.fallback : AppIcons.search,
-          title: q.isEmpty ? NotionStrings.noPages : NotionStrings.noMatches,
-          hint: q.isEmpty
-              ? NotionStrings.noPagesHint
-              : NotionStrings.noMatchesHint(q),
-        ),
-      ];
-    }
-    return [
-      M3Group(
-        title: _notion.query.isEmpty
-            ? NotionStrings.pagesTitle
-            : NotionStrings.results,
-        children: [
-          for (final i in items)
-            SettingsTile(
-              icon: i.isDatabase ? NotionIcons.database : NotionIcons.page,
-              leading: notionRowIcon(i),
-              title: i.title.isEmpty ? NotionStrings.untitled : i.title,
-              summary: i.lastEdited == null
-                  ? null
-                  : timeAgo(i.lastEdited!, widget.now ?? DateTime.now()),
-              trailing: i.isDatabase
-                  ? const M3Tag(NotionStrings.database)
-                  : AppIcon(
-                      AppIcons.chevronRight,
-                      size: AppIconSize.sm,
-                      color: scheme.onSurfaceVariant,
-                    ),
-              onTap: () => _open(i),
-            ),
-        ],
-      ),
-    ];
-  }
 }
-
-Widget notionRowIcon(NotionItem i) => ConnectorRowIcon(
-  icon: i.isDatabase ? NotionIcons.database : NotionIcons.page,
-  emoji: i.iconIsImage ? null : i.icon,
-  imageUrl: i.iconIsImage ? i.icon : null,
-);
 
 /// A Notion page (or database rows) read as Markdown.
 class NotionPageScreen extends StatelessWidget {
