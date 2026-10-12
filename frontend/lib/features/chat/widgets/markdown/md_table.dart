@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/markdown_sizes.dart';
+import '../../../../core/constants/widget_playful.dart';
+import '../../../../core/constants/widget_structure.dart';
+import '../../../../core/haptics.dart';
+import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/widgets/copy_action.dart';
 import 'md_blocks.dart';
@@ -13,7 +17,7 @@ final _markup = RegExp(r'[*_`~]|\{\{icon:[^}]*\}\}|\[([^\]]*)\]\([^)]*\)');
 
 /// A markdown table: rounded frame, raised header, row dividers only, and
 /// horizontal scrolling when the columns do not fit.
-class MdTable extends StatelessWidget {
+class MdTable extends StatefulWidget {
   const MdTable({super.key, required this.block, required this.renderCell});
 
   final MdTableBlock block;
@@ -23,12 +27,8 @@ class MdTable extends StatelessWidget {
 
   static final _mathRe = RegExp(r'\$[^$]+\$|\\\(|\\\[');
 
-  /// Columns holding math: they keep their width (the table scrolls instead)
-  /// so formulas stay readable.
-  List<bool> _mathColumns() => [
-    for (var c = 0; c < block.header.length; c++)
-      [block.header[c], for (final r in block.rows) r[c]].any(_mathRe.hasMatch),
-  ];
+  @override
+  State<MdTable> createState() => _MdTableState();
 
   /// Roughly how many characters a cell shows once rendered: TeX commands
   /// draw as one glyph, braces and script markers take no space.
@@ -40,27 +40,6 @@ class MdTable extends StatelessWidget {
         .replaceAll(RegExp(r'\\[a-zA-Z]+'), 'x')
         .replaceAll(RegExp(r'[{}^_$]|\\[()\[\]]'), '')
         .length;
-  }
-
-  List<double> _widths() {
-    final cols = block.header.length;
-    final mathCols = _mathColumns();
-    return [
-      for (var c = 0; c < cols; c++)
-        () {
-          var chars = 0;
-          for (final cell in [
-            block.header[c],
-            for (final r in block.rows) r[c],
-          ]) {
-            chars = math.max(chars, _visibleChars(cell));
-          }
-          return (chars * MdSizes.tableCharWidth + AppSpacing.md * 2).clamp(
-            MdSizes.tableMinColumn,
-            mathCols[c] ? MdSizes.tableMaxMathColumn : MdSizes.tableMaxColumn,
-          );
-        }(),
-    ];
   }
 
   /// Fills the screen when the table is narrow. When it is wider, shrinks
@@ -88,6 +67,83 @@ class MdTable extends StatelessWidget {
             : base[c] - (base[c] - MdSizes.tableMinColumn) * cut / slack,
     ];
   }
+}
+
+class _MdTableState extends State<MdTable> {
+  int? _sortCol;
+  bool _asc = true;
+  MdTableBlock get block => widget.block;
+
+  /// Columns holding math: they keep their width (the table scrolls instead)
+  /// so formulas stay readable.
+  List<bool> _mathColumns() => [
+    for (var c = 0; c < block.header.length; c++)
+      [
+        block.header[c],
+        for (final r in block.rows) r[c],
+      ].any(MdTable._mathRe.hasMatch),
+  ];
+
+  List<double> _widths() {
+    final cols = block.header.length;
+    final mathCols = _mathColumns();
+    return [
+      for (var c = 0; c < cols; c++)
+        () {
+          var chars = 0;
+          for (final cell in [
+            block.header[c],
+            for (final r in block.rows) r[c],
+          ]) {
+            chars = math.max(chars, MdTable._visibleChars(cell));
+          }
+          return (chars * MdSizes.tableCharWidth + AppSpacing.md * 2).clamp(
+            MdSizes.tableMinColumn,
+            mathCols[c] ? MdSizes.tableMaxMathColumn : MdSizes.tableMaxColumn,
+          );
+        }(),
+    ];
+  }
+
+  static double? _numeric(String c) {
+    final cleaned = c
+        .replaceAll(RegExp(r'[*_`~,%$€£\s]'), '')
+        .replaceAll(RegExp(r'[a-zA-Z]+$'), '');
+    return double.tryParse(cleaned);
+  }
+
+  /// Rows in display order: sorted by the chosen column (numeric when every
+  /// cell in it reads as a number), else as written.
+  List<List<String>> _rows() {
+    final col = _sortCol;
+    if (col == null) return block.rows;
+    final rows = [...block.rows];
+    final nums = [for (final r in rows) _numeric(r[col])];
+    final numeric = nums.every((n) => n != null);
+    final idx = List<int>.generate(rows.length, (i) => i);
+    idx.sort((a, b) {
+      final c = numeric
+          ? nums[a]!.compareTo(nums[b]!)
+          : rows[a][col].toLowerCase().compareTo(rows[b][col].toLowerCase());
+      return c != 0 ? c : a.compareTo(b);
+    });
+    return [for (final i in (_asc ? idx : idx.reversed)) rows[i]];
+  }
+
+  void _sortBy(int c) {
+    Haptics.tap();
+    setState(() {
+      if (_sortCol != c) {
+        _sortCol = c;
+        _asc = true;
+      } else if (_asc) {
+        _asc = false;
+      } else {
+        _sortCol = null;
+        _asc = true;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,13 +151,15 @@ class MdTable extends StatelessWidget {
     final t = context.text;
     final base = _widths();
     final total = base.fold<double>(0, (a, b) => a + b);
+    final rows = _rows();
+    final sortable = block.rows.length >= StructLimits.sortableMinRows;
 
     Widget cell(String text, {required bool header}) => Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
         vertical: MdSizes.tableCellVertical,
       ),
-      child: renderCell(text, header: header),
+      child: widget.renderCell(text, header: header),
     );
 
     return Container(
@@ -130,7 +188,12 @@ class MdTable extends StatelessWidget {
           ),
           LayoutBuilder(
             builder: (context, box) {
-              final widths = _fit(base, total, box.maxWidth, _mathColumns());
+              final widths = MdTable._fit(
+                base,
+                total,
+                box.maxWidth,
+                _mathColumns(),
+              );
               return SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Table(
@@ -149,10 +212,35 @@ class MdTable extends StatelessWidget {
                     TableRow(
                       decoration: BoxDecoration(color: p.surfaceRaised),
                       children: [
-                        for (final h in block.header) cell(h, header: true),
+                        for (var c = 0; c < block.header.length; c++)
+                          sortable
+                              ? GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _sortBy(c),
+                                  child: Stack(
+                                    alignment: Alignment.centerRight,
+                                    children: [
+                                      cell(block.header[c], header: true),
+                                      if (_sortCol == c)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: AppSpacing.xs,
+                                          ),
+                                          child: AppIcon(
+                                            _asc
+                                                ? PlayfulIcons.collapse
+                                                : PlayfulIcons.expand,
+                                            size: StructSizes.sortIcon,
+                                            color: p.accent,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                )
+                              : cell(block.header[c], header: true),
                       ],
                     ),
-                    for (final r in block.rows)
+                    for (final r in rows)
                       TableRow(
                         children: [for (final c in r) cell(c, header: false)],
                       ),

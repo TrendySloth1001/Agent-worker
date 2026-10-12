@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../../core/constants/connections.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/constants/widget_kit.dart';
+import '../../../../core/constants/widget_structure.dart';
 import '../github/github_commits_card.dart';
 import '../github/github_compare_card.dart';
 import '../github/github_connect_card.dart';
@@ -17,11 +18,14 @@ import 'ask_card.dart' show RichPlaceholder;
 import 'calc_card.dart';
 import 'chart_card.dart';
 import 'checklist_card.dart';
+import 'compare_card.dart';
 import 'flashcards_card.dart';
 import 'html_card.dart';
+import 'progress_card.dart';
 import 'quiz_card.dart';
 import 'stats_card.dart';
 import 'timeline_card.dart';
+import 'tree_card.dart';
 
 typedef RichWidgetFactory = Widget Function(String source);
 
@@ -49,6 +53,16 @@ final Map<String, _Entry> _entries = {
     WidgetKitStrings.checklist,
     (s) => ChecklistCard(source: s),
   ),
+  // Structure widgets.
+  StructLang.compare: _Entry(
+    StructStrings.compare,
+    (s) => CompareCard(source: s),
+  ),
+  StructLang.progress: _Entry(
+    StructStrings.progress,
+    (s) => ProgressCard(source: s),
+  ),
+  StructLang.tree: _Entry(StructStrings.tree, (s) => TreeCard(source: s)),
   // Live GitHub cards (fetch through /github).
   GithubLang.repo: _Entry(GithubStrings.repo, (s) => GithubRepoCard(source: s)),
   GithubLang.search: _Entry(
