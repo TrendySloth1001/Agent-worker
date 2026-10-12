@@ -19,6 +19,8 @@ import '../storage/storage_screen.dart';
 import '../storage/widgets/storage_usage_card.dart';
 import '../../core/constants/storage.dart';
 import 'settings_controller.dart';
+import '../memory/memory_screen.dart';
+import '../../core/constants/memory.dart';
 import 'widgets/connections_section.dart';
 import 'widgets/personalization.dart';
 import 'widgets/provider_card.dart';
@@ -125,6 +127,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: AppIcons.personalization,
                 ),
                 const PersonalizationRows(),
+                const SectionHeader(
+                  MemoryStrings.section,
+                  icon: MemoryIcons.section,
+                ),
+                FlatCard(
+                  onTap: () => MemoryScreen.open(context),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: IconLabel(
+                          icon: MemoryIcons.section,
+                          text: MemoryStrings.entry,
+                          style: context.text.label,
+                          iconSize: AppIconSize.sm,
+                          expand: true,
+                        ),
+                      ),
+                      AppIcon(
+                        AppIcons.chevronRight,
+                        size: AppIconSize.xs,
+                        color: p.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
                 const SectionHeader(
                   AppStrings.appearance,
                   icon: AppIcons.appearance,

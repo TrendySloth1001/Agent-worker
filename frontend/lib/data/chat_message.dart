@@ -74,6 +74,9 @@ class ChatMessage {
   /// Phases this table went through, for the progress meter (not saved).
   Set<String> tableSeen = {};
 
+  /// Long-term memory ops this turn caused: ADD, UPDATE, DELETE (not saved).
+  List<String> memoryOps = const [];
+
   /// The user asked to be notified when this reply is ready (not saved).
   bool notifyWhenDone = false;
 
