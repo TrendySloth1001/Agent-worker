@@ -499,11 +499,15 @@ class _NewChatPill extends StatelessWidget {
       excludeSemantics: true,
       child: Center(
         child: FilledButton.tonalIcon(
+          // Same height as the bar's icon buttons, so the row lines up.
           style: FilledButton.styleFrom(
-            minimumSize: const Size(0, AppSizes.chipHeight + AppSpacing.sm),
+            minimumSize: const Size(0, AppSizes.topBar),
+            maximumSize: const Size(double.infinity, AppSizes.topBar),
+            fixedSize: const Size.fromHeight(AppSizes.topBar),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSizes.chipHorizontalPadding,
             ),
+            textStyle: Theme.of(context).textTheme.labelLarge,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
           onPressed: onTap,

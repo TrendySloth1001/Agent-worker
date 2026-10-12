@@ -83,7 +83,8 @@ abstract final class AppSizes {
   static const thinkingDot = 5.0;
 
   // Floating UI
-  static const topBar = 32.0;
+  /// Chat top bar: its icon buttons and the new-chat pill share this height.
+  static const topBar = 40.0;
   static const glassBlur = 20.0;
   static const dotGridSpacing = 18.0;
   static const dotGridRadius = 1.0;
