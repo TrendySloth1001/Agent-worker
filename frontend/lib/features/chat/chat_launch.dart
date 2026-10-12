@@ -9,5 +9,12 @@ class ChatLaunch {
   /// Set to a message to open a new chat with it; the chat screen clears it.
   final prompt = ValueNotifier<String?>(null);
 
-  void ask(String text) => prompt.value = text;
+  /// Connected-app items the new chat is about (`{provider, id, title}`),
+  /// read live by the server on every turn of that chat.
+  List<Map<String, String>> apps = const [];
+
+  void ask(String text, {List<Map<String, String>> apps = const []}) {
+    this.apps = apps;
+    prompt.value = text;
+  }
 }

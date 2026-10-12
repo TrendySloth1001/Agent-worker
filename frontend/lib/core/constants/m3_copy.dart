@@ -35,6 +35,8 @@ abstract final class KnowledgeCopy {
   static const kindFile = 'File';
   static const kindDoc = 'Doc';
   static const kindDocument = 'Document';
+  static const kindDrive = 'Google Drive';
+  static const kindNotion = 'Notion';
 
   static const docs = 'docs';
   static const chunks = 'chunks';

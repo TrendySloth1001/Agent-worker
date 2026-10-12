@@ -1,3 +1,4 @@
+import '../connectors/connector_actions.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -286,7 +287,7 @@ String docFileName(Doc doc, String extension) {
   return '${slug.isEmpty ? DocStrings.fileFallback : slug}.$extension';
 }
 
-enum DocExportFormat { pdf, markdown, docx }
+enum DocExportFormat { pdf, markdown, docx, drive, notion }
 
 /// EXPORT: PDF built on device, Markdown, or DOCX from the server.
 Future<void> exportDoc(BuildContext context, Doc doc, {DocsApi? api}) async {
@@ -294,13 +295,24 @@ Future<void> exportDoc(BuildContext context, Doc doc, {DocsApi? api}) async {
   final format = await showShareSheet<DocExportFormat>(
     context,
     title: DocStrings.exportTitle,
-    options: const [
+    options: [
       (DocExportFormat.pdf, ShareIcons.pdf, DocStrings.pdf),
       (DocExportFormat.markdown, ShareIcons.markdown, DocStrings.markdown),
       (DocExportFormat.docx, DocIcons.docx, DocStrings.docx),
+      // Connected apps: an explicit save, never automatic.
+      ...connectorSaveOptions(
+        drive: DocExportFormat.drive,
+        notion: DocExportFormat.notion,
+      ),
     ],
   );
   if (format == null || !context.mounted) return;
+  if (format == DocExportFormat.drive) {
+    return saveToDrive(context, docId: doc.id);
+  }
+  if (format == DocExportFormat.notion) {
+    return saveToNotion(context, docId: doc.id);
+  }
   docToast(context, DocStrings.exporting);
   final messenger = ScaffoldMessenger.maybeOf(context);
   try {
@@ -315,7 +327,9 @@ Future<void> exportDoc(BuildContext context, Doc doc, {DocsApi? api}) async {
         ShareStrings.mdExtension,
         ShareStrings.mdMime,
       ),
-      DocExportFormat.docx => (
+      DocExportFormat.docx ||
+      DocExportFormat.drive ||
+      DocExportFormat.notion => (
         await (api ?? DocsApi()).export(doc.id, ShareStrings.docxExtension),
         ShareStrings.docxExtension,
         ShareStrings.docxMime,

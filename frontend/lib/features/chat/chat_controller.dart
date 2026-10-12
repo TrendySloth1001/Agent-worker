@@ -439,7 +439,12 @@ class ChatController extends ChangeNotifier {
     _docLinks.clear();
   }
 
+  /// Connected-app items this chat is about (Drive file, Notion page); sent
+  /// with every turn so follow-ups still see them. Cleared by [newChat].
+  List<Map<String, String>> appRefs = const [];
+
   void newChat() {
+    appRefs = const [];
     _detachTable();
     _unlinkDocs();
     _session++;
@@ -473,6 +478,7 @@ class ChatController extends ChangeNotifier {
 
   /// Shows a chat the server just returned (opened, forked or merged).
   void adopt(ConversationSummary summary, List<ChatMessage> saved) {
+    appRefs = const [];
     _detachTable();
     _unlinkDocs();
     _session++;
@@ -827,6 +833,7 @@ class ChatController extends ChangeNotifier {
           conversationId: conversationId,
           smartSuggestions: _settings.smartSuggestions,
           suppressSuggest: Set.of(_suppressed),
+          apps: appRefs,
         )
         .listen(
           onEvent,

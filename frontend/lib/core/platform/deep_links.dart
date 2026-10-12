@@ -28,8 +28,13 @@ abstract final class DeepLinks {
     return _links.stream;
   }
 
-  /// The launch link, handed out once (null when there is none).
-  static Future<Uri?> initial() async {
+  static Future<Uri?>? _initial;
+
+  /// The launch link (null when there is none). Fetched once and shared, so
+  /// every listener (GitHub sign-in, connected apps) sees it.
+  static Future<Uri?> initial() => _initial ??= _fetchInitial();
+
+  static Future<Uri?> _fetchInitial() async {
     if (!supported) return null;
     try {
       final raw = await _channel.invokeMethod<String>(
