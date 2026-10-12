@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../../core/notifications.dart';
+import '../../core/notify/notification_center.dart';
+import '../../core/notify/notify_kind.dart';
 import '../../data/doc_models.dart';
 import '../../data/docs_api.dart';
 import 'doc_controller.dart';
@@ -65,7 +66,7 @@ class DocRegistry extends ChangeNotifier {
       c.dispose();
     }
     _docs.clear();
-    AppNotifications.instance.cancelDocProgress();
+    NotificationCenter.instance.finishProgress(NotifyKind.doc);
     notifyListeners();
   }
 }

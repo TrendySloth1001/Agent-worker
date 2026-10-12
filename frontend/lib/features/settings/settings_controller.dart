@@ -5,6 +5,8 @@ import '../../core/constants/app_prefs.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
+import '../../core/notify/notify_kind.dart';
+import '../../core/notify/notify_prefs.dart';
 
 /// Persisted user preferences.
 class SettingsController extends ChangeNotifier {
@@ -14,7 +16,7 @@ class SettingsController extends ChangeNotifier {
     defaultWebSearch = _prefs?.getBool(AppPrefs.defaultWebSearch) ?? false;
     defaultKnowledge = _prefs?.getBool(AppPrefs.defaultKnowledge) ?? false;
     defaultRoundTable = _prefs?.getBool(AppPrefs.defaultRoundTable) ?? false;
-    notifyRoundTable = _prefs?.getBool(AppPrefs.notifyRoundTable) ?? true;
+    notify = NotifyPrefs(_prefs)..addListener(notifyListeners);
     autocompleteOn = _prefs?.getBool(AppPrefs.autocomplete) ?? true;
     voiceAutoSend = _prefs?.getBool(AppPrefs.voiceAutoSend) ?? false;
     voiceHighAccuracy = _prefs?.getBool(AppPrefs.voiceHighAccuracy) ?? false;
@@ -73,8 +75,12 @@ class SettingsController extends ChangeNotifier {
   late bool defaultKnowledge;
   late bool defaultRoundTable;
 
-  /// System notification when a round table finishes in the background.
-  late bool notifyRoundTable;
+  /// Notification choices: master switch, one per kind, quiet hours.
+  late final NotifyPrefs notify;
+
+  /// System notification when a round table finishes in the background
+  /// (same key as before the notification center).
+  bool get notifyRoundTable => notify.isOn(NotifyKind.roundTable);
   late String mode;
 
   // Personalization. Empty string means not set; [tone] '' means no tone.
@@ -152,9 +158,7 @@ class SettingsController extends ChangeNotifier {
   }
 
   void setNotifyRoundTable(bool value) {
-    notifyRoundTable = value;
-    _prefs?.setBool(AppPrefs.notifyRoundTable, value);
-    notifyListeners();
+    notify.setKind(NotifyKind.roundTable, value);
   }
 
   void setMode(String value) {
@@ -280,7 +284,7 @@ class SettingsController extends ChangeNotifier {
     defaultWebSearch = false;
     defaultKnowledge = false;
     defaultRoundTable = false;
-    notifyRoundTable = true;
+    notify.reset();
     mode = modes.first;
     tone = '';
     length = 'detailed';
@@ -295,7 +299,6 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.defaultWebSearch,
       AppPrefs.defaultKnowledge,
       AppPrefs.defaultRoundTable,
-      AppPrefs.notifyRoundTable,
       AppPrefs.mode,
       AppPrefs.profileTone,
       AppPrefs.profileLength,

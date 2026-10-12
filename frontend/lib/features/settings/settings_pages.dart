@@ -9,6 +9,8 @@ import '../../core/constants/about.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/connections.dart';
 import '../../core/constants/memory.dart';
+import '../../core/constants/notify_copy.dart';
+import '../../core/notify/notify_kind.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/constants/storage.dart';
 import '../../core/constants/telemetry.dart';
@@ -30,6 +32,7 @@ import 'telemetry/telemetry_screen.dart';
 import 'widgets/appearance_tiles.dart';
 import 'widgets/connections_section.dart';
 import 'widgets/model_choice.dart';
+import 'widgets/notify_tiles.dart';
 import 'widgets/personalization.dart';
 import 'widgets/provider_card.dart';
 import 'widgets/reply_style_cards.dart';
@@ -167,7 +170,7 @@ String categorySummary(SettingsCategory c, AppScope scope) {
     case SettingsCategory.storage:
       return SettingsStrings.sumStorage;
     case SettingsCategory.notifications:
-      return s.notifyRoundTable ? SettingsStrings.on : SettingsStrings.off;
+      return s.notify.master ? SettingsStrings.on : SettingsStrings.off;
     case SettingsCategory.appearance:
       return '${themeLabel(s.themeMode)}$sep'
           '${textSizeLabels[s.textScale] ?? SettingsStrings.textNormal}';
@@ -581,16 +584,70 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
         SettingsSection(
           items: [
             SettingItem(
-              id: 'table-notify',
-              title: SettingsStrings.tableNotifyLabel,
-              keywords: 'notify notification alert round table done background',
+              id: 'notify-master',
+              title: NotifyCopy.masterLabel,
+              keywords: NotifyCopy.keywords,
               build: (_) => SettingsSwitchTile(
                 icon: TableIcons.notify,
-                title: SettingsStrings.tableNotifyLabel,
-                summary: SettingsStrings.tableNotifyHelp,
-                value: s.notifyRoundTable,
-                onChanged: s.setNotifyRoundTable,
+                title: NotifyCopy.masterLabel,
+                summary: NotifyCopy.masterHelp,
+                value: s.notify.master,
+                onChanged: s.notify.setMaster,
               ),
+            ),
+          ],
+        ),
+        const SettingsSection(
+          title: NotifyCopy.secPermission,
+          items: [
+            SettingItem(
+              id: 'notify-permission',
+              title: NotifyCopy.permissionLabel,
+              keywords: 'permission allow android system blocked',
+              build: _permissionTile,
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: NotifyCopy.secKinds,
+          items: [
+            for (final k in NotifyKind.values)
+              SettingItem(
+                // The round table keeps the id it always had.
+                id: k == NotifyKind.roundTable
+                    ? 'table-notify'
+                    : 'notify-${k.key}',
+                title: k.label,
+                keywords: '${k.key} ${k.help} notify notification',
+                build: (_) => SettingsSwitchTile(
+                  icon: TableIcons.notify,
+                  title: k.label,
+                  summary: k.help,
+                  value: s.notify.isOn(k),
+                  onChanged: (v) => s.notify.setKind(k, v),
+                ),
+              ),
+          ],
+        ),
+        SettingsSection(
+          title: NotifyCopy.secQuiet,
+          items: [
+            SettingItem(
+              id: 'notify-quiet',
+              title: NotifyCopy.quietLabel,
+              keywords:
+                  'quiet hours night silent sound vibration do not disturb',
+              build: (_) => QuietHoursTiles(prefs: s.notify),
+            ),
+          ],
+        ),
+        const SettingsSection(
+          items: [
+            SettingItem(
+              id: 'notify-test',
+              title: NotifyCopy.testLabel,
+              keywords: 'test notification try sample',
+              build: _testTile,
             ),
           ],
         ),
@@ -1040,3 +1097,7 @@ class _SectionView extends StatelessWidget {
     );
   }
 }
+
+Widget _permissionTile(BuildContext context) => const NotifyPermissionTile();
+
+Widget _testTile(BuildContext context) => const NotifyTestTile();

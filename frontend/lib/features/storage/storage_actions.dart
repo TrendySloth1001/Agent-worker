@@ -8,7 +8,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/storage.dart';
 import '../../core/haptics.dart';
-import '../../core/notifications.dart';
+import '../../core/notify/notification_center.dart';
+import '../../core/notify/notify_target.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/files_api.dart';
@@ -103,7 +104,7 @@ void openStorageChat(BuildContext context, FileInfo file) {
   if (id == null) return;
   Haptics.tap();
   Navigator.of(context).popUntil((r) => r.isFirst);
-  AppNotifications.instance.opened.value = id;
+  NotificationCenter.instance.open(ChatTarget(id));
 }
 
 Future<File?> _fetch(BuildContext context, FileInfo file, Directory dir) async {

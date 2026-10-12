@@ -4,7 +4,7 @@ import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/share_export.dart';
 import '../../core/haptics.dart';
-import '../../core/notifications.dart';
+import '../../core/notify/notification_center.dart';
 import '../../core/app_scope.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
@@ -17,6 +17,7 @@ import '../../data/conversations_api.dart';
 import '../../data/files_api.dart';
 import '../docs/doc_background_chip.dart';
 import '../docs/doc_screen.dart';
+import 'notify_router.dart';
 import 'chat_actions.dart';
 import 'chat_controller.dart';
 import 'share/chat_export.dart';
@@ -76,28 +77,20 @@ class _ChatScreenState extends State<ChatScreen> {
       _showScrollButton.value = _scroll.offset > AppSizes.scrollButtonThreshold;
     });
     _controller.docStarted.addListener(_onDocStarted);
-    AppNotifications.instance.opened.addListener(_onNotificationOpened);
-    AppNotifications.instance.openedDoc.addListener(_onDocNotificationOpened);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _onNotificationOpened();
-      _onDocNotificationOpened();
-    });
+    NotificationCenter.instance.target.addListener(_onNotificationOpened);
+    NotificationCenter.instance.currentChat = () => _controller.conversationId;
+    // A cold start from a notification has its target waiting already.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _onNotificationOpened(),
+    );
   }
 
-  /// A tapped "document ready" notification opens the reader.
-  void _onDocNotificationOpened() {
-    final id = AppNotifications.instance.openedDoc.value;
-    if (id == null || !mounted) return;
-    AppNotifications.instance.openedDoc.value = null;
-    openDoc(context, id);
-  }
-
-  /// A tapped notification opens its chat.
+  /// A tapped notification (or in-app link) opens what it points at.
   void _onNotificationOpened() {
-    final id = AppNotifications.instance.opened.value;
-    if (id == null || !mounted) return;
-    AppNotifications.instance.opened.value = null;
-    _openChat(id);
+    final t = NotificationCenter.instance.target.value;
+    if (t == null || !mounted) return;
+    NotificationCenter.instance.target.value = null;
+    routeNotifyTarget(context, t, openChat: _openChat);
   }
 
   /// A document started from the composer opens in the reader.
@@ -116,10 +109,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    AppNotifications.instance.opened.removeListener(_onNotificationOpened);
-    AppNotifications.instance.openedDoc.removeListener(
-      _onDocNotificationOpened,
-    );
+    NotificationCenter.instance.target.removeListener(_onNotificationOpened);
+    NotificationCenter.instance.currentChat = () => null;
     _controller.dispose();
     _voice.dispose();
     _scroll.dispose();
@@ -250,8 +241,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           draft: _controller.draft,
                           autocomplete: scope.settings.autocompleteOn,
                           voice: _voice,
-                          sendVoiceAutomatically:
-                              scope.settings.voiceAutoSend,
+                          sendVoiceAutomatically: scope.settings.voiceAutoSend,
                           conversationId: _controller.conversationId,
                           doc: _controller.doc,
                           onToggleDoc: _controller.toggleDoc,
@@ -405,8 +395,7 @@ class _TopBar extends StatelessWidget {
   final VoidCallback? onExport;
 
   @override
-  Widget build(BuildContext context) =>
-      M3Themed(child: Builder(builder: _bar));
+  Widget build(BuildContext context) => M3Themed(child: Builder(builder: _bar));
 
   Widget _bar(BuildContext context) {
     final canReset = controller.messages.isNotEmpty;

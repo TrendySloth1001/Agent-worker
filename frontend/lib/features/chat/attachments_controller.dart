@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_files.dart';
+import '../../core/notify/job_watch.dart';
 import '../../data/chat_api.dart';
 import '../../data/files_api.dart';
 
@@ -120,7 +121,11 @@ class AttachmentsController extends ChangeNotifier {
           a.info = info.withLocalPath(a.localPath);
           a.state = PendingState.uploaded;
           notifyListeners();
-          if (info.status == FileStatus.processing) _poll(a);
+          if (info.status == FileStatus.processing) {
+            _poll(a);
+            // Keeps watching after the composer is gone or the app is left.
+            JobWatch.instance.watchFile(info);
+          }
         })
         .catchError((Object e) {
           if (a.cancel.cancelled) return;
