@@ -20,10 +20,13 @@ import 'widgets/add_source_sheet.dart';
 import 'widgets/source_tile.dart';
 
 class KnowledgeScreen extends StatefulWidget {
-  const KnowledgeScreen({super.key, this.controller});
+  const KnowledgeScreen({super.key, this.controller, this.imageFor});
 
   /// Test seam; defaults to a controller on the app's API.
   final KnowledgeController? controller;
+
+  /// Test seam for source icon images.
+  final ImageProvider Function(String url)? imageFor;
 
   @override
   State<KnowledgeScreen> createState() => _KnowledgeScreenState();
@@ -239,6 +242,7 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
                 ),
                 child: SourceTile(
                   source: source,
+                  imageFor: widget.imageFor,
                   onRefresh: () {
                     Haptics.tap();
                     controller.refresh(source.id);

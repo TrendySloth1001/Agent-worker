@@ -6,6 +6,7 @@ import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { chunkMarkdown, embeddingInput, sha, type Chunk } from "./chunk.js";
 import { connectors } from "./connectors/index.js";
+import { backfillIcons, hasRemoteIcon, storeIcon } from "./icon.js";
 import type { DocInput, IngestCtx } from "./types.js";
 
 const limit = pLimit(1);
@@ -33,6 +34,7 @@ export function recoverQueue(): void {
       const rows = await db().source.findMany({ where: { status: "queued" }, orderBy: { createdAt: "asc" }, select: { id: true } });
       for (const r of rows) enqueue(r.id);
       if (rows.length) log.info("ingestion recovered", { queued: rows.length });
+      backfillIcons();
     } catch (e) {
       log.warn("queue recovery failed", { reason: (e as Error).message.slice(0, 120) });
     }
@@ -158,6 +160,7 @@ async function runSource(id: string): Promise<void> {
       data: { status: "ready", error: null, docCount: docs, chunkCount: chunks, progressDone: finished, progressTotal: finished, lastIngestedAt: now, updatedAt: now },
     });
     log.info("ingestion finished", { sourceId: id, type: src.type, docs, chunks });
+    if (hasRemoteIcon(src.type)) void storeIcon(id, src.type, src.uri);
   } catch (e) {
     log.warn("ingestion failed", { sourceId: id, reason: errText(e) });
     await withDb((c) => c.source.updateMany({ where: { id }, data: { status: "failed", error: errText(e), updatedAt: new Date() } })).catch(() => {});

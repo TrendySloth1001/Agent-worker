@@ -64,6 +64,14 @@ abstract final class KnowledgeSizes {
   static const progressHeight = 2.0;
   static const statusDot = 6.0;
   static const searchHeight = 48.0;
+
+  /// The leading icon tile of a source row.
+  static const iconTile = 40.0;
+  static const iconTileRadius = 12.0;
+  static const iconGlyph = 22.0;
+
+  /// Padding around a fetched site icon so logos do not touch the tile edge.
+  static const iconInset = 6.0;
 }
 
 abstract final class TelemetryCopy {
@@ -119,7 +127,8 @@ abstract final class TelemetryCopy {
   static const turnMessages = 'Messages';
   static const turnExtraCalls = 'Extra calls';
   static const turnTtft = 'First token';
-  static const turnExtraNote = 'Extra calls: other models, embeddings, searches and page fetches.';
+  static const turnExtraNote =
+      'Extra calls: other models, embeddings, searches and page fetches.';
   static const errors = 'Errors';
   static const recentCalls = 'Recent calls';
   static const showMore = 'Show more';

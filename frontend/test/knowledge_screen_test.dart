@@ -26,6 +26,7 @@ KbSource _source(
   String type = 'web',
   String? title,
   String? error,
+  String? iconUrl,
   int? done,
   int? total,
 }) => KbSource(
@@ -40,6 +41,7 @@ KbSource _source(
   chunkCount: 340,
   error: error,
   lastIngestedAt: null,
+  iconUrl: iconUrl,
 );
 
 void main() {

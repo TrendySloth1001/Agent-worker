@@ -8,7 +8,7 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/time_ago.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/kb_source.dart';
-import '../../settings/widgets/settings_kit.dart';
+import 'source_icon.dart';
 
 String kindLabel(String type) => switch (type) {
   'github' => KnowledgeCopy.kindGithub,
@@ -52,11 +52,15 @@ class SourceTile extends StatelessWidget {
     required this.onRefresh,
     required this.onDelete,
     this.now,
+    this.imageFor,
   });
 
   final KbSource source;
   final VoidCallback onRefresh;
   final VoidCallback onDelete;
+
+  /// Test seam for the icon image source.
+  final ImageProvider Function(String url)? imageFor;
 
   /// Test seam for the relative time.
   final DateTime? now;
@@ -121,7 +125,7 @@ class SourceTile extends StatelessWidget {
         : scheme.onSurfaceVariant;
     return ListTile(
       onLongPress: onDelete,
-      leading: SettingsIconCircle(AppIcons.sourceKind(source.type)),
+      leading: SourceIcon(source: source, imageFor: imageFor),
       title: Text(
         hasTitle ? source.title! : source.uri,
         maxLines: 2,

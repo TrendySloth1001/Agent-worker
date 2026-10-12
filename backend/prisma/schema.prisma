@@ -245,6 +245,7 @@ model Source {
   status         String    @default("queued")
   options        Json      @default("{}")
   error          String?
+  iconUrl        String?   @map("icon_url")
   progressDone   Int       @default(0) @map("progress_done")
   progressTotal  Int?      @map("progress_total")
   docCount       Int       @default(0) @map("doc_count")
