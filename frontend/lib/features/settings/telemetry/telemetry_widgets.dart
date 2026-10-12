@@ -157,12 +157,14 @@ class TSection extends StatelessWidget {
   const TSection({
     super.key,
     required this.title,
+    this.icon,
     this.trailing,
     required this.child,
     this.note,
   });
 
   final String title;
+  final AppIconData? icon;
   final Widget? trailing;
   final Widget child;
 
@@ -177,6 +179,14 @@ class TSection extends StatelessWidget {
         const SizedBox(height: TelemetrySizes.sectionTop),
         Row(
           children: [
+            if (icon != null) ...[
+              AppIcon(
+                icon!,
+                size: TelemetrySizes.sectionIcon,
+                color: context.palette.textSecondary,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+            ],
             Expanded(child: Text(title, style: TType.section(context))),
             ?trailing,
           ],
@@ -225,10 +235,12 @@ class TextAction extends StatelessWidget {
     super.key,
     required this.label,
     required this.onTap,
+    this.icon,
     this.active = false,
   });
 
   final String label;
+  final AppIconData? icon;
   final VoidCallback onTap;
   final bool active;
 
@@ -247,12 +259,25 @@ class TextAction extends StatelessWidget {
           child: Align(
             alignment: Alignment.centerRight,
             widthFactor: 1,
-            child: Text(
-              label,
-              style: TType.secondary(
-                context,
-                color: active ? p.accent : p.textPrimary,
-              ).copyWith(fontVariations: const [FontVariation.weight(600)]),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  AppIcon(
+                    icon!,
+                    size: TelemetrySizes.actionIcon,
+                    color: active ? p.accent : p.textPrimary,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                ],
+                Text(
+                  label,
+                  style: TType.secondary(
+                    context,
+                    color: active ? p.accent : p.textPrimary,
+                  ).copyWith(fontVariations: const [FontVariation.weight(600)]),
+                ),
+              ],
             ),
           ),
         ),
@@ -270,7 +295,10 @@ class SummaryStat {
     this.sub,
     this.alert = false,
     this.unit = false,
+    this.icon,
   });
+
+  final AppIconData? icon;
 
   /// The value ends in a unit (ms, s) that is drawn small.
   final bool unit;
@@ -347,11 +375,25 @@ class SummaryRow extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            s.label,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TType.secondary(context),
+          Row(
+            children: [
+              if (s.icon != null) ...[
+                AppIcon(
+                  s.icon!,
+                  size: TelemetrySizes.actionIcon,
+                  color: s.alert ? p.accent : p.textTertiary,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+              ],
+              Flexible(
+                child: Text(
+                  s.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TType.secondary(context),
+                ),
+              ),
+            ],
           ),
           if (s.sub != null)
             Text(

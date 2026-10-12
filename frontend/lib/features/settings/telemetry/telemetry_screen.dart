@@ -148,15 +148,29 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         const SizedBox(height: AppSpacing.md),
         SummaryRow(
           stats: [
-            SummaryStat(compact(a.requests), TelemetryCopy.summaryRequests),
+            SummaryStat(
+              compact(a.requests),
+              TelemetryCopy.summaryRequests,
+              icon: TelemetryIcons.log,
+            ),
             SummaryStat(
               compact(a.failed),
               TelemetryCopy.summaryFailed,
               sub: pct(a.failureRate),
               alert: a.failed > 0 && a.failureRate > TelemetrySizes.failWarn,
+              icon: TelemetryIcons.failed,
             ),
-            SummaryStat(compact(a.tokens), TelemetryCopy.summaryTokens),
-            SummaryStat(ms(a.latencyP50), TelemetryCopy.summaryP50, unit: true),
+            SummaryStat(
+              compact(a.tokens),
+              TelemetryCopy.summaryTokens,
+              icon: TelemetryIcons.tokens,
+            ),
+            SummaryStat(
+              ms(a.latencyP50),
+              TelemetryCopy.summaryP50,
+              unit: true,
+              icon: TelemetryIcons.latency,
+            ),
           ],
         ),
         if (a.unknown > 0)
@@ -192,6 +206,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     final s = _c.series;
     return TSection(
       title: TelemetryCopy.activity,
+      icon: TelemetryIcons.chart,
       trailing: Wrap(
         spacing: AppSpacing.md,
         children: switch (_metric) {
@@ -236,6 +251,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   Widget _providers(BuildContext context, TelemetryOverview o) {
     return TSection(
       title: TelemetryCopy.providers,
+      icon: TelemetryIcons.providers,
       child: PlainList(
         children: [
           for (final x in o.providers)
@@ -259,6 +275,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   ) {
     return TSection(
       title: TelemetryCopy.models,
+      icon: TelemetryIcons.models,
       note: models.hidden > 0
           ? '${TelemetryCopy.modelsUnused}: ${models.hidden}'
           : null,
@@ -291,6 +308,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   Widget _turns(BuildContext context, TurnTelemetry t) {
     return TSection(
       title: TelemetryCopy.perTurn,
+      icon: TelemetryIcons.tokens,
       note: TelemetryCopy.turnExtraNote,
       child: SummaryRow(
         stats: [
@@ -314,6 +332,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   Widget _errors(BuildContext context, List<ErrorGroup> errors) {
     return TSection(
       title: TelemetryCopy.errors,
+      icon: TelemetryIcons.errors,
       child: PlainList(
         children: [
           for (final e in errors.take(TelemetrySizes.topErrorsShown))
@@ -332,6 +351,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   Widget _users(BuildContext context, TelemetryOverview o) {
     return TSection(
       title: TelemetryCopy.users,
+      icon: TelemetryIcons.users,
       child: PlainList(
         children: [
           for (final u in o.users.take(TelemetrySizes.usersShown))
@@ -348,11 +368,13 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         : list.take(TelemetrySizes.callsShown);
     return TSection(
       title: TelemetryCopy.recentCalls,
+      icon: TelemetryIcons.log,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextAction(
             label: TelemetryCopy.failedOnly,
+            icon: TelemetryIcons.failed,
             active: _c.failedOnly,
             onTap: () => _c.setFailedOnly(!_c.failedOnly),
           ),
@@ -360,6 +382,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
             label: _c.paused
                 ? '${TelemetryCopy.resume}${_c.heldCount > 0 ? ' +${_c.heldCount}' : ''}'
                 : TelemetryCopy.pause,
+            icon: _c.paused ? TelemetryIcons.resume : TelemetryIcons.pause,
             active: _c.paused,
             onTap: _c.togglePause,
           ),

@@ -161,6 +161,9 @@ abstract final class TelemetryStrings {
 }
 
 abstract final class TelemetrySizes {
+  /// Icons beside section titles, text actions and summary labels.
+  static const sectionIcon = 18.0;
+  static const actionIcon = 14.0;
   // Plain layout.
   static const sectionTop = 32.0;
   static const rowPad = 14.0;
