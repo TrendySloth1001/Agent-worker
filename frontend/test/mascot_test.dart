@@ -1,6 +1,7 @@
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/core/widgets/mascot.dart';
-import 'package:app/core/widgets/mascot_frame.dart';
+import 'package:lottie/lottie.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -42,6 +43,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(_gallery(theme));
+      await tester.runAsync(() => Future.delayed(const Duration(seconds: 2)));
       for (final step in [0, 1, 2, 3]) {
         await tester.pump(Duration(milliseconds: step == 0 ? 1 : 700));
         expect(tester.takeException(), isNull);
@@ -51,31 +53,39 @@ void main() {
     });
   }
 
-  test('every state lights dots at every moment of the loop', () {
-    for (final s in MascotState.values) {
-      for (var t = 0.0; t < 4; t += 0.1) {
-        expect(buildMascotFrame(s, t).litCount, greaterThan(20), reason: '$s');
-      }
+  test('every state maps to a bundled lottie file', () {
+    final assets = {for (final s in MascotState.values) s.asset};
+    expect(assets.length, MascotState.values.length);
+    for (final a in assets) {
+      final f = File(a);
+      expect(f.existsSync(), isTrue, reason: a);
+      expect(f.lengthSync(), lessThan(200 * 1024), reason: a);
     }
   });
 
-  test('states look different from one another', () {
-    String sig(MascotState s) {
-      final f = buildMascotFrame(s, 0.5);
-      return [
-        for (var r = 0; r < 15; r++)
-          for (var c = 0; c < 17; c++) f.at(c, r) == null ? '.' : 'x',
-      ].join();
-    }
-
-    final sigs = {for (final s in MascotState.values) sig(s)};
-    expect(sigs.length, MascotState.values.length);
+  testWidgets('loads the lottie and cross-fades on state change', (
+    tester,
+  ) async {
+    Widget app(MascotState s) => MaterialApp(
+      theme: AppTheme.light,
+      home: Mascot(state: s),
+    );
+    await tester.pumpWidget(app(MascotState.idle));
+    await tester.runAsync(() => Future.delayed(const Duration(seconds: 1)));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(LottieBuilder), findsOneWidget);
+    await tester.pumpWidget(app(MascotState.thinking));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(LottieBuilder), findsNWidgets(2));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(LottieBuilder), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('reduced motion shows a static frame', (tester) async {
     await tester.pumpWidget(_gallery(AppTheme.light, still: true));
     expect(tester.hasRunningAnimations, isFalse);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
     expect(tester.takeException(), isNull);
   });
 
@@ -90,6 +100,8 @@ void main() {
       ),
     );
     await tester.pumpWidget(app(true));
+    await tester.runAsync(() => Future.delayed(const Duration(seconds: 1)));
+    await tester.pump(const Duration(milliseconds: 50));
     expect(tester.hasRunningAnimations, isTrue);
     await tester.pumpWidget(app(false));
     await tester.pump(const Duration(seconds: 1));

@@ -1,54 +1,64 @@
 # Mascots
 
-Decision: sparky's mascot is a **custom dot-matrix character drawn in code**
-(`CustomPainter` + one `AnimationController`). No third-party animation files
-are bundled, so there is no licence or attribution risk and no bundle growth.
+Decision (2026-10-12): sparky is rendered from **Google's Animated Noto Emoji**
+(Lottie JSON, CC BY 4.0), one emoji per state, on a tonal disc with a dot-ring
+halo. This replaces the earlier code-drawn dot-matrix character, which looked
+unfinished.
 
-## Candidates reviewed
+## Licence (verified 2026-10-12)
 
-Verified on 2026-10-12 from the sources linked. "Fit" is the Nothing aesthetic
-(monochrome ink plus one red accent, dot-matrix).
+Official Noto Emoji page, https://googlefonts.github.io/noto-emoji-files/ :
 
-| Candidate | URL | Licence (as found) | Attribution | Format / size | Fits | Nothing fit |
-|---|---|---|---|---|---|---|
-| **Sparky (custom, chosen)** | `lib/core/widgets/mascot.dart` | Own work, no third-party code or art | None | Code only, 0 KB assets | All states, all screens | Perfect: ink dots plus red accent, follows light and dark |
-| Google Noto Animated Emoji | https://googlefonts.github.io/noto-emoji-animation/ | CC BY 4.0 per the project (the repo LICENSE could not be fetched in this session, so confirm before use) | Required (credit the author, link the licence) | Lottie JSON (also WebP/GIF), roughly 20-150 KB each | Generic reactions (robot, thinking, party) | Poor: full-colour emoji, a Lottie colour filter would flatten them, not a consistent character |
-| Microsoft Fluent Emoji | https://github.com/microsoft/fluentui-emoji | MIT (LICENSE read: "MIT License, Copyright (c) Microsoft Corporation") | Keep the copyright notice | Static SVG/PNG (3D, Color, Flat, High Contrast); no animated variants found in the repo | Static icons only | High Contrast set is monochrome but static |
-| LottieFiles free animations | https://lottiefiles.com/page/license | Lottie Simple License: commercial use allowed, attribution "strongly encouraged" not required, modified files stay under the same licence, no re-compiling into a competing service. Each file has its own page, some are marked otherwise | Optional | Lottie JSON, 10-300 KB | Anything, but each file must be checked individually | Mixed styles, would need recolouring per file, no single consistent character |
-| Rive Community | https://rive.app/docs/community/community-overview | CC BY (Rive docs: community files are shared under CC BY) | Required | `.riv`, small, but needs the `rive` runtime package (native lib, bigger APK) | Rich mascots exist | Colours are baked in, mixed authors, extra runtime |
-| Open Peeps (already used) | https://www.openpeeps.com/ | CC0 | None | SVG, static | Login, hello, empty screens | Line art, already tinted; static only |
-| unDraw | https://undraw.co/license | Own licence: free for commercial use, no attribution, but cannot be bundled or redistributed as packs and is discouraged where illustrations are central to an app | None | SVG, static | Spot illustrations | Colourful, static; the restriction is a risk for an app |
-| Dot-matrix / pixel-art animated characters | searched, none found with a clear permissive licence and a code/dev theme | n/a | n/a | n/a | n/a | n/a |
-| GitHub Octocat | https://github.com/logos | Trademarked, not open source | n/a | n/a | n/a | Not used. Replaced by a branch-antenna sparky |
+> Animated Noto Emoji is licensed under CC BY 4.0. See the full license for all details.
 
-## Recommended set: one character, nine states
+Full text: https://creativecommons.org/licenses/by/4.0/ . Commercial use is
+allowed, attribution required. Note: the `noto-emoji` repo's own `LICENSE` is
+the SIL OFL 1.1 (fonts) and its README says tools and most images are Apache
+2.0; those cover the fonts and static images, not the animated set. The
+animation repo has no LICENSE file of its own, so the CC BY 4.0 statement above
+is the authoritative one. Credit: "Animated emoji: Noto Emoji by Google, CC BY
+4.0" (About screen, `AboutStrings.creditList`) and
+`frontend/assets/mascots/LICENSE.md`. Files are bundled unmodified.
 
-One consistent character beats a mix of emoji. Sparky is a 17 x 15 dot grid:
-ink dots (theme text colour), unlit dots in the border colour, and a red
-accent dot on the antenna. It loops over 4 seconds.
+## Cast
 
-| State | Look | Used for |
+URL pattern (verified by fetching): `https://fonts.gstatic.com/s/e/notoemoji/latest/<codepoint>/lottie.json`.
+Not every emoji exists (the magnifier 1f50d and satellite 1f4e1 return 404).
+
+| State | Emoji | File | Size |
+|---|---|---|---|
+| idle | robot 1f916 | idle.json | 187 KB |
+| thinking | thinking face 1f914 | thinking.json | 68 KB |
+| writing | writing hand 270d_fe0f | writing.json | 81 KB |
+| searching | magnifier tilted right 1f50e | searching.json | 29 KB |
+| celebrating | party popper 1f389 | celebrating.json | 68 KB |
+| sleeping | sleeping face 1f634 | sleeping.json | 24 KB |
+| error | crossed-out eyes 1f635 | error.json | 28 KB |
+| offline | electric plug 1f50c | offline.json | 16 KB |
+| code host (the `github` state) | laptop 1f4bb (an octopus would be Octocat-adjacent) | code.json | 83 KB |
+
+Total about 584 KB.
+
+## Implementation
+
+`Mascot(state:, size:)` (`lib/core/widgets/mascot.dart`) draws a halo
+(`CustomPainter`: tonal disc plus 28 dots from the theme palette), then a
+`Lottie.asset` for the state inside an `AnimatedSwitcher` (320 ms cross-fade).
+The lottie package caches parsed compositions, so each file loads once. The
+Lottie controller uses the widget tree's tickers, so it stops under
+`TickerMode(enabled: false)` (hidden routes). Reduced motion
+(`MediaQuery.disableAnimations`) renders the first frame only. If a file fails
+to load, only the halo shows. Only one mascot is shown per screen; do not put it
+in list rows beyond the small empty/error states. Stage mapping:
+`MascotState.forTablePhase` and `MascotState.forDocPhase`.
+
+## Other candidates reviewed
+
+| Candidate | Licence | Why not |
 |---|---|---|
-| idle | blinks, glances sideways, smiles | empty chat (HELLO), empty history, docs outline ready |
-| thinking | eyes up, three dots light in turn | Round Table seating/checking/reviewing, doc planning, empty memory |
-| writing | eyes down, red text line grows | Round Table drafting/synthesizing, doc writing, empty docs list |
-| searching | eyes scan left and right | Round Table researching, doc researching, empty knowledge base, no search matches |
-| celebrating | ^ ^ eyes, hops, confetti | doc finishing |
-| sleeping | closed eyes, breathing, Z | empty storage, empty telemetry, archived list, doc paused/partial |
-| error | red X eyes, blinking spark and "!" | load failures (history, KB, memory, storage, docs), failed doc |
-| offline | dim eyes, wavy mouth, flickering signal bars | reserved for offline banners |
-| github | `<` `>` eyes, forked antenna with a travelling red node | GitHub connect card, future GitHub screen |
-
-`Mascot(state:, size:)` lives in `lib/core/widgets/mascot.dart`; frames are
-built by the pure function `buildMascotFrame` in `mascot_frame.dart`.
-Reduced motion (`MediaQuery.disableAnimations`) shows frame 0 and the
-controller never runs; the ticker also stops when its route is hidden
-(`TickerMode`). Stage mapping: `MascotState.forTablePhase` and
-`MascotState.forDocPhase`.
-
-## Optional licensed accents
-
-If richer motion is wanted later, Noto Animated Emoji (CC BY 4.0) or a
-LottieFiles file can be added with the `lottie` package. Add the attribution
-to `AboutStrings.creditList` and `assets/mascots/LICENSES.md` at that point.
-Currently no such asset is bundled.
+| Microsoft Fluent Emoji | MIT | Static only |
+| LottieFiles free animations | Lottie Simple License, per-file | Mixed styles, no single character |
+| Rive Community | CC BY | Needs the rive runtime, baked colours |
+| Open Peeps (used for illustrations) | CC0 | Static line art |
+| unDraw | Own licence | Cannot be bundled as packs |
+| Octocat | Trademarked | Not used |

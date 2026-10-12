@@ -136,9 +136,9 @@ abstract final class AboutStrings {
     ),
     (
       icon: AboutIcons.illustrations,
-      label: 'MASCOT',
-      value: 'Sparky, drawn in code for this app (no third-party art)',
-      url: null,
+      label: 'ANIMATED EMOJI',
+      value: 'Noto Emoji by Google, CC BY 4.0',
+      url: 'https://googlefonts.github.io/noto-emoji-animation/',
     ),
     (
       icon: AboutIcons.icons,

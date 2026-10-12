@@ -1,8 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 
 import '../constants/mascot.dart';
 import '../theme/app_palette.dart';
-import 'mascot_frame.dart';
 
 /// What sparky is doing. Pick the one that matches the screen.
 enum MascotState {
@@ -22,6 +24,19 @@ enum MascotState {
 
   final String label;
 
+  /// The Lottie file that plays for this state.
+  String get asset => switch (this) {
+    idle => MascotAssets.idle,
+    thinking => MascotAssets.thinking,
+    writing => MascotAssets.writing,
+    searching => MascotAssets.searching,
+    celebrating => MascotAssets.celebrating,
+    sleeping => MascotAssets.sleeping,
+    error => MascotAssets.error,
+    offline => MascotAssets.offline,
+    github => MascotAssets.code,
+  };
+
   /// The mascot for a live Round Table phase.
   static MascotState forTablePhase(String? phase) => switch (phase) {
     'researching' => searching,
@@ -38,13 +53,12 @@ enum MascotState {
   };
 }
 
-/// Sparky, a dot-matrix robot painted in code from the theme palette (ink
-/// dots plus a red accent), so it follows light and dark with no assets.
-///
-/// Animates in a 4 second loop. With animations disabled it shows one still
-/// frame, and it stops whenever its route is hidden (the ticker is muted by
-/// [TickerMode]).
-class Mascot extends StatefulWidget {
+/// Sparky: a Noto Animated Emoji (Lottie) per state on a tonal disc with a
+/// dot-ring halo. Compositions are cached by the lottie package, so a state
+/// loads once. Changing state cross-fades. With animations disabled it shows
+/// the first frame only, and it stops whenever its route is hidden (the
+/// Lottie controller is muted by [TickerMode]).
+class Mascot extends StatelessWidget {
   const Mascot({
     super.key,
     required this.state,
@@ -54,58 +68,48 @@ class Mascot extends StatefulWidget {
 
   final MascotState state;
 
-  /// Width in logical pixels; the height follows the grid.
+  /// Width and height in logical pixels.
   final double size;
 
   /// Spoken label; defaults to the state's description.
   final String? semanticLabel;
 
   @override
-  State<Mascot> createState() => _MascotState();
-}
-
-class _MascotState extends State<Mascot> with SingleTickerProviderStateMixin {
-  late final _loop = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 1) * MascotGrid.loopSeconds.toInt(),
-  );
-  bool _still = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _still = MediaQuery.disableAnimationsOf(context);
-    if (_still) {
-      _loop.stop();
-    } else if (!_loop.isAnimating) {
-      _loop.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _loop.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final height = widget.size * MascotGrid.rows / MascotGrid.cols;
+    final still = MediaQuery.disableAnimationsOf(context);
     return Semantics(
-      label: widget.semanticLabel ?? widget.state.label,
+      label: semanticLabel ?? state.label,
       image: true,
       child: ExcludeSemantics(
         child: RepaintBoundary(
-          child: CustomPaint(
-            size: Size(widget.size, height),
-            painter: _MascotPainter(
-              state: widget.state,
-              progress: _loop,
-              still: _still,
-              ink: p.textPrimary,
-              accent: p.accent,
-              faint: p.border,
+          child: SizedBox.square(
+            dimension: size,
+            child: CustomPaint(
+              painter: _HaloPainter(
+                disc: p.surfaceRaised.withValues(
+                  alpha: p.surfaceRaised.a * MascotLayout.discAlpha,
+                ),
+                dots: p.border.withValues(
+                  alpha: p.border.a * MascotLayout.haloAlpha,
+                ),
+              ),
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: still ? Duration.zero : MascotLayout.crossFade,
+                  child: SizedBox.square(
+                    key: ValueKey(state),
+                    dimension: size * MascotLayout.emojiShare,
+                    child: Lottie.asset(
+                      state.asset,
+                      animate: !still,
+                      repeat: true,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -114,53 +118,28 @@ class _MascotState extends State<Mascot> with SingleTickerProviderStateMixin {
   }
 }
 
-class _MascotPainter extends CustomPainter {
-  _MascotPainter({
-    required this.state,
-    required this.progress,
-    required this.still,
-    required this.ink,
-    required this.accent,
-    required this.faint,
-  }) : super(repaint: progress);
+class _HaloPainter extends CustomPainter {
+  const _HaloPainter({required this.disc, required this.dots});
 
-  final MascotState state;
-  final Animation<double> progress;
-  final bool still;
-  final Color ink, accent, faint;
+  final Color disc, dots;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final seconds = still
-        ? MascotGrid.stillAt
-        : progress.value * MascotGrid.loopSeconds;
-    final frame = buildMascotFrame(state, seconds);
-    final cell = size.width / MascotGrid.cols;
-    final radius = cell * MascotGrid.dotRadius;
-    final paint = Paint();
-    for (var r = 0; r < MascotGrid.rows; r++) {
-      for (var c = 0; c < MascotGrid.cols; c++) {
-        final dot = frame.at(c, r);
-        final center = Offset((c + 0.5) * cell, (r + 0.5) * cell);
-        if (dot == null) {
-          final a = MascotFrame.inHead(c, r)
-              ? MascotGrid.faintInside
-              : MascotGrid.faintOutside;
-          paint.color = faint.withValues(alpha: faint.a * a);
-        } else {
-          final base = dot.accent ? accent : ink;
-          paint.color = base.withValues(alpha: base.a * dot.a);
-        }
-        canvas.drawCircle(center, radius, paint);
-      }
+    final c = size.center(Offset.zero);
+    canvas.drawCircle(
+      c,
+      size.width * MascotLayout.discShare / 2,
+      Paint()..color = disc,
+    );
+    final ring = size.width * MascotLayout.haloRingShare;
+    final r = size.width * MascotLayout.haloDotRadius;
+    final paint = Paint()..color = dots;
+    for (var i = 0; i < MascotLayout.haloDots; i++) {
+      final a = 2 * math.pi * i / MascotLayout.haloDots;
+      canvas.drawCircle(c + Offset(math.cos(a), math.sin(a)) * ring, r, paint);
     }
   }
 
   @override
-  bool shouldRepaint(_MascotPainter old) =>
-      old.state != state ||
-      old.still != still ||
-      old.ink != ink ||
-      old.accent != accent ||
-      old.faint != faint;
+  bool shouldRepaint(_HaloPainter old) => old.disc != disc || old.dots != dots;
 }
