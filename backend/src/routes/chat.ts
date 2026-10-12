@@ -10,6 +10,7 @@ import { researchWeb, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
 import { githubGround } from "../github/grounding.js";
+import { appsGround } from "../connections/oauth/tools.js";
 import { decideSearchLocal, type SearchDecision } from "../web/searchDecision.js";
 import { fitBudget } from "../web/budget.js";
 import { newTurnCounters, recordTurnSummary, setTelemetry, withTelemetry } from "../db/usage.js";
@@ -108,6 +109,11 @@ const bodySchema = z.object({
   roundTable: z.boolean().default(false),
   // Briefing from a merged chat, sent as background (never as a user/assistant turn).
   context: z.string().max(8000).optional(),
+  // Connected-app items the user attached ("Ask Sparky about this page"): read live, cited as documents.
+  apps: z
+    .array(z.object({ provider: z.enum(["google_drive", "notion"]), id: z.string().min(10).max(200), title: z.string().max(200).optional() }))
+    .max(3)
+    .optional(),
 });
 
 /** Messages of history kept for a confident small-talk turn. */
@@ -232,7 +238,7 @@ chatRouter.post("/", async (req, res) => {
     if (prepared.failed.length > 0) {
       sse.send("notice", { code: "attachment_failed", message: `Could not read: ${prepared.failed.join(", ")}` });
     }
-    const docItems = prepared.docs;
+    const docItems: ContextItem[] = prepared.docs;
     docItems.forEach((d) =>
       citations.push({ id: d.id, kind: "file", title: d.title, url: d.url, snippet: snippet(d.text), site: "document" }),
     );
@@ -444,6 +450,23 @@ chatRouter.post("/", async (req, res) => {
       }
     };
 
+    // Connected apps (Drive, Notion): read-only tools, run when the message is about them or an item is attached.
+    let appsHint: string | null = null;
+    const appsTask = async () => {
+      if (!lastUserText && !body.apps?.length) return;
+      try {
+        const g = await appsGround(req.user?.id ?? null, aboutAttachments ? "" : lastUserText, body.apps ?? [], { prefix: "D", firstId: docItems.length + 1 });
+        if (!g) return;
+        appsHint = g.hint;
+        for (const i of g.items) {
+          docItems.push(i);
+          citations.push({ id: i.id, kind: "web", title: i.title, url: i.url, snippet: snippet(i.text), site: hostOf(i.url) });
+        }
+      } catch (e) {
+        log.warn("apps grounding failed", { requestId, message: (e as Error).message?.slice(0, 120) });
+      }
+    };
+
     // Past conversations: always searched when the user refers to one, otherwise only a clearly related chat is surfaced.
     let pastBlock: string | null = null;
     const recallTask = async () => {
@@ -485,7 +508,7 @@ chatRouter.post("/", async (req, res) => {
       }
     };
 
-    const [, , , , suggestion] = await Promise.all([kbTask(), webTask(), githubTask(), recallTask(), suggestTask()]);
+    const [, , , , suggestion] = await Promise.all([kbTask(), webTask(), githubTask(), recallTask(), suggestTask(), appsTask()]);
     if (suggestion && !ctl.signal.aborted) {
       sse.send("suggest_toggle", suggestion);
       log.info("suggest_toggle", { requestId, conversationId: body.conversationId, event: "shown", kind: suggestion.kind, reason: suggestion.reason });
@@ -534,6 +557,7 @@ chatRouter.post("/", async (req, res) => {
     const shape = lastUserText ? shapeHint(nlp.intent) : null;
     if (shape) prompt.push({ role: "system", content: shape });
     if (githubHint) prompt.push({ role: "system", content: githubHint });
+    if (appsHint) prompt.push({ role: "system", content: appsHint });
     prompt.push({
       role: "system",
       content: toolsNote({

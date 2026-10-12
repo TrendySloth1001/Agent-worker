@@ -56,6 +56,7 @@ model User {
   connections      Connection[]
   identities       AuthIdentity[]
   githubOAuthFlows GithubOAuthFlow[]
+  oauthFlows       OAuthFlow[]
   docs             Doc[]
   memories         Memory[]
   conversationChunks ConversationChunk[]
@@ -375,11 +376,43 @@ model Connection {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   lastUsedAt      DateTime? @map("last_used_at") @db.Timestamptz(6)
+  /// Display name / email of the connected account (Google profile, Notion owner).
+  accountName     String?   @map("account_name")
+  accountEmail    String?   @map("account_email")
+  /// Provider extras without secrets (Notion workspace name/icon/id, bot id).
+  meta            Json      @default("{}")
+  /// The provider rejected the token or the refresh: the app offers Reconnect.
+  needsReauth     Boolean   @default(false) @map("needs_reauth")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([userId, provider])
   @@map("connections")
+}
+
+/// Pending OAuth web flows of the generic connectors (src/connections/oauth)
+/// and Google Picker tickets (mode 'picker'). Same shape as github_oauth_flows.
+model OAuthFlow {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider        String
+  /// 'connect' | 'picker'
+  mode            String    @default("connect")
+  stateHash       String    @unique @map("state_hash")
+  /// PKCE code_verifier; cleared once the code is exchanged.
+  codeVerifier    String    @map("code_verifier")
+  userId          String    @map("user_id") @db.Uuid
+  status          String    @default("pending")
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  ticketHash      String?   @unique @map("ticket_hash")
+  ticketExpiresAt DateTime? @map("ticket_expires_at") @db.Timestamptz(6)
+  /// What the callback resolved (no tokens).
+  result          Json?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([createdAt])
+  @@map("oauth_flows")
 }
 
 /// External sign-in methods (GitHub, Google) linked to an account.

@@ -17,6 +17,13 @@ export type ConnectionSummary = {
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
+  /** Account name / email (Google Drive, Notion); null for GitHub. */
+  accountName: string | null;
+  accountEmail: string | null;
+  /** Non-secret provider extras (Notion workspace name and icon). */
+  meta: Record<string, unknown>;
+  /** The provider rejected the token: the app offers Reconnect. */
+  needsReauth: boolean;
 };
 
 const summary = (c: {
@@ -29,6 +36,10 @@ const summary = (c: {
   createdAt: Date;
   updatedAt: Date;
   lastUsedAt: Date | null;
+  accountName?: string | null;
+  accountEmail?: string | null;
+  meta?: unknown;
+  needsReauth?: boolean;
 }): ConnectionSummary => ({
   provider: c.provider,
   accountLogin: c.accountLogin,
@@ -40,6 +51,10 @@ const summary = (c: {
   createdAt: c.createdAt.toISOString(),
   updatedAt: c.updatedAt.toISOString(),
   lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
+  accountName: c.accountName ?? null,
+  accountEmail: c.accountEmail ?? null,
+  meta: c.meta && typeof c.meta === "object" && !Array.isArray(c.meta) ? (c.meta as Record<string, unknown>) : {},
+  needsReauth: c.needsReauth ?? false,
 });
 
 export async function listConnections(userId: string): Promise<ConnectionSummary[]> {
@@ -56,6 +71,10 @@ export async function listConnections(userId: string): Promise<ConnectionSummary
       createdAt: true,
       updatedAt: true,
       lastUsedAt: true,
+      accountName: true,
+      accountEmail: true,
+      meta: true,
+      needsReauth: true,
     },
   });
   return rows.map(summary);

@@ -1,5 +1,6 @@
 import { AppError } from "../../util/errors.js";
 import type { Connector } from "../types.js";
+import { googleDrive, notion } from "./apps.js";
 import { doc } from "./doc.js";
 import { file } from "./file.js";
 import { github } from "./github.js";
@@ -9,12 +10,12 @@ import { reddit } from "./reddit.js";
 import { stackoverflow } from "./stackoverflow.js";
 import { web } from "./web.js";
 
-export type SourceType = "web" | "github" | "stackoverflow" | "reddit" | "hackernews" | "note" | "file" | "doc";
-/** Types a user can add by URL/handle; notes, files and docs are created by the server. */
-export type AddableType = Exclude<SourceType, "note" | "file" | "doc">;
+export type SourceType = "web" | "github" | "stackoverflow" | "reddit" | "hackernews" | "note" | "file" | "doc" | "google_drive" | "notion";
+/** Types a user can add by URL/handle; notes, files, docs and connected-app items are created by the server. */
+export type AddableType = Exclude<SourceType, "note" | "file" | "doc" | "google_drive" | "notion">;
 export const SOURCE_TYPES: AddableType[] = ["web", "github", "stackoverflow", "reddit", "hackernews"];
 
-export const connectors: Record<SourceType, Connector> = { web, github, stackoverflow, reddit, hackernews, note, file, doc };
+export const connectors: Record<SourceType, Connector> = { web, github, stackoverflow, reddit, hackernews, note, file, doc, google_drive: googleDrive, notion };
 
 export function detectType(input: string): AddableType {
   const s = input.trim();

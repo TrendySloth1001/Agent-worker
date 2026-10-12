@@ -23,6 +23,7 @@ import { suggestRouter } from "./routes/suggest.js";
 import { filesRouter } from "./routes/files.js";
 import { githubRouter } from "./routes/github.js";
 import { connectionsRouter } from "./routes/connections.js";
+import { connectPublicRouter, connectRouter } from "./routes/connect.js";
 import { failInterrupted } from "./files/process.js";
 import { authPublicRouter, authRouter, requireUser } from "./routes/auth.js";
 import { aiBudget, chatLimit, docLimit } from "./auth/limits.js";
@@ -47,6 +48,8 @@ app.use(cors());
 // as an admin/dev bypass that acts as the owner account (curl tests).
 app.use("/health", healthRouter);
 app.use("/auth", authPublicRouter);
+// Connected apps: the OAuth callback and the Drive picker page (state/ticket authenticated).
+app.use("/connect", connectPublicRouter);
 // Failed sign-ins (bad API_TOKEN / JWT) are counted per IP before anything is compared.
 app.use(failedAuthGuard());
 app.use(requireUser);
@@ -86,6 +89,7 @@ app.use("/assist", transcribeRouter);
 app.use("/files", filesRouter);
 app.use("/github", githubGate, githubRouter);
 app.use("/connections", connectionsRouter);
+app.use("/connect", connectRouter);
 app.use("/docs", docsRouter);
 app.use("/memory", memoryRouter);
 
