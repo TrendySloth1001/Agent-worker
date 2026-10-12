@@ -7,6 +7,7 @@ import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { ownerFilter } from "../auth/context.js";
 import { joinOverlap, mmr, parseVector, rrfFuse } from "./fusion.js";
+import { fuzzyTerms, needsFuzzy, synonymsOf } from "../nlp/text.js";
 import { rerank } from "./rerank.js";
 import { rewriteQueries, type HistoryMsg } from "./rewrite.js";
 
@@ -64,13 +65,14 @@ type Row = {
 const COLS = Prisma.sql`c.id, c.document_id AS doc_id, c.ord, c.heading_path, c.content, c.token_count, d.title, d.url, d.meta, s.type`;
 const JOINS = Prisma.sql`FROM chunks c JOIN documents d ON d.id = c.document_id JOIN sources s ON s.id = c.source_id`;
 
-/** OR-joined keyword terms for websearch_to_tsquery (identifiers like `useState` or `c++` survive). */
+/** OR-joined keyword terms for websearch_to_tsquery (identifiers like `useState` or `c++` survive), plus tech synonyms (k8s/kubernetes). The 'english' tsvector config does the stemming. */
 export function keywordQuery(q: string): string {
   const words = [...new Set(q.toLowerCase().match(/[\p{L}\p{N}_#+.-]{3,}/gu) ?? [])]
     .map((w) => w.replace(/^[.+-]+|[.+-]+$/g, ""))
     .filter((w) => w.length >= 3)
     .slice(0, 12);
-  return words.join(" or ");
+  const syn = words.flatMap((w) => synonymsOf(w)).filter((s) => !/\s/.test(s));
+  return [...new Set([...words, ...syn])].join(" or ");
 }
 
 function hostOf(url: string): string {
@@ -150,6 +152,18 @@ export async function retrieve(queryText: string, opts: RetrieveOpts = {}): Prom
           WHERE c.tsv @@ websearch_to_tsquery('english', ${kw}) ${inSources} ${mine}
           ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', ${kw})) DESC LIMIT ${CANDIDATES}`;
         out.push({ rows: kr, weight, kw: true });
+        // Typo tolerance: too few keyword hits -> trigram word_similarity (`term <% content`, GIN-indexed).
+        if (needsFuzzy(kr.length)) {
+          const terms = fuzzyTerms(queries[qi], 3);
+          if (terms.length) {
+            const anyTerm = Prisma.join(terms.map((t) => Prisma.sql`${t} <% c.content`), " OR ");
+            const fr = await c.$queryRaw<Row[]>`
+              SELECT ${COLS}, 1 - (c.embedding <=> ${vec}::vector) AS sim ${JOINS}
+              WHERE (${anyTerm}) ${inSources} ${mine}
+              ORDER BY c.embedding <=> ${vec}::vector LIMIT ${CANDIDATES}`;
+            out.push({ rows: fr, weight: weight * 0.7, kw: true });
+          }
+        }
       }
     }
     return out;

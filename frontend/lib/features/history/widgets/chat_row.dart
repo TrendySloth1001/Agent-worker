@@ -119,7 +119,8 @@ class ChatRow extends StatelessWidget {
   Widget _body(BuildContext context) {
     final p = context.palette;
     final t = context.text;
-    final snippet = query.trim().isNotEmpty && chat.preview.isNotEmpty;
+    final snippetText = chat.snippet ?? chat.preview;
+    final snippet = query.trim().isNotEmpty && snippetText.isNotEmpty;
     final content = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: HistorySizes.rowInset + AppSpacing.xs,
@@ -150,7 +151,7 @@ class ChatRow extends StatelessWidget {
                   ),
                 if (snippet && !renaming)
                   HighlightedText(
-                    chat.preview,
+                    snippetText,
                     query: query,
                     style: t.bodySmall.copyWith(
                       color: p.textTertiary,

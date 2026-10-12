@@ -9,6 +9,7 @@ import { takeAi } from "../auth/limits.js";
 import { mergeBriefing, type MergeChat } from "../conversations/merge.js";
 import { deleteFile, getFileRow } from "../files/store.js";
 import { userOf } from "../auth/context.js";
+import { searchConversationIds, snippetsFor } from "../conversations/search.js";
 
 export const conversationsRouter = Router();
 
@@ -133,19 +134,26 @@ conversationsRouter.get("/", async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
   const archived = req.query.archived === "1" || req.query.archived === "true";
   const before = typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before)) ? new Date(req.query.before) : null;
+  if (q) {
+    // Stemmed full-text + typo-tolerant search (src/conversations/search.ts); each item carries the matched excerpt.
+    const ids = await searchConversationIds({ uid, q, archived, before, limit });
+    const found = await db().conversation.findMany({ where: { id: { in: ids }, userId: uid }, include: WITH_PARENT });
+    const byId = new Map(found.map((r) => [r.id, r]));
+    const snippets = await snippetsFor(ids, q);
+    const items = ids.flatMap((id) => {
+      const r = byId.get(id);
+      if (!r) return [];
+      const sn = snippets.get(id);
+      return [{ ...summary(r), snippet: sn ? sn.text : null, snippetMatch: sn ? { start: sn.start, length: sn.length } : null }];
+    });
+    res.json({ conversations: items });
+    return;
+  }
   const rows = await db().conversation.findMany({
     where: {
       userId: uid,
       archivedAt: archived ? { not: null } : null,
       ...(before ? { updatedAt: { lt: before } } : {}),
-      ...(q
-        ? {
-            OR: [
-              { title: { contains: q, mode: "insensitive" } },
-              { messages: { some: { content: { contains: q, mode: "insensitive" } } } },
-            ],
-          }
-        : {}),
     },
     // Pinned first (most recently pinned on top), then by activity.
     orderBy: [{ pinnedAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],

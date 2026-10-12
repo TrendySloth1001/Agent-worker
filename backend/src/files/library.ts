@@ -1,3 +1,4 @@
+import { fuzzyScore, needsFuzzy } from "../nlp/text.js";
 import { db, Prisma } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
 import type { FileKind } from "./kinds.js";
@@ -97,7 +98,16 @@ export async function listFiles(userId: string | null, q: ListQuery): Promise<{ 
     ...(q.q ? { name: { contains: q.q, mode: "insensitive" } } : {}),
     ...(plan.after ? { AND: [plan.after] } : {}),
   };
-  const rows = (await db().storedFile.findMany({ where, orderBy: plan.orderBy, take: q.limit + 1, select: INFO_SELECT })).map(toFileRow);
+  let found = await db().storedFile.findMany({ where, orderBy: plan.orderBy, take: q.limit + 1, select: INFO_SELECT });
+  // Few substring hits on the first page: retry with typo / stem / synonym tolerant name matching.
+  if (q.q && !q.cursor && needsFuzzy(found.length)) {
+    const names = await db().storedFile.findMany({ where: { userId, ...(q.kind ? { kind: q.kind } : {}) }, select: { id: true, name: true }, take: 2000 });
+    const ids = names.filter((n) => fuzzyScore(q.q, n.name) >= 0.7).map((n) => n.id);
+    if (ids.length > found.length) {
+      found = await db().storedFile.findMany({ where: { ...where, name: undefined, id: { in: ids } }, orderBy: plan.orderBy, take: q.limit + 1, select: INFO_SELECT });
+    }
+  }
+  const rows = found.map(toFileRow);
   const page = rows.slice(0, q.limit);
   const convs = await conversationsOf(userId, page.map((r) => r.id));
   // Titles of chats a file was uploaded into but never saved with (files.conversation_id).

@@ -11,6 +11,7 @@ class ConversationSummary {
     this.origin,
     this.forkedFrom,
     this.parentTitle,
+    this.snippet,
   });
 
   final String id;
@@ -29,6 +30,9 @@ class ConversationSummary {
   /// Chat this one was forked from; null if not a fork or it was deleted.
   final String? forkedFrom;
   final String? parentTitle;
+
+  /// Excerpt of the message that matched a search (only in search results).
+  final String? snippet;
 
   bool get isFork => origin == originFork;
   bool get isMerge => origin == originMerge;
@@ -51,5 +55,6 @@ class ConversationSummary {
         forkedFrom: j['forkedFrom'] as String?,
         parentTitle:
             (j['parent'] as Map<String, dynamic>?)?['title'] as String?,
+        snippet: j['snippet'] as String?,
       );
 }
