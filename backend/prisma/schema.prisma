@@ -193,7 +193,7 @@ model FileChunk {
 
 // ---- knowledge base ----------------------------------------------------------
 
-/// CHECK type IN ('web','github','stackoverflow','reddit','hackernews','note'),
+/// CHECK type IN ('web','github','stackoverflow','reddit','hackernews','note','file','doc'),
 /// status IN ('queued','running','ready','failed').
 /// The (user_id, type, uri) key is UNIQUE NULLS NOT DISTINCT in SQL.
 model Source {

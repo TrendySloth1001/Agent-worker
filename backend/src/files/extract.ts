@@ -1,5 +1,6 @@
 import mammoth from "mammoth";
 import ExcelJS from "exceljs";
+import { htmlToMarkdown } from "../ingest/extract.js";
 import { extOf } from "./kinds.js";
 
 export const MAX_TEXT_CHARS = 400_000;
@@ -64,11 +65,22 @@ async function sheetsText(buf: Buffer): Promise<string> {
     .join("\n\n");
 }
 
+/** Word headings, lists and tables as Markdown (so chunks keep heading paths); raw text if conversion yields nothing. */
+async function docxText(buf: Buffer): Promise<string> {
+  try {
+    const md = htmlToMarkdown((await mammoth.convertToHtml({ buffer: buf })).value);
+    if (md.trim()) return md;
+  } catch {
+    /* fall back to plain text */
+  }
+  return (await mammoth.extractRawText({ buffer: buf })).value;
+}
+
 export async function extractText(buf: Buffer, name: string): Promise<Extracted> {
   const ext = extOf(name);
   let out: Extracted;
   if (ext === "pdf") out = await pdfText(buf);
-  else if (ext === "docx") out = { text: (await mammoth.extractRawText({ buffer: buf })).value };
+  else if (ext === "docx") out = { text: await docxText(buf) };
   else if (ext === "xlsx") out = { text: await sheetsText(buf) };
   else {
     if (buf.subarray(0, 4096).includes(0)) throw new Error("File looks binary, not text");

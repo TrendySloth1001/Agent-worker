@@ -5,6 +5,7 @@ import { db, Prisma } from "../db/prisma.js";
 import { toVector } from "../db/vector.js";
 import { embedTexts } from "../embeddings/index.js";
 import { chunkMarkdown } from "../ingest/chunk.js";
+import { indexNow, isKnowledgeDoc } from "../ingest/indexer.js";
 import { getObject, putObject } from "../storage/s3.js";
 import { log } from "../util/logger.js";
 import { extractText } from "./extract.js";
@@ -60,6 +61,9 @@ async function processDocument(t: Target, buf: Buffer) {
     }
   }
   await setResult(t.id, { status: "ready", meta, text });
+  // Searchable from chat's knowledge base (indexes in the background).
+  const owner = await db().storedFile.findUnique({ where: { id: t.id }, select: { userId: true } }).catch(() => null);
+  if (owner && isKnowledgeDoc(t.name)) void indexNow("file", owner.userId, t.id, t.name);
 }
 
 async function processMedia(t: Target, buf: Buffer) {

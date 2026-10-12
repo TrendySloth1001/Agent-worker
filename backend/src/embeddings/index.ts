@@ -84,16 +84,57 @@ async function embedBatch(batch: string[], kind: "document" | "query"): Promise<
   throw new AppError(503, "unavailable", `Embedding service failed: ${lastErr}`.slice(0, 200), true);
 }
 
-/** 1024-dim, L2-normalized embeddings. Batches inputs; retries 429/5xx with backoff. */
+const BATCH_CONCURRENCY = 2;
+
+/** 1024-dim, L2-normalized embeddings. Batches inputs (two requests in flight); retries 429/5xx with backoff. */
 export async function embedTexts(texts: string[], kind: "document" | "query", opts: { reembed?: boolean } = {}): Promise<number[][]> {
   if (!endpoint().key()) throw new AppError(503, "unavailable", `Embeddings not configured (${config.embeddingProvider} key missing)`);
   const guard = getEmbeddingGuardError();
   if (guard && !opts.reembed) throw new AppError(503, "unavailable", guard);
-  const out: number[][] = [];
   const size = Math.max(1, config.embeddingBatchSize);
+  const batches: string[][] = [];
   for (let i = 0; i < texts.length; i += size) {
-    const batch = texts.slice(i, i + size).map((t) => (t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t) || " ");
-    out.push(...(await embedBatch(batch, kind)));
+    batches.push(texts.slice(i, i + size).map((t) => (t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t) || " "));
   }
-  return out;
+  const results: number[][][] = new Array(batches.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < batches.length; i = next++) results[i] = await embedBatch(batches[i], kind);
+  };
+  await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, batches.length) }, worker));
+  return results.flat();
+}
+
+// ---- query embedding cache ---------------------------------------------------
+// Follow-up turns, rewrites and repeated searches embed the same text again:
+// a small LRU keeps those off the (rate-limited, ~200-600 ms) network path.
+
+const QUERY_CACHE_MAX = 256;
+const QUERY_CACHE_TTL_MS = 30 * 60_000;
+const queryCache = new Map<string, { v: number[]; at: number }>();
+const cacheKey = (t: string) => `${config.embeddingModel}|${config.embeddingDimensions}|${t}`;
+
+/** Query embeddings with an LRU cache; only the misses hit the network (in one batch). */
+export async function embedQueries(texts: string[]): Promise<number[][]> {
+  const now = Date.now();
+  const out: Array<number[] | undefined> = texts.map((t) => {
+    const k = cacheKey(t);
+    const hit = queryCache.get(k);
+    if (!hit || now - hit.at > QUERY_CACHE_TTL_MS) return undefined;
+    queryCache.delete(k); // refresh recency
+    queryCache.set(k, hit);
+    return hit.v;
+  });
+  const missIdx = out.flatMap((v, i) => (v ? [] : [i]));
+  if (missIdx.length) {
+    const unique = [...new Set(missIdx.map((i) => texts[i]))];
+    const vecs = await embedTexts(unique, "query");
+    const byText = new Map(unique.map((t, i) => [t, vecs[i]]));
+    for (const [t, v] of byText) {
+      queryCache.set(cacheKey(t), { v, at: now });
+      if (queryCache.size > QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value as string);
+    }
+    for (const i of missIdx) out[i] = byText.get(texts[i]);
+  }
+  return out as number[][];
 }

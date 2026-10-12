@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { config } from "../config.js";
 import { db, type Prisma } from "../db/prisma.js";
-import { connectors, detectType, SOURCE_TYPES, type SourceType } from "../ingest/connectors/index.js";
+import { connectors, detectType, SOURCE_TYPES, type AddableType } from "../ingest/connectors/index.js";
+import { indexNow, isKnowledgeDoc } from "../ingest/indexer.js";
 import { enqueue } from "../ingest/queue.js";
 import { retrieve } from "../retrieval/search.js";
 import { AppError } from "../util/errors.js";
@@ -73,7 +74,7 @@ const createBody = z.object({
 knowledgeRouter.post("/sources", async (req, res) => {
   const body = createBody.parse(req.body ?? {});
   await db().$queryRaw`SELECT 1`; // 503 early when the DB is down
-  const type: Exclude<SourceType, "note"> = body.type === "auto" ? detectType(body.input) : body.type;
+  const type: AddableType = body.type === "auto" ? detectType(body.input) : body.type;
   const resolved = await connectors[type].resolve(body.input, body.limit);
   const uid = userOf(req).id;
   const dup = await db().source.findFirst({ where: { type, uri: resolved.uri, userId: uid }, select: { id: true } });
@@ -135,8 +136,30 @@ knowledgeRouter.post("/search", async (req, res) => {
   const b = searchBody.parse(req.body ?? {});
   const hits = await retrieve(b.query, { k: b.k, sourceIds: b.sourceIds });
   res.json({
-    results: hits.map((h) => ({ chunkId: h.chunkId, score: h.score, title: h.title, url: h.url, headingPath: h.headingPath, content: h.content, sourceType: h.sourceType })),
+    results: hits.map((h) => ({
+      chunkId: h.chunkId,
+      score: h.score,
+      title: h.title,
+      url: h.url,
+      headingPath: h.headingPath,
+      content: h.content,
+      sourceType: h.sourceType,
+      ...(h.docId ? { docId: h.docId, sectionId: h.sectionId } : {}),
+      ...(h.fileId ? { fileId: h.fileId } : {}),
+    })),
   });
+});
+
+// Index any of the caller's finished docs and uploaded documents that are not in the knowledge base yet.
+knowledgeRouter.post("/reindex", async (req, res) => {
+  const uid = userOf(req).id;
+  const have = new Set((await db().source.findMany({ where: { userId: uid, type: { in: ["doc", "file"] } }, select: { uri: true } })).map((s) => s.uri));
+  const docs = uid ? await db().doc.findMany({ where: { userId: uid, status: { in: ["done", "partial", "interrupted"] } }, select: { id: true, title: true }, take: 500 }) : [];
+  const files = await db().storedFile.findMany({ where: { userId: uid, kind: "document", status: "ready", text: { not: null } }, select: { id: true, name: true }, take: 500 });
+  let queued = 0;
+  for (const d of docs) if (!have.has(`doc:${d.id}`)) (await indexNow("doc", uid, d.id, d.title), queued++);
+  for (const f of files) if (!have.has(`file:${f.id}`) && isKnowledgeDoc(f.name)) (await indexNow("file", uid, f.id, f.name), queued++);
+  res.status(202).json({ queued });
 });
 
 knowledgeRouter.get("/sources/:id", async (req, res) => {

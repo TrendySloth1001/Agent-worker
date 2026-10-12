@@ -8,6 +8,7 @@ import { ask } from "../llm/ask.js";
 import { pickCandidates, preferForPrompt, runChat, ChatFailure } from "../llm/router.js";
 import { webSearch, webFetch, type WebResult } from "../web/search.js";
 import { imagesForQuery } from "../web/images.js";
+import { scheduleIndex } from "../ingest/indexer.js";
 import { retrieve, type KbHit } from "../retrieval/search.js";
 import { loadRows, prepareMessages, waitForFiles } from "../files/context.js";
 import { buildContextMessage, buildSystemPrompt, type ContextItem, type Profile } from "../prompts/system.js";
@@ -564,6 +565,7 @@ async function finish(c: Ctx) {
   statusEvent(c);
   send(c, "doc_done", { status, words: st.words, used: usedInOrder(st), latencyMs: Date.now() - c.startedAt });
   await deps.linkMessage(st).catch((e) => log.warn("doc link failed", { message: (e as Error).message?.slice(0, 120) }));
+  if (status === "done" || status === "partial") scheduleIndex("doc", st.userId, st.id, st.title, 500); // knowledge base
   log.info("doc", { doc: st.id, status, sections: `${done.length}/${body.length}`, words: st.words, sources: st.sources.length, latencyMs: Date.now() - c.startedAt });
 }
 
@@ -661,6 +663,7 @@ export async function runRewrite(job: LiveJob, sectionId: string, op: RewriteOp,
   await persist(c, { version: st.version, words: docWords(st), sources: c.book.items, status: st.status });
   send(c, "doc_done", { status: st.status, words: st.words, used: usedInOrder(st), latencyMs: Date.now() - started });
   await deps.linkMessage(st).catch(() => undefined);
+  if (st.status === "done" || st.status === "partial") scheduleIndex("doc", st.userId, st.id, st.title); // re-index the revised section
 }
 
 /** Manual edit: keeps the user's Markdown, drops unknown citation tags, recomputes evidence. */
@@ -684,6 +687,7 @@ export async function editSection(store: DocStore, st: DocState, sectionId: stri
   if (sectionId !== REFERENCES_ID) await refreshReferences(store, st, () => {});
   st.words = docWords(st);
   await store.update(st.userId, st.id, { version: st.version, words: st.words });
+  if (st.status === "done" || st.status === "partial") scheduleIndex("doc", st.userId, st.id, st.title);
   return sec;
 }
 
