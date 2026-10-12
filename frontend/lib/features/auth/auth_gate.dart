@@ -53,7 +53,12 @@ class _Splash extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Wordmark(),
-                  const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.xl),
+                  const SizedBox(
+                    width: AuthSizes.splashProgress,
+                    child: LinearProgressIndicator(),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
                   Text(AuthStrings.restoring, style: context.text.caption),
                 ],
               ),

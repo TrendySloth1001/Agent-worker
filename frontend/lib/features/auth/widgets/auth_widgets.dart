@@ -76,7 +76,15 @@ class AuthScaffold extends StatelessWidget {
                                 style: context.text.bodySmall,
                               ),
                               const SizedBox(height: AppSpacing.xxl),
-                              Text(title, style: context.text.label),
+                              Semantics(
+                                header: true,
+                                child: Text(
+                                  title,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.headlineMedium,
+                                ),
+                              ),
                               const SizedBox(height: AppSpacing.xs),
                               Text(subtitle, style: context.text.bodySmall),
                               const SizedBox(height: AppSpacing.xl),
@@ -153,7 +161,8 @@ class Wordmark extends StatelessWidget {
   }
 }
 
-/// Mono label over a 1px bordered field; the error shows inline below.
+/// Filled tonal field (24dp radius) under a Space Grotesk label; the error
+/// shows inline below.
 class AuthField extends StatefulWidget {
   const AuthField({
     super.key,
@@ -198,6 +207,7 @@ class _AuthFieldState extends State<AuthField> {
   Widget build(BuildContext context) {
     final p = context.palette;
     final error = widget.error;
+    final tt = Theme.of(context).textTheme;
     OutlineInputBorder border(Color c) => OutlineInputBorder(
       borderRadius: BorderRadius.circular(AppRadius.field),
       borderSide: BorderSide(color: c, width: AppBorder.thin),
@@ -207,8 +217,14 @@ class _AuthFieldState extends State<AuthField> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.label, style: context.text.caption),
-          const SizedBox(height: AppSpacing.sm),
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.lg),
+            child: Text(
+              widget.label,
+              style: tt.labelLarge!.copyWith(color: p.textSecondary),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs + AppSpacing.xxs),
           TextField(
             controller: widget.controller,
             focusNode: widget.focusNode,
@@ -227,8 +243,6 @@ class _AuthFieldState extends State<AuthField> {
             decoration: InputDecoration(
               hintText: widget.hint,
               counterText: '',
-              filled: true,
-              fillColor: p.surface,
               prefixIcon: Padding(
                 padding: const EdgeInsets.only(
                   left: AppSpacing.lg,
@@ -255,10 +269,10 @@ class _AuthFieldState extends State<AuthField> {
                       },
                     )
                   : null,
-              border: border(error != null ? p.error : p.border),
-              enabledBorder: border(error != null ? p.error : p.border),
+              enabledBorder: border(
+                error != null ? p.error : Colors.transparent,
+              ),
               focusedBorder: border(error != null ? p.error : p.textPrimary),
-              disabledBorder: border(p.border),
             ),
           ),
           AnimatedSize(
@@ -273,7 +287,7 @@ class _AuthFieldState extends State<AuthField> {
                     ),
                     child: Text(
                       error,
-                      style: context.text.caption.copyWith(color: p.error),
+                      style: tt.bodySmall!.copyWith(color: p.error),
                     ),
                   ),
           ),
@@ -321,7 +335,12 @@ class PillButton extends StatelessWidget {
                   color: fg,
                 ),
               )
-            : Text(label, style: context.text.button.copyWith(color: fg)),
+            : Text(
+                label,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium!.copyWith(color: fg),
+              ),
       ),
     );
   }
@@ -350,7 +369,10 @@ class FormError extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: p.error, width: AppBorder.thin),
+                color: Color.alphaBlend(
+                  p.error.withValues(alpha: 0.12),
+                  p.background,
+                ),
               ),
               child: Row(
                 children: [
@@ -434,13 +456,15 @@ class StrengthHint extends StatelessWidget {
                 child: Text(
                   label,
                   textAlign: TextAlign.end,
-                  style: context.text.caption.copyWith(color: color),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium!.copyWith(color: color),
                 ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text(AuthStrings.strengthHint, style: context.text.caption),
+          Text(AuthStrings.strengthHint, style: context.text.bodySmall),
         ],
       ),
     );
@@ -478,7 +502,9 @@ class SwitchPrompt extends StatelessWidget {
                   },
             child: Text(
               action,
-              style: context.text.button.copyWith(color: p.textPrimary),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall!.copyWith(color: p.textPrimary),
             ),
           ),
         ],

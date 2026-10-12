@@ -23,17 +23,9 @@ Future<SsoPoll?> showGithubDeviceSheet(
   required Future<SsoPoll> Function(String flowId) poll,
 }) {
   Haptics.tap();
-  final p = context.palette;
   return showModalBottomSheet<SsoPoll>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
     builder: (context) => _GithubDeviceSheet(
       title: title,
       flow: GithubDeviceFlow(start: start, poll: poll),
@@ -103,24 +95,12 @@ class _GithubDeviceSheetState extends State<_GithubDeviceSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     return SafeArea(
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: AppSpacing.sm),
-            Center(
-              child: Container(
-                width: ConnectSizes.sheetHandleWidth,
-                height: ConnectSizes.sheetHandleHeight,
-                decoration: BoxDecoration(
-                  color: p.borderStrong,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-            ),
             ListenableBuilder(
               listenable: _flow,
               builder: (context, _) => AnimatedSize(
