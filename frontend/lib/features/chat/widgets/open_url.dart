@@ -4,7 +4,8 @@ import '../../../core/app_scope.dart';
 import '../../../core/platform/browsers.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
-import '../../../core/notifications.dart';
+import '../../../core/notify/notification_center.dart';
+import '../../../core/notify/notify_target.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/browser_picker.dart';
 import '../../../data/files_api.dart';
@@ -29,7 +30,7 @@ Future<void> openUrl(
   // An earlier chat the assistant recalled opens in the chat screen.
   if (url.startsWith('chat:')) {
     final id = url.substring(5).split('#').first;
-    if (id.isNotEmpty) AppNotifications.instance.opened.value = id;
+    if (id.isNotEmpty) NotificationCenter.instance.open(ChatTarget(id));
     return;
   }
   var target = url;

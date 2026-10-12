@@ -176,10 +176,20 @@ sealed class ChatEvent {
       case 'table':
         return TableEvent.fromJson(json);
       case 'memory':
-        return MemoryEvent([
-          for (final c in json['changes'] as List? ?? const [])
-            if (c is Map<String, dynamic>) c['op'] as String? ?? '',
-        ]);
+        return MemoryEvent(
+          [
+            for (final c in json['changes'] as List? ?? const [])
+              if (c is Map<String, dynamic>) c['op'] as String? ?? '',
+          ],
+          added: [
+            for (final c in json['changes'] as List? ?? const [])
+              if (c is Map<String, dynamic> &&
+                  c['op'] == 'ADD' &&
+                  c['id'] is String &&
+                  c['text'] is String)
+                (id: c['id'] as String, text: c['text'] as String),
+          ],
+        );
       case 'usage':
         return UsageEvent(
           json['promptTokens'] as int?,
@@ -250,8 +260,11 @@ class ResetEvent extends ChatEvent {}
 
 /// What the assistant just saved to long-term memory: ADD, UPDATE or DELETE.
 class MemoryEvent extends ChatEvent {
-  const MemoryEvent(this.ops);
+  const MemoryEvent(this.ops, {this.added = const []});
   final List<String> ops;
+
+  /// The memories that were newly saved (ADD), with their ids.
+  final List<({String id, String text})> added;
 }
 
 class UsageEvent extends ChatEvent {

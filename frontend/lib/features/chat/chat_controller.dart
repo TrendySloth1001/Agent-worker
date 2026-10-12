@@ -8,7 +8,10 @@ import '../../core/constants/app_strings.dart';
 import '../../core/constants/docs.dart';
 import '../../core/constants/suggest.dart';
 import '../../core/haptics.dart';
-import '../../core/notifications.dart';
+import '../../core/constants/notify_copy.dart';
+import '../../core/notify/notification_center.dart';
+import '../../core/notify/notify_kind.dart';
+import '../../core/notify/notify_target.dart';
 import '../../data/ai_model.dart';
 import '../../data/chat_api.dart';
 import '../../data/chat_event.dart';
@@ -40,7 +43,7 @@ class ChatController extends ChangeNotifier {
     _notify.background.addListener(_onBackground);
   }
 
-  final _notify = AppNotifications.instance;
+  final _notify = NotificationCenter.instance;
 
   /// An ongoing progress notification is showing.
   bool _progressPosted = false;
@@ -583,6 +586,7 @@ class ChatController extends ChangeNotifier {
     _runSession = session;
     final client = http.Client();
     _client = client;
+    _watchReply(message);
 
     // Shown on screen (also after coming back from the background).
     bool foreground() => session == _session || _alias == (session, _session);
@@ -604,6 +608,7 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       _save();
       _tableFinished(message);
+      _replyFinished(message);
     }
 
     void fail(String text) {
@@ -644,8 +649,9 @@ class ChatController extends ChangeNotifier {
           message.content += text;
           _scheduleNotify();
           if (foreground()) _tick();
-        case MemoryEvent(:final ops):
+        case MemoryEvent(:final ops, :final added):
           message.memoryOps = ops;
+          _memoryNotes(added);
           notifyListeners();
         case ResetEvent():
           message.content = '';
@@ -768,7 +774,16 @@ class ChatController extends ChangeNotifier {
         : '${TableWaitStrings.phase(m.tablePhase)}${TableStrings.separator}'
               '${TableWaitStrings.leftLower((eta / 1000).ceil())}';
     _progressPosted = true;
-    unawaited(_notify.showProgress(body, payload: id ?? conversationId));
+    final chat = id ?? conversationId;
+    unawaited(
+      _notify.progress(
+        NotifyKind.roundTable,
+        title: TableWaitStrings.progressTitle,
+        body: body,
+        target: chat == null ? null : TableTarget(chat),
+        force: m.notifyWhenDone,
+      ),
+    );
   }
 
   void _clearProgress() {
@@ -776,7 +791,7 @@ class ChatController extends ChangeNotifier {
     // A table still running in the background keeps its service.
     if (_background != null) return;
     _progressPosted = false;
-    unawaited(_notify.cancelProgress());
+    unawaited(_notify.finishProgress(NotifyKind.roundTable));
   }
 
   /// After a round table reply ends: a system notification when the app is
@@ -786,19 +801,17 @@ class ChatController extends ChangeNotifier {
     // A background table ending must not stop a foreground one's service.
     if (bg == null || _runningTable == null) _clearProgress();
     if (!wasTable) return;
-    // A background table is out of sight even while the app is open.
-    final wanted =
-        message.notifyWhenDone ||
-        (_settings.notifyRoundTable &&
-            (_notify.background.value || bg != null));
-    if (!wanted) return;
+    final asked = message.notifyWhenDone;
     message.notifyWhenDone = false;
     final failed = message.isError || message.content.trim().isEmpty;
     final name = bg == null
         ? _notificationTitle(message)
         : _notificationTitle(message, chat: bg.messages, chatTitle: bg.title);
+    final chat = bg?.id ?? conversationId;
     unawaited(
-      _notify.showFinished(
+      _notify.post(
+        NotifyKind.roundTable,
+        key: chat ?? 'table',
         title: failed
             ? TableWaitStrings.failedTitle
             : TableWaitStrings.doneFor(name),
@@ -806,9 +819,89 @@ class ChatController extends ChangeNotifier {
           failed ? (message.error ?? message.content) : _plain(message.content),
           TableMeterSizes.notifyBodyMax,
         ),
-        payload: bg?.id ?? conversationId,
+        target: chat == null ? null : TableTarget(chat),
+        // A background table is out of sight even while the app is open;
+        // otherwise only a user who left the app (or asked) hears of it.
+        lookingAt: bg == null,
+        force: asked,
       ),
     );
+  }
+
+  Timer? _replyTimer;
+  bool _replyAlive = false;
+
+  /// A reply that runs long keeps the process alive (foreground service,
+  /// started while the app is still visible) in case the user leaves, so
+  /// the stream is not dropped and "reply ready" can follow.
+  void _watchReply(ChatMessage message) {
+    _stopWatchingReply();
+    if (!_settings.notify.allows(NotifyKind.reply)) return;
+    _replyTimer = Timer(NotifyConfig.replyKeepAliveAfter, () {
+      if (!isSending || messages.lastOrNull != message) return;
+      if (_runningTable != null || _notify.background.value) return;
+      _replyAlive = true;
+      unawaited(
+        _notify.keepAlive(
+          NotifyKind.reply,
+          title: NotifyCopy.replyProgressTitle,
+          body: NotifyCopy.replyProgressBody,
+          target: _chatTarget(),
+        ),
+      );
+    });
+  }
+
+  void _stopWatchingReply() {
+    _replyTimer?.cancel();
+    _replyTimer = null;
+    if (!_replyAlive) return;
+    _replyAlive = false;
+    unawaited(_notify.finishProgress(NotifyKind.reply));
+  }
+
+  NotifyTarget? _chatTarget([String? id]) {
+    final chat = id ?? conversationId;
+    return chat == null ? null : ChatTarget(chat);
+  }
+
+  /// A plain reply ended: "reply ready" when the user is away (the center
+  /// holds it back while the app is open).
+  void _replyFinished(ChatMessage message) {
+    _stopWatchingReply();
+    if (message.tablePhase != null) return;
+    final failed = message.isError || message.content.trim().isEmpty;
+    final chat = conversationId;
+    unawaited(
+      _notify.post(
+        NotifyKind.reply,
+        key: chat ?? 'reply',
+        title: failed
+            ? NotifyCopy.replyFailedTitle
+            : _notificationTitle(message),
+        body: _clip(
+          failed ? (message.error ?? message.content) : _plain(message.content),
+          TableMeterSizes.notifyBodyMax,
+        ),
+        target: _chatTarget(chat),
+      ),
+    );
+  }
+
+  /// Memories the assistant just saved: a quiet note with an Undo button
+  /// when the user is not looking (the chat shows a chip otherwise).
+  void _memoryNotes(List<({String id, String text})> added) {
+    for (final m in added.take(NotifyConfig.memoryMax)) {
+      unawaited(
+        _notify.post(
+          NotifyKind.memory,
+          key: m.id,
+          title: NotifyCopy.memoryTitle,
+          body: m.text,
+          target: MemoryTarget(m.id),
+        ),
+      );
+    }
   }
 
   /// The chat title, or the question while the server has not named it.
@@ -856,10 +949,13 @@ class ChatController extends ChangeNotifier {
       if (_settings.notifyRoundTable) unawaited(_notify.ensurePermission());
       // Keeps the stream alive if the user leaves the app mid-table.
       _progressPosted = true;
+      final chat = conversationId;
       unawaited(
         _notify.keepAlive(
-          TableWaitStrings.phase(e.phase),
-          payload: conversationId,
+          NotifyKind.roundTable,
+          title: TableWaitStrings.progressTitle,
+          body: TableWaitStrings.phase(e.phase),
+          target: chat == null ? null : TableTarget(chat),
         ),
       );
     }
@@ -938,6 +1034,7 @@ class ChatController extends ChangeNotifier {
 
   void _teardown() {
     _clearProgress();
+    _stopWatchingReply();
     _throttle?.cancel();
     _throttle = null;
     _pending = false;

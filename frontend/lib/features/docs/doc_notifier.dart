@@ -1,5 +1,8 @@
 import '../../core/constants/docs.dart';
-import '../../core/notifications.dart';
+import '../../core/constants/notify_copy.dart';
+import '../../core/notify/notification_center.dart';
+import '../../core/notify/notify_kind.dart';
+import '../../core/notify/notify_target.dart';
 import '../../data/doc_models.dart';
 import 'doc_controller.dart';
 
@@ -9,10 +12,10 @@ import 'doc_controller.dart';
 /// opens the doc. Tracks every controller of the registry, so it keeps
 /// working when the reader is closed or the chat changes.
 class DocNotifier {
-  DocNotifier({AppNotifications? notifications, required this.onChanged})
-    : _n = notifications ?? AppNotifications.instance;
+  DocNotifier({NotificationCenter? center, required this.onChanged})
+    : _n = center ?? NotificationCenter.instance;
 
-  final AppNotifications _n;
+  final NotificationCenter _n;
 
   /// Called when a doc starts or stops running (the shell's chip follows).
   final void Function() onChanged;
@@ -42,6 +45,11 @@ class DocNotifier {
     } else if (seen.running) {
       _stopped(c, doc, seen);
     }
+    // The reminder is for an outline nobody has looked at yet.
+    if (seen.reminded && (doc.status != DocStatus.outlineReady || c.viewing)) {
+      seen.reminded = false;
+      _n.cancel(NotifyKind.resume, doc.id);
+    }
   }
 
   void _running(DocController c, Doc doc, _Seen seen) {
@@ -57,20 +65,29 @@ class DocNotifier {
       _n.ensurePermission();
       // Only allowed while the app is visible; the service then keeps the
       // process alive after the user leaves.
-      if (!_n.background.value) _n.keepDocAlive(doc.id, body);
+      if (!_n.background.value) _keepAlive(doc, body);
     } else if (!_n.background.value) {
       // Back in the foreground after a background start: try again.
-      _n.keepDocAlive(doc.id, body);
+      _keepAlive(doc, body);
     }
     if (body == seen.body) return;
     seen.body = body;
-    _n.showDocProgress(
-      doc.id,
-      body,
-      progress: doc.done,
-      maxProgress: doc.total,
+    _n.progress(
+      NotifyKind.doc,
+      title: DocStrings.notifyProgressTitle,
+      body: body,
+      target: DocTarget(doc.id),
+      done: doc.done,
+      total: doc.total,
     );
   }
+
+  void _keepAlive(Doc doc, String body) => _n.keepAlive(
+    NotifyKind.doc,
+    title: DocStrings.notifyProgressTitle,
+    body: body,
+    target: DocTarget(doc.id),
+  );
 
   void _stopped(DocController c, Doc doc, _Seen seen) {
     seen.running = false;
@@ -91,11 +108,26 @@ class DocNotifier {
             words: doc.wordCount,
             sections: doc.body.where((s) => s.isDone).length,
           );
-    // Reading the doc right now needs no notification.
-    if (_n.background.value || !c.viewing) {
-      _n.showDocFinished(doc.id, title: title, body: body);
-    } else {
-      _n.cancelDocProgress();
+    // Reading the doc right now needs no notification (the center skips it
+    // and still clears the progress one).
+    _n.post(
+      NotifyKind.doc,
+      key: doc.id,
+      title: title,
+      body: body,
+      target: DocTarget(doc.id),
+      lookingAt: c.viewing,
+    );
+    if (doc.status == DocStatus.outlineReady && !c.viewing) {
+      seen.reminded = true;
+      _n.schedule(
+        NotifyKind.resume,
+        key: doc.id,
+        title: NotifyCopy.resumeTitle,
+        body: NotifyCopy.resumeBody(doc.title),
+        delay: NotifyConfig.resumeDelay,
+        target: DocTarget(doc.id),
+      );
     }
   }
 }
@@ -103,5 +135,6 @@ class DocNotifier {
 class _Seen {
   bool running = false;
   bool viewing = false;
+  bool reminded = false;
   String body = '';
 }

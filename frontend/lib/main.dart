@@ -4,7 +4,7 @@ import 'core/app_messenger.dart';
 import 'core/app_scope.dart';
 import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
-import 'core/notifications.dart';
+import 'core/notify/notification_center.dart';
 import 'core/platform/google_auth.dart';
 import 'core/theme/app_theme.dart';
 import 'data/chat_api.dart';
@@ -21,7 +21,8 @@ import 'features/docs/doc_registry.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsController.load();
-  await AppNotifications.instance.init();
+  NotificationCenter.instance.attach(settings.notify);
+  await NotificationCenter.instance.init();
   // Per-user caches go on sign-out; the chat itself is rebuilt per user.
   AuthController.instance.addSignOutHook(FilesApi.instance.clearCache);
   AuthController.instance.addSignOutHook(ConnectionsController.instance.reset);
