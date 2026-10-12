@@ -25,17 +25,9 @@ Future<Set<String>?> showBranchPicker(
   int maxSelected = GithubBranchLimits.maxSelected,
   BranchLoader? loader,
 }) {
-  final p = context.palette;
   return showModalBottomSheet<Set<String>>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
     builder: (_) => _BranchPicker(
       loader:
           loader ??

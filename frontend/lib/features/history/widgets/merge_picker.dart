@@ -11,6 +11,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/conversation.dart';
+import '../../settings/widgets/settings_kit.dart';
 
 /// Sheet that lists the other chats (searchable) and returns the one picked
 /// to merge with [exclude].
@@ -80,8 +81,6 @@ class _MergePickerState extends State<_MergePicker> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
     final media = MediaQuery.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
@@ -92,45 +91,26 @@ class _MergePickerState extends State<_MergePicker> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screenPadding,
-                  AppSpacing.lg,
-                  AppSpacing.screenPadding,
-                  AppSpacing.md,
-                ),
-                child: Row(
-                  children: [
-                    AppIcon(
-                      AppIcons.merge,
-                      size: AppIconSize.sm,
-                      color: p.textSecondary,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(LineageStrings.pickChat, style: t.caption),
-                  ],
-                ),
-              ),
+              M3SheetTitle(sentenceCase(LineageStrings.pickChat)),
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.screenPadding,
                 ),
                 child: TextField(
                   onChanged: _onSearch,
-                  style: t.body,
+                  style: Theme.of(context).textTheme.bodyLarge,
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
-                    isDense: true,
                     hintText: AppStrings.searchChats,
                     prefixIcon: AppIcon(
                       AppIcons.search,
                       size: AppIconSize.md,
-                      color: p.textTertiary,
+                      color: context.palette.textSecondary,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.md),
               Expanded(child: _list(context)),
             ],
           ),
@@ -140,65 +120,46 @@ class _MergePickerState extends State<_MergePicker> {
   }
 
   Widget _list(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
     if (_loading) {
-      return Center(
-        child: SizedBox.square(
-          dimension: LineageSizes.progress,
-          child: CircularProgressIndicator(
-            strokeWidth: AppBorder.thin,
-            color: p.textSecondary,
-          ),
-        ),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
     if (_failed || _items.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(AppSpacing.screenPadding),
-        child: Text(
+      return SingleChildScrollView(
+        child: SettingsEmptyState(
           _failed ? AppStrings.errorNetwork : LineageStrings.noOtherChats,
-          textAlign: TextAlign.center,
-          style: t.bodySmall,
         ),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenPadding,
+        0,
+        AppSpacing.screenPadding,
+        AppSpacing.lg,
+      ),
       itemCount: _items.length,
       itemBuilder: (context, i) {
         final chat = _items[i];
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            Haptics.tap();
-            Navigator.pop(context, chat);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: p.border)),
+        return M3Cell(
+          index: i,
+          count: _items.length,
+          child: ListTile(
+            title: Text(
+              chat.title ?? AppStrings.untitled,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  chat.title ?? AppStrings.untitled,
-                  style: t.body,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (chat.preview.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
+            subtitle: chat.preview.isEmpty
+                ? null
+                : Text(
                     chat.preview,
-                    style: t.bodySmall,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ],
-              ],
-            ),
+            onTap: () {
+              Haptics.tap();
+              Navigator.pop(context, chat);
+            },
           ),
         );
       },

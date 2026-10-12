@@ -11,6 +11,7 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../core/widgets/app_icon.dart';
 import 'rich_frame.dart';
 import 'rich_parsers.dart';
+import '../../../../core/widgets/m3_kit_extras.dart';
 
 /// ```email block: header rows, body, inline editing, AI rewrite and
 /// copy / open-in-mail actions. Edits live in this card's state.
@@ -163,16 +164,8 @@ class _EmailCardState extends State<EmailCard> {
 
   Future<void> _custom() async {
     if (_busy) return;
-    final text = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.palette.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppRadius.lg),
-        ),
-        side: BorderSide(color: context.palette.border),
-      ),
+    final text = await showM3Sheet<String>(
+      context,
       builder: (_) => const _InstructionSheet(),
     );
     if (text == null || text.trim().isEmpty || !mounted) return;

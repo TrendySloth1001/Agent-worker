@@ -54,13 +54,6 @@ Future<void> editDocPassage(
     context: context,
     isScrollControlled: true,
     isDismissible: false,
-    backgroundColor: context.palette.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: context.palette.border),
-    ),
     builder: (sheet) => _Preview(
       controller: controller,
       section: section,

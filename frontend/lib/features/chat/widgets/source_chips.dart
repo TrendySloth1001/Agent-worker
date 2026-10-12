@@ -14,6 +14,7 @@ import '../../../core/widgets/browser_picker.dart';
 import 'open_url.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 
 /// Every source as a chip with its site logo. Cited ones get a red outline.
 class SourceChips extends StatelessWidget {
@@ -28,7 +29,8 @@ class SourceChips extends StatelessWidget {
     final byKey = <String, Citation>{};
     final cited = <String>{};
     for (final c in citations) {
-      final key = '${c.kind.name}|${c.url.isNotEmpty ? c.url.split('#').first : c.title}';
+      final key =
+          '${c.kind.name}|${c.url.isNotEmpty ? c.url.split('#').first : c.title}';
       byKey.putIfAbsent(key, () => c);
       if (used.contains(c.id)) cited.add(key);
     }
@@ -102,17 +104,8 @@ Future<void> showSourceCard(
   bool used = false,
 }) {
   Haptics.tap();
-  final p = context.palette;
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<void>(
+    context,
     builder: (_) => _SourceCard(citation: citation, used: used, host: context),
   );
 }
