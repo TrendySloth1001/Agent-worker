@@ -485,7 +485,8 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// Tonal new-chat button: icon plus CHAT.
+/// New chat: a filled round icon button, the same size as the bar's other
+/// icon buttons (disabled on an empty chat).
 class _NewChatPill extends StatelessWidget {
   const _NewChatPill({this.onTap});
 
@@ -493,27 +494,19 @@ class _NewChatPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: AppStrings.newChat,
-      excludeSemantics: true,
-      child: Center(
-        child: FilledButton.tonalIcon(
-          // Same height as the bar's icon buttons, so the row lines up.
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, AppSizes.topBar),
-            maximumSize: const Size(double.infinity, AppSizes.topBar),
-            fixedSize: const Size.fromHeight(AppSizes.topBar),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSizes.chipHorizontalPadding,
-            ),
-            textStyle: Theme.of(context).textTheme.labelLarge,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          onPressed: onTap,
-          icon: const AppIcon(AppIcons.newChat, size: AppIconSize.sm),
-          label: Text(sentenceCase(AppStrings.chatPill)),
-        ),
+    return IconButton.filled(
+      onPressed: onTap,
+      tooltip: AppStrings.newChat,
+      style: IconButton.styleFrom(
+        fixedSize: const Size.square(AppSizes.topBar),
+        minimumSize: const Size.square(AppSizes.topBar),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: const AppIcon(
+        AppIcons.newChat,
+        size: AppIconSize.md,
+        semanticLabel: AppStrings.newChat,
       ),
     );
   }
@@ -529,16 +522,22 @@ class _BarIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // A tonal circle the same height as the new-chat pill, so every control
+    // in the bar has the same size and weight.
     return IconButton(
       onPressed: onTap,
       tooltip: label,
-      constraints: const BoxConstraints.tightFor(
-        width: AppSizes.topBar,
-        height: AppSizes.topBar,
+      style: IconButton.styleFrom(
+        fixedSize: const Size.square(AppSizes.topBar),
+        minimumSize: const Size.square(AppSizes.topBar),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: scheme.surfaceContainerHigh,
+        disabledBackgroundColor: scheme.surfaceContainerHigh,
       ),
       icon: AppIcon(
         icon,
-        size: AppIconSize.lg,
+        size: AppIconSize.md,
         semanticLabel: label,
         color: onTap == null ? scheme.outline : scheme.onSurface,
       ),
