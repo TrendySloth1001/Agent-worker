@@ -164,4 +164,46 @@ class ConversationsApi {
   Future<void> delete(String id) async {
     await _send('DELETE', '/conversations/$id');
   }
+
+  /// Most ids one bulk delete takes (the server's limit).
+  static const bulkDeleteMax = 500;
+
+  /// Deletes [ids] (files attached in them too), [bulkDeleteMax] per request.
+  /// Returns how many the server deleted.
+  Future<int> deleteMany(List<String> ids) async {
+    var deleted = 0;
+    for (var i = 0; i < ids.length; i += bulkDeleteMax) {
+      final end = min(i + bulkDeleteMax, ids.length);
+      final r = await _send(
+        'POST',
+        '/conversations/bulk-delete',
+        body: {'ids': ids.sublist(i, end)},
+        timeout: AppDurations.bulkDeleteTimeout,
+      );
+      deleted += (_json(r)['deleted'] as num?)?.toInt() ?? 0;
+    }
+    return deleted;
+  }
+
+  /// Deletes every chat; archived ones unless [includeArchived] is false,
+  /// pinned ones unless [includePinned] is false. [archivedOnly] takes just
+  /// the archive. Returns how many were deleted.
+  Future<int> deleteAll({
+    bool includeArchived = true,
+    bool includePinned = true,
+    bool archivedOnly = false,
+  }) async {
+    final r = await _send(
+      'POST',
+      '/conversations/bulk-delete',
+      body: {
+        'all': true,
+        'includeArchived': includeArchived,
+        'includePinned': includePinned,
+        'archivedOnly': archivedOnly,
+      },
+      timeout: AppDurations.bulkDeleteTimeout,
+    );
+    return (_json(r)['deleted'] as num?)?.toInt() ?? 0;
+  }
 }

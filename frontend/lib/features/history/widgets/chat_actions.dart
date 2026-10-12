@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/chat_cleanup.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/history.dart';
 import '../../../core/constants/share_export.dart';
@@ -158,7 +159,7 @@ Future<void> _merge(
   if (other == null || !context.mounted) return;
   final ok = await showDialog<bool>(
     context: context,
-    builder: (dialog) => _Dialog(
+    builder: (dialog) => ChatConfirmDialog(
       title: LineageStrings.mergeTitle,
       confirm: LineageStrings.merge,
       onConfirm: () => Navigator.pop(dialog, true),
@@ -188,7 +189,7 @@ Future<void> _delete(
 ) async {
   final ok = await showDialog<bool>(
     context: context,
-    builder: (dialog) => _Dialog(
+    builder: (dialog) => ChatConfirmDialog(
       title: AppStrings.deleteChatTitle,
       confirm: AppStrings.deleteChat,
       destructive: true,
@@ -203,6 +204,21 @@ Future<void> _delete(
   } else {
     Haptics.error();
   }
+}
+
+/// Asks before deleting [count] picked chats (and their files).
+Future<bool> confirmDeleteChats(BuildContext context, int count) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => ChatConfirmDialog(
+      title: ChatCleanupStrings.deleteTitle(count),
+      confirm: ChatCleanupStrings.delete,
+      destructive: true,
+      onConfirm: () => Navigator.pop(dialog, true),
+      child: Text(ChatCleanupStrings.deleteBody, style: dialog.text.bodySmall),
+    ),
+  );
+  return ok == true;
 }
 
 class _SheetRow extends StatelessWidget {
@@ -259,8 +275,11 @@ class _Progress extends StatelessWidget {
   }
 }
 
-class _Dialog extends StatelessWidget {
-  const _Dialog({
+/// Material 3 confirm dialog with CANCEL and a (red, when [destructive])
+/// confirm button.
+class ChatConfirmDialog extends StatelessWidget {
+  const ChatConfirmDialog({
+    super.key,
     required this.title,
     required this.confirm,
     required this.onConfirm,
@@ -292,12 +311,12 @@ class _Dialog extends StatelessWidget {
                 child: Text(sentenceCase(AppStrings.cancel)),
               ),
               FilledButton(
-                style: destructive
-                    ? FilledButton.styleFrom(
-                        backgroundColor: p.accent,
-                        foregroundColor: Colors.white,
-                      )
-                    : null,
+                // The theme's buttons are full-width; dialog actions hug.
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, ChatCleanupSizes.dialogAction),
+                  backgroundColor: destructive ? p.accent : null,
+                  foregroundColor: destructive ? Colors.white : null,
+                ),
                 onPressed: () {
                   Haptics.tap();
                   onConfirm();

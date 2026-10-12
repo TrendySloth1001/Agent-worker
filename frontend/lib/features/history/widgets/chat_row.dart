@@ -3,6 +3,7 @@ import 'package:flutter/semantics.dart';
 
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/chat_cleanup.dart';
 import '../../../core/constants/history.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
@@ -14,6 +15,8 @@ import 'highlighted_text.dart';
 /// The open chat is filled. Small marks show a fork or merge and a reply that
 /// is still being written; [time] and the matched preview appear in search.
 /// Swipe right pins, swipe left archives; long-press opens the actions.
+/// In selection mode ([selecting]) a round check leads the row and taps
+/// (or long-presses) toggle it through [onToggle].
 class ChatRow extends StatelessWidget {
   const ChatRow({
     super.key,
@@ -30,6 +33,9 @@ class ChatRow extends StatelessWidget {
     this.onRename,
     this.onCancelRename,
     this.archivedList = false,
+    this.selecting = false,
+    this.selected = false,
+    this.onToggle,
   });
 
   final ConversationSummary chat;
@@ -49,14 +55,33 @@ class ChatRow extends StatelessWidget {
   final VoidCallback onArchive;
   final ValueChanged<String>? onRename;
   final VoidCallback? onCancelRename;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback? onToggle;
 
   String get _title => chat.title ?? HistoryStrings.untitled;
+
+  void _toggle() {
+    Haptics.tick();
+    onToggle?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final body = _body(context);
     if (renaming) return body;
+    if (selecting) {
+      return Semantics(
+        container: true,
+        button: true,
+        checked: selected,
+        label: _title,
+        onTap: _toggle,
+        excludeSemantics: true,
+        child: body,
+      );
+    }
     final archiveLabel = archivedList
         ? HistoryStrings.swipeUnarchive
         : HistoryStrings.swipeArchive;
@@ -120,7 +145,9 @@ class ChatRow extends StatelessWidget {
     final p = context.palette;
     final t = context.text;
     final scheme = Theme.of(context).colorScheme;
-    final titleColor = isCurrent ? scheme.onSecondaryContainer : null;
+    // While picking chats the fill marks the selection, not the open chat.
+    final filled = selecting ? selected : isCurrent;
+    final titleColor = filled ? scheme.onSecondaryContainer : null;
     final snippetText = chat.snippet ?? chat.preview;
     final snippet = query.trim().isNotEmpty && snippetText.isNotEmpty;
     final content = Padding(
@@ -130,6 +157,10 @@ class ChatRow extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (selecting) ...[
+            SelectCheck(selected: selected),
+            const SizedBox(width: AppSpacing.md),
+          ],
           if (running) ...[
             RunningDot(color: p.accent),
             const SizedBox(width: AppSpacing.sm),
@@ -152,7 +183,7 @@ class ChatRow extends StatelessWidget {
                     style: t.body.copyWith(
                       height: 1.3,
                       color: titleColor,
-                      fontVariations: isCurrent
+                      fontVariations: isCurrent && !selecting
                           ? const [FontVariation.weight(600)]
                           : null,
                     ),
@@ -188,17 +219,58 @@ class ChatRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: HistorySizes.rowInset),
       child: Material(
         // Material 3 navigation drawer item: a full-width stadium indicator.
-        color: isCurrent ? scheme.secondaryContainer : Colors.transparent,
+        color: filled ? scheme.secondaryContainer : Colors.transparent,
         shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: renaming ? null : onTap,
-          onLongPress: renaming ? null : onLongPress,
+          onTap: renaming ? null : (selecting ? _toggle : onTap),
+          onLongPress: renaming ? null : (selecting ? _toggle : onLongPress),
           child: ConstrainedBox(
             constraints: const BoxConstraints(
               minHeight: HistorySizes.rowHeight,
             ),
             child: Align(alignment: Alignment.centerLeft, child: content),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The round M3 check of a row in selection mode: an outline when off,
+/// filled with a tick when on.
+class SelectCheck extends StatelessWidget {
+  const SelectCheck({super.key, required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final duration = reduce ? Duration.zero : ChatCleanupDurations.check;
+    return AnimatedContainer(
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      width: ChatCleanupSizes.check,
+      height: ChatCleanupSizes.check,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: selected ? scheme.primary : Colors.transparent,
+        border: Border.all(
+          color: selected ? scheme.primary : scheme.outline,
+          width: ChatCleanupSizes.checkStroke,
+        ),
+      ),
+      child: AnimatedScale(
+        duration: duration,
+        curve: Curves.easeOutBack,
+        scale: selected ? 1 : 0,
+        child: Center(
+          child: AppIcon(
+            ChatCleanupIcons.check,
+            size: ChatCleanupSizes.checkIcon,
+            color: scheme.onPrimary,
           ),
         ),
       ),

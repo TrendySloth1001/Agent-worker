@@ -20,6 +20,13 @@ import '../../../core/theme/app_palette.dart';
 ///
 /// Back closes the panel, with predictive back progress where the platform
 /// provides it. Reduced motion makes the settle instant.
+/// Content of the panel that wants back first (e.g. to leave a selection).
+abstract interface class PanelBackHandler {
+  /// Back should go to [handleBack] instead of closing the panel.
+  bool get wantsBack;
+  void handleBack();
+}
+
 class DrawerShell extends StatefulWidget {
   const DrawerShell({
     super.key,
@@ -54,6 +61,12 @@ class DrawerShellState extends State<DrawerShell>
   bool _backActive = false;
   double _backFrom = 0;
   bool _reduce = false;
+
+  /// Asked before back closes the panel; see [PanelBackHandler].
+  PanelBackHandler? panelBack;
+  bool _panelBackActive = false;
+
+  bool get _panelWantsBack => _shown && (panelBack?.wantsBack ?? false);
 
   /// 0 closed, 1 open.
   double get value => _c.value;
@@ -161,6 +174,10 @@ class DrawerShellState extends State<DrawerShell>
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     if (!_shown) return false;
+    if (_panelWantsBack) {
+      _panelBackActive = true;
+      return true;
+    }
     _c.stop();
     _backActive = true;
     _backFrom = _c.value;
@@ -174,6 +191,11 @@ class DrawerShellState extends State<DrawerShell>
 
   @override
   void handleCommitBackGesture() {
+    if (_panelBackActive) {
+      _panelBackActive = false;
+      panelBack?.handleBack();
+      return;
+    }
     if (!_backActive) return;
     _backActive = false;
     close();
@@ -181,6 +203,7 @@ class DrawerShellState extends State<DrawerShell>
 
   @override
   void handleCancelBackGesture() {
+    _panelBackActive = false;
     if (!_backActive) return;
     _backActive = false;
     open();
@@ -193,7 +216,12 @@ class DrawerShellState extends State<DrawerShell>
     return PopScope(
       canPop: !_shown,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) close();
+        if (didPop) return;
+        if (_panelWantsBack) {
+          panelBack!.handleBack();
+        } else {
+          close();
+        }
       },
       child: LayoutBuilder(
         builder: (context, box) {

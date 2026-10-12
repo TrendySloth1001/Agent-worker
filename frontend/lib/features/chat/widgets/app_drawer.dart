@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../core/app_scope.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/chat_cleanup.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../data/conversation.dart';
+import '../../../data/conversation_events.dart';
 import '../../../data/conversations_api.dart';
 import '../../../data/docs_api.dart';
 import '../../docs/doc_registry.dart';
@@ -16,6 +18,7 @@ import '../../history/widgets/conversation_list.dart';
 import '../../docs/docs_list_screen.dart';
 import '../../history/widgets/history_footer.dart';
 import '../../history/widgets/history_header.dart';
+import '../../history/widgets/selection_bar.dart';
 import '../../apps/apps_screen.dart';
 import '../../profile/profile_screen.dart';
 import '../../settings/settings_screen.dart';
@@ -26,7 +29,8 @@ import '../share/chat_export.dart';
 
 /// Left sidebar: wordmark with search and new chat, the conversation list
 /// (grouped by date, swipe to pin or archive), and a footer with quick
-/// entries and the account.
+/// entries and the account. Long-press starts picking chats to archive, pin
+/// or delete together; back leaves that mode before it closes the panel.
 class AppDrawer extends StatefulWidget {
   const AppDrawer({super.key, required this.chat, this.history, this.docsApi});
 
@@ -42,16 +46,28 @@ class AppDrawer extends StatefulWidget {
   State<AppDrawer> createState() => AppDrawerState();
 }
 
-class AppDrawerState extends State<AppDrawer> {
+class AppDrawerState extends State<AppDrawer> implements PanelBackHandler {
   HistoryController? _history;
   bool _ownsHistory = false;
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
   bool _searchOpen = false;
+  DrawerShellState? _shell;
+
+  @override
+  void initState() {
+    super.initState();
+    ConversationEvents.instance.addListener(_onWiped);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final shell = DrawerShell.maybeOf(context);
+    if (shell != _shell) {
+      if (_shell?.panelBack == this) _shell!.panelBack = null;
+      _shell = shell?..panelBack = this;
+    }
     if (_history != null) return;
     final given = widget.history;
     if (given != null) {
@@ -67,6 +83,8 @@ class AppDrawerState extends State<AppDrawer> {
 
   @override
   void dispose() {
+    ConversationEvents.instance.removeListener(_onWiped);
+    if (_shell?.panelBack == this) _shell!.panelBack = null;
     if (_ownsHistory) _history?.dispose();
     _search.dispose();
     _searchFocus.dispose();
@@ -74,7 +92,107 @@ class AppDrawerState extends State<AppDrawer> {
   }
 
   /// Reloads the list; called each time the drawer opens.
-  void refresh() => _history?.load();
+  void refresh() {
+    _history?.endSelection();
+    _history?.load();
+  }
+
+  @override
+  bool get wantsBack => _history?.selecting ?? false;
+
+  @override
+  void handleBack() {
+    Haptics.tap();
+    _history?.endSelection();
+  }
+
+  /// Chats were deleted from Settings: reload, and leave the open chat if
+  /// it went with them.
+  void _onWiped() {
+    final wipe = ConversationEvents.instance.lastWipe;
+    final history = _history;
+    if (wipe == null || history == null) return;
+    final open = widget.chat.conversationId;
+    if (open != null) {
+      final known = history.items.where((c) => c.id == open).firstOrNull;
+      final gone = known == null
+          ? wipe.includeArchived
+          : (wipe.includePinned || !known.pinned) &&
+                (wipe.includeArchived || !known.archived);
+      if (gone) widget.chat.onConversationChanged(open, deleted: true);
+    }
+    history.endSelection();
+    history.load();
+  }
+
+  void _startSelection(ConversationSummary chat) {
+    Haptics.received();
+    _closeSearchField();
+    _history!.startSelection(chat.id);
+  }
+
+  /// Leaves the search field open state but keeps its query (selection
+  /// survives filtering).
+  void _closeSearchField() {
+    if (_searchOpen) _searchFocus.unfocus();
+  }
+
+  Future<void> _deleteSelected() async {
+    final history = _history!;
+    final messenger = ScaffoldMessenger.of(context);
+    if (!await confirmDeleteChats(context, history.selected.length)) return;
+    final ids = await history.deleteSelected();
+    if (ids == null) {
+      Haptics.error();
+      messenger.showSnackBar(
+        const SnackBar(content: Text(ChatCleanupStrings.deleteFailed)),
+      );
+      return;
+    }
+    Haptics.received();
+    for (final id in ids) {
+      widget.chat.onConversationChanged(id, deleted: true);
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(ChatCleanupStrings.deleted(ids.length))),
+      );
+  }
+
+  Future<void> _archiveSelected() async {
+    final history = _history!;
+    final messenger = ScaffoldMessenger.of(context);
+    final wanted = history.selected.length;
+    final restoring = history.archived;
+    final done = await history.archiveSelected();
+    done == wanted ? Haptics.received() : Haptics.error();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            done < wanted
+                ? ChatCleanupStrings.actionFailed
+                : restoring
+                ? ChatCleanupStrings.restored(done)
+                : ChatCleanupStrings.archived(done),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _pinSelected() async {
+    final ok = await _history!.pinSelected();
+    ok ? Haptics.received() : Haptics.error();
+  }
+
+  void _moreForSelected() {
+    final history = _history!;
+    final chat = history.selectedChats.firstOrNull;
+    history.endSelection();
+    if (chat != null) _showActions(chat);
+  }
 
   void _closeDrawer() => DrawerShell.maybeOf(context)?.close();
 
@@ -165,6 +283,31 @@ class AppDrawerState extends State<AppDrawer> {
     openDoc(navigator.context, doc.id, seed: doc);
   }
 
+  /// The full action sheet for one chat.
+  Future<void> _showActions(ConversationSummary chat) {
+    final history = _history!;
+    return showChatActions(
+      context,
+      chat: chat,
+      controller: history,
+      onDeleted: (id) => widget.chat.onConversationChanged(id, deleted: true),
+      onFork: _forkChat,
+      onExport: (chat) => exportSavedChat(
+        context,
+        id: chat.id,
+        title: chat.title,
+        openId: widget.chat.conversationId,
+        openMessages: widget.chat.messages,
+        modelName: widget.chat.modelName,
+      ),
+      onMerge: (id, otherId) => widget.chat.mergeWith(otherId, baseId: id),
+      onMerged: (ok) {
+        _lineageDone(ok, done: '', failed: LineageStrings.mergeFailed);
+        if (ok) history.load();
+      },
+    );
+  }
+
   void _closeSearch() {
     _search.clear();
     _history!.clearSearch();
@@ -215,6 +358,17 @@ class AppDrawerState extends State<AppDrawer> {
                   onCloseSearch: _closeSearch,
                   onNewChat: _newChat,
                   onBack: () => _toggleArchived(false),
+                  selectionBar: history.selecting
+                      ? SelectionBar(
+                          controller: history,
+                          onArchive: _archiveSelected,
+                          onPin: _pinSelected,
+                          onDelete: _deleteSelected,
+                          onMore: history.selected.length == 1
+                              ? _moreForSelected
+                              : null,
+                        )
+                      : null,
                 ),
               ),
             ),
@@ -232,32 +386,7 @@ class AppDrawerState extends State<AppDrawer> {
                   onPin: _pin,
                   onArchive: _archive,
                   onRename: _rename,
-                  onActions: (chat) => showChatActions(
-                    context,
-                    chat: chat,
-                    controller: history,
-                    onDeleted: (id) =>
-                        widget.chat.onConversationChanged(id, deleted: true),
-                    onFork: _forkChat,
-                    onExport: (chat) => exportSavedChat(
-                      context,
-                      id: chat.id,
-                      title: chat.title,
-                      openId: widget.chat.conversationId,
-                      openMessages: widget.chat.messages,
-                      modelName: widget.chat.modelName,
-                    ),
-                    onMerge: (id, otherId) =>
-                        widget.chat.mergeWith(otherId, baseId: id),
-                    onMerged: (ok) {
-                      _lineageDone(
-                        ok,
-                        done: '',
-                        failed: LineageStrings.mergeFailed,
-                      );
-                      if (ok) history.load();
-                    },
-                  ),
+                  onActions: _startSelection,
                 ),
               ),
             ),

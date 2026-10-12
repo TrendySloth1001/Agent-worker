@@ -107,9 +107,7 @@ Future<(_FakeConversations, HistoryController)> _pump(
     MaterialApp(
       theme: theme ?? AppTheme.light,
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(
+        data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(textScale),
           // The empty state's mascot loops forever; keep it still.
           disableAnimations: chats != null && chats.isEmpty,
@@ -227,12 +225,16 @@ void main() {
     expect(api.archives, [('b', true)]);
   });
 
-  testWidgets('long press opens the actions sheet; rename is inline', (
+  testWidgets('long press selects; MORE opens the actions; rename is inline', (
     tester,
   ) async {
-    final (api, _) = await _pump(tester);
+    final (api, history) = await _pump(tester);
     await tester.longPress(find.text('Budget plan'));
     await tester.pumpAndSettle();
+    expect(history.selected, {'a'});
+    await tester.tap(find.bySemanticsLabel(HistoryStrings.moreActions));
+    await tester.pumpAndSettle();
+    expect(history.selecting, isFalse);
     for (final label in [
       AppStrings.rename,
       AppStrings.pinChat,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_sizes.dart';
+import '../../core/constants/chat_cleanup.dart';
 import '../../core/constants/history.dart';
 import '../../data/chat_api.dart';
 import '../../data/conversation.dart';
@@ -33,6 +34,15 @@ class HistoryController extends ChangeNotifier {
 
   /// Chat being renamed inline, if any.
   String? renamingId;
+
+  /// Selection mode: rows show a check and taps pick chats.
+  bool selecting = false;
+
+  /// Picked chat ids. Kept while scrolling, searching and paging.
+  final Set<String> selected = {};
+
+  /// "Select all" is loading the pages not seen yet.
+  bool selectingAll = false;
 
   Timer? _debounce;
   int _request = 0;
@@ -179,9 +189,177 @@ class HistoryController extends ChangeNotifier {
     }
   }
 
+  // ---- Selection ---------------------------------------------------------------
+
+  /// Enters selection mode, picking [id] when given.
+  void startSelection([String? id]) {
+    selecting = true;
+    renamingId = null;
+    if (id != null) selected.add(id);
+    notifyListeners();
+  }
+
+  void endSelection() {
+    if (!selecting && selected.isEmpty) return;
+    selecting = false;
+    selectingAll = false;
+    selected.clear();
+    notifyListeners();
+  }
+
+  void toggleSelected(String id) {
+    if (!selected.remove(id)) selected.add(id);
+    notifyListeners();
+  }
+
+  bool isSelected(String id) => selected.contains(id);
+
+  /// Every listed chat is picked and there are no pages left to load.
+  bool get allSelected {
+    final list = visible;
+    return !hasMore &&
+        list.isNotEmpty &&
+        list.every((c) => selected.contains(c.id));
+  }
+
+  /// Picks every chat in the current list (all of it, or every match of
+  /// the search), loading the pages not shown yet first.
+  Future<void> selectAll() async {
+    selecting = true;
+    selectingAll = true;
+    notifyListeners();
+    var pages = 0;
+    while (hasMore && error == null && pages++ < ChatCleanupSizes.maxPages) {
+      final before = visible.length;
+      await loadMore();
+      if (!selectingAll) return; // left selection mode meanwhile
+      if (visible.length == before) break;
+    }
+    selectingAll = false;
+    selected.addAll(visible.map((c) => c.id));
+    notifyListeners();
+  }
+
+  void selectNone() {
+    selected.clear();
+    notifyListeners();
+  }
+
+  /// Picked chats this list knows about.
+  List<ConversationSummary> get selectedChats {
+    final seen = <String>{};
+    return [
+      for (final c in [...items, ...?_found])
+        if (selected.contains(c.id) && seen.add(c.id)) c,
+    ];
+  }
+
+  /// Every picked chat is pinned (the action then unpins).
+  bool get selectionPinned {
+    final chats = selectedChats;
+    return chats.isNotEmpty && chats.every((c) => c.pinned);
+  }
+
+  /// Runs [op] for [ids], a few at a time. Returns the ids it worked for.
+  Future<List<String>> _each(
+    List<String> ids,
+    Future<void> Function(String id) op,
+  ) async {
+    final done = <String>[];
+    for (var i = 0; i < ids.length; i += ChatCleanupSizes.parallel) {
+      final end = i + ChatCleanupSizes.parallel;
+      final group = ids.sublist(i, end > ids.length ? ids.length : end);
+      await Future.wait(
+        group.map((id) async {
+          try {
+            await op(id);
+            done.add(id);
+          } on ApiException {
+            // Reported by the count; the chat stays as it was.
+          }
+        }),
+      );
+    }
+    return done;
+  }
+
+  /// Deletes the picked chats: they leave the list at once and come back
+  /// only if the server refuses. Returns the deleted ids, or null.
+  Future<List<String>?> deleteSelected() async {
+    final ids = selected.toList();
+    if (ids.isEmpty) return const [];
+    final keepItems = items;
+    final keepFound = _found;
+    final gone = selected.toSet();
+    items = [
+      for (final c in items)
+        if (!gone.contains(c.id)) c,
+    ];
+    if (_found != null) {
+      _found = [
+        for (final c in _found!)
+          if (!gone.contains(c.id)) c,
+      ];
+    }
+    selecting = false;
+    selectingAll = false;
+    selected.clear();
+    notifyListeners();
+    try {
+      await _api.deleteMany(ids);
+      return ids;
+    } on ApiException {
+      items = keepItems;
+      _found = keepFound;
+      notifyListeners();
+      await load(); // some batches may have gone through
+      return null;
+    }
+  }
+
+  /// Archives the picked chats (restores them in the archive). Returns how
+  /// many moved; the rest stay picked.
+  Future<int> archiveSelected() async {
+    final value = !archived;
+    final done = await _each(
+      selected.toList(),
+      (id) => _api.setArchived(id, value),
+    );
+    final gone = done.toSet();
+    items = [
+      for (final c in items)
+        if (!gone.contains(c.id)) c,
+    ];
+    if (_found != null) {
+      _found = [
+        for (final c in _found!)
+          if (!gone.contains(c.id)) c,
+      ];
+    }
+    selected.removeAll(gone);
+    if (selected.isEmpty) selecting = false;
+    notifyListeners();
+    return done.length;
+  }
+
+  /// Pins the picked chats, or unpins them when all are pinned. Returns
+  /// whether every one changed.
+  Future<bool> pinSelected() async {
+    final pin = !selectionPinned;
+    final ids = selected.toList();
+    final done = await _each(ids, (id) => _api.setPinned(id, pin));
+    selecting = false;
+    selected.clear();
+    await load();
+    return done.length == ids.length;
+  }
+
   void showArchived(bool value) {
     if (archived == value) return;
     archived = value;
+    selecting = false;
+    selectingAll = false;
+    selected.clear();
     query = '';
     _found = null;
     _foundFor = '';
