@@ -6,6 +6,8 @@ export type RateSnapshot = {
   resetsAt: string | null;
   limitTokens: number | null;
   remainingTokens: number | null;
+  /** When the token window (per minute on Groq) refills. */
+  tokensResetAt: string | null;
   at: string;
 };
 
@@ -32,16 +34,38 @@ export function recordRateHeaders(id: string, headers: Headers): void {
   const limitRequests = int(headers.get("x-ratelimit-limit-requests"));
   if (limitRequests === null && headers.get("x-ratelimit-limit-tokens") === null) return;
   const reset = durationMs(headers.get("x-ratelimit-reset-requests"));
+  const tokensReset = durationMs(headers.get("x-ratelimit-reset-tokens"));
   snapshots.set(id, {
     limitRequests,
     remainingRequests: int(headers.get("x-ratelimit-remaining-requests")),
     resetsAt: reset === null ? null : new Date(Date.now() + reset).toISOString(),
     limitTokens: int(headers.get("x-ratelimit-limit-tokens")),
     remainingTokens: int(headers.get("x-ratelimit-remaining-tokens")),
+    tokensResetAt: tokensReset === null ? null : new Date(Date.now() + tokensReset).toISOString(),
     at: new Date().toISOString(),
   });
 }
 
 export function rateSnapshots(prefix: string): Array<[string, RateSnapshot]> {
   return [...snapshots].filter(([id]) => id.startsWith(prefix));
+}
+
+/** Rough tokens for a prompt of [chars] plus the reply budget. */
+export const estimateTokens = (chars: number, replyTokens = 1_500) => Math.ceil(chars / 3.5) + replyTokens;
+
+/**
+ * False when the last headers for [id] say its token window cannot fit
+ * [tokens] before it refills (e.g. Groq's 8k tokens/minute free tier), so
+ * the router can skip it instead of collecting a 429.
+ */
+export function hasTokenBudget(id: string, tokens: number, now = Date.now()): boolean {
+  const s = snapshots.get(id);
+  if (!s || s.remainingTokens === null) return true;
+  if (s.tokensResetAt && Date.parse(s.tokensResetAt) <= now) return true;
+  return s.remainingTokens >= tokens;
+}
+
+/** Test hook. */
+export function setSnapshot(id: string, snap: RateSnapshot): void {
+  snapshots.set(id, snap);
 }

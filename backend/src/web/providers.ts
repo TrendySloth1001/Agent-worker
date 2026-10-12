@@ -87,6 +87,15 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 // ---- providers ---------------------------------------------------------------
 
 const ollamaLimit = pLimit(2);
+/** Ollama's web search 429s on bursts (round-table seats searching at once): space call starts. */
+const OLLAMA_MIN_GAP_MS = 700;
+let ollamaNextAt = 0;
+async function ollamaSlot(signal?: AbortSignal): Promise<void> {
+  const now = Date.now();
+  const wait = Math.max(0, ollamaNextAt - now);
+  ollamaNextAt = Math.max(now, ollamaNextAt) + OLLAMA_MIN_GAP_MS;
+  if (wait > 0) await sleep(wait, signal);
+}
 
 const ollama: Provider = {
   name: "ollama",
@@ -99,6 +108,7 @@ const ollama: Provider = {
     // Ollama's search is the one that rate-limits: cap concurrency, retry a 429 once.
     const call = () => ollamaPost("web_search", { query, max_results: Math.min(ctx.limit, 8) }, ctx.signal, this.timeoutMs);
     const data = await ollamaLimit(async () => {
+      await ollamaSlot(ctx.signal);
       try {
         return await call();
       } catch (e) {

@@ -3,6 +3,7 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { config } from "../config.js";
 import { recordUsage } from "../db/usage.js";
 import { getOpenRouterKeyInfo, noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
+import { estimateTokens, hasTokenBudget } from "../usage/rateLimits.js";
 import { health } from "./health.js";
 
 const FIRST_BYTE_MS = 20_000;
@@ -77,6 +78,10 @@ const LONG_CONTEXT_MODELS = new Set([
 /** Auto: move the 1M-context models to the front when the prompt is very long. */
 export function preferForPrompt(candidates: string[], promptChars: number): string[] {
   if (promptChars > GROQ_MAX_PROMPT_CHARS) candidates = candidates.filter((id) => !id.startsWith("groq:"));
+  // Skip Groq models whose per-minute token window can't fit this prompt right now.
+  const need = estimateTokens(promptChars);
+  const fits = candidates.filter((id) => !id.startsWith("groq:") || hasTokenBudget(id, need));
+  if (fits.length > 0) candidates = fits;
   if (promptChars < LONG_CONTEXT_CHARS) return candidates;
   return [...candidates.filter((id) => LONG_CONTEXT_MODELS.has(id)), ...candidates.filter((id) => !LONG_CONTEXT_MODELS.has(id))];
 }
