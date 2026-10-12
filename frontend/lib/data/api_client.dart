@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../core/constants/app_config.dart';
@@ -19,9 +20,28 @@ class AuthClient extends http.BaseClient {
   final http.Client _inner;
   final bool _owns;
 
-  static bool _ours(Uri url) =>
-      url.toString().startsWith(AppConfig.apiBaseUrl) &&
-      !url.path.startsWith('/auth/refresh');
+  /// True for URLs on the API origin (same scheme, host and port, and under
+  /// the base path on a `/` boundary). A look-alike such as
+  /// `https://api.example.com.evil.tld` never matches.
+  static bool _ours(Uri url) => isApiUrl(url, Uri.parse(AppConfig.apiBaseUrl));
+
+  @visibleForTesting
+  static bool isApiUrl(Uri url, Uri base) {
+    if (url.scheme != base.scheme ||
+        url.host != base.host ||
+        url.port != base.port) {
+      return false;
+    }
+    final prefix = base.path.endsWith('/')
+        ? base.path.substring(0, base.path.length - 1)
+        : base.path;
+    if (prefix.isNotEmpty &&
+        url.path != prefix &&
+        !url.path.startsWith('$prefix/')) {
+      return false;
+    }
+    return !url.path.startsWith('/auth/refresh');
+  }
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
