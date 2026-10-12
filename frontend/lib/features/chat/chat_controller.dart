@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/docs.dart';
+import '../../core/constants/smart_toggles.dart';
 import '../../core/constants/suggest.dart';
 import '../../core/haptics.dart';
 import '../../core/constants/notify_copy.dart';
@@ -24,6 +25,7 @@ import '../../data/files_api.dart';
 import '../docs/doc_controller.dart';
 import '../docs/doc_registry.dart';
 import '../settings/settings_controller.dart';
+import 'composer_state.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController(
@@ -32,9 +34,11 @@ class ChatController extends ChangeNotifier {
     this._conversations, {
     DocsApi? docs,
     DocRegistry? docRegistry,
+    ComposerStore? composerStore,
   }) : _docRegistry = docRegistry ?? DocRegistry.instance,
        _docsOverride = docs,
-       webSearch = _settings.defaultWebSearch,
+       _composerStore = composerStore ?? ComposerStore(),
+       webMode = _settings.defaultWebSearch ? WebMode.auto : WebMode.off,
        knowledge = _settings.defaultKnowledge,
        roundTable = _settings.defaultRoundTable {
     _lastDefaults = (_settings.defaultWebSearch, _settings.defaultKnowledge);
@@ -77,8 +81,24 @@ class ChatController extends ChangeNotifier {
 
   /// Used only to name the model under each reply; the server picks it.
   List<AiModel> models = [];
-  bool webSearch;
+
+  /// WEB chip: auto (the server decides), on (always) or off (never).
+  WebMode webMode;
+
+  /// True unless WEB is off (what a document request sends).
+  bool get webSearch => webMode != WebMode.off;
   bool knowledge;
+
+  // ---- smart suggestions -----------------------------------------------------
+
+  final ComposerStore _composerStore;
+
+  /// What the server suggested for the latest reply (KB or Doc), until the
+  /// user answers it or sends another message.
+  SuggestToggleEvent? suggestion;
+
+  /// Kinds already suggested in this conversation: never asked twice.
+  final Set<SuggestKind> _suppressed = {};
 
   /// Round Table: several models draft and cross-check, a chair answers.
   bool roundTable;
@@ -155,7 +175,9 @@ class ChatController extends ChangeNotifier {
   /// Changing a default in settings carries over to the chips.
   void _onSettings() {
     final now = (_settings.defaultWebSearch, _settings.defaultKnowledge);
-    if (now.$1 != _lastDefaults.$1) webSearch = now.$1;
+    if (now.$1 != _lastDefaults.$1) {
+      webMode = now.$1 ? WebMode.auto : WebMode.off;
+    }
     if (now.$2 != _lastDefaults.$2) knowledge = now.$2;
     _lastDefaults = now;
     if (_settings.defaultRoundTable != _lastRoundTableDefault) {
@@ -174,8 +196,10 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  void toggleWebSearch() {
-    webSearch = !webSearch;
+  /// Auto, then on, then off, then auto again.
+  void cycleWebMode() {
+    webMode = webMode.next;
+    _persistComposer();
     notifyListeners();
   }
 
@@ -186,17 +210,113 @@ class ChatController extends ChangeNotifier {
 
   void toggleKnowledge() {
     knowledge = !knowledge;
+    _persistComposer();
     notifyListeners();
   }
 
   void toggleDoc() {
     doc = !doc;
+    _persistComposer();
     notifyListeners();
   }
 
   void setDocLength(String length) {
     docLength = length;
+    _persistComposer();
     notifyListeners();
+  }
+
+  // ---- composer state per conversation ----------------------------------------
+
+  ComposerState get composerState => ComposerState(
+    web: webMode,
+    knowledge: knowledge,
+    doc: doc,
+    docLength: docLength,
+    suppressed: Set.of(_suppressed),
+  );
+
+  void _persistComposer() {
+    final id = conversationId;
+    if (id != null) unawaited(_composerStore.write(id, composerState));
+  }
+
+  /// The toggles every new chat starts with (from Settings).
+  void _resetComposer() {
+    webMode = _settings.defaultWebSearch ? WebMode.auto : WebMode.off;
+    knowledge = _settings.defaultKnowledge;
+    doc = false;
+    docLength = DocConfig.defaultLength;
+    _suppressed.clear();
+    suggestion = null;
+  }
+
+  /// Brings back the toggles saved with chat [id], if any.
+  Future<void> _restoreComposer(String id) async {
+    final saved = await _composerStore.read(id);
+    if (saved == null || conversationId != id) return;
+    webMode = saved.web;
+    knowledge = saved.knowledge;
+    doc = saved.doc;
+    docLength = saved.docLength;
+    _suppressed
+      ..clear()
+      ..addAll(saved.suppressed);
+    notifyListeners();
+  }
+
+  // ---- answering a suggestion --------------------------------------------------
+
+  /// "Not now" / "Answer in chat": the prompt goes away and is not shown
+  /// again in this chat.
+  void dismissSuggestion() {
+    final s = suggestion;
+    if (s == null) return;
+    suggestion = null;
+    unawaited(
+      _api.reportSuggestion(
+        s.kind,
+        'dismissed',
+        conversationId: conversationId,
+      ),
+    );
+    notifyListeners();
+  }
+
+  /// "Use KB" turns the KB chip on and asks the same question again, the new
+  /// reply replacing the old one. "Write as Doc" turns the message into a
+  /// document instead of the chat reply.
+  void acceptSuggestion() {
+    final s = suggestion;
+    if (s == null) return;
+    suggestion = null;
+    unawaited(
+      _api.reportSuggestion(s.kind, 'accepted', conversationId: conversationId),
+    );
+    // Drop the reply (stopping it if it is still streaming).
+    if (isSending) {
+      _session++;
+      _teardown();
+      isSending = false;
+    }
+    if (messages.isNotEmpty && messages.last.role == Role.assistant) {
+      messages.removeLast();
+    }
+    final last = messages.lastOrNull;
+    if (last == null || last.role != Role.user) {
+      notifyListeners();
+      return;
+    }
+    switch (s.kind) {
+      case SuggestKind.kb:
+        knowledge = true;
+        _persistComposer();
+        _run();
+      case SuggestKind.doc:
+        messages.removeLast();
+        notifyListeners();
+        sendDoc(last.content, attachments: last.attachments);
+    }
   }
 
   /// DOC: [text] becomes a document (POST /docs) instead of a chat reply.
@@ -331,6 +451,7 @@ class ChatController extends ChangeNotifier {
     parentId = null;
     parentTitle = null;
     isSending = false;
+    _resetComposer();
     notifyListeners();
   }
 
@@ -366,6 +487,8 @@ class ChatController extends ChangeNotifier {
     parentId = summary.forkedFrom;
     parentTitle = summary.parentTitle;
     _relinkDocs();
+    _resetComposer();
+    unawaited(_restoreComposer(summary.id));
     notifyListeners();
   }
 
@@ -491,6 +614,7 @@ class ChatController extends ChangeNotifier {
     final snapshot = _persistable();
     if (!snapshot.any((m) => m.role == Role.assistant)) return;
     final id = conversationId ??= ConversationsApi.newId();
+    _persistComposer();
     _saving = _saving.then((_) async {
       try {
         final summary = await _conversations.save(id, snapshot);
@@ -582,6 +706,7 @@ class ChatController extends ChangeNotifier {
     isSending = true;
     notifyListeners();
 
+    suggestion = null;
     final session = ++_session;
     _runSession = session;
     final client = http.Client();
@@ -640,6 +765,18 @@ class ChatController extends ChangeNotifier {
         case EvidenceEvent(:final items):
           message.evidence = items;
           notifyListeners();
+        case final SuggestToggleEvent e:
+          if (_settings.smartSuggestions && foreground()) {
+            suggestion = e;
+            _suppressed.add(e.kind);
+            _persistComposer();
+            notifyListeners();
+          }
+        case ToolsEvent(:final web, :final auto):
+          if (web && auto) {
+            message.meta = {...message.meta, SmartConfig.searchedKey: true};
+            notifyListeners();
+          }
         case SuggestionsEvent(:final items):
           message.meta = {...message.meta, SuggestConfig.followUpKey: items};
         case ModelEvent(:final model):
@@ -681,13 +818,15 @@ class ChatController extends ChangeNotifier {
           client,
           history,
           modelId: _requestedModel,
-          webSearch: webSearch,
+          webMode: webMode,
           knowledge: knowledge,
           mode: _settings.mode,
           profile: _settings.profileJson(),
           context: _contextText,
           roundTable: roundTableOverride ?? roundTable,
           conversationId: conversationId,
+          smartSuggestions: _settings.smartSuggestions,
+          suppressSuggest: Set.of(_suppressed),
         )
         .listen(
           onEvent,

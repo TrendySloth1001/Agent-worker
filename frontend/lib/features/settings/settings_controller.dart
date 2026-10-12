@@ -13,7 +13,8 @@ class SettingsController extends ChangeNotifier {
   SettingsController._(this._prefs) {
     themeMode = _readTheme();
     hapticsOn = _prefs?.getBool(AppPrefs.haptics) ?? true;
-    defaultWebSearch = _prefs?.getBool(AppPrefs.defaultWebSearch) ?? false;
+    defaultWebSearch = _prefs?.getBool(AppPrefs.defaultWebSearch) ?? true;
+    smartSuggestions = _prefs?.getBool(AppPrefs.smartSuggestions) ?? true;
     defaultKnowledge = _prefs?.getBool(AppPrefs.defaultKnowledge) ?? false;
     defaultRoundTable = _prefs?.getBool(AppPrefs.defaultRoundTable) ?? false;
     notify = NotifyPrefs(_prefs)..addListener(notifyListeners);
@@ -71,7 +72,12 @@ class SettingsController extends ChangeNotifier {
 
   /// Voice input: send when dictation ends / always transcribe on the server.
   late bool voiceAutoSend, voiceHighAccuracy;
+
+  /// New chats start with WEB on Auto (true) or Off (false).
   late bool defaultWebSearch;
+
+  /// Offer the knowledge base and Docs when a message looks like it needs them.
+  late bool smartSuggestions;
   late bool defaultKnowledge;
   late bool defaultRoundTable;
 
@@ -142,6 +148,12 @@ class SettingsController extends ChangeNotifier {
   void setDefaultWebSearch(bool value) {
     defaultWebSearch = value;
     _prefs?.setBool(AppPrefs.defaultWebSearch, value);
+    notifyListeners();
+  }
+
+  void setSmartSuggestions(bool value) {
+    smartSuggestions = value;
+    _prefs?.setBool(AppPrefs.smartSuggestions, value);
     notifyListeners();
   }
 
@@ -281,7 +293,8 @@ class SettingsController extends ChangeNotifier {
     themeMode = ThemeMode.system;
     hapticsOn = true;
     Haptics.enabled = true;
-    defaultWebSearch = false;
+    defaultWebSearch = true;
+    smartSuggestions = true;
     defaultKnowledge = false;
     defaultRoundTable = false;
     notify.reset();
@@ -299,6 +312,7 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.defaultWebSearch,
       AppPrefs.defaultKnowledge,
       AppPrefs.defaultRoundTable,
+      AppPrefs.smartSuggestions,
       AppPrefs.mode,
       AppPrefs.profileTone,
       AppPrefs.profileLength,

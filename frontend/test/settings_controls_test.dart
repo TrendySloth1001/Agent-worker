@@ -1,6 +1,7 @@
 import 'package:app/core/app_scope.dart';
 import 'package:app/core/constants/notify_copy.dart';
 import 'package:app/core/constants/settings_copy.dart';
+import 'package:app/core/constants/smart_toggles.dart';
 import 'package:app/core/constants/voice.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/data/ai_model.dart';
@@ -197,16 +198,18 @@ void main() {
   ) async {
     final s = await _pump(tester);
     await _open(tester, SettingsStrings.catSearch);
-    for (final title in [
-      SettingsStrings.webLabel,
-      SettingsStrings.kbLabel,
-      SettingsStrings.tableLabel,
-    ]) {
+    // WEB starts on Auto and smart suggestions on; the rest start off.
+    expect(_on(tester, SettingsStrings.webLabel), isTrue);
+    expect(_on(tester, SmartStrings.settingLabel), isTrue);
+    for (final title in [SettingsStrings.kbLabel, SettingsStrings.tableLabel]) {
       expect(_on(tester, title), isFalse);
       await _tap(tester, _switchRow(title));
       expect(_on(tester, title), isTrue, reason: title);
     }
-    expect(s.defaultWebSearch, isTrue);
+    await _tap(tester, _switchRow(SettingsStrings.webLabel));
+    await _tap(tester, _switchRow(SmartStrings.settingLabel));
+    expect(s.defaultWebSearch, isFalse);
+    expect(s.smartSuggestions, isFalse);
     expect(s.defaultKnowledge, isTrue);
     expect(s.defaultRoundTable, isTrue);
     await _back(tester);
@@ -214,7 +217,6 @@ void main() {
       _summary(
         SettingsStrings.catSearch,
         [
-          SettingsStrings.sumWeb,
           SettingsStrings.sumKnowledge,
           SettingsStrings.sumRoundTable,
         ].join(SettingsStrings.separator),

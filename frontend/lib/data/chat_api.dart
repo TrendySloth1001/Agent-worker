@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/constants/app_config.dart';
 import '../core/constants/app_sizes.dart';
+import '../core/constants/smart_toggles.dart';
 import '../features/auth/auth_controller.dart';
 import 'api_client.dart';
 import 'ai_model.dart';
@@ -92,13 +93,15 @@ class ChatApi {
     http.Client client,
     List<ChatMessage> history, {
     String? modelId,
-    required bool webSearch,
+    WebMode webMode = WebMode.auto,
     required bool knowledge,
     required String mode,
     Map<String, String> profile = const {},
     String? context,
     bool roundTable = false,
     String? conversationId,
+    bool smartSuggestions = true,
+    Set<SuggestKind> suppressSuggest = const {},
   }) async* {
     final request =
         http.Request('POST', Uri.parse('${AppConfig.apiBaseUrl}/chat'))
@@ -109,13 +112,17 @@ class ChatApi {
           ..body = jsonEncode({
             'messages': history.map((m) => m.toJson()).toList(),
             'model': ?modelId,
-            'webSearch': webSearch,
+            'webSearch': webMode != WebMode.off,
+            'webMode': webMode.wire,
             'knowledge': knowledge,
             'mode': mode,
             if (profile.isNotEmpty) 'profile': profile,
             'context': ?context,
             if (roundTable) 'roundTable': true,
             'conversationId': ?conversationId,
+            if (!smartSuggestions) 'smartSuggestions': false,
+            if (suppressSuggest.isNotEmpty)
+              'suppressSuggest': [for (final k in suppressSuggest) k.name],
           });
 
     // [client] stays the caller's (closing it stops the stream); the
@@ -160,6 +167,36 @@ class ChatApi {
         if (data.isNotEmpty) data.write('\n');
         data.write(line.substring(5).trimLeft());
       }
+    }
+  }
+
+  /// Tells the server what the user did with a suggestion (telemetry only;
+  /// failures are ignored).
+  Future<void> reportSuggestion(
+    SuggestKind kind,
+    String outcome, {
+    String? conversationId,
+  }) async {
+    final client = AuthClient();
+    try {
+      final response = await client
+          .send(
+            http.Request(
+                'POST',
+                Uri.parse('${AppConfig.apiBaseUrl}/chat/suggestion'),
+              )
+              ..headers.addAll(apiHeaders(json: true))
+              ..body = jsonEncode({
+                'kind': kind.name,
+                'outcome': outcome,
+                'conversationId': ?conversationId,
+              }),
+          )
+          .timeout(AppDurations.streamIdle);
+      await response.stream.drain<void>();
+    } catch (_) {
+    } finally {
+      client.close();
     }
   }
 }

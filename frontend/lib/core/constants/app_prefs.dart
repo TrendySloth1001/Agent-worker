@@ -5,6 +5,7 @@ abstract final class AppPrefs {
   static const defaultWebSearch = 'default_web_search';
   static const defaultKnowledge = 'default_knowledge';
   static const defaultRoundTable = 'default_round_table';
+  static const smartSuggestions = 'smart_suggestions';
   static const notifyRoundTable = 'notify_round_table';
   static const autocomplete = 'autocomplete_on';
   static const voiceAutoSend = 'voice_auto_send';

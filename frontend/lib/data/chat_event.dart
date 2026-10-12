@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../core/constants/smart_toggles.dart';
+
 /// Where a cited source comes from: the knowledge base (`K<n>`), the web
 /// (`W<n>`), an attached file (`D<n>`), a generated document or one of the
 /// user's earlier chats (`C<n>`, url `chat:<conversationId>`).
@@ -190,6 +192,23 @@ sealed class ChatEvent {
                 (id: c['id'] as String, text: c['text'] as String),
           ],
         );
+      case 'suggest_toggle':
+        final kind = SuggestKind.fromWire(json['kind']);
+        if (kind == null) return null;
+        return SuggestToggleEvent(
+          kind,
+          reason: json['reason'] as String? ?? '',
+          sampleTitles: [
+            for (final t in json['sampleTitles'] as List? ?? const [])
+              if (t is String && t.trim().isNotEmpty) t.trim(),
+          ],
+          proposedTitle: json['proposedTitle'] as String? ?? '',
+        );
+      case 'tools':
+        return ToolsEvent(
+          web: json['web'] == true,
+          auto: json['webMode'] == WebMode.auto.wire,
+        );
       case 'usage':
         return UsageEvent(
           json['promptTokens'] as int?,
@@ -257,6 +276,26 @@ class DeltaEvent extends ChatEvent {
 }
 
 class ResetEvent extends ChatEvent {}
+
+/// The server thinks the turn would benefit from the knowledge base or a
+/// Doc and asks the user instead of assuming.
+class SuggestToggleEvent extends ChatEvent {
+  const SuggestToggleEvent(
+    this.kind, {
+    this.reason = '',
+    this.sampleTitles = const [],
+    this.proposedTitle = '',
+  });
+  final SuggestKind kind;
+  final String reason, proposedTitle;
+  final List<String> sampleTitles;
+}
+
+/// Which tools actually ran for the reply. [auto]: WEB was on Auto.
+class ToolsEvent extends ChatEvent {
+  const ToolsEvent({required this.web, required this.auto});
+  final bool web, auto;
+}
 
 /// What the assistant just saved to long-term memory: ADD, UPDATE or DELETE.
 class MemoryEvent extends ChatEvent {
