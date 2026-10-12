@@ -4,7 +4,7 @@ import '../constants/mascot.dart';
 import 'illustration.dart';
 
 /// Which scene a screen shows. Kept as a small state vocabulary so callers
-/// say what is happening; each maps to one of the Open Peeps illustrations.
+/// say what is happening; each maps to one of the line-art illustrations.
 enum MascotState {
   idle(MascotStrings.idle),
   thinking(MascotStrings.thinking),
@@ -24,7 +24,9 @@ enum MascotState {
 
   /// The illustration drawn for this state.
   IllustrationKind get illustration => switch (this) {
-    github => IllustrationKind.github,
+    github => IllustrationKind.githubBranches,
+    thinking => IllustrationKind.homeThink,
+    writing => IllustrationKind.homeCode,
     searching => IllustrationKind.emptyKnowledge,
     sleeping || error || offline => IllustrationKind.emptyHistory,
     _ => IllustrationKind.hello,

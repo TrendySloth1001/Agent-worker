@@ -1,5 +1,3 @@
-import '../../../core/constants/mascot.dart';
-import '../../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
@@ -8,10 +6,13 @@ import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/constants/suggest.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/widgets/rotating_illustration.dart';
 import '../../../data/suggest_api.dart';
 import 'suggestion_chips.dart';
 
-/// HELLO on a new chat, with a peep and a few one-tap starter prompts.
+/// HELLO on a new chat, with a few line-art scenes taking turns above it
+/// and a few one-tap starter prompts.
 /// The art and then the prompts drop out when space runs short (keyboard).
 class EmptyState extends StatefulWidget {
   const EmptyState({super.key, this.onSuggestion});
@@ -73,9 +74,9 @@ class _EmptyStateState extends State<EmptyState> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (showArt) ...[
-                    const Mascot(
-                      state: MascotState.idle,
-                      size: MascotSizes.hero,
+                    const RotatingIllustration(
+                      kinds: IllustrationKind.home,
+                      height: IllustrationSizes.hello,
                     ),
                     const SizedBox(height: AppSpacing.lg),
                   ],

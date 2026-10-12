@@ -1,13 +1,12 @@
 import 'package:app/core/theme/app_theme.dart';
+import 'package:app/core/widgets/illustration.dart';
 import 'package:app/core/widgets/mascot.dart';
+import 'package:app/core/widgets/rotating_illustration.dart';
 import 'package:app/features/chat/widgets/empty_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/render.dart';
-
-MascotState _mascot(WidgetTester tester) =>
-    tester.widget<Mascot>(find.byType(Mascot)).state;
 
 void main() {
   for (final (name, theme) in [
@@ -20,7 +19,11 @@ void main() {
         const Scaffold(body: EmptyState()),
         theme: theme,
       );
-      expect(_mascot(tester), MascotState.idle);
+      final art = tester.widget<RotatingIllustration>(
+        find.byType(RotatingIllustration),
+      );
+      expect(art.kinds, IllustrationKind.home);
+      await tester.pumpWidget(const SizedBox());
       expect(tester.takeException(), isNull);
     });
   }

@@ -1,5 +1,6 @@
 import '../../../../core/constants/mascot.dart';
-import '../../../../core/widgets/mascot.dart';
+import '../../../../core/widgets/illustration.dart';
+import '../../../../core/widgets/rotating_illustration.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -214,7 +215,11 @@ class _Intro extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Center(
-          child: Mascot(state: MascotState.github, size: MascotSizes.large),
+          child: RotatingIllustration(
+            kinds: IllustrationKind.githubSet,
+            height: MascotSizes.large,
+            paper: paper,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         const GithubHeading(ConnectStrings.title),
