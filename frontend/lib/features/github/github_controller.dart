@@ -52,6 +52,7 @@ class GithubHubController extends ChangeNotifier {
   final pulls = Loadable<List<GhIssue>>();
   final issues = Loadable<List<GhIssue>>();
   final activity = Loadable<List<GhCommit>>();
+  final feed = Loadable<List<GhActivity>>();
 
   bool get failedOnce => error != null;
 
@@ -74,10 +75,7 @@ class GithubHubController extends ChangeNotifier {
     error = null;
     _notify();
     try {
-      final r = await Future.wait([
-        api.me(),
-        api.myRepos(refresh: refresh),
-      ]);
+      final r = await Future.wait([api.me(), api.myRepos(refresh: refresh)]);
       if (gen != _gen) return;
       me = r[0] as GhMe;
       repos = r[1] as List<GhRepo>;
@@ -97,7 +95,7 @@ class GithubHubController extends ChangeNotifier {
       load(refresh: true),
       if (pulls.ready || pulls.failed) loadPulls(),
       if (issues.ready || issues.failed) loadIssues(),
-      if (activity.ready || activity.failed) loadActivity(),
+      if (feed.ready || feed.failed) loadActivity(),
     ]);
   }
 
@@ -154,15 +152,15 @@ class GithubHubController extends ChangeNotifier {
       for (final r in repos)
         if (matches(r)) r,
     ];
-    int pushed(GhRepo a, GhRepo b) => (b.pushedAt ?? DateTime(0)).compareTo(
-      a.pushedAt ?? DateTime(0),
-    );
+    int pushed(GhRepo a, GhRepo b) =>
+        (b.pushedAt ?? DateTime(0)).compareTo(a.pushedAt ?? DateTime(0));
     switch (sort) {
       case RepoSort.pushed:
         list.sort(pushed);
       case RepoSort.name:
         list.sort(
-          (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+          (a, b) =>
+              a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
         );
       case RepoSort.stars:
         list.sort((a, b) {
@@ -194,10 +192,17 @@ class GithubHubController extends ChangeNotifier {
     () async => (await api.involvedIssues(me!.login)).items,
   );
 
-  Future<void> loadActivity() => _fill<List<GhCommit>>(
-    activity,
-    () async => (await api.activity(me!.login)).items,
-  );
+  /// The activity feed (pushes, pull requests, issues, reviews, releases);
+  /// when GitHub's events API fails, the latest commits instead.
+  Future<void> loadActivity() async {
+    await _fill<List<GhActivity>>(feed, api.myEvents);
+    if (feed.failed && !activity.ready) {
+      await _fill<List<GhCommit>>(
+        activity,
+        () async => (await api.activity(me!.login)).items,
+      );
+    }
+  }
 
   Future<void> _fill<T>(Loadable<T> slot, Future<T> Function() fetch) async {
     if (me == null) return;
@@ -220,7 +225,7 @@ class GithubHubController extends ChangeNotifier {
         loadPulls();
       case 2 when !issues.ready && !issues.loading && !issues.failed:
         loadIssues();
-      case 3 when !activity.ready && !activity.loading && !activity.failed:
+      case 3 when !feed.ready && !feed.loading && !feed.failed:
         loadActivity();
     }
   }

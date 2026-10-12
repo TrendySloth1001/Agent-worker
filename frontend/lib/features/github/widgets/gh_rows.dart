@@ -5,12 +5,14 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/apps.dart';
 import '../../../core/constants/widget_github.dart';
 import '../../../core/haptics.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/github_api.dart';
 import '../../chat/widgets/github/github_common.dart';
+import '../gh_actions.dart';
 import '../github_controller.dart';
+
+export 'gh_search_pill.dart';
 
 /// A repository as one grouped cell: owner avatar, name, description and the
 /// facts that matter (language, stars, last push).
@@ -52,7 +54,9 @@ class GhRepoTile extends StatelessWidget {
                             children: [
                               TextSpan(
                                 text: '${r.owner}/',
-                                style: TextStyle(color: scheme.onSurfaceVariant),
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
                               TextSpan(text: r.name),
                             ],
@@ -91,7 +95,10 @@ class GhRepoTile extends StatelessWidget {
                     runSpacing: AppSpacing.xs,
                     children: [
                       if (r.language != null) _Lang(r.language!),
-                      GhStat(GithubOcticons.star, GithubStrings.countOf(r.stars)),
+                      GhStat(
+                        GithubOcticons.star,
+                        GithubStrings.countOf(r.stars),
+                      ),
                       if (r.pushedAt != null)
                         GhStat(
                           GithubOcticons.commit,
@@ -123,10 +130,16 @@ class _Lang extends StatelessWidget {
         Container(
           width: GithubSizes.labelDot,
           height: GithubSizes.labelDot,
-          decoration: BoxDecoration(color: p.textSecondary, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: p.textSecondary,
+            shape: BoxShape.circle,
+          ),
         ),
         const SizedBox(width: AppSpacing.xs),
-        Text(name, style: context.text.caption.copyWith(color: p.textSecondary)),
+        Text(
+          name,
+          style: context.text.caption.copyWith(color: p.textSecondary),
+        ),
       ],
     );
   }
@@ -148,7 +161,9 @@ class GhItemTile extends StatelessWidget {
     final p = context.palette;
     final i = item;
     final merged = i.state == GithubStrings.stateMerged;
-    final open = i.state == GithubStrings.stateOpen || i.state == GithubStrings.stateDraft;
+    final open =
+        i.state == GithubStrings.stateOpen ||
+        i.state == GithubStrings.stateDraft;
     final icon = i.isPr
         ? (merged
               ? GithubOcticons.merged
@@ -169,7 +184,14 @@ class GhItemTile extends StatelessWidget {
       if (i.updatedAt != null) GithubStrings.ago(i.updatedAt),
     ].join('  ·  ');
     return InkWell(
-      onTap: () => ghVisit(context, i.url),
+      onTap: () => openGhItem(
+        context,
+        repo: i.repoFullName,
+        number: i.number,
+        isPr: i.isPr,
+        title: i.title,
+        url: i.url,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
@@ -244,7 +266,13 @@ class GhCommitTile extends StatelessWidget {
       if (c.date != null) GithubStrings.ago(c.date),
     ].join('  ·  ');
     return InkWell(
-      onTap: () => ghVisit(context, c.url),
+      onTap: () => openGhCommit(
+        context,
+        repo: c.repo.isNotEmpty ? c.repo : _repoOfUrl(c.url),
+        sha: c.sha,
+        message: c.message,
+        url: c.url,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
@@ -289,6 +317,11 @@ class GhCommitTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _repoOfUrl(String url) {
+  final m = RegExp(r'github\.com/([^/]+)/([^/]+)/').firstMatch(url);
+  return m == null ? '' : '${m[1]}/${m[2]}';
 }
 
 /// Placeholder cells while a list loads.
@@ -393,82 +426,6 @@ class GhLoadableList<T> extends StatelessWidget {
         for (var i = 0; i < data.length; i++)
           M3Cell(index: i, count: data.length, child: cell(context, data[i])),
       ],
-    );
-  }
-}
-
-/// M3 search field: filled pill with a search icon and a clear button.
-class GhPillSearch extends StatefulWidget {
-  const GhPillSearch({
-    super.key,
-    required this.hint,
-    required this.onChanged,
-    this.autofocus = false,
-  });
-
-  final String hint;
-  final ValueChanged<String> onChanged;
-  final bool autofocus;
-
-  @override
-  State<GhPillSearch> createState() => _GhPillSearchState();
-}
-
-class _GhPillSearchState extends State<GhPillSearch> {
-  final _c = TextEditingController();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const border = OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(AppRadius.pill)),
-      borderSide: BorderSide.none,
-    );
-    return SizedBox(
-      height: GithubHubSizes.searchHeight,
-      child: TextField(
-        controller: _c,
-        autofocus: widget.autofocus,
-        textInputAction: TextInputAction.search,
-        cursorColor: context.palette.accent,
-        onChanged: (v) {
-          setState(() {});
-          widget.onChanged(v);
-        },
-        decoration: InputDecoration(
-          filled: true,
-          fillColor: scheme.surfaceContainerHigh,
-          hintText: widget.hint,
-          border: border,
-          enabledBorder: border,
-          focusedBorder: border,
-          prefixIcon: AppIcon(
-            AppIcons.search,
-            size: AppIconSize.md,
-            color: scheme.onSurfaceVariant,
-          ),
-          suffixIcon: _c.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: AppIcon(
-                    AppIcons.close,
-                    size: AppIconSize.sm,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  onPressed: () {
-                    _c.clear();
-                    setState(() {});
-                    widget.onChanged('');
-                  },
-                ),
-        ),
-      ),
     );
   }
 }

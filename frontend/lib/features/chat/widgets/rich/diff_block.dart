@@ -202,9 +202,15 @@ class _DiffLinesState extends State<DiffLines> {
         if (_wrap)
           body
         else
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: IntrinsicWidth(child: body),
+          // Short diffs still fill the width (row tints reach the edge).
+          LayoutBuilder(
+            builder: (context, box) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: box.maxWidth),
+                child: IntrinsicWidth(child: body),
+              ),
+            ),
           ),
         if (!_all && all.length > rows.length)
           GestureDetector(

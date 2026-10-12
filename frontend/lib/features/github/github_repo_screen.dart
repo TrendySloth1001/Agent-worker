@@ -4,12 +4,11 @@ import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/apps.dart';
 import '../../core/constants/widget_github.dart';
-import '../../core/haptics.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/chat_api.dart';
 import '../../data/github_api.dart';
-import '../chat/chat_launch.dart';
+import 'gh_actions.dart';
 import '../chat/widgets/github/github_branch_picker.dart';
 import '../chat/widgets/github/github_commits_card.dart';
 import '../chat/widgets/github/github_common.dart';
@@ -127,11 +126,7 @@ class _GithubRepoScreenState extends State<GithubRepoScreen>
     if (_tabs.index == 5) await _loadIssues();
   }
 
-  void _ask() {
-    Haptics.tap();
-    ChatLaunch.instance.ask(GithubRepoStrings.prompt(_repo.fullName));
-    Navigator.of(context).popUntil((r) => r.isFirst);
-  }
+  void _ask() => askSparky(context, GithubRepoStrings.prompt(_repo.fullName));
 
   Future<void> _pickBranch() async {
     final picked = await showBranchPicker(
@@ -154,10 +149,7 @@ class _GithubRepoScreenState extends State<GithubRepoScreen>
         IconButton(
           tooltip: GithubRepoStrings.share,
           icon: const AppIcon(AppIcons.openExternal, size: AppIconSize.lg),
-          onPressed: () => ghVisit(
-            context,
-            r.url.isEmpty ? _ref.url : r.url,
-          ),
+          onPressed: () => ghVisit(context, r.url.isEmpty ? _ref.url : r.url),
         ),
       ],
       bottom: TabBar(
@@ -208,9 +200,7 @@ class _GithubRepoScreenState extends State<GithubRepoScreen>
           const SizedBox(height: AppSpacing.md),
           GithubTreeCard(
             key: key,
-            source: _branch == null
-                ? _ref.full
-                : '${_ref.full}@$_branch',
+            source: _branch == null ? _ref.full : '${_ref.full}@$_branch',
           ),
         ];
       case 2:
