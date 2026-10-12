@@ -49,14 +49,12 @@ class _MessageEditorState extends State<MessageEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final t = context.text;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: p.borderStrong, width: AppBorder.thin),
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadius.sheet),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -82,7 +80,7 @@ class _MessageEditorState extends State<MessageEditor> {
             autofocus: true,
             minLines: 1,
             maxLines: ShareSizes.editorMaxLines,
-            style: t.body,
+            style: Theme.of(context).textTheme.bodyLarge,
             textCapitalization: TextCapitalization.sentences,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
@@ -120,7 +118,7 @@ class _MessageEditorState extends State<MessageEditor> {
   }
 }
 
-/// Bordered pill; [filled] for the main action.
+/// Text button, or the filled pill for the main action.
 class _Button extends StatelessWidget {
   const _Button({required this.label, this.onTap, this.filled = false});
 
@@ -130,35 +128,17 @@ class _Button extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final enabled = onTap != null;
-    final fill = filled && enabled ? p.textPrimary : Colors.transparent;
-    final color = !enabled
-        ? p.textTertiary
-        : filled
-        ? p.textInverse
-        : p.textPrimary;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppDurations.fast,
-        height: ShareSizes.editorButtonHeight,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: enabled
-                ? (filled ? p.textPrimary : p.borderStrong)
-                : p.border,
-            width: AppBorder.thin,
-          ),
-        ),
-        child: Text(label, style: context.text.caption.copyWith(color: color)),
+    final style = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(
+        Size(0, ShareSizes.editorButtonHeight),
+      ),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       ),
     );
+    return filled
+        ? FilledButton(style: style, onPressed: onTap, child: Text(label))
+        : TextButton(style: style, onPressed: onTap, child: Text(label));
   }
 }
 
@@ -180,7 +160,7 @@ class _FileChip extends StatelessWidget {
       padding: const EdgeInsets.only(left: AppSpacing.sm),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: p.border, width: AppBorder.thin),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -196,7 +176,9 @@ class _FileChip extends StatelessWidget {
               file.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.text.caption.copyWith(color: p.textSecondary),
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium!.copyWith(color: p.textSecondary),
             ),
           ),
           GestureDetector(

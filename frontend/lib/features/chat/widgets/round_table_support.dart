@@ -29,17 +29,15 @@ class WhoAgreedToggle extends StatelessWidget {
         ),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: on ? p.textPrimary : null,
+          color: on
+              ? Theme.of(context).colorScheme.secondaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: on ? p.textPrimary : p.border,
-            width: AppBorder.thin,
-          ),
         ),
         child: Text(
           TableSupportStrings.toggle,
-          style: context.text.caption.copyWith(
-            color: on ? p.textInverse : p.textSecondary,
+          style: Theme.of(context).textTheme.labelMedium!.copyWith(
+            color: on ? p.textPrimary : p.textSecondary,
           ),
         ),
       ),

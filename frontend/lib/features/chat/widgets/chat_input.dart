@@ -845,7 +845,8 @@ class _DocHint extends StatelessWidget {
   }
 }
 
-/// LENGTH  SHORT · STANDARD · LONG, shown while DOC is on.
+/// LENGTH label and an M3 segmented button (short, standard, long), shown
+/// while DOC is on.
 class _DocLengthRow extends StatelessWidget {
   const _DocLengthRow({required this.value, required this.onPick});
 
@@ -854,7 +855,6 @@ class _DocLengthRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final t = context.text;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -868,27 +868,28 @@ class _DocLengthRow extends StatelessWidget {
         child: Row(
           children: [
             Text(DocStrings.lengthLabel, style: t.caption),
-            const SizedBox(width: AppSpacing.sm),
-            for (final (id, label) in DocStrings.lengths)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  Haptics.tap();
-                  onPick(id);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  child: Text(
-                    label,
-                    style: t.caption.copyWith(
-                      color: id == value ? p.accent : p.textTertiary,
-                    ),
-                  ),
-                ),
+            const SizedBox(width: AppSpacing.md),
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                textStyle: Theme.of(context).textTheme.labelMedium,
+                selectedBackgroundColor: Theme.of(
+                  context,
+                ).colorScheme.secondaryContainer,
+                selectedForegroundColor: context.palette.textPrimary,
               ),
+              segments: [
+                for (final (id, label) in DocStrings.lengths)
+                  ButtonSegment(value: id, label: Text(sentenceCase(label))),
+              ],
+              selected: {value},
+              onSelectionChanged: (v) {
+                Haptics.tap();
+                onPick(v.first);
+              },
+            ),
           ],
         ),
       ),

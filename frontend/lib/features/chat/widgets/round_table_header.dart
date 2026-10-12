@@ -56,8 +56,8 @@ class _RoundTableHeaderState extends State<RoundTableHeader> {
     final tone = table.disputed ? p.accent : p.textSecondary;
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: p.border, width: AppBorder.thin),
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -124,11 +124,6 @@ class _RoundTableHeaderState extends State<RoundTableHeader> {
         AppSpacing.md,
         AppSpacing.md,
         AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: p.border, width: AppBorder.thin),
-        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -265,7 +260,9 @@ class _DraftState extends State<_Draft> {
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
               child: Text(
                 _open ? TableWaitStrings.showLess : TableWaitStrings.showAll,
-                style: context.text.caption.copyWith(color: p.textTertiary),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium!.copyWith(color: p.textSecondary),
               ),
             ),
           ),
