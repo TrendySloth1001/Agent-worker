@@ -21,6 +21,7 @@ class GhPillSearch extends StatefulWidget {
     this.autofocus = false,
     this.controller,
     this.debounce = GithubHubDurations.debounce,
+    this.onFocusChange,
   });
 
   final String hint;
@@ -30,6 +31,9 @@ class GhPillSearch extends StatefulWidget {
   /// Lets the screen clear the field (e.g. from an empty state).
   final TextEditingController? controller;
   final Duration debounce;
+
+  /// Lets the screen make room for results while the keyboard is up.
+  final ValueChanged<bool>? onFocusChange;
 
   @override
   State<GhPillSearch> createState() => _GhPillSearchState();
@@ -59,7 +63,10 @@ class _GhPillSearchState extends State<GhPillSearch> {
     super.dispose();
   }
 
-  void _onFocus() => setState(() {});
+  void _onFocus() {
+    setState(() {});
+    widget.onFocusChange?.call(_focus.hasFocus);
+  }
 
   void _onText() {
     if (!mounted) return;

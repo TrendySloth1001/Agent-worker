@@ -43,6 +43,10 @@ class _GithubScreenState extends State<GithubScreen>
   final _scroll = ScrollController();
   final _search = TextEditingController();
 
+  /// While the repo search has focus the profile header steps aside, so
+  /// the results sit above the keyboard.
+  bool _searching = false;
+
   @override
   void initState() {
     super.initState();
@@ -205,31 +209,33 @@ class _GithubScreenState extends State<GithubScreen>
             ],
           ),
           slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                AppSpacing.sm,
-                AppSpacing.screenPadding,
-                0,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: _Header(
-                  connection: _conn.github!,
-                  me: _hub.me,
-                  onOpen: () {
-                    final url = _hub.me?.url;
-                    ghVisit(
-                      context,
-                      url == null || url.isEmpty
-                          ? ConnectStrings.profileUrl(_conn.github!.login)
-                          : url,
-                    );
-                  },
-                  onReconnect: _reconnect,
-                  onDisconnect: _disconnect,
+            if (!_searching)
+              SliverPadding(
+                key: const ValueKey('gh-header'),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenPadding,
+                  AppSpacing.sm,
+                  AppSpacing.screenPadding,
+                  0,
+                ),
+                sliver: SliverToBoxAdapter(
+                  child: _Header(
+                    connection: _conn.github!,
+                    me: _hub.me,
+                    onOpen: () {
+                      final url = _hub.me?.url;
+                      ghVisit(
+                        context,
+                        url == null || url.isEmpty
+                            ? ConnectStrings.profileUrl(_conn.github!.login)
+                            : url,
+                      );
+                    },
+                    onReconnect: _reconnect,
+                    onDisconnect: _disconnect,
+                  ),
                 ),
               ),
-            ),
             ..._tab(context),
           ],
         );
@@ -386,6 +392,7 @@ class _GithubScreenState extends State<GithubScreen>
     }
     return [
       SliverPadding(
+        key: const ValueKey('gh-repo-controls'),
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.screenPadding,
           AppSpacing.lg,
@@ -393,7 +400,21 @@ class _GithubScreenState extends State<GithubScreen>
           AppSpacing.sm,
         ),
         sliver: SliverToBoxAdapter(
-          child: _RepoControls(hub: h, search: _search),
+          child: _RepoControls(
+            hub: h,
+            search: _search,
+            onFocusChange: (focused) {
+              if (focused == _searching) return;
+              setState(() => _searching = focused);
+              if (focused && _scroll.hasClients) {
+                _scroll.animateTo(
+                  0,
+                  duration: GithubHubDurations.focus,
+                  curve: Curves.easeOutCubic,
+                );
+              }
+            },
+          ),
         ),
       ),
       if (message != null)
@@ -571,10 +592,15 @@ class _Header extends StatelessWidget {
 
 /// Search, sort and filter of the repository list.
 class _RepoControls extends StatelessWidget {
-  const _RepoControls({required this.hub, required this.search});
+  const _RepoControls({
+    required this.hub,
+    required this.search,
+    this.onFocusChange,
+  });
 
   final GithubHubController hub;
   final TextEditingController search;
+  final ValueChanged<bool>? onFocusChange;
 
   static String _sortLabel(RepoSort s) => switch (s) {
     RepoSort.pushed => GithubHubStrings.sortPushed,
@@ -599,6 +625,7 @@ class _RepoControls extends StatelessWidget {
           hint: GithubHubStrings.filterRepos,
           controller: search,
           onChanged: hub.setQuery,
+          onFocusChange: onFocusChange,
         ),
         const SizedBox(height: AppSpacing.md),
         SingleChildScrollView(
