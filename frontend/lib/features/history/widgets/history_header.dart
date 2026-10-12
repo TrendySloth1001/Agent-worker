@@ -106,27 +106,36 @@ class HistoryHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Flexible(
-            child: Semantics(
-              header: true,
-              child: Text(
-                AppStrings.appName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.text.title.copyWith(
-                  fontVariations: const [FontVariation.weight(600)],
-                  letterSpacing: -0.3,
+          // The wordmark takes the free width, so the icons sit at the edge.
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      AppStrings.appName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.title.copyWith(
+                        fontVariations: const [FontVariation.weight(600)],
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: AppSpacing.xs),
+                Container(
+                  width: AppSizes.dot,
+                  height: AppSizes.dot,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: p.accent,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Container(
-            width: AppSizes.dot,
-            height: AppSizes.dot,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: p.accent),
-          ),
-          const Spacer(),
           SidebarIconButton(
             icon: HistoryIcons.search,
             label: HistoryStrings.search,
