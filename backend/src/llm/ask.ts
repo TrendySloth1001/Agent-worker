@@ -3,6 +3,7 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { recordUsage } from "../db/usage.js";
 import { noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
 import { applyCooldown, withSlot } from "./router.js";
+import { health } from "./health.js";
 
 export type AskOptions = {
   /** Whole-call budget, including the wait for a provider slot. */
@@ -55,6 +56,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
         recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
         if (modelId.endsWith(":free")) noteOpenRouterFreeRequest();
         clearCooldown(modelId);
+        health.success(modelId);
         return text;
       } catch (e) {
         const err = timedOut
@@ -66,7 +68,8 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
               : new UpstreamError(0, (e as Error).message ?? "unknown error");
         if (err instanceof UpstreamError) {
           recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: false, status: err.status || undefined, latencyMs: Date.now() - started, ttftMs: ttft, errorMessage: err.message });
-          applyCooldown(modelId, err);
+          // A caller-imposed (short) timeout says nothing about the model's health.
+          if (!timedOut) applyCooldown(modelId, err);
         }
         throw err;
       }
