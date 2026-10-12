@@ -56,7 +56,7 @@ export type StreamUsage = {
 /** `tokens` yields text deltas; `usage` is filled in as the stream progresses. */
 export type StreamHandle = { tokens: AsyncGenerator<string>; usage: StreamUsage };
 
-export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number };
+export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low" };
 
 export async function streamModel(id: string, messages: Message[], opts: StreamOptions): Promise<StreamHandle> {
   const separator = id.indexOf(":");
