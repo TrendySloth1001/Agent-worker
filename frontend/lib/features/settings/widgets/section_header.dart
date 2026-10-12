@@ -43,7 +43,20 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// Bordered flat surface shared by every card on the screen.
+/// Lets a parent that already draws the card surface (a settings group cell)
+/// ask [FlatCard]s below it to drop their own border and radius.
+class CardChrome extends InheritedWidget {
+  const CardChrome({super.key, required super.child});
+
+  static bool flat(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<CardChrome>() != null;
+
+  @override
+  bool updateShouldNotify(CardChrome oldWidget) => false;
+}
+
+/// Bordered flat surface shared by every card on the screen. Inside a
+/// [CardChrome] it is just padded content.
 class FlatCard extends StatelessWidget {
   const FlatCard({super.key, required this.child, this.onTap});
 
@@ -53,6 +66,7 @@ class FlatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final flat = CardChrome.flat(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -61,10 +75,12 @@ class FlatCard extends StatelessWidget {
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: p.border, width: AppBorder.thin),
-          ),
+          decoration: flat
+              ? null
+              : BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: p.border, width: AppBorder.thin),
+                ),
           child: child,
         ),
       ),

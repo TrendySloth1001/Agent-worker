@@ -1,33 +1,113 @@
 import 'package:hugeicons/hugeicons.dart';
 
-import 'app_icons.dart';
-
 /// Plain-language copy for the Settings screen.
 abstract final class SettingsStrings {
   static const searchHint = 'Search settings';
+  static const searchResults = 'Results';
+  static const resetKeywords = 'reset defaults restore';
   static const searchClear = 'Clear search';
   static const noResults = 'No settings match that. Try another word.';
 
-  // Groups: title (mono caption) and one-line helper.
-  static const youTitle = 'YOU';
-  static const youHelp = 'Tell sparky who you are so replies feel personal.';
-  static const repliesTitle = 'REPLIES';
-  static const repliesHelp = 'Pick how sparky should sound. Tap a style.';
-  static const privacyTitle = 'PRIVACY & MEMORY';
-  static const privacyHelp =
-      'What sparky remembers and what it may look at when it answers.';
-  static const appsTitle = 'CONNECTED APPS';
-  static const appsHelp = 'Link your accounts so sparky can use them.';
-  static const storageTitle = 'STORAGE';
-  static const storageHelp = 'Files and uploads you have shared with sparky.';
-  static const notificationsTitle = 'NOTIFICATIONS';
-  static const notificationsHelp =
-      'When sparky is allowed to get your attention.';
-  static const appearanceTitle = 'APPEARANCE';
-  static const appearanceHelp = 'Light or dark, text size and touch feedback.';
-  static const advancedTitle = 'ADVANCED';
-  static const advancedHelp = 'Models, modes, usage and server details.';
-  static const aboutTitle = 'ABOUT';
+  // Root screen
+  static const title = 'Settings';
+  static const accountFallback = 'Your profile';
+  static const accountHelp = 'Account, photo and sessions';
+
+  // Categories: title and the summary shown when nothing live is available.
+  static const catProfile = 'Profile & personalization';
+  static const catReplies = 'Replies & voice';
+  static const catPrivacy = 'Privacy & memory';
+  static const catSearch = 'Search & knowledge';
+  static const catApps = 'Connected apps';
+  static const catStorage = 'Storage';
+  static const catNotifications = 'Notifications';
+  static const catAppearance = 'Appearance';
+  static const catModels = 'Models & usage';
+  static const catTelemetry = 'Telemetry & analytics';
+  static const catServer = 'Server status';
+  static const catAbout = 'About sparky';
+
+  static const sumPrivacy = 'Memory and saved knowledge';
+  static const sumApps = 'GitHub, Google Drive, Google Photos';
+  static const sumStorage = 'Files and uploads you shared';
+  static const sumTelemetry = 'Owner only: model calls, tokens, latency';
+  static const sumNotSet = 'Not set';
+  static const on = 'On';
+  static const off = 'Off';
+  static const separator = ' \u00b7 ';
+
+  // Section headers on sub-pages
+  static const secAbout = 'About you';
+  static const secAccount = 'Account';
+  static const secStyle = 'Style';
+  static const secLanguage = 'Language & instructions';
+  static const secTyping = 'Typing & voice';
+  static const secMemory = 'Memory';
+  static const secDefaults = 'On by default in new chats';
+  static const secAccounts = 'Accounts';
+  static const secLinks = 'Links';
+  static const secTheme = 'Display';
+  static const secText = 'Text';
+  static const secFeedback = 'Feedback';
+  static const secModel = 'Which AI answers';
+  static const secUsage = 'Usage today';
+  static const secProviders = 'Providers and quotas';
+  static const secServices = 'Data and tools';
+  static const secHealth = 'Health';
+
+  // Sentence-case option labels
+  static const themeSystem = 'System';
+  static const themeLight = 'Light';
+  static const themeDark = 'Dark';
+  static const toneNone = 'No preference';
+  static const toneFriendly = 'Friendly';
+  static const toneProfessional = 'Professional';
+  static const toneCasual = 'Casual';
+  static const toneDirect = 'Direct';
+  static const toneEnthusiastic = 'Enthusiastic';
+  static const lengthConcise = 'Concise';
+  static const lengthBalanced = 'Balanced';
+  static const lengthDetailed = 'Detailed';
+  static const modeEngineer = 'Engineer';
+  static const modeDebug = 'Debug';
+  static const modeReview = 'Review';
+  static const modeArchitect = 'Architect';
+  static const modeExplain = 'Explain';
+  static const toneHelp = 'The voice sparky answers in.';
+  static const lengthHelp = 'How much sparky writes back.';
+  static const defaultReply = 'Default';
+  static const textPreview =
+      'The quick brown fox jumps over the lazy dog. Sparky replies will look '
+      'like this.';
+  static const textSizeTitle = 'Text size';
+  static const browserTitle = 'Browser';
+  static const systemDefault = 'System default';
+  static const soon = 'Coming soon';
+  static const connect = 'Tap to connect';
+  static const waiting = 'Waiting for approval';
+  static const unavailable = 'Unavailable';
+  static const online = 'Online';
+  static const offline = 'Offline';
+  static const degraded = 'Degraded';
+  static const checking = 'Checking';
+  static const backend = 'Backend';
+  static const status = 'Status';
+  static const database = 'Database';
+  static const embeddings = 'Embeddings';
+  static const unknown = 'Unknown';
+  static const providersActive = 'providers active';
+  static const resetTitle = 'Reset to defaults';
+  static const saveFirstProfile = 'Add your name';
+
+  static const accountTitle = 'Account and sessions';
+  static const replyStyleTitle = 'Reply style';
+  static const knowledgeTitle = 'Saved knowledge';
+  static const knowledgeHelp = 'Notes and files sparky can check first.';
+  static const searchService = 'Web search';
+  static const sumWeb = 'Web';
+  static const sumKnowledge = 'Knowledge';
+  static const sumRoundTable = 'Round table';
+  static const sumAllOff = 'All off';
 
   // You
   static const nameLabel = 'Your name';
@@ -39,12 +119,8 @@ abstract final class SettingsStrings {
   static const languageLabel = 'Language of replies';
   static const languageHint = 'e.g. English, Español, Deutsch';
   static const instructionsLabel = 'Anything else sparky should know';
-  static const customise = 'Customise';
-  static const customiseHelp = 'Fine control over tone and length.';
   static const toneLabel = 'Tone';
   static const lengthLabel = 'How long replies are';
-  static const customStyle = 'Custom mix';
-  static const defaultStyle = 'Default style';
 
   // Memory and typing
   static const memoryLabel = 'Remember things about me';
@@ -95,7 +171,6 @@ abstract final class SettingsStrings {
   static const modelsLoading = 'Loading models...';
   static const modelsFailed = 'Could not load the model list.';
   static const modeTitle = 'Working mode';
-  static const modeHelp = 'Changes what sparky focuses on in chat.';
 
   // Reset
   static const reset = 'Reset to defaults';
@@ -111,25 +186,39 @@ abstract final class SettingsStrings {
 
 abstract final class SettingsIcons {
   static const textSize = HugeIcons.strokeRoundedTextFont;
+  static const theme = HugeIcons.strokeRoundedPaintBoard;
+  static const tone = HugeIcons.strokeRoundedSmile;
+  static const length = HugeIcons.strokeRoundedTextAlignLeft;
+  static const account = HugeIcons.strokeRoundedUserCircle;
+  static const listModels = HugeIcons.strokeRoundedListView;
   static const privacy = HugeIcons.strokeRoundedSecurityLock;
   static const notifications = HugeIcons.strokeRoundedNotification01;
-  static const advanced = HugeIcons.strokeRoundedSettings02;
   static const reset = HugeIcons.strokeRoundedArrowReloadHorizontal;
   static const apps = HugeIcons.strokeRoundedPlug01;
-  static const storage = HugeIcons.strokeRoundedHardDrive;
   static const modelAuto = HugeIcons.strokeRoundedRocket01;
   static const modelFast = HugeIcons.strokeRoundedFlash;
   static const modelSmart = HugeIcons.strokeRoundedBrain02;
   static const presetTeacher = HugeIcons.strokeRoundedTeacher;
   static const presetFun = HugeIcons.strokeRoundedHappy;
-  static const customise = HugeIcons.strokeRoundedSlidersHorizontal;
-  static const you = AppIcons.personalization;
 }
 
 abstract final class SettingsSizes {
   /// Minimum height of any tappable row or card (Android guideline: 48dp).
   static const touchTarget = 56.0;
-  static const presetIcon = 40.0;
+
+  /// Android 16 style grouping: big outer corners, small inner ones, a thin
+  /// gap between cells.
+  static const groupOuterRadius = 28.0;
+  static const groupInnerRadius = 6.0;
+  static const groupGap = 2.0;
+  static const iconCircle = 40.0;
+  static const iconGlyph = 22.0;
+  static const avatar = 56.0;
+  static const groupSpacing = 20.0;
+  static const headerInset = 16.0;
+  static const pageTransition = Duration(milliseconds: 300);
+  static const pageShift = 30.0;
+  static const highlightMs = Duration(milliseconds: 1400);
 
   /// Model ids behind the "Fastest" and "Smartest" presets.
   static const fastModelId = 'groq:openai/gpt-oss-20b';
