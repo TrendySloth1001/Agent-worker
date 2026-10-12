@@ -118,13 +118,6 @@ abstract final class AssistSizes {
   static const fieldMaxLines = 4;
   static const mutedAlpha = 0.7;
 
-  // Scrim: clear at the top, darker towards the pill (like Gemini's).
-  static const scrimStops = [0.0, 0.45, 1.0];
-  static const scrimMidLight = 0.12;
-  static const scrimEndLight = 0.45;
-  static const scrimMidDark = 0.3;
-  static const scrimEndDark = 0.8;
-
   static const shadowLight = 0.14;
   static const shadowDark = 0.5;
   static const shadowBlur = 24.0;

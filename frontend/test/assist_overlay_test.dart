@@ -396,6 +396,42 @@ void main() {
       await _golden(tester, 'goldens/assist_answer_$theme.png');
     });
 
+    testWidgets('backdrop: open wave mid-way ($theme)', (tester) async {
+      _phone(tester);
+      final h = _Harness(settings);
+      h.controller.reset(const AssistShow(source: AssistSource.session));
+      await tester.pumpWidget(h.app(dark: dark));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 220));
+      await _golden(tester, 'goldens/assist_backdrop_wave_$theme.png');
+    });
+
+    testWidgets('backdrop: idle glow ($theme)', (tester) async {
+      _phone(tester);
+      final h = _Harness(settings);
+      h.controller.reset(const AssistShow(source: AssistSource.session));
+      await tester.pumpWidget(h.app(dark: dark));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 2400));
+      await _golden(tester, 'goldens/assist_backdrop_idle_$theme.png');
+    });
+
+    testWidgets('backdrop: thinking shimmer ($theme)', (tester) async {
+      _phone(tester);
+      final h = _Harness(settings);
+      h.controller.reset(const AssistShow(source: AssistSource.session));
+      await tester.pumpWidget(h.app(dark: dark));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.enterText(find.byType(TextField), 'What is on my plate?');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      // Half way through a shimmer pass (t = 2.25 s).
+      await tester.pump(const Duration(milliseconds: 750));
+      await _golden(tester, 'goldens/assist_backdrop_thinking_$theme.png');
+      h.controller.stop();
+    });
+
     testWidgets('signed out ($theme)', (tester) async {
       _phone(tester);
       auth.status = AuthStatus.signedOut;

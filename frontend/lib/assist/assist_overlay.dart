@@ -8,6 +8,7 @@ import '../core/constants/voice.dart';
 import '../core/haptics.dart';
 import '../core/theme/app_palette.dart';
 import '../core/widgets/app_icon.dart';
+import '../core/widgets/dot_matrix_backdrop.dart';
 import '../core/widgets/icon_label.dart';
 import '../core/widgets/m3_kit_extras.dart';
 import '../data/chat_message.dart';
@@ -201,7 +202,6 @@ class _AssistOverlayState extends State<AssistOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -215,26 +215,14 @@ class _AssistOverlayState extends State<AssistOverlay> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _c.close,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: AssistSizes.scrimStops,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(
-                          alpha: p.isDark
-                              ? AssistSizes.scrimMidDark
-                              : AssistSizes.scrimMidLight,
-                        ),
-                        Colors.black.withValues(
-                          alpha: p.isDark
-                              ? AssistSizes.scrimEndDark
-                              : AssistSizes.scrimEndLight,
-                        ),
-                      ],
-                    ),
+                child: ListenableBuilder(
+                  listenable: Listenable.merge([_c, ?widget.voice]),
+                  builder: (context, _) => DotMatrixBackdrop(
+                    mode: _backdropMode(),
+                    wave: _c.generation,
+                    level: widget.voice == null
+                        ? null
+                        : () => widget.voice!.level,
                   ),
                 ),
               ),
@@ -255,6 +243,18 @@ class _AssistOverlayState extends State<AssistOverlay> {
         ),
       ),
     );
+  }
+
+  /// The backdrop follows the overlay: listening, thinking (no words yet),
+  /// streaming, else a calm idle glow.
+  DotMatrixMode _backdropMode() {
+    if (widget.voice?.listening ?? false) return DotMatrixMode.listening;
+    final last = _c.messages.lastOrNull;
+    if (_c.waitingUploads || (_c.streaming && last!.content.isEmpty)) {
+      return DotMatrixMode.thinking;
+    }
+    if (_c.streaming) return DotMatrixMode.streaming;
+    return DotMatrixMode.idle;
   }
 
   Widget _content(BuildContext context) {
