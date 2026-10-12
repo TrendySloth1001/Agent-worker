@@ -51,3 +51,6 @@ env.json
 /android/key.properties
 /android/app/upload-keystore.jks
 test/failures/
+android/app/src/debug/
+android/app/src/profile/
+README.md

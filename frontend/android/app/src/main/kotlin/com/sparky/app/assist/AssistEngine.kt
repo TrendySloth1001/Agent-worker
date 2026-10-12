@@ -116,8 +116,28 @@ object AssistEngine {
                 SparkySession.finishCurrent()
             }
             AssistProtocol.ASSISTANT_SETTINGS -> result.success(AssistantSetup.openAssistantSettings(context))
+            AssistProtocol.ALLOW_MIC -> {
+                result.success(openAppForMic(context))
+                activity?.get()?.close()
+                SparkySession.finishCurrent()
+            }
             else -> result.notImplemented()
         }
+    }
+
+    /** Opens the app, which asks for the microphone in a normal window. */
+    private fun openAppForMic(context: Context): Boolean = try {
+        context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .setAction(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(AssistProtocol.EXTRA_REQUEST_MIC, true),
+        )
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "could not open the app for the microphone", e)
+        false
     }
 
     /** Opens the app, optionally on a sparky:// link (e.g. a conversation). */

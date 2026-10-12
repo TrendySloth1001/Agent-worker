@@ -19,6 +19,13 @@ object AssistProtocol {
     const val SCREEN_CONTEXT = "screenContext"
     const val OPEN_APP = "openApp"
     const val ASSISTANT_SETTINGS = "assistantSettings"
+    // Microphone not allowed yet: Android closes the overlay when it shows its
+    // permission dialog, so the app asks instead.
+    const val ALLOW_MIC = "allowMic"
+
+    /** Intent extra: MainActivity asks for the microphone permission. */
+    const val EXTRA_REQUEST_MIC = "com.sparky.app.extra.REQUEST_MIC"
+    const val REQUEST_MIC_CODE = 4107
 
     // Arguments and map keys
     const val SOURCE = "source"

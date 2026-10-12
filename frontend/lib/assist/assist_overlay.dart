@@ -130,27 +130,31 @@ class _AssistOverlayState extends State<AssistOverlay> {
     await voice.start(_onVoiceText);
   }
 
+  /// The overlay never asks Android for the microphone itself: the system
+  /// closes the overlay when its permission dialog appears. Until it is
+  /// allowed, offer to open sparky, which asks in a normal window.
   Future<bool> _micRationale(VoiceController voice) async {
     final state = await voice.permissionState();
-    if (state != VoicePermissionState.denied || !mounted) return true;
-    final ok = await showDialog<bool>(
+    if (state == VoicePermissionState.granted || !mounted) return true;
+    final open = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text(VoiceStrings.rationaleTitle),
-        content: const Text(VoiceStrings.rationaleBody),
+        title: const Text(AssistStrings.micTitle),
+        content: const Text(AssistStrings.micBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text(VoiceStrings.rationaleNotNow),
+            child: const Text(AssistStrings.micNotNow),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(VoiceStrings.rationaleAllow),
+            child: const Text(AssistStrings.micOpen),
           ),
         ],
       ),
     );
-    return ok ?? false;
+    if (open == true) await _c.bridge.allowMicInApp();
+    return false;
   }
 
   void _onVoiceText(String text, bool isFinal) {

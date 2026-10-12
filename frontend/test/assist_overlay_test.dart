@@ -61,6 +61,11 @@ class FakeBridge implements AssistBridge {
 
   @override
   Future<void> assistantSettings() async => settingsOpened++;
+
+  int micHandoffs = 0;
+
+  @override
+  Future<void> allowMicInApp() async => micHandoffs++;
 }
 
 class FakeChat extends ChatApi {
@@ -160,6 +165,20 @@ class _Engine implements VoiceEngine {
   Future<void> cancel() async {}
   @override
   void dispose() {}
+}
+
+class _Denied implements VoicePermission {
+  int requests = 0;
+  @override
+  Future<VoicePermissionState> check() async => VoicePermissionState.denied;
+  @override
+  Future<VoicePermissionState> request() async {
+    requests++;
+    return VoicePermissionState.denied;
+  }
+
+  @override
+  Future<void> openSettings() async {}
 }
 
 class _Granted implements VoicePermission {
@@ -294,7 +313,11 @@ class _BehindApp extends StatelessWidget {
 }
 
 class _Harness {
-  _Harness(this.settings);
+  _Harness(this.settings, {VoicePermission? permission})
+    : voice = VoiceController(
+        onDevice: _Engine(),
+        permission: permission ?? _Granted(),
+      );
 
   final SettingsController settings;
   final bridge = FakeBridge();
@@ -311,7 +334,7 @@ class _Harness {
   /// What the document picker returns next.
   List<PickedFile> documents = const [];
   late final attach = AttachPicker(documents: () async => documents);
-  final voice = VoiceController(onDevice: _Engine(), permission: _Granted());
+  final VoiceController voice;
 
   Widget app({required bool dark}) => AppScope(
     settings: settings,
@@ -653,6 +676,25 @@ void main() {
     });
     expect(h.chat.requests.last.history.single.content, 'what is this?');
     h.controller.stop();
+  });
+
+  testWidgets('mic not allowed: offers to open sparky, never asks here', (
+    tester,
+  ) async {
+    _phone(tester);
+    final denied = _Denied();
+    final h = _Harness(settings, permission: denied);
+    h.controller.reset(const AssistShow(source: AssistSource.tryIt));
+    await tester.pumpWidget(h.app(dark: false));
+    await tester.tap(find.bySemanticsLabel(AssistStrings.mic));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text(AssistStrings.micTitle), findsOneWidget);
+    await tester.tap(find.text(AssistStrings.micOpen));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(h.bridge.micHandoffs, 1);
+    expect(denied.requests, 0);
   });
 
   testWidgets('no session: no screen chip', (tester) async {

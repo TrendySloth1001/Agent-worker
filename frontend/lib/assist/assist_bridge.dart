@@ -64,6 +64,9 @@ abstract class AssistBridge {
 
   /// Opens the system's assistant settings (screenshot / screen text toggles).
   Future<void> assistantSettings();
+
+  /// Opens the app so it can ask for the microphone, and closes the overlay.
+  Future<void> allowMicInApp();
 }
 
 class ChannelAssistBridge implements AssistBridge {
@@ -97,6 +100,9 @@ class ChannelAssistBridge implements AssistBridge {
 
   @override
   Future<void> close() => _call(AssistChannel.close);
+
+  @override
+  Future<void> allowMicInApp() => _call(AssistChannel.allowMic);
 
   @override
   Future<ScreenContext?> screenContext() async {

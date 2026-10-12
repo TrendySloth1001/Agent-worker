@@ -1,5 +1,11 @@
 package com.sparky.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.sparky.app.assist.AssistProtocol
 import android.content.Intent
 import android.os.Bundle
 import androidx.credentials.ClearCredentialStateRequest
@@ -43,12 +49,43 @@ class MainActivity : FlutterActivity() {
         // Before super: Dart may ask for the initial link as soon as it runs.
         if (savedInstanceState == null) pendingLink = appLink(intent)
         super.onCreate(savedInstanceState)
+        maybeRequestMic(intent)
+    }
+
+    // The assistant overlay can't show Android's permission dialog (the system
+    // closes it), so it opens the app with this extra and the app asks.
+    private fun maybeRequestMic(intent: Intent?) {
+        if (intent?.getBooleanExtra(AssistProtocol.EXTRA_REQUEST_MIC, false) != true) return
+        intent.removeExtra(AssistProtocol.EXTRA_REQUEST_MIC)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, R.string.assistant_mic_ready, Toast.LENGTH_LONG).show()
+            return
+        }
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            AssistProtocol.REQUEST_MIC_CODE,
+        )
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != AssistProtocol.REQUEST_MIC_CODE) return
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        Toast.makeText(
+            this,
+            if (granted) R.string.assistant_mic_ready else R.string.assistant_mic_denied,
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     // singleTask: a sparky:// link while the app is alive lands here.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        maybeRequestMic(intent)
         val link = appLink(intent) ?: return
         val channel = linksChannel
         if (channel == null) pendingLink = link else channel.invokeMethod("onLink", link)

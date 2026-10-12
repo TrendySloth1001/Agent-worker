@@ -4,6 +4,14 @@ import 'app_sizes.dart';
 
 /// The assistant overlay (power-button hold) and Settings > Assistant.
 abstract final class AssistStrings {
+  // Microphone not allowed yet: Android closes the overlay when it shows its
+  // own permission dialog, so the app asks once instead.
+  static const micTitle = 'Turn on the microphone';
+  static const micBody =
+      'Android can\'t ask for the microphone over other apps. Open sparky '
+      'once to allow it, then voice works here too.';
+  static const micNotNow = 'Not now';
+  static const micOpen = 'Open sparky';
   // Overlay
   static const askHint = 'Ask sparky';
   static const attach = 'Add a photo';
@@ -188,6 +196,7 @@ abstract final class AssistChannel {
   static const screenContext = 'screenContext';
   static const openApp = 'openApp';
   static const assistantSettings = 'assistantSettings';
+  static const allowMic = 'allowMic';
 
   // Arguments and map keys
   static const source = 'source';

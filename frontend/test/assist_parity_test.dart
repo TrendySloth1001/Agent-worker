@@ -110,6 +110,9 @@ class _Bridge implements AssistBridge {
   Future<bool> openApp([String? link]) async => true;
   @override
   Future<void> assistantSettings() async {}
+
+  @override
+  Future<void> allowMicInApp() async {}
 }
 
 class _Docs extends DocsApi {

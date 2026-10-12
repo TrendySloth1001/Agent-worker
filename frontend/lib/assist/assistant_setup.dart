@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/constants/assist.dart';
+import '../features/chat/voice/voice_permission.dart';
 
 /// Whether sparky is the default digital assistant, and the system's
 /// screen-context switches (null when the phone does not say).
@@ -54,7 +55,16 @@ class AssistantSetup {
 
   /// Asks to become the assistant: 'granted', 'settings' (the system page
   /// opened instead) or 'failed'.
-  Future<String> request() => _string(AssistSetupChannel.request);
+  /// Also asks for the microphone here, in the app: the overlay can't show
+  /// Android's permission dialog without being closed by the system.
+  Future<String> request() async {
+    if (supported) {
+      try {
+        await const SystemVoicePermission().request();
+      } catch (_) {}
+    }
+    return _string(AssistSetupChannel.request);
+  }
 
   Future<void> openSettings() => _string(AssistSetupChannel.openSettings);
 
