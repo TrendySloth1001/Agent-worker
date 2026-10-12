@@ -54,11 +54,11 @@ async function askModel(model: string, messages: Message[]): Promise<string> {
 }
 
 /**
- * Whether this turn needs the web, and what to search for. Explicit requests
- * and clearly time-sensitive questions search without asking a model;
- * everything else is decided by a small fast model. Never throws.
+ * The decision when no model is needed: explicit asks, time-sensitive questions
+ * and anything the local classifier is sure about. Null means "uncertain": a
+ * model (the turn preflight, or [decideSearch]) has to decide.
  */
-export async function decideSearch(question: string, previous: string, intent?: IntentResult): Promise<SearchDecision> {
+export function decideSearchLocal(question: string, intent?: IntentResult): SearchDecision | null {
   const q = question.trim();
   if (!q) return { search: false, query: "", reason: "none" };
   if (EXPLICIT.test(q)) return { search: true, query: q.slice(0, 200), reason: "explicit" };
@@ -70,6 +70,18 @@ export async function decideSearch(question: string, previous: string, intent?: 
   const verdict = webVerdict(intent ?? classifyIntent(q));
   if (verdict === "skip") return { search: false, query: "", reason: "intent" };
   if (verdict === "search" && !ownData) return { search: true, query: q.slice(0, 200), reason: "intent" };
+  return null;
+}
+
+/**
+ * Whether this turn needs the web, and what to search for. Explicit requests
+ * and clearly time-sensitive questions search without asking a model;
+ * everything else is decided by a small fast model. Never throws.
+ */
+export async function decideSearch(question: string, previous: string, intent?: IntentResult): Promise<SearchDecision> {
+  const q = question.trim();
+  const local = decideSearchLocal(q, intent);
+  if (local) return local;
   const key = `${previous.slice(-200)}|${q}`.toLowerCase();
   const hit = cache.get(key);
   if (hit) return hit;

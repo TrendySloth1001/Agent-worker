@@ -553,3 +553,13 @@ model Memory {
   @@index([userId, updatedAt(sort: Desc)])
   @@map("memories")
 }
+
+/// Shared web-search cache (all users): provider results keyed by provider, freshness class and normalised query, with a TTL.
+model WebCache {
+  key       String   @id
+  payload   Json
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("web_cache")
+}

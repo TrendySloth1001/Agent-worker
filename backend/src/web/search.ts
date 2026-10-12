@@ -12,10 +12,10 @@ export { researchWeb } from "./pipeline.js";
 
 /**
  * Single-angle search for an already focused query (Round Table seats):
- * no query rewriting, one query, a couple of pages read.
+ * no query rewriting, one query, one page read.
  */
 export function webSearch(query: string, signal?: AbortSignal): Promise<WebResult[]> {
-  return researchWeb({ question: query, focused: query, signal, maxQueries: 1, fetchTop: 2 });
+  return researchWeb({ question: query, focused: query, signal, maxQueries: 1, fetchTop: 1 });
 }
 
 /** Reads one URL: the local readability fetch first, Ollama's fetch as a fallback for blocked or script-rendered pages. */

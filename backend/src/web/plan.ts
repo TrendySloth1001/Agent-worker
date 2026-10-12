@@ -68,8 +68,24 @@ export function heuristicQueries(question: string, ctx: PlanContext = {}, now = 
   q = q.slice(0, MAX_QUERY);
   const queries = [q];
   const fresh = classifyFreshness(q);
-  if (fresh !== "evergreen" && !/\b20\d\d\b/.test(q) && words.length <= 10) queries.push(`${q} ${now.getFullYear()}`);
-  return dedupeQueries(queries);
+  // One query by default (every extra query is another round of provider calls); a second only for comparisons and multi-entity questions.
+  if (isComparison(q)) queries.push(fresh !== "evergreen" && !/\b20\d\d\b/.test(q) ? `${q} ${now.getFullYear()}` : `${q} comparison`);
+  return dedupeQueries(queries, MAX_QUERIES);
+}
+
+/** "A vs B", "compare A and B", "difference between A and B", "A or B?": worth a second angle. */
+export function isComparison(text: string): boolean {
+  return /\b(vs\.?|versus|compare[ds]?|comparison|difference between|differences between|better than|alternatives? to|pros and cons)\b/i.test(text) || /\b(?:which|what) (?:is|are) (?:better|best)\b.{0,60}\bor\b/i.test(text);
+}
+
+const MAX_QUERIES = 2;
+
+/** A plan from queries the turn preflight already wrote: no model call, entity names quoted like any other plan. */
+export function planFromPreflight(question: string, queries: string[], fresh: Freshness | null | undefined): SearchPlan {
+  const cleaned = dedupeQueries(queries, isComparison(question) ? MAX_QUERIES : 1);
+  const entities = extractEntities(`${cleaned.join(" ")} ${question}`);
+  const qs = dedupeQueries(cleaned.map((q) => quoteNames(q, entities)), MAX_QUERIES);
+  return { queries: qs, fresh: fresh ?? classifyFreshness(`${cleaned.join(" ")} ${question}`), intents: detectIntents(`${cleaned.join(" ")} ${question}`), via: "model" };
 }
 
 const norm = (q: string) => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -88,7 +104,7 @@ export function dedupeQueries(qs: string[], max = 3): string[] {
 
 const PROMPT = `You rewrite a chat message into web search queries.
 Return only JSON: {"queries": ["..."], "fresh": "breaking" | "recent" | "evergreen"}
-- 1 to 3 queries, each 3-10 words, keyword style, no quotes or operators, no filler.
+- Exactly 1 query (3-10 words, keyword style, no quotes or operators, no filler); 2 only when comparing several things.
 - Resolve pronouns and follow-ups using the earlier messages so each query stands alone.
 - The first query is the main one; extra queries cover a different angle or wording.
 - fresh: "breaking" for news in the last days, "recent" if facts change over months (versions, prices, releases), else "evergreen".`;
@@ -110,6 +126,8 @@ export function needsModel(question: string, ctx: PlanContext): boolean {
   const q = clean(question);
   const words = q.split(/\s+/).length;
   if (q.length > 160) return true;
+  // The turn's standalone question already resolved the follow-up: the heuristic is enough.
+  if (ctx.standalone) return false;
   return (!!ctx.previousUser || !!ctx.topics?.length) && (words < 4 || (words < 9 && FOLLOW_UP.test(q)));
 }
 
@@ -155,7 +173,7 @@ async function planSearchInner(question: string, ctx: PlanContext, signal?: Abor
       const raw = await ask(model, messages, { timeoutMs: PLAN_MS, maxTokens: 600, signal, purpose: "search-plan" });
       const plan = parsePlan(raw);
       if (plan) {
-        const queries = dedupeQueries(plan.queries);
+        const queries = dedupeQueries(plan.queries, isComparison(question) ? MAX_QUERIES : 1);
         const f = plan.fresh ?? fresh;
         return { queries, fresh: f, intents: detectIntents(`${queries.join(" ")} ${question}`), via: "model" };
       }
