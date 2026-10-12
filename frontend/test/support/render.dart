@@ -2,6 +2,8 @@ import 'package:app/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'shot.dart';
+
 /// The theme/scale matrix of the render tests: 360dp wide, light and dark,
 /// plus a 1.3 text scale.
 final renderCases = <(String, ThemeData, double)>[
@@ -35,6 +37,7 @@ Future<void> pumpScreen(
   await tester.pumpWidget(wrap == null ? app : wrap(app));
   await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 400));
+  await autoShot(tester);
 }
 
 /// Drags the first scroll view through its whole length; overflows throw.

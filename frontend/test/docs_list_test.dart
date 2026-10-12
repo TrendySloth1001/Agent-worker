@@ -58,8 +58,14 @@ void main() {
         height: 800,
       );
       await shot(tester, 'docs_${name.replaceAll(' ', '_')}');
-      expect(find.textContaining('Writing 3/8', findRichText: true), findsOneWidget);
-      expect(find.textContaining('10 min ago', findRichText: true), findsOneWidget);
+      expect(
+        find.textContaining('Writing 3/8', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('10 min ago', findRichText: true),
+        findsOneWidget,
+      );
       expect(find.text(DocsCopy.untitled), findsOneWidget);
       // Rows keep their natural height: no stretched trailing chips.
       expect(

@@ -703,8 +703,7 @@ class _NoteRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$kind · ${DocStrings.sectionNo(number)} '
-                    '${heading}',
+                    '$kind · ${DocStrings.sectionNo(number)} $heading',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: t.meta.copyWith(

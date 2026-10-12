@@ -83,7 +83,7 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   String get _platform {
-    final name = defaultTargetPlatform.name.toUpperCase();
+    final name = _titleCase(defaultTargetPlatform.name);
     return name.isEmpty ? AboutStrings.fallbackPlatform : name;
   }
 
@@ -239,7 +239,10 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
-                  M3Tag(AboutStrings.versionLine(_version, _build, _platform)),
+                  M3Tag(
+                    AboutStrings.versionLine(_version, _build, _platform),
+                    mono: false,
+                  ),
                 ],
               ),
             ),
@@ -472,3 +475,6 @@ class AboutFooterLink extends StatelessWidget {
     );
   }
 }
+
+String _titleCase(String s) =>
+    s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);

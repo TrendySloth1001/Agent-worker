@@ -26,9 +26,9 @@ abstract final class AboutStrings {
   // Version line, e.g. VERSION 1.0.0 (1) · ANDROID.
   static const fallbackVersion = '1.0.0';
   static const fallbackBuild = '1';
-  static const fallbackPlatform = 'ANDROID';
+  static const fallbackPlatform = 'Android';
   static String versionLine(String version, String build, String platform) =>
-      'VERSION $version ($build) · $platform';
+      'Version $version ($build) · $platform';
   static String versionShort(String version, String build) =>
       '$version ($build)';
 

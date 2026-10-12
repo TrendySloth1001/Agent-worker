@@ -10,8 +10,8 @@ abstract final class StorageStrings {
   static const title = 'Storage';
   static const manage = 'MANAGE STORAGE';
   static const open = 'OPEN';
-  static const used = 'USED';
-  static const of = 'OF';
+  static const used = 'Used';
+  static const of = 'of';
   static const unlimited = 'UNLIMITED';
   static const full = 'Storage full';
   static const files = 'FILES';
@@ -37,8 +37,8 @@ abstract final class StorageStrings {
   static const noMatch = 'No matching files';
   static const loadFailed = 'Could not load your files.';
   static const loadMore = 'Load more';
-  static const processing = 'PROCESSING';
-  static const failed = 'FAILED';
+  static const processing = 'Processing';
+  static const failed = 'Failed';
   static const notInChat = 'Not in a chat';
   static const untitledChat = 'Untitled chat';
 
@@ -66,7 +66,7 @@ abstract final class StorageStrings {
       n == 1 ? 'Delete this file?' : 'Delete $n files?';
   static const deleteBody =
       'The files are removed from storage for good. Chats keep a '
-      '"FILE DELETED" placeholder where they were attached.';
+      '“FILE DELETED” placeholder where they were attached.';
   static String deleted(int n) =>
       n == 1 ? 'File deleted.' : '$n files deleted.';
   static const deleteFailed = 'Could not delete. Try again.';

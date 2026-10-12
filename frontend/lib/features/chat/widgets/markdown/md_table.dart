@@ -14,6 +14,8 @@ import 'md_table_cards.dart';
 import 'md_table_fullscreen.dart';
 import 'md_table_grid.dart';
 import 'md_table_model.dart';
+import '../../../../core/constants/app_fonts.dart';
+import '../../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
 
 /// A markdown table that adapts to the screen. It is measured, then drawn as
 /// a normal table (fits), a sideways scroller with a frozen first column, or
@@ -145,15 +147,26 @@ class _MdTableState extends State<MdTable> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: block.header.length > 1
-                            ? _ViewToggle(
-                                cards: cards,
-                                onChanged: (c) => setState(
-                                  () => _prefer = c
-                                      ? MdTableLayout.cards
-                                      : MdTableLayout.fit,
+                            ? FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: _ViewToggle(
+                                  cards: cards,
+                                  onChanged: (c) => setState(
+                                    () => _prefer = c
+                                        ? MdTableLayout.cards
+                                        : MdTableLayout.fit,
+                                  ),
                                 ),
                               )
-                            : Text(MdTableStrings.table, style: t.caption),
+                            : Text(
+                                sentenceCase(MdTableStrings.table),
+                                style: t.caption.copyWith(
+                                  fontFamily: AppFonts.body,
+                                  letterSpacing: 0,
+                                  fontSize: AppFontSize.label,
+                                ),
+                              ),
                       ),
                     ),
                     Semantics(
@@ -229,8 +242,11 @@ class _ViewToggle extends StatelessWidget {
               borderRadius: BorderRadius.circular(MdTableSizes.toggleRadius),
             ),
             child: Text(
-              label,
+              sentenceCase(label),
               style: context.text.caption.copyWith(
+                fontFamily: AppFonts.body,
+                letterSpacing: 0,
+                fontSize: AppFontSize.label,
                 color: on ? p.textPrimary : p.textTertiary,
               ),
             ),

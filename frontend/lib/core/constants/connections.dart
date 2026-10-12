@@ -74,7 +74,7 @@ abstract final class ConnectStrings {
   static const setupSteps = [
     'github.com → Settings → Developer settings → OAuth Apps → New OAuth App.',
     'Any name and homepage URL; the callback URL is not used (any https URL).',
-    'Check "Enable Device Flow", then Register application.',
+    'Check “Enable Device Flow”, then Register application.',
     'Copy the Client ID into backend/.env as GITHUB_OAUTH_CLIENT_ID and '
         'restart the backend.',
   ];

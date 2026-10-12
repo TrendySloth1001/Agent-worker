@@ -39,3 +39,18 @@ Future<void> shot(WidgetTester tester, String name) async {
     File('$shotDir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
   });
 }
+
+bool _fontsLoaded = false;
+
+/// Review screenshot named after the running test. Runs only with
+/// `flutter test --dart-define=SHOTS=true`, so the normal suite stays fast.
+Future<void> autoShot(WidgetTester tester, [String suffix = '']) async {
+  if (!const bool.fromEnvironment('SHOTS')) return;
+  if (!_fontsLoaded) {
+    await tester.runAsync(loadAppFonts);
+    _fontsLoaded = true;
+    await tester.pump();
+  }
+  final name = tester.testDescription.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+  await shot(tester, 'auto_$name$suffix');
+}

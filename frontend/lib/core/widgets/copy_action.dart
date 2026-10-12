@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../constants/app_fonts.dart';
 import '../constants/app_sizes.dart';
 import '../constants/app_strings.dart';
 import '../haptics.dart';
 import '../theme/app_palette.dart';
 import '../../core/constants/app_icons.dart';
 import 'app_icon.dart';
+import 'm3_kit_extras.dart' show sentenceCase;
 
 /// Tappable COPY label that flips to COPIED for a moment.
 class CopyAction extends StatefulWidget {
@@ -52,8 +54,15 @@ class _CopyActionState extends State<CopyAction> {
             ),
             const SizedBox(width: AppSpacing.xs),
             Text(
-              _copied ? AppStrings.copied : (widget.label ?? AppStrings.copy),
-              style: context.text.caption.copyWith(color: color),
+              sentenceCase(
+                _copied ? AppStrings.copied : (widget.label ?? AppStrings.copy),
+              ),
+              style: context.text.caption.copyWith(
+                fontFamily: AppFonts.body,
+                letterSpacing: 0,
+                fontSize: AppFontSize.label,
+                color: color,
+              ),
             ),
           ],
         ),

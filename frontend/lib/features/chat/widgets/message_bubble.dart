@@ -13,7 +13,9 @@ import '../../../core/widgets/appear.dart';
 import '../../../core/widgets/copy_action.dart';
 import '../../../data/chat_message.dart';
 import '../../../data/doc_models.dart';
+import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
 import '../../docs/doc_card.dart';
+import '../../docs/doc_text.dart';
 import '../chat_actions.dart';
 import '../share/reply_share.dart';
 import 'markdown/app_markdown.dart';
@@ -152,7 +154,7 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
-            Text(label.toUpperCase(), style: t.caption),
+            Text(label, style: t.meta),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -218,31 +220,28 @@ class MessageBubble extends StatelessWidget {
           // Wraps on narrow screens rather than overflowing.
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.lg,
             runSpacing: AppSpacing.xs,
             children: [
               if (!message.isError) ...[
                 CopyAction(text: message.content),
-                const SizedBox(width: AppSpacing.lg),
                 _TextAction(
                   icon: ShareIcons.share,
                   label: ShareStrings.share,
                   onTap: () =>
                       showReplyShare(context, message: message, model: label),
                 ),
-                const SizedBox(width: AppSpacing.lg),
                 _SaveAction(
                   content: message.content,
                   question: question,
                   conversationId: conversationId,
                 ),
-                const SizedBox(width: AppSpacing.lg),
                 if (onFork != null) ...[
                   _TextAction(
                     icon: AppIcons.fork,
                     label: LineageStrings.fork,
                     onTap: onFork!,
                   ),
-                  const SizedBox(width: AppSpacing.lg),
                 ],
               ],
               if (onRegenerate != null)
@@ -316,7 +315,10 @@ class _TextAction extends StatelessWidget {
           children: [
             AppIcon(icon, size: AppIconSize.sm, color: color),
             const SizedBox(width: AppSpacing.xs),
-            Text(label, style: context.text.caption.copyWith(color: color)),
+            Text(
+              sentenceCase(label),
+              style: context.text.meta.copyWith(color: color),
+            ),
           ],
         ),
       ),
@@ -397,11 +399,18 @@ class _SaveActionState extends State<_SaveAction> {
               color: color,
             ),
             const SizedBox(width: AppSpacing.xs),
-            Text(switch (_state) {
-              _SaveState.idle => AppStrings.saveToKnowledge,
-              _SaveState.saving => AppStrings.saving,
-              _SaveState.saved => AppStrings.saved,
-            }, style: context.text.caption.copyWith(color: color)),
+            Flexible(
+              child: Text(
+                sentenceCase(switch (_state) {
+                  _SaveState.idle => AppStrings.saveToKnowledge,
+                  _SaveState.saving => AppStrings.saving,
+                  _SaveState.saved => AppStrings.saved,
+                }),
+                style: context.text.meta.copyWith(color: color),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),

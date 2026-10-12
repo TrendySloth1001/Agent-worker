@@ -17,6 +17,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/shot.dart';
+
 /// Renders [home] at 360dp wide in a theme and text scale, and fails on any
 /// framework exception (overflow included).
 Future<void> _render(
@@ -50,6 +52,7 @@ Future<void> _render(
   );
   await tester.pump(const Duration(milliseconds: 300));
   await tester.pump(const Duration(milliseconds: 300));
+  await autoShot(tester);
   expect(tester.takeException(), isNull);
 }
 
@@ -152,6 +155,7 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+    await autoShot(tester);
     expect(find.text('Share as'), findsOneWidget);
     await tester.tap(find.text('Pdf'));
     await tester.pumpAndSettle();

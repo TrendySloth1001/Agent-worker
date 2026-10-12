@@ -217,12 +217,9 @@ class _AuthFieldState extends State<AuthField> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(left: AppSpacing.lg),
-            child: Text(
-              widget.label,
-              style: tt.labelLarge!.copyWith(color: p.textSecondary),
-            ),
+          Text(
+            widget.label,
+            style: tt.labelLarge!.copyWith(color: p.textSecondary),
           ),
           const SizedBox(height: AppSpacing.xs + AppSpacing.xxs),
           TextField(

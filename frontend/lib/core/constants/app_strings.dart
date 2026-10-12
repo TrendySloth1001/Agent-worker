@@ -542,8 +542,8 @@ abstract final class GithubSettingsStrings {
 
 /// Markdown table chrome: view toggle, expand, swipe hint, export labels.
 abstract final class MdTableStrings {
-  static const table = 'TABLE';
-  static const cards = 'CARDS';
+  static const table = 'Table';
+  static const cards = 'Cards';
   static const expand = 'Expand table';
   static const swipe = 'SWIPE';
   static const copyMarkdown = 'COPY MD';

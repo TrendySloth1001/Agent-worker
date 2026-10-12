@@ -14,6 +14,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/shot.dart';
+
 Future<SettingsController> _pump(
   WidgetTester tester,
   ThemeData theme, {
@@ -44,6 +46,8 @@ Future<SettingsController> _pump(
     ),
   );
   await tester.pump(const Duration(milliseconds: 100));
+  await tester.pump(const Duration(milliseconds: 400));
+  await autoShot(tester);
   return settings;
 }
 
