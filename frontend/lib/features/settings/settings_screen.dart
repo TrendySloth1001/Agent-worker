@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/app_scope.dart';
+import '../../core/constants/voice.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
@@ -320,6 +321,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: AppIcons.aiFormat,
               value: s.autocompleteOn,
               onChanged: s.setAutocomplete,
+            ),
+          ),
+          _Item(
+            'voice dictate microphone speech send automatically',
+            (_) => ToggleRow(
+              label: VoiceStrings.autoSendLabel,
+              subtitle: VoiceStrings.autoSendHelp,
+              icon: AppIcons.mic,
+              value: s.voiceAutoSend,
+              onChanged: s.setVoiceAutoSend,
+            ),
+          ),
+          _Item(
+            'voice dictate microphone speech accuracy whisper transcription',
+            (_) => ToggleRow(
+              label: VoiceStrings.accuracyLabel,
+              subtitle: VoiceStrings.accuracyHelp,
+              icon: AppIcons.mic,
+              value: s.voiceHighAccuracy,
+              onChanged: s.setVoiceHighAccuracy,
             ),
           ),
           _Item(

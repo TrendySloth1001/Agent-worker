@@ -60,6 +60,8 @@ void main() {
         300,
         scrollable: list,
       );
+      await tester.ensureVisible(find.text(SettingsStrings.advancedTitle));
+      await tester.pump();
       await tester.tap(find.text(SettingsStrings.advancedTitle));
       await tester.pump(const Duration(milliseconds: 100));
       await tester.scrollUntilVisible(

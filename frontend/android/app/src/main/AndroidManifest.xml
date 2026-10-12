@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Voice input in the composer: dictation, and recording for server transcription. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Round Table progress and "finished" notifications (Android 13+ asks at first use). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Keeps a Round Table answer streaming while the app is in the background. -->
@@ -61,6 +63,10 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- speech_to_text finds the device's speech recognizer (Android 11+). -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <!-- "Continue with GitHub" opens in the GitHub app when it handles the authorize URL. -->
         <package android:name="com.github.android" />
         <intent>

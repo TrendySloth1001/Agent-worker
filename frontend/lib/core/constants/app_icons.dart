@@ -18,6 +18,7 @@ abstract final class AppIcons {
   static const search = HugeIcons.strokeRoundedSearch01;
   static const send = HugeIcons.strokeRoundedArrowUp02;
   static const stop = HugeIcons.strokeRoundedStopCircle;
+  static const mic = HugeIcons.strokeRoundedMic01;
   static const scrollDown = HugeIcons.strokeRoundedArrowDown02;
   static const expand = HugeIcons.strokeRoundedArrowDown01;
   static const collapse = HugeIcons.strokeRoundedArrowUp01;

@@ -16,6 +16,8 @@ class SettingsController extends ChangeNotifier {
     defaultRoundTable = _prefs?.getBool(AppPrefs.defaultRoundTable) ?? false;
     notifyRoundTable = _prefs?.getBool(AppPrefs.notifyRoundTable) ?? true;
     autocompleteOn = _prefs?.getBool(AppPrefs.autocomplete) ?? true;
+    voiceAutoSend = _prefs?.getBool(AppPrefs.voiceAutoSend) ?? false;
+    voiceHighAccuracy = _prefs?.getBool(AppPrefs.voiceHighAccuracy) ?? false;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
     role = _prefs?.getString(AppPrefs.profileRole) ?? '';
@@ -64,6 +66,9 @@ class SettingsController extends ChangeNotifier {
   late ThemeMode themeMode;
   late bool hapticsOn;
   late bool autocompleteOn;
+
+  /// Voice input: send when dictation ends / always transcribe on the server.
+  late bool voiceAutoSend, voiceHighAccuracy;
   late bool defaultWebSearch;
   late bool defaultKnowledge;
   late bool defaultRoundTable;
@@ -113,6 +118,18 @@ class SettingsController extends ChangeNotifier {
   void setAutocomplete(bool value) {
     autocompleteOn = value;
     _prefs?.setBool(AppPrefs.autocomplete, value);
+    notifyListeners();
+  }
+
+  void setVoiceAutoSend(bool value) {
+    voiceAutoSend = value;
+    _prefs?.setBool(AppPrefs.voiceAutoSend, value);
+    notifyListeners();
+  }
+
+  void setVoiceHighAccuracy(bool value) {
+    voiceHighAccuracy = value;
+    _prefs?.setBool(AppPrefs.voiceHighAccuracy, value);
     notifyListeners();
   }
 
@@ -270,6 +287,8 @@ class SettingsController extends ChangeNotifier {
     textScale = 'normal';
     modelChoice = 'auto';
     autocompleteOn = true;
+    voiceAutoSend = false;
+    voiceHighAccuracy = false;
     for (final key in [
       AppPrefs.themeMode,
       AppPrefs.haptics,
@@ -283,6 +302,8 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.textScale,
       AppPrefs.modelChoice,
       AppPrefs.autocomplete,
+      AppPrefs.voiceAutoSend,
+      AppPrefs.voiceHighAccuracy,
     ]) {
       _prefs?.remove(key);
     }
