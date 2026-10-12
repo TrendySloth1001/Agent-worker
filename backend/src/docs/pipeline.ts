@@ -174,7 +174,7 @@ export function docWords(doc: DocState): number {
   return doc.sections.filter((s) => s.sectionId !== REFERENCES_ID && s.status === "done").reduce((n, s) => n + s.words, 0);
 }
 
-function sourceItems(sources: DocSource[]): { kb: ContextItem[]; web: ContextItem[]; files: ContextItem[] } {
+export function sourceItems(sources: DocSource[]): { kb: ContextItem[]; web: ContextItem[]; files: ContextItem[] } {
   const item = (s: DocSource): ContextItem => ({ id: s.id, title: s.title, url: s.url, text: s.text });
   return {
     kb: sources.filter((s) => s.kind === "kb").map(item),
@@ -692,10 +692,10 @@ export async function editSection(store: DocStore, st: DocState, sectionId: stri
 }
 
 /** Adds a pending section after `after` (null: first). Write it with a `regenerate` rewrite. */
-export async function addSection(store: DocStore, st: DocState, after: string | null, heading: string, goal: string): Promise<DocSection> {
+export async function addSection(store: DocStore, st: DocState, after: string | null, heading: string, goal: string, keyPoints: string[] = []): Promise<DocSection> {
   const outline = st.outline!;
   const n = Math.max(0, ...outline.sections.filter((s) => !s.kind).map((s) => Number(s.id.slice(1)) || 0)) + 1;
-  const os: OutlineSection = { id: `s${n}`, heading: heading.trim().slice(0, 120), goal: goal.trim().slice(0, 300), keyPoints: [], queries: [], visual: "none", words: 400 };
+  const os: OutlineSection = { id: `s${n}`, heading: heading.trim().slice(0, 120), goal: goal.trim().slice(0, 300), keyPoints, queries: [], visual: "none", words: 400 };
   let at = after ? outline.sections.findIndex((s) => s.id === after) + 1 : 0;
   const firstClosing = outline.sections.findIndex((s) => s.kind);
   if (at <= 0 && after) at = firstClosing >= 0 ? firstClosing : outline.sections.length;

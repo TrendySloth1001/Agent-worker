@@ -193,15 +193,81 @@ class DocsApi {
   Future<void> saveSection(String id, String sectionId, String markdown) =>
       _send('PUT', '/$id/sections/$sectionId', body: {'markdown': markdown});
 
-  Future<void> addSection(
+  /// Adds a pending section after [after] (null: first); returns its id.
+  Future<String> addSection(
     String id, {
-    required String after,
+    required String? after,
     required String heading,
     required String goal,
-  }) => _send(
-    'POST',
-    '/$id/sections',
-    body: {'after': after, 'heading': heading, 'goal': goal},
+  }) async {
+    final r = await _send(
+      'POST',
+      '/$id/sections',
+      body: {'after': after, 'heading': heading, 'goal': goal},
+    );
+    final sec = _map(r.body)['section'];
+    final sid = sec is Map ? sec['sectionId'] : null;
+    if (sid is! String || sid.isEmpty) {
+      throw const ApiException(DocStrings.actionFailed);
+    }
+    return sid;
+  }
+
+  /// ASK AI: answers [question] about [quote] without touching the text.
+  /// With [highlightId] the answer joins that passage's thread; otherwise
+  /// the server creates the highlight. Returns the saved highlight.
+  Future<DocHighlight> ask(
+    String id, {
+    required String sectionId,
+    required String quote,
+    required String question,
+    String? highlightId,
+    String prefix = '',
+    String suffix = '',
+  }) async {
+    final r = await _send(
+      'POST',
+      '/$id/ask',
+      timeout: DocConfig.askTimeout,
+      body: {
+        'sectionId': sectionId,
+        'quote': quote,
+        'question': question,
+        'highlightId': ?highlightId,
+        'prefix': prefix,
+        'suffix': suffix,
+      },
+    );
+    final h = _map(r.body)['highlight'];
+    if (h is! Map<String, dynamic>) {
+      throw const ApiException(DocStrings.askFailed);
+    }
+    return DocHighlight.fromJson(h);
+  }
+
+  /// Previews an edit of one passage (nothing is saved).
+  Future<DocSelectionEdit> previewSelection(
+    String id,
+    String sectionId, {
+    required DocSelectionOp op,
+    required String quote,
+    String? instruction,
+  }) async {
+    final r = await _send(
+      'POST',
+      '/$id/sections/$sectionId/selection',
+      timeout: DocConfig.askTimeout,
+      body: {'op': op.name, 'quote': quote, 'instruction': ?instruction},
+    );
+    return DocSelectionEdit.fromJson(_map(r.body));
+  }
+
+  /// Plans and writes one more section; streams like a rewrite (the
+  /// snapshot first already holds the new pending section).
+  Stream<DocEvent> continueWriting(String id, {String? hint}) => _stream(
+    () => http.Request('POST', _uri('/$id/continue'))
+      ..headers.addAll(_json)
+      ..body = jsonEncode({'hint': ?hint}),
   );
 
   Future<List<DocRevision>> versions(String id, String sectionId) async {

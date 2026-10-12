@@ -35,7 +35,12 @@ String plainOf(String markdown) => markdown
 
 /// A highlight for [quote] in [section], with up to
 /// [DocConfig.anchorContext] characters of context on each side.
-DocHighlight anchorHighlight(DocSection section, String quote, {String? note}) {
+DocHighlight anchorHighlight(
+  DocSection section,
+  String quote, {
+  String? note,
+  String color = DocConfig.highlightColor,
+}) {
   final q = normalizeQuote(quote);
   final plain = plainOf(section.markdown);
   final at = plain.indexOf(q);
@@ -51,7 +56,7 @@ DocHighlight anchorHighlight(DocSection section, String quote, {String? note}) {
             at + q.length,
             (at + q.length + n).clamp(0, plain.length),
           ),
-    color: DocConfig.highlightColor,
+    color: color,
     note: note,
   );
 }
@@ -139,10 +144,10 @@ List<String> _chunks(String s) {
 }
 
 /// What the reader picked from the selection menu.
-enum DocSelectionAction { highlight, note, ask, copyCite }
+enum DocSelectionAction { highlight, note, ask, edit, copyCite }
 
-/// Selectable section text with HIGHLIGHT, NOTE, ASK AI and COPY WITH
-/// CITATION added to the system selection menu.
+/// Selectable section text with HIGHLIGHT, NOTE, ASK AI, EDIT… and COPY
+/// WITH CITATION added to the system selection menu.
 class DocSelectionArea extends StatefulWidget {
   const DocSelectionArea({
     super.key,
@@ -183,6 +188,7 @@ class _DocSelectionAreaState extends State<DocSelectionArea> {
               item(DocSelectionAction.highlight, DocStrings.highlight),
               item(DocSelectionAction.note, DocStrings.note),
               item(DocSelectionAction.ask, DocStrings.askAi),
+              item(DocSelectionAction.edit, DocStrings.editPassage),
               item(DocSelectionAction.copyCite, DocStrings.copyCite),
             ],
             ...state.contextMenuButtonItems,

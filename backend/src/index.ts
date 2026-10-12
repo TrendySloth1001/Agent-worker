@@ -54,6 +54,9 @@ app.use("/auth", authRouter);
 app.post("/chat", rateLimit(20), chatLimit);
 app.post("/docs", rateLimit(5), docLimit);
 app.post("/docs/:id/sections/:sid/rewrite", rateLimit(20));
+app.post("/docs/:id/ask", rateLimit(30), aiBudget());
+app.post("/docs/:id/sections/:sid/selection", rateLimit(30), aiBudget());
+app.post("/docs/:id/continue", rateLimit(10), aiBudget());
 app.post("/knowledge/sources", rateLimit(10), aiBudget());
 // Other LLM/embedding work is metered per user per day (the owner is unlimited).
 app.post("/knowledge/notes", rateLimit(20), aiBudget());

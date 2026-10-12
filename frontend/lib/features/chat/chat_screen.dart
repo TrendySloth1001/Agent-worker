@@ -14,6 +14,7 @@ import '../../core/widgets/size_reporter.dart';
 import '../../data/chat_message.dart';
 import '../../data/conversations_api.dart';
 import '../../data/files_api.dart';
+import '../docs/doc_background_chip.dart';
 import '../docs/doc_screen.dart';
 import 'chat_actions.dart';
 import 'chat_controller.dart';
@@ -72,9 +73,19 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _controller.docStarted.addListener(_onDocStarted);
     AppNotifications.instance.opened.addListener(_onNotificationOpened);
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _onNotificationOpened(),
-    );
+    AppNotifications.instance.openedDoc.addListener(_onDocNotificationOpened);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onNotificationOpened();
+      _onDocNotificationOpened();
+    });
+  }
+
+  /// A tapped "document ready" notification opens the reader.
+  void _onDocNotificationOpened() {
+    final id = AppNotifications.instance.openedDoc.value;
+    if (id == null || !mounted) return;
+    AppNotifications.instance.openedDoc.value = null;
+    openDoc(context, id);
   }
 
   /// A tapped notification opens its chat.
@@ -102,6 +113,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     AppNotifications.instance.opened.removeListener(_onNotificationOpened);
+    AppNotifications.instance.openedDoc.removeListener(
+      _onDocNotificationOpened,
+    );
     _controller.dispose();
     _scroll.dispose();
     _showScrollButton.dispose();
@@ -413,14 +427,18 @@ class _TopBar extends StatelessWidget {
                         key: const ValueKey(BackgroundTableChip),
                         onTap: controller.openBackground,
                       )
-                    : Text(
-                        title == null ? '' : title.toUpperCase(),
-                        key: ValueKey(title),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.caption.copyWith(
-                          color: context.palette.textSecondary,
+                    // A document still being written elsewhere.
+                    : DocBackgroundChip(
+                        key: const ValueKey(DocBackgroundChip),
+                        fallback: Text(
+                          title == null ? '' : title.toUpperCase(),
+                          key: ValueKey(title),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.caption.copyWith(
+                            color: context.palette.textSecondary,
+                          ),
                         ),
                       ),
               ),
