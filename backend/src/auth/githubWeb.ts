@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { encryptSecret } from "../connections/crypto.js";
-import { ACCESS_TOKEN_URL, connectionRow, notConfigured, type ConnectionRow, type DeviceGrant, type GithubAccount } from "../connections/deviceFlow.js";
+import { ACCESS_TOKEN_URL, GITHUB_SCOPES, connectionRow, notConfigured, type ConnectionRow, type DeviceGrant, type GithubAccount } from "../connections/deviceFlow.js";
 import { listConnections, saveGithubConnection, type ConnectionSummary } from "../connections/store.js";
 import { db, tx } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
@@ -154,7 +154,8 @@ export function createGithubWeb(deps: GithubWebDeps) {
     const q = new URLSearchParams({
       client_id: clientId,
       redirect_uri: deps.redirectUri(),
-      scope: GITHUB_SSO_SCOPES,
+      // Sign-in and linking only ask who you are; connecting asks for repos.
+      scope: input.mode === "connect" ? GITHUB_SCOPES : GITHUB_SSO_SCOPES,
       state,
       code_challenge: pkceChallenge(verifier),
       code_challenge_method: "S256",

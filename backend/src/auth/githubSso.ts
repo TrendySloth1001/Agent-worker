@@ -5,7 +5,6 @@ import {
   fetchGithubEmails,
   fetchGithubUser,
   GithubDeviceFlow,
-  GITHUB_SCOPES,
   pickGithubEmail,
   type ConnectionRow,
   type DeviceGrant,
@@ -20,14 +19,16 @@ import { linkIdentity, ssoSignIn, type IdentitySummary, type SsoOutcome, type Ss
 /**
  * "Continue with GitHub" over the device flow (no hosting, no callback URL).
  * Signed out (owner null) it signs in or creates the account; signed in
- * (owner = user id, Profile → LINK) it links GitHub to that account. Either
- * way the same grant becomes the user's GitHub connection, so they are
- * connected at once. Scopes cover both sign-in (read:user user:email) and the
- * connection (repo read:org).
+ * (owner = user id, Profile → LINK) it links GitHub to that account. The
+ * grant only becomes the user's GitHub connection when it carries repo access
+ * (e.g. GitHub kept an earlier, wider approval).
  */
 
-/** Sign-in asks for the full set, so one approval also connects GitHub. */
-export const GITHUB_SSO_SCOPES = GITHUB_SCOPES;
+/**
+ * Sign-in only asks who you are. Repo access is asked for separately, when
+ * the user connects GitHub (Apps, or the GitHub screen), with GITHUB_SCOPES.
+ */
+export const GITHUB_SSO_SCOPES = "read:user user:email";
 
 export type GithubSsoMeta = { device: string | null };
 
@@ -75,6 +76,9 @@ export async function saveGrantConnection(
   userId: string,
   grant: DeviceGrant,
 ): Promise<boolean> {
+  // A sign-in grant without repo access is not a connection; never let it
+  // replace one that has it.
+  if (!grant.scope.split(/[\s,]+/).includes("repo")) return false;
   try {
     await deps.saveConnection(connectionRow(u, userId, grant, deps));
     return true;

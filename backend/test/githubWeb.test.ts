@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { ACCESS_TOKEN_URL, GITHUB_EMAILS_URL, GITHUB_USER_URL, type ConnectionRow } from "../src/connections/deviceFlow.js";
 import { decryptSecret, encryptSecret } from "../src/connections/crypto.js";
 import { GITHUB_SSO_SCOPES } from "../src/auth/githubSso.js";
+import { GITHUB_SCOPES } from "../src/connections/deviceFlow.js";
 import {
   AUTHORIZE_URL,
   createGithubWeb,
@@ -351,4 +352,12 @@ test("prisma store: state claimed once, ticket consumed once, expired ones refus
   } finally {
     await db().githubOAuthFlow.deleteMany({ where: { stateHash } });
   }
+});
+
+test("web start: sign-in asks only who you are; connect asks for repo access", async () => {
+  const h = harness();
+  const signin = new URL((await h.web.start({ mode: "signin", userId: null, device: null })).authorizeUrl);
+  assert.equal(signin.searchParams.get("scope"), "read:user user:email");
+  const connect = new URL((await h.web.start({ mode: "connect", userId: "u1", device: null })).authorizeUrl);
+  assert.equal(connect.searchParams.get("scope"), GITHUB_SCOPES);
 });

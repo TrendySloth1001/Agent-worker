@@ -160,7 +160,7 @@ test("github sso: asks for sign-in + connection scopes", async () => {
   const h = ghHarness([]);
   await h.flows.start(null, { device: "Pixel" });
   assert.equal(new URLSearchParams(h.calls[0].body).get("scope"), GITHUB_SSO_SCOPES);
-  assert.equal(GITHUB_SSO_SCOPES, "repo read:org read:user user:email workflow notifications");
+  assert.equal(GITHUB_SSO_SCOPES, "read:user user:email");
 });
 
 test("github sso: pending, slow_down (reported once), then a session; the result is handed out once", async () => {
@@ -216,7 +216,7 @@ test("github sso: an account conflict comes back as an error with its code", asy
 });
 
 test("github sso: signed-out flows don't replace each other; link flows are private to their user", async () => {
-  const h = ghHarness([{ access_token: "gho_sso_token" }]);
+  const h = ghHarness([{ access_token: "gho_sso_token", scope: "repo,read:user" }]);
   const a = await h.flows.start(null, { device: null });
   const b = await h.flows.start(null, { device: null });
   assert.equal((await h.flows.poll(null, a.flowId)).status, "pending");
@@ -417,4 +417,14 @@ test("missingGithubScopes: what a reconnect would add", async () => {
   assert.deepEqual(missingGithubScopes([]), []);
   assert.deepEqual(missingGithubScopes(["repo", "read:user", "read:org"]), ["user:email", "workflow", "notifications"]);
   assert.deepEqual(missingGithubScopes(["repo", "user", "admin:org", "workflow", "notifications"]), []);
+});
+
+test("github sso: a sign-in-only grant does not become a connection", async () => {
+  const h = ghHarness([{ access_token: "gho_sso_token", scope: "read:user,user:email" }]);
+  const { flowId } = await h.flows.start(null, { device: null });
+  h.tick(5);
+  const r = await h.flows.poll(null, flowId);
+  assert.equal(r.status, "done");
+  assert.equal(r.result?.kind, "session");
+  assert.equal(h.saved.length, 0);
 });
