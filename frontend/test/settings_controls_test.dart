@@ -1,4 +1,5 @@
 import 'package:app/core/app_scope.dart';
+import 'package:app/core/constants/notify_copy.dart';
 import 'package:app/core/constants/settings_copy.dart';
 import 'package:app/core/constants/voice.dart';
 import 'package:app/core/theme/app_theme.dart';
@@ -316,10 +317,11 @@ void main() {
   ) async {
     final s = await _pump(tester);
     await _open(tester, SettingsStrings.catNotifications);
-    expect(_on(tester, SettingsStrings.tableNotifyLabel), isTrue);
-    await _tap(tester, _switchRow(SettingsStrings.tableNotifyLabel));
-    expect(s.notifyRoundTable, isFalse);
-    expect(_on(tester, SettingsStrings.tableNotifyLabel), isFalse);
+    expect(_on(tester, NotifyCopy.masterLabel), isTrue);
+    expect(s.notifyRoundTable, isTrue);
+    await _tap(tester, _switchRow(NotifyCopy.masterLabel));
+    expect(s.notify.master, isFalse);
+    expect(_on(tester, NotifyCopy.masterLabel), isFalse);
     await _back(tester);
     expect(
       _summary(SettingsStrings.catNotifications, SettingsStrings.off),
