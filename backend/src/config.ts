@@ -19,6 +19,10 @@ const schema = z.object({
   EMBEDDING_BATCH_SIZE: num(64),
   RAG_MIN_SIM: num(0.3),
   RAG_TOP_K: num(6),
+  /** Resolve follow-up questions into standalone queries with a small model (time-boxed). */
+  RAG_REWRITE: z.preprocess(blank, z.enum(["true", "false"]).default("true")),
+  /** LLM rerank of the fused top candidates (adds up to ~2.5s; off by default). */
+  RAG_RERANK: z.preprocess(blank, z.enum(["true", "false"]).default("false")),
   GITHUB_TOKEN: str,
   GITHUB_OAUTH_CLIENT_ID: str,
   GITHUB_OAUTH_CLIENT_SECRET: str,
@@ -71,6 +75,8 @@ export const config = {
   embeddingBatchSize: env.EMBEDDING_BATCH_SIZE,
   ragMinSim: env.RAG_MIN_SIM,
   ragTopK: env.RAG_TOP_K,
+  ragRewrite: env.RAG_REWRITE === "true",
+  ragRerank: env.RAG_RERANK === "true",
   githubToken: env.GITHUB_TOKEN,
   /** Per-user GitHub connections (OAuth device flow); see src/connections. */
   githubOAuth: { clientId: env.GITHUB_OAUTH_CLIENT_ID, clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET },

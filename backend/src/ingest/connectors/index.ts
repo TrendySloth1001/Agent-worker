@@ -1,5 +1,7 @@
 import { AppError } from "../../util/errors.js";
 import type { Connector } from "../types.js";
+import { doc } from "./doc.js";
+import { file } from "./file.js";
 import { github } from "./github.js";
 import { hackernews } from "./hackernews.js";
 import { note } from "./note.js";
@@ -7,12 +9,14 @@ import { reddit } from "./reddit.js";
 import { stackoverflow } from "./stackoverflow.js";
 import { web } from "./web.js";
 
-export type SourceType = "web" | "github" | "stackoverflow" | "reddit" | "hackernews" | "note";
-export const SOURCE_TYPES: Exclude<SourceType, "note">[] = ["web", "github", "stackoverflow", "reddit", "hackernews"];
+export type SourceType = "web" | "github" | "stackoverflow" | "reddit" | "hackernews" | "note" | "file" | "doc";
+/** Types a user can add by URL/handle; notes, files and docs are created by the server. */
+export type AddableType = Exclude<SourceType, "note" | "file" | "doc">;
+export const SOURCE_TYPES: AddableType[] = ["web", "github", "stackoverflow", "reddit", "hackernews"];
 
-export const connectors: Record<SourceType, Connector> = { web, github, stackoverflow, reddit, hackernews, note };
+export const connectors: Record<SourceType, Connector> = { web, github, stackoverflow, reddit, hackernews, note, file, doc };
 
-export function detectType(input: string): Exclude<SourceType, "note"> {
+export function detectType(input: string): AddableType {
   const s = input.trim();
   if (/^https?:\/\//i.test(s)) {
     let host = "";

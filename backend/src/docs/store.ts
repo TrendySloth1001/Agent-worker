@@ -2,6 +2,7 @@
 // user's document reads as not found.
 import { randomUUID } from "node:crypto";
 import { db, Prisma } from "../db/prisma.js";
+import { unindex } from "../ingest/indexer.js";
 import type { DocSection, DocState, DocStatus, DocSummary, Highlight, Revision, RevisionReason } from "./types.js";
 
 export const MAX_REVISIONS = 10;
@@ -178,6 +179,7 @@ export const prismaStore: DocStore = {
   async remove(userId, id) {
     if (!isUuid(id)) return false;
     const r = await db().doc.deleteMany({ where: { id, userId } });
+    if (r.count > 0) void unindex("doc", id);
     return r.count > 0;
   },
 

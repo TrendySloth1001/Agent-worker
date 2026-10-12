@@ -42,6 +42,11 @@ export type Citation = {
   snippet: string;
   site: string;
   sourceType?: string;
+  /** Knowledge-base hits from a generated doc: which doc and section. */
+  docId?: string;
+  sectionId?: string;
+  /** Knowledge-base hits from an uploaded file. */
+  fileId?: string;
 };
 
 // Each profile field is lenient: an invalid value is dropped, never a 400.
@@ -204,7 +209,12 @@ chatRouter.post("/", async (req, res) => {
       sse.send("status", { phase: "retrieving" });
       let hits: KbHit[] = [];
       try {
-        hits = await retrieve(retrievalQuery(body.messages), { k: config.ragTopK, sourceIds: body.sourceIds });
+        // With rewriting on, the raw question is sent and resolved against the history by a small model.
+        hits = await retrieve(config.ragRewrite && lastUser.trim() ? lastUser.trim().slice(0, 500) : retrievalQuery(body.messages), {
+          k: config.ragTopK,
+          sourceIds: body.sourceIds,
+          history: body.messages.slice(-7).map((m) => ({ role: m.role, content: m.content })),
+        });
       } catch (e) {
         const down = embeddingsHealthy() === "down";
         sse.send("notice", {
@@ -217,7 +227,17 @@ chatRouter.post("/", async (req, res) => {
       hits.forEach((h, i) => {
         const id = `K${i + 1}`;
         kbItems.push({ id, title: h.title || h.url, url: h.url, heading: h.headingPath, text: h.content });
-        citations.push({ id, kind: "kb", title: h.title || h.url, url: h.url, snippet: snippet(h.content), site: h.site || hostOf(h.url), sourceType: h.sourceType });
+        citations.push({
+          id,
+          kind: "kb",
+          title: h.title || h.url,
+          url: h.url,
+          snippet: snippet(h.content),
+          site: h.site || hostOf(h.url),
+          sourceType: h.sourceType,
+          ...(h.docId ? { docId: h.docId, sectionId: h.sectionId } : {}),
+          ...(h.fileId ? { fileId: h.fileId } : {}),
+        });
       });
     };
 

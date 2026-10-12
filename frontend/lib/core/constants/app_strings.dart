@@ -69,6 +69,8 @@ abstract final class AppStrings {
   static const kindReddit = 'REDDIT';
   static const kindHn = 'HN';
   static const kindNote = 'NOTE';
+  static const kindFile = 'FILE';
+  static const kindDoc = 'DOC';
 
   // Menu and settings
   static const settings = 'SETTINGS';

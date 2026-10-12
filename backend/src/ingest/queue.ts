@@ -10,11 +10,19 @@ import type { DocInput, IngestCtx } from "./types.js";
 
 const limit = pLimit(1);
 const queued = new Set<string>();
+/** Sources enqueued again while their run was in flight (e.g. a doc edited mid-index): run once more after. */
+const dirty = new Set<string>();
 
 export function enqueue(sourceId: string): void {
-  if (queued.has(sourceId)) return;
+  if (queued.has(sourceId)) {
+    dirty.add(sourceId);
+    return;
+  }
   queued.add(sourceId);
-  void limit(() => runSource(sourceId)).finally(() => queued.delete(sourceId));
+  void limit(() => runSource(sourceId)).finally(() => {
+    queued.delete(sourceId);
+    if (dirty.delete(sourceId)) enqueue(sourceId);
+  });
 }
 
 /** On boot / DB recovery: running -> queued, then enqueue everything queued. */
@@ -39,10 +47,11 @@ type Pending = { doc: DocInput; hash: string; chunks: Chunk[]; reuse: Map<string
 
 async function runSource(id: string): Promise<void> {
   if (!isDbUp()) return;
-  const row = await db().source.findUnique({ where: { id }, select: { id: true, type: true, uri: true, options: true } });
+  const row = await db().source.findUnique({ where: { id }, select: { id: true, type: true, uri: true, options: true, userId: true } });
   if (!row) return;
   const src = { ...row, options: (row.options ?? {}) as Record<string, any> };
   const connector = connectors[src.type as keyof typeof connectors];
+  if (!connector) return;
   const lim: number = Math.min(Math.max(Number(src.options?.limit) || 20, 1), 100);
   // updateMany throughout: the source may be deleted while it is being ingested.
   await db().source.updateMany({
@@ -135,7 +144,7 @@ async function runSource(id: string): Promise<void> {
   };
 
   try {
-    await connector.run({ id, type: src.type, uri: src.uri, options: src.options ?? {} }, ctx);
+    await connector.run({ id, type: src.type, uri: src.uri, options: src.options ?? {}, userId: src.userId }, ctx);
     await flush();
     if (stored === 0 && done > 0 && firstError && seen.size === 0) throw new AppError(502, "upstream_failed", firstError);
     // refresh semantics: drop documents that no longer exist upstream (only after a fully successful run)

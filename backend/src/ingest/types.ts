@@ -11,7 +11,7 @@ export type IngestCtx = {
   skip(reason?: string): void;
 };
 
-export type SourceRow = { id: string; type: string; uri: string; options: Record<string, any> };
+export type SourceRow = { id: string; type: string; uri: string; options: Record<string, any>; userId: string | null };
 
 export type Connector = {
   /** Validate + canonicalize user input. Throws AppError(400). */

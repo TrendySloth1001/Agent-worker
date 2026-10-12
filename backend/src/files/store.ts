@@ -1,3 +1,4 @@
+import { unindex } from "../ingest/indexer.js";
 import { db, type Prisma } from "../db/prisma.js";
 import { ownerFilter } from "../auth/context.js";
 import { deleteObject, listKeys, presign } from "../storage/s3.js";
@@ -117,6 +118,7 @@ export async function deleteFile(row: FileRow): Promise<void> {
   const keys = [...new Set([...knownKeys(row), ...listed])];
   await Promise.allSettled(keys.map((k) => deleteObject(k)));
   await db().storedFile.deleteMany({ where: { id: row.id } });
+  void unindex("file", row.id);
   await markAttachments(row.id, { deleted: true, status: "deleted" }).catch((e) => {
     log.warn("attachment placeholder update failed", { id: row.id, message: (e as Error).message.slice(0, 120) });
   });
