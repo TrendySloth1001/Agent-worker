@@ -469,3 +469,11 @@ class M3ActionSheet extends StatelessWidget {
     ),
   );
 }
+
+/// "FORK FROM HERE" -> "Fork from here". Strings that already carry
+/// lowercase letters are returned unchanged.
+String sentenceCase(String s) {
+  if (s.isEmpty || s != s.toUpperCase()) return s;
+  final lower = s.toLowerCase();
+  return lower[0].toUpperCase() + lower.substring(1);
+}

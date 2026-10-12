@@ -14,6 +14,8 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/glass.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
+import '../../settings/widgets/settings_kit.dart';
 import '../../../core/widgets/icon_label.dart';
 import '../../../data/files_api.dart';
 import '../../../data/suggest_api.dart';
@@ -899,50 +901,22 @@ enum AttachChoice { media, photo, video, document }
 
 /// Compact sheet with the ways to add a file.
 Future<AttachChoice?> showAttachSheet(BuildContext context) {
-  final p = context.palette;
-  return showModalBottomSheet<AttachChoice>(
-    context: context,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
-    builder: (sheet) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (choice, icon, label) in [
-            (AttachChoice.media, AppIcons.image, AppStrings.attachMedia),
-            (AttachChoice.photo, AppIcons.camera, AppStrings.attachTakePhoto),
-            (AttachChoice.video, AppIcons.video, AppStrings.attachRecordVideo),
-            (AttachChoice.document, AppIcons.file, AppStrings.attachDocument),
-          ])
-            InkWell(
-              onTap: () {
-                Haptics.tap();
-                Navigator.pop(sheet, choice);
-              },
-              child: Container(
-                height: AppSizes.sheetOptionHeight,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.screenPadding,
-                ),
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: p.border)),
-                ),
-                child: Row(
-                  children: [
-                    AppIcon(icon, size: AppIconSize.md, color: p.textSecondary),
-                    const SizedBox(width: AppSpacing.md),
-                    Text(label, style: sheet.text.label),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
+  return showM3Sheet<AttachChoice>(
+    context,
+    builder: (sheet) => M3ActionSheet(
+      rows: [
+        for (final (choice, icon, label) in [
+          (AttachChoice.media, AppIcons.image, AppStrings.attachMedia),
+          (AttachChoice.photo, AppIcons.camera, AppStrings.attachTakePhoto),
+          (AttachChoice.video, AppIcons.video, AppStrings.attachRecordVideo),
+          (AttachChoice.document, AppIcons.file, AppStrings.attachDocument),
+        ])
+          SettingsTile(
+            icon: icon,
+            title: sentenceCase(label),
+            onTap: () => Navigator.pop(sheet, choice),
+          ),
+      ],
     ),
   );
 }

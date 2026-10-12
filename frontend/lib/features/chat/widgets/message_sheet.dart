@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_icons.dart';
-import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
-import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
+import '../../settings/widgets/settings_kit.dart';
 
 /// Long-press menu for a user message: EDIT (greyed out while [onEdit] is
 /// null, i.e. a reply is streaming), FORK FROM HERE (when [onForkHere] is
@@ -20,43 +19,32 @@ Future<void> showUserMessageActions(
   VoidCallback? onEdit,
 }) async {
   Haptics.tap();
-  final p = context.palette;
-  final action = await showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
-    builder: (sheet) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+  final action = await showM3Sheet<String>(
+    context,
+    builder: (sheet) => M3ActionSheet(
+      rows: [
+        _Row(
+          label: EditStrings.edit,
+          icon: AppIcons.edit,
+          subtitle: onEdit == null
+              ? EditStrings.busyHint
+              : EditStrings.editHint,
+          onTap: onEdit == null
+              ? null
+              : () => Navigator.pop(sheet, EditStrings.edit),
+        ),
+        if (onForkHere != null)
           _Row(
-            label: EditStrings.edit,
-            icon: AppIcons.edit,
-            subtitle: onEdit == null
-                ? EditStrings.busyHint
-                : EditStrings.editHint,
-            onTap: onEdit == null
-                ? null
-                : () => Navigator.pop(sheet, EditStrings.edit),
+            label: LineageStrings.forkFromHere,
+            icon: AppIcons.fork,
+            onTap: () => Navigator.pop(sheet, LineageStrings.forkFromHere),
           ),
-          if (onForkHere != null)
-            _Row(
-              label: LineageStrings.forkFromHere,
-              icon: AppIcons.fork,
-              onTap: () => Navigator.pop(sheet, LineageStrings.forkFromHere),
-            ),
-          _Row(
-            label: AppStrings.copy,
-            icon: AppIcons.copy,
-            onTap: () => Navigator.pop(sheet, AppStrings.copy),
-          ),
-        ],
-      ),
+        _Row(
+          label: AppStrings.copy,
+          icon: AppIcons.copy,
+          onTap: () => Navigator.pop(sheet, AppStrings.copy),
+        ),
+      ],
     ),
   );
   if (action == EditStrings.edit) onEdit?.call();
@@ -75,34 +63,23 @@ Future<void> showReplyActions(
   VoidCallback? onTurnIntoDoc,
 }) async {
   Haptics.tap();
-  final p = context.palette;
-  final action = await showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
-    builder: (sheet) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (onTurnIntoDoc != null)
-            _Row(
-              label: DocStrings.turnIntoDoc,
-              icon: AppIcons.doc,
-              subtitle: DocStrings.turnIntoDocHint,
-              onTap: () => Navigator.pop(sheet, DocStrings.turnIntoDoc),
-            ),
+  final action = await showM3Sheet<String>(
+    context,
+    builder: (sheet) => M3ActionSheet(
+      rows: [
+        if (onTurnIntoDoc != null)
           _Row(
-            label: AppStrings.copy,
-            icon: AppIcons.copy,
-            onTap: () => Navigator.pop(sheet, AppStrings.copy),
+            label: DocStrings.turnIntoDoc,
+            icon: AppIcons.doc,
+            subtitle: DocStrings.turnIntoDocHint,
+            onTap: () => Navigator.pop(sheet, DocStrings.turnIntoDoc),
           ),
-        ],
-      ),
+        _Row(
+          label: AppStrings.copy,
+          icon: AppIcons.copy,
+          onTap: () => Navigator.pop(sheet, AppStrings.copy),
+        ),
+      ],
     ),
   );
   if (action == DocStrings.turnIntoDoc) onTurnIntoDoc?.call();
@@ -131,48 +108,14 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final enabled = onTap != null;
-    return InkWell(
-      onTap: enabled
-          ? () {
-              Haptics.tap();
-              onTap!();
-            }
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.screenPadding,
-        ),
-        child: SizedBox(
-          height: AppSizes.rowHeight,
-          child: Row(
-            children: [
-              AppIcon(
-                icon,
-                size: AppIconSize.md,
-                color: enabled ? p.textSecondary : p.textTertiary,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: context.text.label.copyWith(
-                        color: enabled ? null : p.textTertiary,
-                      ),
-                    ),
-                    if (subtitle != null)
-                      Text(subtitle!, style: context.text.caption),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: SettingsTile(
+        icon: icon,
+        title: sentenceCase(label),
+        summary: subtitle == null ? null : sentenceCase(subtitle!),
+        onTap: onTap,
       ),
     );
   }

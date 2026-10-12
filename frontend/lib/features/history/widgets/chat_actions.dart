@@ -9,7 +9,8 @@ import '../../../core/constants/history.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
+import '../../settings/widgets/settings_kit.dart';
 import '../../../data/conversation.dart';
 import '../history_controller.dart';
 import 'merge_picker.dart';
@@ -32,80 +33,51 @@ Future<void> showChatActions(
 }) async {
   Haptics.tap();
   final p = context.palette;
-  final action = await showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (sheet) => SafeArea(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                AppSpacing.lg,
-                AppSpacing.screenPadding,
-                AppSpacing.xs,
-              ),
-              child: Text(
-                chat.title ?? HistoryStrings.untitled,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: sheet.text.bodySmall,
-              ),
-            ),
-            _SheetRow(
-              label: AppStrings.rename,
-              icon: AppIcons.edit,
-              onTap: () => Navigator.pop(sheet, AppStrings.rename),
-            ),
-            _SheetRow(
-              label: chat.pinned ? AppStrings.unpinChat : AppStrings.pinChat,
-              icon: chat.pinned ? AppIcons.unpin : AppIcons.pin,
-              onTap: () => Navigator.pop(sheet, AppStrings.pinChat),
-            ),
-            _SheetRow(
-              label: chat.archived
-                  ? AppStrings.unarchiveChat
-                  : AppStrings.archiveChat,
-              icon: chat.archived ? AppIcons.unarchive : AppIcons.archive,
-              onTap: () => Navigator.pop(sheet, AppStrings.archiveChat),
-            ),
-            _SheetRow(
-              label: LineageStrings.fork,
-              icon: AppIcons.fork,
-              onTap: () => Navigator.pop(sheet, LineageStrings.fork),
-            ),
-            _SheetRow(
-              label: LineageStrings.mergeWith,
-              icon: AppIcons.merge,
-              onTap: () => Navigator.pop(sheet, LineageStrings.mergeWith),
-            ),
-            if (onExport != null)
-              _SheetRow(
-                label: ShareStrings.export,
-                icon: ShareIcons.export,
-                onTap: () => Navigator.pop(sheet, ShareStrings.export),
-              ),
-            Divider(color: p.border),
-            _SheetRow(
-              label: AppStrings.deleteChat,
-              icon: AppIcons.delete,
-              color: p.accent,
-              onTap: () => Navigator.pop(sheet, AppStrings.deleteChat),
-            ),
-          ],
+  final action = await showM3Sheet<String>(
+    context,
+    builder: (sheet) => M3ActionSheet(
+      title: chat.title ?? HistoryStrings.untitled,
+      rows: [
+        _SheetRow(
+          label: AppStrings.rename,
+          icon: AppIcons.edit,
+          onTap: () => Navigator.pop(sheet, AppStrings.rename),
         ),
-      ),
+        _SheetRow(
+          label: chat.pinned ? AppStrings.unpinChat : AppStrings.pinChat,
+          icon: chat.pinned ? AppIcons.unpin : AppIcons.pin,
+          onTap: () => Navigator.pop(sheet, AppStrings.pinChat),
+        ),
+        _SheetRow(
+          label: chat.archived
+              ? AppStrings.unarchiveChat
+              : AppStrings.archiveChat,
+          icon: chat.archived ? AppIcons.unarchive : AppIcons.archive,
+          onTap: () => Navigator.pop(sheet, AppStrings.archiveChat),
+        ),
+        _SheetRow(
+          label: LineageStrings.fork,
+          icon: AppIcons.fork,
+          onTap: () => Navigator.pop(sheet, LineageStrings.fork),
+        ),
+        _SheetRow(
+          label: LineageStrings.mergeWith,
+          icon: AppIcons.merge,
+          onTap: () => Navigator.pop(sheet, LineageStrings.mergeWith),
+        ),
+        if (onExport != null)
+          _SheetRow(
+            label: ShareStrings.export,
+            icon: ShareIcons.export,
+            onTap: () => Navigator.pop(sheet, ShareStrings.export),
+          ),
+        _SheetRow(
+          label: AppStrings.deleteChat,
+          icon: AppIcons.delete,
+          color: p.accent,
+          onTap: () => Navigator.pop(sheet, AppStrings.deleteChat),
+        ),
+      ],
     ),
   );
   if (!context.mounted || action == null) return;
@@ -247,63 +219,41 @@ class _SheetRow extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) {
-    final c = color ?? context.palette.textSecondary;
-    return InkWell(
-      onTap: () {
-        Haptics.tap();
-        onTap();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.screenPadding,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: AppSizes.rowHeight),
-          child: Row(
-            children: [
-              AppIcon(icon, size: AppIconSize.md, color: c),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  label,
-                  style: context.text.label.copyWith(color: color),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SettingsTile(
+    icon: icon,
+    title: sentenceCase(label),
+    iconColor: color,
+    titleColor: color,
+    onTap: onTap,
+  );
 }
 
-/// MERGING with a thin spinner, shown while the briefing is written.
+/// MERGING with a spinner, shown while the briefing is written.
 class _Progress extends StatelessWidget {
   const _Progress();
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AlertDialog(
-      backgroundColor: p.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        side: BorderSide(color: p.border),
-      ),
-      content: Row(
-        children: [
-          SizedBox.square(
-            dimension: LineageSizes.progress,
-            child: CircularProgressIndicator(
-              strokeWidth: AppBorder.thin,
-              color: p.textSecondary,
-            ),
+    return M3Themed(
+      child: Builder(
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              SizedBox.square(
+                dimension: LineageSizes.progress,
+                child: CircularProgressIndicator(
+                  strokeWidth: AppBorder.thick,
+                  color: context.palette.accent,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Text(
+                sentenceCase(LineageStrings.merging),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
           ),
-          const SizedBox(width: AppSpacing.md),
-          Text(LineageStrings.merging, style: context.text.caption),
-        ],
+        ),
       ),
     );
   }
@@ -326,37 +276,38 @@ class _Dialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AlertDialog(
-      backgroundColor: p.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        side: BorderSide(color: p.border),
+    return M3Themed(
+      child: Builder(
+        builder: (context) {
+          final p = context.palette;
+          return AlertDialog(
+            title: Text(sentenceCase(title)),
+            content: child,
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Haptics.tap();
+                  Navigator.pop(context);
+                },
+                child: Text(sentenceCase(AppStrings.cancel)),
+              ),
+              FilledButton(
+                style: destructive
+                    ? FilledButton.styleFrom(
+                        backgroundColor: p.accent,
+                        foregroundColor: Colors.white,
+                      )
+                    : null,
+                onPressed: () {
+                  Haptics.tap();
+                  onConfirm();
+                },
+                child: Text(sentenceCase(confirm)),
+              ),
+            ],
+          );
+        },
       ),
-      title: Text(title, style: context.text.label),
-      content: child,
-      actions: [
-        TextButton(
-          onPressed: () {
-            Haptics.tap();
-            Navigator.pop(context);
-          },
-          child: Text(AppStrings.cancel, style: context.text.caption),
-        ),
-        TextButton(
-          onPressed: () {
-            Haptics.tap();
-            onConfirm();
-          },
-          child: Text(
-            confirm,
-            style: context.text.caption.copyWith(
-              color: destructive ? p.accent : p.textPrimary,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
