@@ -6,6 +6,8 @@ import { ask } from "../conversations/ask.js";
 import { embedTexts } from "../embeddings/index.js";
 import { isDbUp } from "../db/prisma.js";
 import { log } from "../util/logger.js";
+import { classifyIntent } from "../nlp/intent.js";
+import { extractEntities, memoryHints } from "../nlp/entities.js";
 import type { Message } from "../providers.js";
 import {
   EXTRACTOR_SYSTEM,
@@ -98,11 +100,16 @@ export function startMemoryTurn(input: TurnInput): MemoryTurn | null {
       if (!(await isEnabled())) return [];
       const explicit = detectExplicit(text);
       if (!explicit && text.length < MIN_EXTRACT_CHARS) return [];
+      // Confident small talk ("thanks!") holds no facts: skip the extraction call.
+      if (!explicit) {
+        const intent = classifyIntent(text);
+        if (intent.top === "chitchat" && !intent.uncertain && intent.confidence >= 0.6) return [];
+      }
       const v = await queryVec();
       const existing: ExistingMemory[] = v ? await similarMemories(userId, v, EXTRACT_CANDIDATES) : await recentMemories(userId, EXTRACT_CANDIDATES);
       const messages: Message[] = [
         { role: "system", content: EXTRACTOR_SYSTEM },
-        { role: "user", content: buildExtractorUser({ userText: text, assistantText: input.prevAssistant, existing, explicit }) },
+        { role: "user", content: buildExtractorUser({ userText: text, assistantText: input.prevAssistant, existing, explicit, hints: memoryHints(extractEntities(text)) }) },
       ];
       let proposed: Op[] | null = null;
       for (const model of MEMORY_MODELS.slice(0, 3)) {

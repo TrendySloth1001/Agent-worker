@@ -2,8 +2,9 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { recordUsage } from "../db/usage.js";
 import { log } from "../util/logger.js";
 import { needsFreshFacts } from "./freshness.js";
+import { classifyIntent, webVerdict, type IntentResult } from "../nlp/intent.js";
 
-export type SearchDecision = { search: boolean; query: string; reason: "explicit" | "fresh" | "model" | "none" };
+export type SearchDecision = { search: boolean; query: string; reason: "explicit" | "fresh" | "intent" | "model" | "none" };
 
 /** The user explicitly asks for the web. */
 const EXPLICIT = /\b(search|google|look ?up|browse|find (me )?(sources?|links?|articles?|references?)|check (online|the web|the internet)|on the (web|internet)|cite sources?|with sources)\b/i;
@@ -57,7 +58,7 @@ async function askModel(model: string, messages: Message[]): Promise<string> {
  * and clearly time-sensitive questions search without asking a model;
  * everything else is decided by a small fast model. Never throws.
  */
-export async function decideSearch(question: string, previous: string): Promise<SearchDecision> {
+export async function decideSearch(question: string, previous: string, intent?: IntentResult): Promise<SearchDecision> {
   const q = question.trim();
   if (!q) return { search: false, query: "", reason: "none" };
   if (EXPLICIT.test(q)) return { search: true, query: q.slice(0, 200), reason: "explicit" };
@@ -65,6 +66,10 @@ export async function decideSearch(question: string, previous: string): Promise<
   // data, not news: let the model decide those instead of the fast path.
   const ownData = /\b(my|our|mine|we have|i have|i got|we got)\b/i.test(q) && /\d/.test(q);
   if (!ownData && needsFreshFacts(q)) return { search: true, query: q.slice(0, 200), reason: "fresh" };
+  // A confident local classifier (chit-chat, code, math, writing... or news) saves the model call.
+  const verdict = webVerdict(intent ?? classifyIntent(q));
+  if (verdict === "skip") return { search: false, query: "", reason: "intent" };
+  if (verdict === "search" && !ownData) return { search: true, query: q.slice(0, 200), reason: "intent" };
   const key = `${previous.slice(-200)}|${q}`.toLowerCase();
   const hit = cache.get(key);
   if (hit) return hit;

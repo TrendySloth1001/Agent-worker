@@ -24,6 +24,9 @@ import { planQueries, runSeatResearch, type SeatResearch } from "../table/resear
 import { recordLatency } from "../table/latency.js";
 import { compactHistory, summaryMessage } from "../memory/compact.js";
 import { startMemoryTurn } from "../memory/turn.js";
+import { analyze } from "../nlp/index.js";
+import { languageInstruction } from "../nlp/language.js";
+import { shapeHint } from "../nlp/intent.js";
 import { generateFollowups } from "../assist/suggest.js";
 
 // Vision-capable models, best first. Auto uses only these when a request has images or video frames.
@@ -160,6 +163,22 @@ chatRouter.post("/", async (req, res) => {
   const started = Date.now();
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const lastUserText = lastUser.trim() === ATTACH_PLACEHOLDER ? "" : lastUser;
+  // Local NLP (no network, <1 ms): language, intent labels and entities for this turn.
+  const nlp = analyze(
+    lastUserText,
+    body.messages.filter((m) => m.role === "user").slice(0, -1).reverse().map((m) => m.content),
+    { hasImages: latestIds.some((id) => fileRows.get(id)?.kind === "image"), hasAttachments: latestIds.length > 0 },
+  );
+  log.info("nlp", {
+    requestId,
+    intent: nlp.intent.top,
+    confidence: nlp.intent.confidence,
+    labels: nlp.intent.labels.map((l) => l.label).join(","),
+    lang: nlp.language.code,
+    langConfidence: nlp.language.confidence,
+    entities: nlp.entities.length,
+    ms: nlp.ms,
+  });
   // Long-term memory: extraction runs in the background alongside generation; recall happens below.
   const memTurn = startMemoryTurn({
     userText: lastUserText,
@@ -247,7 +266,7 @@ chatRouter.post("/", async (req, res) => {
     const lastAssistant = [...body.messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
     const decision =
       body.webSearch && !aboutAttachments
-        ? await decideSearch(lastUser, lastAssistant)
+        ? await decideSearch(lastUser, lastAssistant, nlp.intent)
         : { search: false, query: "", reason: "none" as const };
     const searching = decision.search;
     if (searching) log.info("web search", { requestId, reason: decision.reason });
@@ -286,7 +305,7 @@ chatRouter.post("/", async (req, res) => {
           ? researchWeb({
               question: searchQuery(lastUser),
               focused: decision.reason === "model" ? searchQuery(decision.query) : undefined,
-              context: { previousUser: previousUser(body.messages), previousAssistant: lastAssistant },
+              context: { previousUser: previousUser(body.messages), previousAssistant: lastAssistant, language: nlp.language },
               signal: ctl.signal,
             })
           : Promise.resolve([]),
@@ -359,7 +378,7 @@ chatRouter.post("/", async (req, res) => {
 
     // ---- generation -------------------------------------------------------
     // Optional prompt sections (HTML, GitHub, widget examples) only when the turn needs them.
-    const needs = promptNeeds(`${previousUser(body.messages)}\n${lastUser}`, githubItems.length > 0);
+    const needs = promptNeeds(`${previousUser(body.messages)}\n${lastUser}`, githubItems.length > 0, nlp.intent);
     const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile, undefined, needs) }];
     const memoryBlock = await memTurn?.recall();
     if (memoryBlock) prompt.push({ role: "system", content: memoryBlock });
@@ -372,8 +391,13 @@ chatRouter.post("/", async (req, res) => {
     }
     const context = buildContextMessage(kbItems, webItems, docItems, githubItems);
     if (context) prompt.push({ role: "system", content: context });
-    const hint = lastUserText ? intentHint(lastUserText) : null;
+    const hint = lastUserText ? intentHint(lastUserText, nlp.intent) : null;
     if (hint) prompt.push({ role: "system", content: hint });
+    // Reply language (unless the profile sets one) and a length/shape nudge from the local classifier.
+    const langLine = lastUserText ? languageInstruction(nlp.language, body.profile?.language) : null;
+    if (langLine) prompt.push({ role: "system", content: langLine });
+    const shape = lastUserText ? shapeHint(nlp.intent) : null;
+    if (shape) prompt.push({ role: "system", content: shape });
     if (githubHint) prompt.push({ role: "system", content: githubHint });
     prompt.push(...prepared.messages);
 
@@ -464,7 +488,7 @@ chatRouter.post("/", async (req, res) => {
 
     // Follow-up prompt chips: a fast model, bounded so it never holds `done` for long.
     const followupsTask = text.trim().length >= 40 && lastUserText
-      ? generateFollowups(lastUserText, text, 3_000, ctl.signal).catch(() => [] as string[])
+      ? generateFollowups(lastUserText, text, 3_000, ctl.signal, nlp.language).catch(() => [] as string[])
       : Promise.resolve([] as string[]);
     // Give late images a moment so they arrive before `done`.
     const strip = await Promise.race([imagesTask, new Promise<ImageResult[]>((r) => setTimeout(() => r([]), 1_500))]);

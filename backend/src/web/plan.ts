@@ -9,9 +9,11 @@ import { pickCandidates } from "../llm/router.js";
 import { log } from "../util/logger.js";
 import { needsFreshFacts } from "./freshness.js";
 import type { Freshness, Intent } from "./types.js";
+import { extractEntities, quoteNames } from "../nlp/entities.js";
+import { isEnglish, REPLY_LANG_MIN_CONFIDENCE, type LangResult } from "../nlp/language.js";
 
 export type SearchPlan = { queries: string[]; fresh: Freshness; intents: Intent[]; via: "heuristic" | "model" };
-export type PlanContext = { previousUser?: string; previousAssistant?: string };
+export type PlanContext = { previousUser?: string; previousAssistant?: string; language?: LangResult };
 
 const PLAN_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
 const PLAN_MS = 2_500;
@@ -103,6 +105,21 @@ export function needsModel(question: string, ctx: PlanContext): boolean {
  * (from the search decision); it is used as the main query without a model call.
  */
 export async function planSearch(question: string, ctx: PlanContext, signal?: AbortSignal, focused?: string): Promise<SearchPlan> {
+  // Exact names (people, orgs, products, owner/repo) are quoted so the engine matches them as one unit.
+  const entities = extractEntities(`${focused ?? ""} ${question}`);
+  const plan = await planSearchInner(question, ctx, signal, focused);
+  return { ...plan, queries: dedupeQueries(plan.queries.map((q) => quoteNames(q, entities))) };
+}
+
+/** What language the model should write the queries in (empty for English or unsure). */
+function languageNote(lang: LangResult | undefined): string {
+  if (!lang || isEnglish(lang) || lang.confidence < REPLY_LANG_MIN_CONFIDENCE) return "";
+  // Romanised Hindi search results are poor: English keywords work better.
+  if (lang.code === "hi-Latn") return "\n- The user writes Hinglish: write the queries in English keywords.";
+  return `\n- The user writes ${lang.name}: write the queries in ${lang.name}, keeping names, code and product terms as they are.`;
+}
+
+async function planSearchInner(question: string, ctx: PlanContext, signal?: AbortSignal, focused?: string): Promise<SearchPlan> {
   const intents = detectIntents(`${focused ?? ""} ${question}`);
   if (focused) {
     const queries = dedupeQueries([focused, ...heuristicQueries(focused, ctx).slice(1)]);
@@ -116,7 +133,7 @@ export async function planSearch(question: string, ctx: PlanContext, signal?: Ab
     const model = PLAN_MODELS.find((m) => avail.has(m));
     if (model && !signal?.aborted) {
       const messages: Message[] = [
-        { role: "system", content: `${PROMPT}\nToday's date is ${new Date().toISOString().slice(0, 10)}.` },
+        { role: "system", content: `${PROMPT}${languageNote(ctx.language)}\nToday's date is ${new Date().toISOString().slice(0, 10)}.` },
         {
           role: "user",
           content: `${ctx.previousUser ? `Earlier user message: ${ctx.previousUser.slice(0, 400)}\n` : ""}${ctx.previousAssistant ? `Earlier assistant reply: ${ctx.previousAssistant.slice(0, 400)}\n` : ""}Latest message: ${question.slice(0, 1200)}`,

@@ -9,6 +9,7 @@ import { ownerFilter } from "../auth/context.js";
 import { joinOverlap, mmr, parseVector, rrfFuse } from "./fusion.js";
 import { rerank } from "./rerank.js";
 import { rewriteQueries, type HistoryMsg } from "./rewrite.js";
+import { extractEntities, quotableNames } from "../nlp/entities.js";
 
 export type KbHit = {
   chunkId: number;
@@ -70,7 +71,14 @@ export function keywordQuery(q: string): string {
     .map((w) => w.replace(/^[.+-]+|[.+-]+$/g, ""))
     .filter((w) => w.length >= 3)
     .slice(0, 12);
-  return words.join(" or ");
+  if (words.length === 0) return "";
+  // Exact names (multi-word people/orgs/products, owner/repo) also match as phrases, which ranks chunks that contain them whole higher.
+  const phrases = quotableNames(extractEntities(q))
+    .map((n) => n.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim())
+    .filter((p, i, a) => p.includes(" ") && a.indexOf(p) === i)
+    .slice(0, 3)
+    .map((p) => `"${p}"`);
+  return [...words, ...phrases].join(" or ");
 }
 
 function hostOf(url: string): string {

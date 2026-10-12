@@ -5,6 +5,7 @@ import { db } from "../db/prisma.js";
 import { userOf } from "../auth/context.js";
 import { AppError } from "../util/errors.js";
 import { completeText, endsInUrl, generateStarters } from "../assist/suggest.js";
+import { detectLanguage } from "../nlp/language.js";
 
 export const suggestRouter = Router();
 
@@ -70,7 +71,8 @@ suggestRouter.post("/complete", perUser(90), async (req, res) => {
     if (!res.writableFinished) ctl.abort();
   });
   const context = await recentContext(conversationId, userOf(req).id);
-  const out = await completeText(text, context, COMPLETE_TIMEOUT_MS, ctl.signal);
+  // The typed text decides the language; short text falls back to the recent conversation.
+  const out = await completeText(text, context, COMPLETE_TIMEOUT_MS, ctl.signal, detectLanguage(text, context ? [context.slice(-600)] : []));
   if (!ctl.signal.aborted) res.json(out ?? { completion: "", nextWords: [] });
 });
 

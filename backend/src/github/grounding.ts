@@ -4,6 +4,7 @@ import { gh, ghAuth } from "./client.js";
 import * as svc from "./service.js";
 import { graph as commitGraph } from "./graph.js";
 import { rankRepos } from "./repoSearch.js";
+import { extractEntities, knownRepoGuesses } from "../nlp/entities.js";
 
 /**
  * GitHub grounding for chat: when the user's message is clearly about GitHub
@@ -52,6 +53,8 @@ const BARE_REF = /(?<![\w./@:-])([A-Za-z0-9][\w-]{0,38})\/([A-Za-z0-9_.-]{1,100}
 const GH_WORDS =
   /\b(github|gh|repos?|repositor(?:y|ies)|git graph|(?:branch|commit) graph|commits?|commit history|pull requests?|prs?|issues?|releases?|branch(?:es)?|contributors?|maintainers?|stars?|forks?|source code|codebase|readme|file tree|changelog)\b/i;
 const STRONG = /\b(github|repos?|repositor(?:y|ies)|open[- ]?source)\b/i;
+/** Asks that are about a repository's data (so a named well-known project can be resolved to its repo). */
+const KNOWN_REPO_ASK = /\b(github|repos?|repositor(?:y|ies)|commits?|pull requests?|prs?|contributors?|changelog|open issues|stars)\b/i;
 const FINDISH =
   /\b(find|search|look(?:ing)? for|recommend|suggest|show|list|discover|best|top|popular|good|alternatives?|which|what are|any)\b/i;
 const FIND_LIB =
@@ -205,10 +208,16 @@ export function githubIntent(text: string): GithubIntent | null {
   const personal = !!mine || !!myRepo || myPulls || myIssues || myActivity;
   if (repos.length === 0 && !personal) {
     const wantsSearch = (STRONG.test(t) && FINDISH.test(t)) || FIND_LIB.test(t);
-    if (!wantsSearch && !looseRepo) return null;
-    // A loosely named repo falls back to a public search when it is not one of the user's.
-    search = wantsSearch ? searchQuery(t) : searchQuery(looseRepo!);
-    if (!search && !looseRepo) return null;
+    // "recent commits in the Flutter repo": a well-known project named without owner/repo.
+    const guess = !wantsSearch && !looseRepo && KNOWN_REPO_ASK.test(t) ? knownRepoGuesses(extractEntities(t))[0] : undefined;
+    if (guess) {
+      repos.push(guess);
+    } else {
+      if (!wantsSearch && !looseRepo) return null;
+      // A loosely named repo falls back to a public search when it is not one of the user's.
+      search = wantsSearch ? searchQuery(t) : searchQuery(looseRepo!);
+      if (!search && !looseRepo) return null;
+    }
   }
   return {
     repos,

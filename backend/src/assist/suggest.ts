@@ -4,6 +4,7 @@ import { providerConfigured } from "../llm/router.js";
 import { ask } from "../llm/ask.js";
 import { withTelemetry } from "../db/usage.js";
 import { log } from "../util/logger.js";
+import { languageClause, type LangResult } from "../nlp/language.js";
 
 // Small, fast models first. Autocomplete uses the first one that is usable.
 const FAST_MODELS = ["groq:openai/gpt-oss-20b", "groq:openai/gpt-oss-120b", "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b"];
@@ -103,11 +104,12 @@ const COMPLETE_PROMPT = [
 
 export type Completion = { completion: string; nextWords: string[] };
 
-export async function completeText(text: string, context: string, timeoutMs: number, signal?: AbortSignal): Promise<Completion | null> {
+export async function completeText(text: string, context: string, timeoutMs: number, signal?: AbortSignal, language?: LangResult): Promise<Completion | null> {
   const models = fastModels();
   if (models.length === 0) return null;
+  const clause = languageClause(language);
   const messages: Message[] = [
-    { role: "system", content: COMPLETE_PROMPT },
+    { role: "system", content: clause ? `${COMPLETE_PROMPT}\n${clause}` : COMPLETE_PROMPT },
     { role: "user", content: `${context ? `<context>\n${context}\n</context>\n` : ""}<text>${text.slice(-600)}</text>` },
   ];
   try {
@@ -131,8 +133,10 @@ const FOLLOWUP_PROMPT = [
 ].join("\n");
 
 /** Up to 3 follow-up prompts for the latest exchange; [] when no fast model answers in time. */
-export async function generateFollowups(user: string, assistant: string, timeoutMs: number, signal?: AbortSignal): Promise<string[]> {
+export async function generateFollowups(user: string, assistant: string, timeoutMs: number, signal?: AbortSignal, language?: LangResult): Promise<string[]> {
   const deadline = Date.now() + timeoutMs;
+  const clause = languageClause(language);
+  const system = clause ? `${FOLLOWUP_PROMPT}\n${clause}` : FOLLOWUP_PROMPT;
   for (const model of fastModels().slice(0, 2)) {
     const left = deadline - Date.now();
     if (left < 500) break;
@@ -141,7 +145,7 @@ export async function generateFollowups(user: string, assistant: string, timeout
         ask(
           model,
           [
-            { role: "system", content: FOLLOWUP_PROMPT },
+            { role: "system", content: system },
             { role: "user", content: `<user>${user.slice(0, 800)}</user>\n<assistant>${assistant.slice(0, 2500)}</assistant>` },
           ],
           { timeoutMs: left, maxTokens: 400, reasoningEffort: "low", signal, purpose: "suggestions" },
