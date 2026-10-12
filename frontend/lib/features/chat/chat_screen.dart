@@ -19,6 +19,8 @@ import '../docs/doc_screen.dart';
 import 'chat_actions.dart';
 import 'chat_controller.dart';
 import 'share/chat_export.dart';
+import 'voice/voice_controller.dart';
+import 'voice/voice_setup.dart';
 import 'widgets/app_drawer.dart';
 import 'widgets/background_table_chip.dart';
 import 'widgets/chat_input.dart';
@@ -40,6 +42,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   late final ChatController _controller;
+  late final VoiceController _voice;
   final _scroll = ScrollController();
   final _scaffold = GlobalKey<ScaffoldState>();
   final _drawer = GlobalKey<AppDrawerState>();
@@ -61,6 +64,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ConversationsApi(scope.baseUrl),
     );
     _controller.loadModels();
+    _voice = createVoiceController(scope.settings);
     _controller.addListener(() {
       if (_controller.messages.isEmpty) _showScrollButton.value = false;
       // Another chat opened, or the message was replaced.
@@ -117,6 +121,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _onDocNotificationOpened,
     );
     _controller.dispose();
+    _voice.dispose();
     _scroll.dispose();
     _showScrollButton.dispose();
     _inputHeight.dispose();
@@ -244,6 +249,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           onToggleRoundTable: _controller.toggleRoundTable,
                           draft: _controller.draft,
                           autocomplete: scope.settings.autocompleteOn,
+                          voice: _voice,
+                          sendVoiceAutomatically:
+                              scope.settings.voiceAutoSend,
                           conversationId: _controller.conversationId,
                           doc: _controller.doc,
                           onToggleDoc: _controller.toggleDoc,

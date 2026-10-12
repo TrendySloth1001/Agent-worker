@@ -8,6 +8,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
 import '../../../core/constants/suggest.dart';
+import '../../../core/constants/voice.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/glass.dart';
@@ -20,6 +21,9 @@ import '../attachments_controller.dart';
 import '../autocomplete/autocomplete_bar.dart';
 import '../autocomplete/autocomplete_controller.dart';
 import '../autocomplete/local_words.dart';
+import '../voice/voice_controller.dart';
+import '../voice/voice_permission.dart';
+import '../voice/voice_strip.dart';
 import 'attachment_bar.dart';
 
 /// Floating capsule with the text field and send button.
@@ -43,6 +47,8 @@ class ChatInput extends StatefulWidget {
     this.onSendAsDoc,
     this.autocomplete = false,
     this.conversationId,
+    this.voice,
+    this.sendVoiceAutomatically = false,
   });
 
   final void Function(String text, List<FileInfo> attachments) onSend;
@@ -79,6 +85,12 @@ class ChatInput extends StatefulWidget {
   /// The open chat, as context for completions.
   final String? conversationId;
 
+  /// Dictation; the mic button shows while the field is empty. Null hides it.
+  final VoiceController? voice;
+
+  /// Send as soon as dictation finishes (the settings toggle).
+  final bool sendVoiceAutomatically;
+
   @override
   State<ChatInput> createState() => _ChatInputState();
 }
@@ -95,9 +107,18 @@ class _ChatInputState extends State<ChatInput> {
   AutocompleteController? _auto;
   SharedPreferences? _prefs;
 
+  /// True while dictating or waiting for the transcript.
+  final _voiceOn = ValueNotifier<bool>(false);
+
+  /// Text already in the field when dictation started (with a trailing space).
+  String _voiceBase = '';
+  bool _holding = false, _slidingOut = false, _starting = false;
+  bool _releaseAfterStart = false;
+
   @override
   void initState() {
     super.initState();
+    widget.voice?.addListener(_voiceChanged);
     widget.draft?.addListener(_applyDraft);
     _controller.addListener(_onText);
     _auto = _makeAuto(LocalWords());
@@ -133,7 +154,10 @@ class _ChatInputState extends State<ChatInput> {
         (s.isCollapsed && s.baseOffset == _controller.text.length);
   }
 
-  void _onText() => _auto?.update(_atEnd ? _controller.text : '');
+  void _onText() {
+    if (_voiceOn.value) return;
+    _auto?.update(_atEnd ? _controller.text : '');
+  }
 
   void _acceptGhost() {
     if (_auto?.accept(_controller) ?? false) Haptics.tap();
@@ -153,6 +177,11 @@ class _ChatInputState extends State<ChatInput> {
       ?..enabled = widget.autocomplete
       ..conversationId = widget.conversationId;
     if (!widget.autocomplete) _auto?.reset();
+    if (old.voice != widget.voice) {
+      old.voice?.removeListener(_voiceChanged);
+      widget.voice?.addListener(_voiceChanged);
+      _voiceChanged();
+    }
     if (old.draft == widget.draft) return;
     old.draft?.removeListener(_applyDraft);
     widget.draft?.addListener(_applyDraft);
@@ -172,6 +201,8 @@ class _ChatInputState extends State<ChatInput> {
   @override
   void dispose() {
     widget.draft?.removeListener(_applyDraft);
+    widget.voice?.removeListener(_voiceChanged);
+    _voiceOn.dispose();
     _controller.removeListener(_onText);
     _auto?.dispose();
     _controller.dispose();
@@ -202,6 +233,94 @@ class _ChatInputState extends State<ChatInput> {
     send(text, ready);
     _controller.clear();
     _files.clearSent();
+  }
+
+  void _voiceChanged() => _voiceOn.value = widget.voice?.active ?? false;
+
+  Future<void> _startVoice() async {
+    final voice = widget.voice;
+    if (voice == null || voice.active || _starting || widget.isStreaming) {
+      return;
+    }
+    _starting = true;
+    try {
+      if (!await _micRationale(voice) || !mounted) return;
+      FocusScope.of(context).unfocus();
+      final text = _controller.text;
+      _voiceBase = text.trim().isEmpty ? '' : '${text.trimRight()} ';
+      await voice.start(_onVoiceText);
+    } finally {
+      _starting = false;
+    }
+    // The button was let go while the permission prompt was up.
+    if (_releaseAfterStart) {
+      _releaseAfterStart = false;
+      if (mounted) _finishHold();
+    }
+  }
+
+  /// Explains the microphone permission before the system asks for it.
+  /// A blocked permission skips this: the strip offers the app settings.
+  Future<bool> _micRationale(VoiceController voice) async {
+    final state = await voice.permissionState();
+    if (state != VoicePermissionState.denied || !mounted) return true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(VoiceStrings.rationaleTitle),
+        content: Text(VoiceStrings.rationaleBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(VoiceStrings.rationaleNotNow),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(VoiceStrings.rationaleAllow),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  void _onVoiceText(String text, bool isFinal) {
+    if (!mounted) return;
+    final all = _voiceBase + text;
+    _controller.value = TextEditingValue(
+      text: all,
+      selection: TextSelection.collapsed(offset: all.length),
+    );
+    if (!isFinal) return;
+    _onText();
+    if (widget.sendVoiceAutomatically) _submit();
+  }
+
+  void _cancelVoice() {
+    widget.voice?.cancel();
+    final base = _voiceBase.trimRight();
+    _controller.value = TextEditingValue(
+      text: base,
+      selection: TextSelection.collapsed(offset: base.length),
+    );
+  }
+
+  void _micTap() {
+    final voice = widget.voice;
+    if (voice == null) return;
+    if (voice.listening) {
+      voice.stop();
+    } else if (!voice.active) {
+      _startVoice();
+    }
+  }
+
+  void _finishHold() {
+    final voice = widget.voice;
+    final out = _slidingOut;
+    setState(() => _holding = _slidingOut = false);
+    if (voice == null || !voice.active) return;
+    out ? _cancelVoice() : voice.stop();
   }
 
   void _toast(String text) => ScaffoldMessenger.of(
@@ -323,8 +442,19 @@ class _ChatInputState extends State<ChatInput> {
   /// The text field, with the completion shown dimmed after the cursor;
   /// swiping right on it accepts the completion.
   Widget _field(BuildContext context) {
-    final field = TextField(
+    final field = ValueListenableBuilder<bool>(
+      valueListenable: _voiceOn,
+      builder: (context, dictating, _) => _textField(context, dictating),
+    );
+    final auto = _auto;
+    if (auto == null || !widget.autocomplete) return field;
+    return _ghostField(context, field, auto);
+  }
+
+  Widget _textField(BuildContext context, bool dictating) {
+    return TextField(
       controller: _controller,
+      readOnly: dictating,
       minLines: 1,
       maxLines: 5,
       style: context.text.body,
@@ -339,8 +469,13 @@ class _ChatInputState extends State<ChatInput> {
         focusedBorder: InputBorder.none,
       ),
     );
-    final auto = _auto;
-    if (auto == null || !widget.autocomplete) return field;
+  }
+
+  Widget _ghostField(
+    BuildContext context,
+    Widget field,
+    AutocompleteController auto,
+  ) {
     return ListenableBuilder(
       listenable: Listenable.merge([auto, _controller]),
       builder: (context, _) {
@@ -404,6 +539,15 @@ class _ChatInputState extends State<ChatInput> {
           AttachmentBar(controller: _files),
           if (widget.doc && widget.onDocLength != null)
             _DocLengthRow(value: widget.docLength, onPick: widget.onDocLength!),
+          if (widget.voice != null)
+            VoiceStrip(
+              voice: widget.voice!,
+              holding: _holding,
+              slidingOut: _slidingOut,
+              onCancel: _cancelVoice,
+              onRetry: _startVoice,
+              onSettings: widget.voice!.openSettings,
+            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -482,6 +626,61 @@ class _ChatInputState extends State<ChatInput> {
     );
   }
 
+  /// Mic when idle; tick while listening (tap, or let go after holding);
+  /// the clock while the transcript is on its way.
+  Widget _micButton(BuildContext context, VoiceController voice) {
+    final p = context.palette;
+    return ListenableBuilder(
+      listenable: voice,
+      builder: (context, _) {
+        final listening = voice.listening;
+        final working = voice.phase == VoicePhase.transcribing;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _micTap,
+          onLongPressStart: (_) {
+            if (voice.active) return;
+            setState(() => _holding = true);
+            _startVoice();
+          },
+          onLongPressMoveUpdate: (d) {
+            final out = d.offsetFromOrigin.dx < -VoiceSizes.holdCancelDistance;
+            if (_holding && out != _slidingOut) {
+              setState(() => _slidingOut = out);
+            }
+          },
+          onLongPressEnd: (_) {
+            if (!_holding) return;
+            if (_starting) {
+              _releaseAfterStart = true;
+            } else {
+              _finishHold();
+            }
+          },
+          child: AnimatedContainer(
+            duration: AppDurations.fast,
+            width: AppSizes.sendButton,
+            height: AppSizes.sendButton,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: listening ? p.accent : p.surfaceHigh,
+            ),
+            child: AppIcon(
+              working
+                  ? AppIcons.timer
+                  : listening
+                  ? AppIcons.check
+                  : AppIcons.mic,
+              size: AppIconSize.lg,
+              semanticLabel: listening ? VoiceStrings.finish : VoiceStrings.mic,
+              color: listening ? p.textInverse : p.textPrimary,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _actionButton(BuildContext context) {
     final p = context.palette;
     if (widget.isStreaming) {
@@ -500,9 +699,13 @@ class _ChatInputState extends State<ChatInput> {
         ),
       );
     }
+    final voice = widget.voice;
     return ListenableBuilder(
-      listenable: Listenable.merge([_controller, _files]),
+      listenable: Listenable.merge([_controller, _files, _voiceOn]),
       builder: (context, _) {
+        if (voice != null && (_voiceOn.value || (!_canSend && !_waiting))) {
+          return _micButton(context, voice);
+        }
         final active = _canSend || _waiting;
         return GestureDetector(
           onTap: _submit,

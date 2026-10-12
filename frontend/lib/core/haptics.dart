@@ -20,6 +20,10 @@ abstract final class Haptics {
   /// Request failed.
   static void error() => _run(HapticFeedback.heavyImpact);
 
+  /// Dictation started / stopped.
+  static void recordStart() => _run(HapticFeedback.mediumImpact);
+  static void recordStop() => _run(HapticFeedback.lightImpact);
+
   static void _run(Future<void> Function() fn) {
     if (enabled) fn();
   }
