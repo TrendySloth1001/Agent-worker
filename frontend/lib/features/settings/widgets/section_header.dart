@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_text_styles.dart';
+
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_palette.dart';
@@ -26,7 +28,17 @@ class SectionHeader extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.sm),
           ],
-          Text(title, style: context.text.caption),
+          // Group headers stay in mono caps, even where rows use body text.
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.caption.copyWith(
+                color: context.palette.textTertiary,
+              ),
+            ),
+          ),
           const SizedBox(width: AppSpacing.md),
           Expanded(child: Divider(color: context.palette.border)),
         ],

@@ -126,6 +126,24 @@ class AppTextTheme extends ThemeExtension<AppTextTheme> {
       button,
       code;
 
+  /// The same theme with [label] and [caption] in the regular body font, for
+  /// screens of plain-language rows (settings) where mono caps read poorly.
+  AppTextTheme readable() => AppTextTheme(
+    display: display,
+    headline: headline,
+    metric: metric,
+    title: title,
+    body: body,
+    bodySmall: bodySmall,
+    label: AppTextStyles.body.copyWith(
+      color: label.color,
+      fontVariations: const [FontVariation.weight(500)],
+    ),
+    caption: AppTextStyles.bodySmall.copyWith(color: caption.color),
+    button: button,
+    code: code,
+  );
+
   @override
   AppTextTheme copyWith() => this;
 

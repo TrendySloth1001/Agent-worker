@@ -132,10 +132,14 @@ class _Row extends StatelessWidget {
                   color: enabled ? p.textPrimary : p.textTertiary,
                 ),
                 const SizedBox(width: AppSpacing.md),
-                Text(
-                  label,
-                  style: context.text.label.copyWith(
-                    color: enabled ? p.textPrimary : p.textTertiary,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.label.copyWith(
+                      color: enabled ? p.textPrimary : p.textTertiary,
+                    ),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.lg),

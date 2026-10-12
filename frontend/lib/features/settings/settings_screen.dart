@@ -96,6 +96,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Plain-language rows read better in the regular font than in mono caps.
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(
+        extensions: [context.palette, context.text.readable()],
+      ),
+      child: Builder(builder: _build),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     final scope = AppScope.of(context);
     final p = context.palette;
     return AnnotatedRegion<SystemUiOverlayStyle>(

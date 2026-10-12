@@ -103,6 +103,8 @@ void main() {
 
   testWidgets('a preset sets tone and length', (tester) async {
     final settings = await _pump(tester, AppTheme.light);
+    await tester.ensureVisible(find.text('Straight to the point'));
+    await tester.pump();
     await tester.tap(find.text('Straight to the point'));
     await tester.pump(const Duration(milliseconds: 100));
     expect(settings.tone, 'direct');
