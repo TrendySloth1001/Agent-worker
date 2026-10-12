@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_scope.dart';
 import '../../core/constants/about.dart';
+import '../../core/constants/changelog.dart';
 import '../../core/constants/m3_copy.dart';
 import '../../core/constants/onboarding.dart';
 import '../../core/constants/app_config.dart';
@@ -23,6 +24,7 @@ import '../../data/usage.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../chat/widgets/open_url.dart';
 import '../onboarding/onboarding_screen.dart';
+import 'changelog_screen.dart';
 import '../settings/widgets/section_header.dart';
 import '../settings/widgets/settings_kit.dart';
 
@@ -195,6 +197,12 @@ class _AboutScreenState extends State<AboutScreen> {
             const SettingsGroupHeader(AboutCopy.credits),
             const _Credits(),
             const SizedBox(height: AppSpacing.xl),
+            _ActionButton(
+              label: ChangelogStrings.entry,
+              icon: ChangelogIcons.entry,
+              onTap: () => ChangelogScreen.open(context),
+            ),
+            const SizedBox(height: AppSpacing.md),
             _ActionButton(
               label: OnboardingStrings.takeTour,
               icon: OnboardingIcons.tour,
