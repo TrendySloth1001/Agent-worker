@@ -146,6 +146,11 @@ sealed class ChatEvent {
         return ResetEvent();
       case 'table':
         return TableEvent.fromJson(json);
+      case 'memory':
+        return MemoryEvent([
+          for (final c in json['changes'] as List? ?? const [])
+            if (c is Map<String, dynamic>) c['op'] as String? ?? '',
+        ]);
       case 'usage':
         return UsageEvent(
           json['promptTokens'] as int?,
@@ -208,6 +213,12 @@ class DeltaEvent extends ChatEvent {
 }
 
 class ResetEvent extends ChatEvent {}
+
+/// What the assistant just saved to long-term memory: ADD, UPDATE or DELETE.
+class MemoryEvent extends ChatEvent {
+  const MemoryEvent(this.ops);
+  final List<String> ops;
+}
 
 class UsageEvent extends ChatEvent {
   const UsageEvent(this.promptTokens, this.completionTokens);

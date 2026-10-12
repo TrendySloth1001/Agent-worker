@@ -20,6 +20,7 @@ import 'markdown/app_markdown.dart';
 import 'message_sheet.dart';
 import 'attachment_views.dart';
 import 'image_strip.dart';
+import 'memory_chip.dart';
 import 'source_chips.dart';
 import 'thinking_indicator.dart';
 import 'round_table_header.dart';
@@ -196,6 +197,10 @@ class MessageBubble extends StatelessWidget {
         if (message.notice != null && !message.isError) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(message.notice!, style: t.caption),
+        ],
+        if (message.memoryOps.isNotEmpty && !message.isError) ...[
+          const SizedBox(height: AppSpacing.sm),
+          MemoryChip(ops: message.memoryOps),
         ],
         if (message.images.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),

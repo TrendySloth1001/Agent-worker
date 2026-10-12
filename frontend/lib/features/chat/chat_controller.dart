@@ -632,6 +632,9 @@ class ChatController extends ChangeNotifier {
           message.content += text;
           _scheduleNotify();
           if (foreground()) _tick();
+        case MemoryEvent(:final ops):
+          message.memoryOps = ops;
+          notifyListeners();
         case ResetEvent():
           message.content = '';
           message.notice = null;

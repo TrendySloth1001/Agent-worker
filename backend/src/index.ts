@@ -24,6 +24,7 @@ import { failInterrupted } from "./files/process.js";
 import { authPublicRouter, authRouter, requireUser } from "./routes/auth.js";
 import { chatLimit, docLimit } from "./auth/limits.js";
 import { docsRouter } from "./routes/docs.js";
+import { memoryRouter } from "./routes/memory.js";
 import { prismaStore as docStore } from "./docs/store.js";
 import { liveIds as liveDocIds } from "./docs/registry.js";
 import { githubGate } from "./auth/githubGate.js";
@@ -64,6 +65,7 @@ app.use("/files", filesRouter);
 app.use("/github", githubGate, githubRouter);
 app.use("/connections", connectionsRouter);
 app.use("/docs", docsRouter);
+app.use("/memory", memoryRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));
 app.use(errorMiddleware);
