@@ -6,177 +6,155 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../data/ai_model.dart';
+import 'settings_kit.dart';
 
-/// "Which AI answers": Auto / Fastest / Smartest, then the raw model list.
-class ModelChoice extends StatelessWidget {
-  const ModelChoice({super.key});
+/// One of the Auto / Fastest / Smartest radio rows. Must sit under a
+/// `RadioGroup<String>` bound to the model choice.
+class ModelRadioTile extends StatelessWidget {
+  const ModelRadioTile({
+    super.key,
+    required this.value,
+    required this.icon,
+    required this.title,
+    required this.help,
+  });
+
+  final String value, title, help;
+  final AppIconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return RadioListTile<String>(
+      value: value,
+      controlAffinity: ListTileControlAffinity.trailing,
+      secondary: SettingsIconCircle(icon),
+      title: Text(title),
+      subtitle: Text(help),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+    );
+  }
+}
+
+/// Wraps the model rows so a pick saves the choice.
+Widget modelChoiceGroup(BuildContext context, Widget child) {
+  final s = AppScope.of(context).settings;
+  return RadioGroup<String>(
+    groupValue: s.modelChoice,
+    onChanged: (v) {
+      if (v == null) return;
+      Haptics.tap();
+      s.setModelChoice(v);
+    },
+    child: child,
+  );
+}
+
+/// "Choose a specific model": the summary shows the pick, tapping opens a
+/// bottom sheet with every model the server offers.
+class SpecificModelTile extends StatelessWidget {
+  const SpecificModelTile({super.key});
+
+  static const _presets = {'auto', 'fast', 'smart'};
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).settings;
-    return Column(
-      children: [
-        _OptionRow(
-          icon: SettingsIcons.modelAuto,
-          title: SettingsStrings.modelAuto,
-          help: SettingsStrings.modelAutoHelp,
-          selected: s.modelChoice == 'auto',
-          onTap: () => s.setModelChoice('auto'),
-        ),
-        _OptionRow(
-          icon: SettingsIcons.modelFast,
-          title: SettingsStrings.modelFast,
-          help: SettingsStrings.modelFastHelp,
-          selected: s.modelChoice == 'fast',
-          onTap: () => s.setModelChoice('fast'),
-        ),
-        _OptionRow(
-          icon: SettingsIcons.modelSmart,
-          title: SettingsStrings.modelSmart,
-          help: SettingsStrings.modelSmartHelp,
-          selected: s.modelChoice == 'smart',
-          onTap: () => s.setModelChoice('smart'),
-        ),
-        const _RawModels(),
-      ],
+    final raw = !_presets.contains(s.modelChoice);
+    return SettingsTile(
+      icon: SettingsIcons.listModels,
+      title: SettingsStrings.allModels,
+      summary: raw ? s.modelChoice : SettingsStrings.allModelsHelp,
+      onTap: () => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => const _ModelSheet(),
+      ),
     );
   }
 }
 
-class _RawModels extends StatefulWidget {
-  const _RawModels();
+class _ModelSheet extends StatefulWidget {
+  const _ModelSheet();
 
   @override
-  State<_RawModels> createState() => _RawModelsState();
+  State<_ModelSheet> createState() => _ModelSheetState();
 }
 
-class _RawModelsState extends State<_RawModels> {
-  bool _open = false;
+class _ModelSheetState extends State<_ModelSheet> {
   Future<List<AiModel>>? _models;
 
   @override
-  Widget build(BuildContext context) {
-    final scope = AppScope.of(context);
-    final s = scope.settings;
-    final p = context.palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _OptionRow(
-          icon: _open ? AppIcons.collapse : AppIcons.expand,
-          title: SettingsStrings.allModels,
-          help: SettingsStrings.allModelsHelp,
-          selected: false,
-          onTap: () => setState(() {
-            _open = !_open;
-            _models ??= scope.api.fetchModels();
-          }),
-        ),
-        if (_open)
-          FutureBuilder<List<AiModel>>(
-            future: _models,
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) {
-                return Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Text(
-                    SettingsStrings.modelsLoading,
-                    style: context.text.caption,
-                  ),
-                );
-              }
-              if (snap.hasError || snap.data == null) {
-                return Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Text(
-                    SettingsStrings.modelsFailed,
-                    style: context.text.caption.copyWith(color: p.accent),
-                  ),
-                );
-              }
-              return Column(
-                children: [
-                  for (final m in snap.data!)
-                    _OptionRow(
-                      title: m.name,
-                      help: m.provider.toUpperCase(),
-                      selected: s.modelChoice == m.id,
-                      onTap: () => s.setModelChoice(m.id),
-                    ),
-                ],
-              );
-            },
-          ),
-      ],
-    );
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _models ??= AppScope.of(context).api.fetchModels();
   }
-}
-
-class _OptionRow extends StatelessWidget {
-  const _OptionRow({
-    required this.title,
-    required this.help,
-    required this.selected,
-    required this.onTap,
-    this.icon,
-  });
-
-  final String title, help;
-  final AppIconData? icon;
-  final bool selected;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScope.of(context).settings;
+    final tt = Theme.of(context).textTheme;
     final p = context.palette;
-    final t = context.text;
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: InkWell(
-        onTap: () {
-          Haptics.tap();
-          onTap();
-        },
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minHeight: SettingsSizes.touchTarget,
-          ),
-          child: Row(
-            children: [
-              if (icon != null) ...[
-                AppIcon(
-                  icon!,
-                  size: AppIconSize.sm,
-                  color: selected ? p.accent : p.textSecondary,
-                ),
-                const SizedBox(width: AppSpacing.md),
-              ],
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: t.label.copyWith(
-                          color: selected ? p.accent : null,
-                        ),
-                      ),
-                      Text(help, style: t.caption),
-                    ],
+    return FutureBuilder<List<AiModel>>(
+      future: _models,
+      builder: (context, snap) {
+        final Widget body;
+        if (snap.connectionState != ConnectionState.done) {
+          body = Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Text(SettingsStrings.modelsLoading, style: tt.bodyMedium),
+          );
+        } else if (snap.hasError || snap.data == null) {
+          body = Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Text(
+              SettingsStrings.modelsFailed,
+              style: tt.bodyMedium!.copyWith(color: p.accent),
+            ),
+          );
+        } else {
+          body = RadioGroup<String>(
+            groupValue: s.modelChoice,
+            onChanged: (v) {
+              if (v == null) return;
+              Haptics.tap();
+              s.setModelChoice(v);
+              Navigator.pop(context);
+            },
+            child: Column(
+              children: [
+                for (final m in snap.data!)
+                  RadioListTile<String>(
+                    value: m.id,
+                    title: Text(m.name),
+                    subtitle: Text(m.provider),
                   ),
+              ],
+            ),
+          );
+        }
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    0,
+                    AppSpacing.xl,
+                    AppSpacing.sm,
+                  ),
+                  child: Text(SettingsStrings.allModels, style: tt.titleLarge),
                 ),
-              ),
-              if (selected)
-                AppIcon(AppIcons.check, size: AppIconSize.sm, color: p.accent),
-            ],
+                body,
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

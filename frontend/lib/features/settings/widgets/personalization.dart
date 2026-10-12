@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/app_scope.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
@@ -8,184 +7,31 @@ import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/icon_label.dart';
-import '../../../core/widgets/segmented.dart';
 import '../../../data/assist_api.dart';
 import '../../../data/chat_api.dart';
-import '../settings_controller.dart';
+import 'settings_kit.dart';
 
 /// Tone ids to display labels.
 const toneLabels = {
-  'friendly': AppStrings.toneFriendly,
-  'professional': AppStrings.toneProfessional,
-  'casual': AppStrings.toneCasual,
-  'direct': AppStrings.toneDirect,
-  'enthusiastic': AppStrings.toneEnthusiastic,
+  'friendly': SettingsStrings.toneFriendly,
+  'professional': SettingsStrings.toneProfessional,
+  'casual': SettingsStrings.toneCasual,
+  'direct': SettingsStrings.toneDirect,
+  'enthusiastic': SettingsStrings.toneEnthusiastic,
 };
 
-/// The "You" rows: name, role, about, sign-off.
-class ProfileRows extends StatelessWidget {
-  const ProfileRows({super.key});
+/// Length ids to display labels.
+const lengthLabels = {
+  'concise': SettingsStrings.lengthConcise,
+  'balanced': SettingsStrings.lengthBalanced,
+  'detailed': SettingsStrings.lengthDetailed,
+};
 
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScope.of(context).settings;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _FieldRow(
-          label: SettingsStrings.nameLabel,
-          icon: AppIcons.profileName,
-          value: s.name,
-          hint: AppStrings.nameHint,
-          max: AppSizes.profileNameMax,
-          onSave: s.setName,
-        ),
-        _FieldRow(
-          label: SettingsStrings.roleLabel,
-          icon: AppIcons.profileRole,
-          value: s.role,
-          hint: AppStrings.roleHint,
-          max: AppSizes.profileRoleMax,
-          onSave: s.setRole,
-        ),
-        _FieldRow(
-          label: SettingsStrings.aboutYouLabel,
-          icon: AppIcons.profileAbout,
-          value: s.about,
-          hint: AppStrings.aboutHint,
-          max: AppSizes.profileAboutMax,
-          multiline: true,
-          aiField: ProfileAiStrings.fieldAbout,
-          onSave: s.setAbout,
-        ),
-        _FieldRow(
-          label: SettingsStrings.signatureLabel,
-          icon: AppIcons.profileSignature,
-          value: s.signature,
-          hint: AppStrings.signatureHint,
-          max: AppSizes.profileSignatureMax,
-          multiline: true,
-          onSave: s.setSignature,
-        ),
-      ],
-    );
-  }
-}
-
-/// Language and free-form instructions for replies.
-class ReplyTextRows extends StatelessWidget {
-  const ReplyTextRows({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScope.of(context).settings;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _FieldRow(
-          label: SettingsStrings.languageLabel,
-          icon: AppIcons.profileLanguage,
-          value: s.language,
-          hint: SettingsStrings.languageHint,
-          max: AppSizes.profileLanguageMax,
-          onSave: s.setLanguage,
-        ),
-        _FieldRow(
-          label: SettingsStrings.instructionsLabel,
-          icon: AppIcons.profileInstructions,
-          value: s.customInstructions,
-          hint: AppStrings.instructionsHint,
-          max: AppSizes.profileInstructionsMax,
-          multiline: true,
-          aiField: ProfileAiStrings.fieldInstructions,
-          onSave: s.setCustomInstructions,
-        ),
-      ],
-    );
-  }
-}
-
-/// Fine tone and length controls (under "Customise").
-class ToneLengthControls extends StatelessWidget {
-  const ToneLengthControls({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScope.of(context).settings;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(SettingsStrings.toneLabel, style: context.text.label),
-        const SizedBox(height: AppSpacing.sm),
-        _toneChips(context, s),
-        const SizedBox(height: AppSpacing.lg),
-        Text(SettingsStrings.lengthLabel, style: context.text.label),
-        const SizedBox(height: AppSpacing.sm),
-        Segmented<String>(
-          value: s.length,
-          onChanged: s.setLength,
-          icons: const {
-            'concise': AppIcons.lengthConcise,
-            'balanced': AppIcons.lengthBalanced,
-            'detailed': AppIcons.lengthDetailed,
-          },
-          options: const [
-            ('concise', AppStrings.lengthConcise),
-            ('balanced', AppStrings.lengthBalanced),
-            ('detailed', AppStrings.lengthDetailed),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Tapping the selected tone again clears it.
-  Widget _toneChips(BuildContext context, SettingsController s) {
-    final p = context.palette;
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: [
-        for (final id in SettingsController.tones)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              Haptics.tap();
-              s.setTone(s.tone == id ? '' : id);
-            },
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: AppSizes.minTap),
-              child: Container(
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.xs,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  color: s.tone == id ? p.textPrimary : Colors.transparent,
-                  border: Border.all(
-                    color: s.tone == id ? p.textPrimary : p.borderStrong,
-                    width: AppBorder.thin,
-                  ),
-                ),
-                child: IconLabel(
-                  icon: AppIcons.tone(id),
-                  text: toneLabels[id]!,
-                  style: context.text.caption,
-                  color: s.tone == id ? p.textInverse : p.textSecondary,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _FieldRow extends StatelessWidget {
-  const _FieldRow({
+/// A text profile field as a settings row: the current value is the
+/// supporting text, tapping opens the editor sheet.
+class ProfileFieldTile extends StatelessWidget {
+  const ProfileFieldTile({
+    super.key,
     required this.label,
     required this.icon,
     required this.value,
@@ -207,64 +53,27 @@ class _FieldRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
-    final empty = value.isEmpty;
     final oneLine = value.replaceAll(RegExp(r'\s+'), ' ');
-    return InkWell(
+    return ListTile(
+      leading: SettingsIconCircle(icon),
+      title: Text(label),
+      subtitle: Text(
+        value.isEmpty ? SettingsStrings.sumNotSet : oneLine,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
       onTap: () {
         Haptics.tap();
         _showEditor(context);
       },
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: AppSizes.minTap),
-        child: LayoutBuilder(
-          builder: (context, box) => Row(
-            children: [
-              AppIcon(icon, size: AppIconSize.xs, color: p.textSecondary),
-              const SizedBox(width: AppSpacing.sm),
-              // The label takes what it needs (at most half); the value the rest.
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: box.maxWidth / 2),
-                child: Text(label, style: t.label),
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: Text(
-                  empty ? AppStrings.notSet : oneLine,
-                  textAlign: TextAlign.end,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.caption.copyWith(
-                    color: empty ? p.textTertiary : p.textPrimary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              AppIcon(
-                AppIcons.chevronRight,
-                size: AppIconSize.xs,
-                color: p.textTertiary,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
   void _showEditor(BuildContext context) {
-    final p = context.palette;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: p.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppRadius.lg),
-        ),
-        side: BorderSide(color: p.border),
-      ),
+      useSafeArea: true,
       builder: (_) => _EditorSheet(
         title: label,
         hint: hint,
@@ -365,6 +174,7 @@ class _EditorSheetState extends State<_EditorSheet> {
   Widget build(BuildContext context) {
     final p = context.palette;
     final t = context.text;
+    final tt = Theme.of(context).textTheme;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
@@ -374,7 +184,7 @@ class _EditorSheetState extends State<_EditorSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(widget.title, style: t.label),
+              Text(widget.title, style: tt.titleLarge),
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: _input,
@@ -453,7 +263,7 @@ class _EditorSheetState extends State<_EditorSheet> {
   }
 }
 
-/// Small outlined pill used for FORMAT WITH AI and UNDO.
+/// M3 assist chip used for FORMAT WITH AI and UNDO.
 class _AiChip extends StatelessWidget {
   const _AiChip({
     required this.icon,
@@ -469,39 +279,23 @@ class _AiChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final color = onTap == null && !busy ? p.textTertiary : p.textPrimary;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: ProfileAiSizes.buttonHeight,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: busy ? p.accent : p.borderStrong,
-            width: AppBorder.thin,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (busy)
-              SizedBox.square(
-                dimension: AppIconSize.sm,
-                child: CircularProgressIndicator(
-                  strokeWidth: AppBorder.thick,
-                  color: p.accent,
-                ),
-              )
-            else
-              AppIcon(icon, size: AppIconSize.sm, color: color),
-            const SizedBox(width: AppSpacing.sm),
-            Text(label, style: context.text.caption.copyWith(color: color)),
-          ],
-        ),
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    final color = onTap == null && !busy
+        ? scheme.onSurfaceVariant
+        : scheme.onSurface;
+    return ActionChip(
+      onPressed: onTap,
+      avatar: busy
+          ? SizedBox.square(
+              dimension: AppIconSize.sm,
+              child: CircularProgressIndicator(
+                strokeWidth: AppBorder.thick,
+                color: context.palette.accent,
+              ),
+            )
+          : AppIcon(icon, size: AppIconSize.md, color: color),
+      label: Text(label),
+      side: BorderSide(color: busy ? context.palette.accent : scheme.outline),
     );
   }
 }

@@ -78,7 +78,7 @@ const replyPresets = [
 ReplyPreset? presetFor(String tone, String length) =>
     replyPresets.where((p) => p.tone == tone && p.length == length).firstOrNull;
 
-/// Tappable cards, one per reply style, each with a sample sentence.
+/// Selectable cards, one per reply style, each with a sample sentence.
 class ReplyStyleCards extends StatelessWidget {
   const ReplyStyleCards({super.key});
 
@@ -86,20 +86,23 @@ class ReplyStyleCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScope.of(context).settings;
     final current = presetFor(s.tone, s.length);
-    return Column(
-      children: [
-        for (final preset in replyPresets) ...[
-          _PresetCard(
-            preset: preset,
-            selected: preset == current,
-            onTap: () {
-              Haptics.tap();
-              s.applyReplyStyle(preset.tone, preset.length);
-            },
-          ),
-          const SizedBox(height: AppSpacing.sm),
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        children: [
+          for (var i = 0; i < replyPresets.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm),
+            _PresetCard(
+              preset: replyPresets[i],
+              selected: replyPresets[i] == current,
+              onTap: () {
+                Haptics.tap();
+                s.applyReplyStyle(replyPresets[i].tone, replyPresets[i].length);
+              },
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -118,45 +121,51 @@ class _PresetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
+    final scheme = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      side: BorderSide(
+        color: selected ? p.accent : Colors.transparent,
+        width: AppBorder.thick,
+      ),
+    );
     return Semantics(
       button: true,
       selected: selected,
       label: preset.title,
       child: Material(
-        color: Colors.transparent,
+        color: scheme.surfaceContainerHigh,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          child: AnimatedContainer(
-            duration: AppDurations.fast,
+          child: Container(
             width: double.infinity,
             constraints: const BoxConstraints(
               minHeight: SettingsSizes.touchTarget,
             ),
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: selected ? p.accent : p.border,
-                width: selected ? AppBorder.thick : AppBorder.thin,
-              ),
-            ),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Row(
               children: [
                 AppIcon(
                   preset.icon,
-                  size: AppIconSize.md,
-                  color: selected ? p.accent : p.textSecondary,
+                  size: AppIconSize.lg,
+                  color: selected ? p.accent : scheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: AppSpacing.md),
+                const SizedBox(width: AppSpacing.lg),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(preset.title, style: t.label),
+                      Text(preset.title, style: tt.titleMedium),
                       const SizedBox(height: AppSpacing.xxs),
-                      Text(preset.sample, style: t.caption),
+                      Text(
+                        preset.sample,
+                        style: tt.bodyMedium!.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -164,7 +173,7 @@ class _PresetCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   AppIcon(
                     AppIcons.check,
-                    size: AppIconSize.sm,
+                    size: AppIconSize.lg,
                     color: p.accent,
                   ),
                 ],

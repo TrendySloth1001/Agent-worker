@@ -1,24 +1,34 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
-import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/connections.dart';
-import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/app_icon.dart';
+import '../../../core/constants/settings_copy.dart';
 import '../../chat/widgets/github/github_connect_card.dart';
 import '../../connections/connections_controller.dart';
-import 'section_header.dart';
+import 'settings_kit.dart';
 
-/// Settings → CONNECTIONS: the user's linked accounts. GitHub opens the
-/// connect sheet; the others are placeholders for now.
-class ConnectionsSection extends StatefulWidget {
-  const ConnectionsSection({super.key});
-
-  @override
-  State<ConnectionsSection> createState() => _ConnectionsSectionState();
+/// Short status line for the GitHub connection, shared by the row and the
+/// category summary.
+String githubSummary(ConnectionsController c) {
+  final g = c.github;
+  if (g != null) return ConnectStrings.account(g.login);
+  return switch (c.githubPhase) {
+    GithubPhase.loading => SettingsStrings.connect,
+    GithubPhase.waiting || GithubPhase.browser => SettingsStrings.waiting,
+    GithubPhase.notConfigured when !c.isOwner => SettingsStrings.unavailable,
+    _ => SettingsStrings.connect,
+  };
 }
 
-class _ConnectionsSectionState extends State<ConnectionsSection> {
+/// GitHub row: opens the connect sheet; refreshes the link state on show.
+class GithubConnectionTile extends StatefulWidget {
+  const GithubConnectionTile({super.key});
+
+  @override
+  State<GithubConnectionTile> createState() => _GithubConnectionTileState();
+}
+
+class _GithubConnectionTileState extends State<GithubConnectionTile> {
   final _c = ConnectionsController.instance;
 
   @override
@@ -28,140 +38,29 @@ class _ConnectionsSectionState extends State<ConnectionsSection> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return ListenableBuilder(
-      listenable: _c,
-      builder: (context, _) => Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: p.border, width: AppBorder.thin),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            _Row(
-              icon: ConnectIcons.github,
-              label: ConnectStrings.github,
-              trailing: _githubTrailing(context),
-              onTap: () => showGithubConnectSheet(context),
-            ),
-            Divider(height: AppBorder.thin, color: p.border),
-            const _Row(
-              icon: ConnectIcons.googleDrive,
-              label: ConnectStrings.googleDrive,
-              trailing: MetaChip(ConnectStrings.soon),
-            ),
-            Divider(height: AppBorder.thin, color: p.border),
-            const _Row(
-              icon: ConnectIcons.googlePhotos,
-              label: ConnectStrings.googlePhotos,
-              trailing: MetaChip(ConnectStrings.soon),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _githubTrailing(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
-    final g = _c.github;
-    if (g != null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          StatusDot(color: p.textPrimary),
-          const SizedBox(width: AppSpacing.sm),
-          Flexible(
-            child: Text(
-              ConnectStrings.account(g.login),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: t.caption.copyWith(color: p.textPrimary),
-            ),
-          ),
-        ],
-      );
-    }
-    return switch (_c.githubPhase) {
-      GithubPhase.loading => const SizedBox.shrink(),
-      GithubPhase.waiting || GithubPhase.browser => const MetaChip(
-        ConnectStrings.waiting,
-        emphasis: true,
-      ),
-      GithubPhase.notConfigured when !_c.isOwner => const MetaChip(
-        ConnectStrings.unavailable,
-      ),
-      _ => const MetaChip(ConnectStrings.connect, emphasis: true),
-    };
-  }
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _c,
+    builder: (context, _) => SettingsTile(
+      icon: ConnectIcons.github,
+      title: ConnectStrings.github,
+      summary: githubSummary(_c),
+      onTap: () => showGithubConnectSheet(context),
+    ),
+  );
 }
 
-class _Row extends StatelessWidget {
-  const _Row({
-    required this.icon,
-    required this.label,
-    required this.trailing,
-    this.onTap,
-  });
+/// Google Drive / Photos placeholder row.
+class SoonTile extends StatelessWidget {
+  const SoonTile({super.key, required this.icon, required this.title});
 
   final AppIconData icon;
-  final String label;
-  final Widget trailing;
-  final VoidCallback? onTap;
+  final String title;
 
   @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final enabled = onTap != null;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: SizedBox(
-            height: AppSizes.rowHeight,
-            child: Row(
-              children: [
-                AppIcon(
-                  icon,
-                  size: AppIconSize.sm,
-                  color: enabled ? p.textPrimary : p.textTertiary,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.text.label.copyWith(
-                      color: enabled ? p.textPrimary : p.textTertiary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.lg),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: trailing,
-                  ),
-                ),
-                if (enabled) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  AppIcon(
-                    ConnectIcons.chevron,
-                    size: AppIconSize.xs,
-                    color: p.textTertiary,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SettingsTile(
+    icon: icon,
+    title: title,
+    summary: SettingsStrings.soon,
+    titleColor: Theme.of(context).colorScheme.onSurfaceVariant,
+  );
 }
