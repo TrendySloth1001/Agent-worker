@@ -401,7 +401,74 @@ class FakeGithubApi extends GithubApi {
         'total': 2,
         'items': [fakeRepos[0], fakeRepos[2]],
       });
+
+  @override
+  Future<List<GhActivity>> myEvents() async => [
+    for (final e in fakeEvents) GhActivity(e),
+  ];
 }
+
+/// The account's activity feed: today, yesterday and older.
+final fakeEvents = <Map<String, dynamic>>[
+  {
+    'id': '1',
+    'type': 'push',
+    'action': 'pushed',
+    'repo': 'nickrivera/sparky',
+    'at': _ago(const Duration(hours: 2)).toIso8601String(),
+    'title': 'feat(app): Apps hub with connectors',
+    'sha': 'a1b2c3d4e5f6a7b8',
+    'ref': 'main',
+    'url': 'https://github.com/nickrivera/sparky/commit/a1b2c3d4e5f6a7b8',
+    'commits': [
+      {'sha': 'a1b2c3d4e5f6a7b8', 'message': 'feat(app): Apps hub with connectors'},
+      {'sha': 'b2c3d4e5f6a7b8c9', 'message': 'fix(chat): keep scroll position'},
+    ],
+  },
+  {
+    'id': '2',
+    'type': 'pr',
+    'action': 'opened',
+    'repo': 'nickrivera/sparky',
+    'at': _ago(const Duration(hours: 3)).toIso8601String(),
+    'title': 'Add the Apps hub and GitHub screen',
+    'number': 214,
+    'isPr': true,
+    'url': 'https://github.com/nickrivera/sparky/pull/214',
+  },
+  {
+    'id': '3',
+    'type': 'review',
+    'action': 'approved',
+    'repo': 'cloudnsofts/platform',
+    'at': _ago(const Duration(days: 1, hours: 1)).toIso8601String(),
+    'title': 'Channels: unread markers',
+    'number': 88,
+    'isPr': true,
+    'url': 'https://github.com/cloudnsofts/platform/pull/88',
+  },
+  {
+    'id': '4',
+    'type': 'issue',
+    'action': 'opened',
+    'repo': 'nickrivera/sparky',
+    'at': _ago(const Duration(days: 1, hours: 4)).toIso8601String(),
+    'title': 'Voice input stops after a long pause',
+    'number': 198,
+    'url': 'https://github.com/nickrivera/sparky/issues/198',
+  },
+  {
+    'id': '5',
+    'type': 'release',
+    'action': 'published',
+    'repo': 'nickrivera/sparky',
+    'at': _ago(const Duration(days: 4)).toIso8601String(),
+    'title': 'v1.1.0',
+    'url': 'https://github.com/nickrivera/sparky/releases/tag/v1.1.0',
+    'body': '## Highlights\n\n- Apps hub\n- GitHub screen',
+    'release': {'tag': 'v1.1.0', 'name': 'v1.1.0'},
+  },
+];
 
 /// Puts the app's connection state in a known place without any network.
 void fakeConnected({bool connected = true}) {

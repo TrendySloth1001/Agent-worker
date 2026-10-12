@@ -4,6 +4,10 @@ import { ghAuth, lastRate } from "../github/client.js";
 import * as svc from "../github/service.js";
 import { reviewPull } from "../github/review.js";
 import { graph } from "../github/graph.js";
+import * as detail from "../github/detail.js";
+import * as actions from "../github/actions.js";
+import { myEvents } from "../github/events.js";
+import { rateLimit } from "../util/rateLimit.js";
 
 export const githubRouter = Router();
 
@@ -155,6 +159,69 @@ githubRouter.post("/repos/:owner/:repo/pulls/:n/review", async (req, res) => {
   const review = await reviewPull(req.params.owner, req.params.repo, Number(req.params.n), { fresh, signal: ctl.signal });
   res.setHeader("Cache-Control", "no-store");
   res.json(review);
+});
+
+// ---- pull request / issue detail (in-app screens) -------------------------
+const num = (req: Request) => Number(req.params.n);
+type P = { owner: string; repo: string; n: string };
+const writeLimit = rateLimit(30);
+
+/** Writes answer fresh data and are never cached by the client. */
+function sendWrite(res: Response, data: unknown) {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(data);
+}
+
+githubRouter.get("/repos/:owner/:repo/pulls/:n/detail", async (req: Request<P>, res) => {
+  await send(res, await detail.pullDetail(req.params.owner, req.params.repo, num(req)));
+});
+githubRouter.get("/repos/:owner/:repo/pulls/:n/timeline", async (req: Request<P>, res) => {
+  await send(res, await detail.timeline(req.params.owner, req.params.repo, num(req), { pr: true }));
+});
+githubRouter.get("/repos/:owner/:repo/pulls/:n/commits", async (req: Request<P>, res) => {
+  await send(res, await detail.pullCommits(req.params.owner, req.params.repo, num(req)));
+});
+githubRouter.get("/repos/:owner/:repo/pulls/:n/files", async (req: Request<P>, res) => {
+  await send(res, await detail.pullFiles(req.params.owner, req.params.repo, num(req)));
+});
+githubRouter.get("/repos/:owner/:repo/pulls/:n/checks", async (req: Request<P>, res) => {
+  await send(res, await detail.pullChecks(req.params.owner, req.params.repo, num(req)));
+});
+githubRouter.get("/repos/:owner/:repo/issues/:n", async (req: Request<P>, res) => {
+  await send(res, await detail.issueDetail(req.params.owner, req.params.repo, num(req)));
+});
+githubRouter.get("/repos/:owner/:repo/issues/:n/timeline", async (req: Request<P>, res) => {
+  await send(res, await detail.timeline(req.params.owner, req.params.repo, num(req)));
+});
+githubRouter.get("/repos/:owner/:repo/labels", async (req, res) => {
+  await send(res, await detail.repoLabels(req.params.owner, req.params.repo));
+});
+githubRouter.get("/repos/:owner/:repo/assignees", async (req, res) => {
+  await send(res, await detail.repoAssignees(req.params.owner, req.params.repo));
+});
+
+githubRouter.post("/repos/:owner/:repo/issues/:n/comments", writeLimit, async (req: Request<P>, res) => {
+  sendWrite(res, await actions.addComment(req.params.owner, req.params.repo, num(req), req.body?.body));
+});
+githubRouter.patch("/repos/:owner/:repo/issues/:n", writeLimit, async (req: Request<P>, res) => {
+  sendWrite(res, await actions.updateIssue(req.params.owner, req.params.repo, num(req), req.body ?? {}));
+});
+githubRouter.post("/repos/:owner/:repo/issues/:n/reactions", writeLimit, async (req: Request<P>, res) => {
+  sendWrite(res, await actions.react(req.params.owner, req.params.repo, num(req), req.body?.content));
+});
+githubRouter.post("/repos/:owner/:repo/pulls/:n/reviews", writeLimit, async (req: Request<P>, res) => {
+  sendWrite(res, await actions.submitReview(req.params.owner, req.params.repo, num(req), req.body ?? {}));
+});
+githubRouter.put("/repos/:owner/:repo/pulls/:n/merge", writeLimit, async (req: Request<P>, res) => {
+  sendWrite(res, await actions.mergePull(req.params.owner, req.params.repo, num(req), req.body ?? {}));
+});
+githubRouter.post("/repos/:owner/:repo/pulls/:n/ready", writeLimit, async (req: Request<P>, res) => {
+  sendWrite(res, await actions.markReady(req.params.owner, req.params.repo, num(req)));
+});
+
+// The caller's activity feed (pushes, pull requests, issues, reviews, releases…).
+githubRouter.get("/my/events", async (_req, res) => {
+  await send(res, await myEvents());
 });
 
 githubRouter.get("/repos/:owner/:repo/issues", async (req, res) => {

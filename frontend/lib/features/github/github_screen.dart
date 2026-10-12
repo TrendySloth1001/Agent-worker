@@ -17,6 +17,7 @@ import '../settings/widgets/settings_kit.dart';
 import 'github_controller.dart';
 import 'github_repo_screen.dart';
 import 'github_search_screen.dart';
+import 'widgets/gh_activity.dart';
 import 'widgets/gh_rows.dart';
 
 /// The connected GitHub account: who is linked, their repositories, pull
@@ -40,6 +41,7 @@ class _GithubScreenState extends State<GithubScreen>
       widget.controller ?? GithubHubController();
   late final TabController _tabs = TabController(length: 4, vsync: this);
   final _scroll = ScrollController();
+  final _search = TextEditingController();
 
   @override
   void initState() {
@@ -57,6 +59,7 @@ class _GithubScreenState extends State<GithubScreen>
     _tabs.removeListener(_onTab);
     _tabs.dispose();
     _scroll.dispose();
+    _search.dispose();
     if (widget.controller == null) _hub.dispose();
     super.dispose();
   }
@@ -160,9 +163,9 @@ class _GithubScreenState extends State<GithubScreen>
     if (_conn.github != null) await _hub.refreshAll();
   }
 
-  void _openRepo(GhRepo r) => Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => GithubRepoScreen(seed: r)),
-  );
+  void _openRepo(GhRepo r) => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => GithubRepoScreen(seed: r)));
 
   @override
   Widget build(BuildContext context) {
@@ -257,11 +260,7 @@ class _GithubScreenState extends State<GithubScreen>
                 title: _WhatYouGet.title,
                 children: [
                   for (final row in _WhatYouGet.rows)
-                    SettingsTile(
-                      icon: row.$1,
-                      title: row.$2,
-                      summary: row.$3,
-                    ),
+                    SettingsTile(icon: row.$1, title: row.$2, summary: row.$3),
                 ],
               ),
             ],
@@ -294,10 +293,28 @@ class _GithubScreenState extends State<GithubScreen>
           GithubHubIcons.issues,
         );
       case 3:
-        return _list<GhCommit>(
-          _hub.activity,
+        final feed = _hub.feed.data;
+        if (feed != null) {
+          return [
+            M3Body(children: [GhActivityFeed(items: feed)]),
+          ];
+        }
+        // The events API failed: the latest commits instead.
+        if (_hub.feed.failed &&
+            (_hub.activity.ready || _hub.activity.loading)) {
+          return _list<GhCommit>(
+            _hub.activity,
+            _hub.loadActivity,
+            (c, i) => GhCommitTile(commit: i),
+            GithubHubStrings.noActivity,
+            GithubHubStrings.noActivityHint,
+            GithubHubIcons.activity,
+          );
+        }
+        return _list<GhActivity>(
+          _hub.feed,
           _hub.loadActivity,
-          (c, i) => GhCommitTile(commit: i),
+          (c, i) => GhActivityTile(item: i),
           GithubHubStrings.noActivity,
           GithubHubStrings.noActivityHint,
           GithubHubIcons.activity,
@@ -354,7 +371,17 @@ class _GithubScreenState extends State<GithubScreen>
           : M3Empty(
               icon: AppIcons.search,
               title: GithubHubStrings.noMatches,
-              hint: GithubHubStrings.noMatchesHint(h.query),
+              hint: h.query.isEmpty
+                  ? null
+                  : GithubHubStrings.noMatchesHint(h.query),
+              action: FilledButton.tonal(
+                onPressed: () {
+                  _search.clear();
+                  h.setQuery('');
+                  h.setFilter(RepoFilter.all);
+                },
+                child: const Text(GithubHubStrings.clearSearch),
+              ),
             );
     }
     return [
@@ -365,7 +392,9 @@ class _GithubScreenState extends State<GithubScreen>
           AppSpacing.screenPadding,
           AppSpacing.sm,
         ),
-        sliver: SliverToBoxAdapter(child: _RepoControls(hub: h)),
+        sliver: SliverToBoxAdapter(
+          child: _RepoControls(hub: h, search: _search),
+        ),
       ),
       if (message != null)
         SliverPadding(
@@ -385,15 +414,16 @@ class _GithubScreenState extends State<GithubScreen>
               if (i >= shown.length) {
                 return const Padding(
                   padding: EdgeInsets.all(AppSpacing.lg),
-                  child: Center(
-                    child: Text(GithubHubStrings.loadingMore),
-                  ),
+                  child: Center(child: Text(GithubHubStrings.loadingMore)),
                 );
               }
               return M3Cell(
                 index: i,
                 count: shown.length + (h.hasMore ? 1 : 0),
-                child: GhRepoTile(repo: shown[i], onTap: () => _openRepo(shown[i])),
+                child: GhRepoTile(
+                  repo: shown[i],
+                  onTap: () => _openRepo(shown[i]),
+                ),
               );
             },
           ),
@@ -441,9 +471,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    final login = me?.login.isNotEmpty == true
-        ? me!.login
-        : connection.login;
+    final login = me?.login.isNotEmpty == true ? me!.login : connection.login;
     final name = me?.name.isNotEmpty == true ? me!.name : login;
     final avatar = me?.avatar.isNotEmpty == true
         ? me!.avatar
@@ -480,7 +508,10 @@ class _Header extends StatelessWidget {
                     const SizedBox(height: AppSpacing.sm),
                     Row(
                       children: [
-                        const M3Tag(GithubHubStrings.connectedStatus, accent: true),
+                        const M3Tag(
+                          GithubHubStrings.connectedStatus,
+                          accent: true,
+                        ),
                         if (counts != null) ...[
                           const SizedBox(width: AppSpacing.sm),
                           Flexible(
@@ -540,9 +571,10 @@ class _Header extends StatelessWidget {
 
 /// Search, sort and filter of the repository list.
 class _RepoControls extends StatelessWidget {
-  const _RepoControls({required this.hub});
+  const _RepoControls({required this.hub, required this.search});
 
   final GithubHubController hub;
+  final TextEditingController search;
 
   static String _sortLabel(RepoSort s) => switch (s) {
     RepoSort.pushed => GithubHubStrings.sortPushed,
@@ -565,6 +597,7 @@ class _RepoControls extends StatelessWidget {
       children: [
         GhPillSearch(
           hint: GithubHubStrings.filterRepos,
+          controller: search,
           onChanged: hub.setQuery,
         ),
         const SizedBox(height: AppSpacing.md),

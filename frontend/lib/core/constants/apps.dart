@@ -110,6 +110,7 @@ abstract final class GithubHubStrings {
   static const tabActivity = 'Activity';
 
   static const filterRepos = 'Search your repositories';
+  static const clearSearch = 'Clear search';
   static const sortLabel = 'Sort';
   static const sortPushed = 'Recently pushed';
   static const sortName = 'Name';
@@ -199,7 +200,7 @@ abstract final class GithubHubSizes {
   static const rowAvatar = 36.0;
   static const reposPage = 30;
   static const loadMoreExtent = 400.0;
-  static const searchHeight = 52.0;
+  static const searchHeight = 48.0;
   static const rowIcon = 18.0;
   static const readmeMaxWidth = 720.0;
   static const treeHeight = 480.0;
@@ -209,4 +210,5 @@ abstract final class GithubHubSizes {
 
 abstract final class GithubHubDurations {
   static const debounce = Duration(milliseconds: 180);
+  static const focus = Duration(milliseconds: 150);
 }

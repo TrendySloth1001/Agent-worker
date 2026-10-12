@@ -166,6 +166,105 @@ function mapError(status: number, message: string, rate: RateInfo | null): AppEr
   return new AppError(502, "upstream_failed", `GitHub error ${status}`, true);
 }
 
+/**
+ * May the current caller change things on GitHub? Only with their own
+ * connected account, or the owner on the server token: never with the
+ * server token on someone else's behalf (that would act as the owner).
+ */
+export function canWriteWith(auth: GhAuth): boolean {
+  return !!auth.token && (auth.kind === "user" || (auth.kind === "server" && !auth.publicOnly));
+}
+
+/** A classic token without the scope to write to this repository (fine-grained tokens report no scopes). */
+export function missingWriteScope(scopes: string[] | null, isPrivate: boolean): boolean {
+  if (scopes == null) return false;
+  if (scopes.includes("repo")) return false;
+  return isPrivate || !scopes.includes("public_repo");
+}
+
+/** Drops cached GETs of one repository for one token (after a write). */
+export function forgetRepo(authKey: string, owner: string, repo: string) {
+  const needle = `|/repos/${owner}/${repo}`.toLowerCase();
+  for (const k of [...cache.keys()]) if (k.startsWith(`${authKey}|`) && k.toLowerCase().includes(needle)) cache.delete(k);
+}
+
+/**
+ * A write (POST / PATCH / PUT / DELETE) to the GitHub REST API with the
+ * caller's token. Never cached; the repository's cached reads are dropped.
+ * Failures map to typed errors the app shows inline: `github_no_permission`
+ * (403, or 404 on a write), `github_scope_missing` (the token lacks the repo
+ * scope: reconnect), `github_invalid` (422), `github_not_mergeable` (405/409)
+ * and `rate_limited`.
+ */
+export async function ghSend<T = any>(
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+  opts: { signal?: AbortSignal } = {},
+): Promise<T> {
+  const auth = await ghAuth();
+  if (!canWriteWith(auth)) throw new AppError(409, "github_not_connected", "Connect your GitHub account to make changes");
+  const signals = [AbortSignal.timeout(TIMEOUT_MS), ...(opts.signal ? [opts.signal] : [])];
+  let res: Response;
+  const t0 = Date.now();
+  try {
+    res = await fetch(`${API}${path}`, {
+      method,
+      headers: { ...headers("application/vnd.github+json", auth.token), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.any(signals),
+    });
+  } catch (e) {
+    if (opts.signal?.aborted) throw e;
+    recordUsage({ provider: "github", model: "rest", kind: "github", ok: false, latencyMs: Date.now() - t0, errorCode: "timeout", errorMessage: "GitHub did not answer in time" });
+    throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
+  }
+  recordUsage({ provider: "github", model: "rest", kind: "github", ok: res.ok, status: res.status, latencyMs: Date.now() - t0, errorMessage: res.ok ? undefined : `${method} ${path.split("?")[0].slice(0, 80)}` });
+  const rate = readRate(res, auth.key);
+  const scopeHeader = res.headers.get("x-oauth-scopes");
+  const scopes = scopeHeader == null ? null : scopeHeader.split(",").map((x) => x.trim()).filter(Boolean);
+  if (scopes) scopesByKey.set(auth.key, scopes);
+  const m = path.match(/^\/repos\/([^/]+)\/([^/]+)/);
+  if (m) forgetRepo(auth.key, m[1], m[2]);
+  if (!res.ok) {
+    if (res.status === 401 && auth.kind === "user" && auth.userId) {
+      await dropRevokedGithub(auth.userId);
+      throw new AppError(409, "github_not_connected", "GitHub access was revoked. Connect GitHub again.");
+    }
+    let message = "";
+    try {
+      message = ((await res.json()) as { message?: string })?.message ?? "";
+    } catch {
+      /* not JSON */
+    }
+    throw mapWriteError(res.status, message, rate, scopes, res.headers.get("x-accepted-oauth-scopes"));
+  }
+  if (res.status === 204) return null as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+/** GitHub's answer to a write, as an error the app can explain. */
+export function mapWriteError(status: number, message: string, rate: RateInfo | null, scopes: string[] | null = null, accepted: string | null = null): AppError {
+  if ((status === 403 || status === 429) && (rate?.remaining === 0 || /rate limit/i.test(message))) return mapError(status, message, rate);
+  if (status === 403 || status === 404) {
+    const need = (accepted ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    const lacksScope = scopes != null && need.length > 0 && !need.some((s) => scopes.includes(s));
+    if (lacksScope || /scope|not accessible by (integration|personal access token)/i.test(message)) {
+      return new AppError(403, "github_scope_missing", "Your GitHub token can't do this here. Reconnect GitHub with repo access.");
+    }
+    return new AppError(
+      403,
+      "github_no_permission",
+      status === 404 ? "You don't have access to change this on GitHub." : `GitHub: ${message || "you don't have permission to do this"}`.slice(0, 160),
+    );
+  }
+  if (status === 405 || status === 409) return new AppError(409, "github_not_mergeable", `GitHub: ${message || "this pull request can't be merged right now"}`.slice(0, 160));
+  if (status === 410) return new AppError(409, "github_invalid", "GitHub: this is turned off for the repository");
+  if (status === 422) return new AppError(422, "github_invalid", `GitHub: ${message || "the change was rejected"}`.slice(0, 160));
+  return mapError(status, message, rate);
+}
+
 /** The server token is set (public GitHub features for everyone). */
 export const githubEnabled = () => !!config.githubToken;
 
@@ -216,6 +315,7 @@ export async function ghGraphql<T = any>(query: string, variables: Record<string
   const body = (await res.json()) as { data?: T; errors?: { type?: string; message?: string }[] };
   const errors = body.errors ?? [];
   if (errors.some((e) => e.type === "RATE_LIMITED")) throw mapError(403, "rate limit", rate);
+  if (errors.some((e) => e.type === "FORBIDDEN")) throw mapWriteError(403, String(errors[0]?.message ?? ""), rate);
   // Partial: a missing alias (deleted branch) is fine; the caller checks for a null repository.
   if (errors.length && opts.partial && body.data) return body.data as T;
   if (errors.some((e) => e.type === "NOT_FOUND")) throw new AppError(404, "not_found", "GitHub: not found (or private)");

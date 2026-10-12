@@ -11,6 +11,9 @@ import '../core/notify/notify_kind.dart';
 import '../core/notify/notify_target.dart';
 import 'chat_api.dart';
 import 'api_client.dart';
+import 'github_detail_models.dart';
+
+export 'github_detail_models.dart';
 
 // ---- models ----------------------------------------------------------------
 
@@ -246,6 +249,13 @@ class GhIssue {
   final List<GhLabel> labels;
   final int? comments;
   final DateTime? updatedAt;
+
+  /// `owner/repo`, from the search result or the item's URL.
+  String get repoFullName {
+    if (repo.isNotEmpty) return repo;
+    final m = RegExp(r'github\.com/([^/]+)/([^/]+)/').firstMatch(url);
+    return m == null ? '' : '${m[1]}/${m[2]}';
+  }
 }
 
 class GhCodeHit {
@@ -480,10 +490,7 @@ class GithubApi {
         .timeout(GithubDurations.timeout);
     if (res.statusCode >= 400) {
       _checkRevoked(res.statusCode, res.body);
-      throw ApiException(
-        errorMessage(res.body, res.statusCode),
-        status: res.statusCode,
-      );
+      throw _error(res.statusCode, res.body);
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
@@ -493,12 +500,46 @@ class GithubApi {
     final res = await _client.post(uri, headers: apiHeaders()).timeout(timeout);
     if (res.statusCode >= 400) {
       _checkRevoked(res.statusCode, res.body);
-      throw ApiException(
-        errorMessage(res.body, res.statusCode),
-        status: res.statusCode,
-      );
+      throw _error(res.statusCode, res.body);
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// A typed error from a failed GitHub route.
+  static GhApiException _error(int status, String body) {
+    var retryable = false;
+    try {
+      final e = (jsonDecode(body) as Map<String, dynamic>)['error'];
+      retryable = e is Map<String, dynamic> && e['retryable'] == true;
+    } catch (_) {}
+    return GhApiException(
+      errorMessage(body, status),
+      status: status,
+      code: errorCode(body),
+      retryable: retryable,
+    );
+  }
+
+  /// A JSON write (POST / PATCH / PUT) to a GitHub route.
+  Future<Map<String, dynamic>> _send(
+    String method,
+    String path, [
+    Map<String, Object?> body = const {},
+  ]) async {
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/github$path');
+    final headers = apiHeaders(json: true);
+    final payload = jsonEncode(body);
+    final res = await switch (method) {
+      'PATCH' => _client.patch(uri, headers: headers, body: payload),
+      'PUT' => _client.put(uri, headers: headers, body: payload),
+      _ => _client.post(uri, headers: headers, body: payload),
+    }.timeout(GithubDurations.timeout);
+    if (res.statusCode >= 400) {
+      _checkRevoked(res.statusCode, res.body);
+      throw _error(res.statusCode, res.body);
+    }
+    final decoded = res.body.isEmpty ? null : jsonDecode(res.body);
+    return decoded is Map<String, dynamic> ? decoded : const {};
   }
 
   /// GitHub access was revoked: one notification (the center backs off) that
@@ -785,5 +826,129 @@ class GithubApi {
     return GhSearch(_i(j['total']), [
       for (final r in _list(j['items'])) GhCommit(r),
     ]);
+  }
+
+  // ---- pull request / issue screens ----------------------------------------
+
+  String _item(String owner, String repo, String kind, int n) =>
+      '${_repo(owner, repo)}/$kind/$n';
+
+  /// A pull request's header, merge state and what the viewer may do.
+  Future<GhItemDetail> pullDetail(String owner, String repo, int n) async =>
+      GhItemDetail(await _get('${_item(owner, repo, 'pulls', n)}/detail'));
+
+  /// An issue's header and what the viewer may do.
+  Future<GhItemDetail> issueDetail(String owner, String repo, int n) async =>
+      GhItemDetail(await _get(_item(owner, repo, 'issues', n)));
+
+  /// The conversation: comments, reviews (with inline comments) and events.
+  Future<List<GhTimelineItem>> timeline(
+    String owner,
+    String repo,
+    int n, {
+    required bool pr,
+  }) async {
+    final j = await _get(
+      '${_item(owner, repo, pr ? 'pulls' : 'issues', n)}/timeline',
+    );
+    return [for (final t in _list(j['items'])) GhTimelineItem(t)];
+  }
+
+  Future<List<GhPrCommit>> pullCommits(String owner, String repo, int n) async {
+    final j = await _get('${_item(owner, repo, 'pulls', n)}/commits');
+    return [for (final c in _list(j['items'])) GhPrCommit(c)];
+  }
+
+  /// Every changed file of a pull request with its patch (up to 300).
+  Future<(List<GhFile>, bool)> pullChangedFiles(
+    String owner,
+    String repo,
+    int n,
+  ) async {
+    final j = await _get('${_item(owner, repo, 'pulls', n)}/files');
+    return (
+      [for (final f in _list(j['files'])) GhFile(f)],
+      j['filesTruncated'] == true,
+    );
+  }
+
+  Future<GhChecks> pullChecks(String owner, String repo, int n) async =>
+      GhChecks(await _get('${_item(owner, repo, 'pulls', n)}/checks'));
+
+  Future<List<GhLabelFull>> repoLabels(String owner, String repo) async {
+    final j = await _get('${_repo(owner, repo)}/labels');
+    return [for (final l in _list(j['items'])) GhLabelFull(l)];
+  }
+
+  Future<List<GhUser>> repoAssignees(String owner, String repo) async {
+    final j = await _get('${_repo(owner, repo)}/assignees');
+    return [for (final u in _list(j['items'])) ?GhUser.fromJson(u)];
+  }
+
+  Future<void> comment(String owner, String repo, int n, String body) =>
+      _send('POST', '${_item(owner, repo, 'issues', n)}/comments', {
+        'body': body,
+      });
+
+  /// [event]: APPROVE, REQUEST_CHANGES or COMMENT.
+  Future<void> submitReview(
+    String owner,
+    String repo,
+    int n, {
+    required String event,
+    String body = '',
+  }) => _send('POST', '${_item(owner, repo, 'pulls', n)}/reviews', {
+    'event': event,
+    if (body.trim().isNotEmpty) 'body': body,
+  });
+
+  /// [method]: merge, squash or rebase. [sha] guards against a moved head.
+  Future<void> merge(
+    String owner,
+    String repo,
+    int n, {
+    required String method,
+    String? title,
+    String? sha,
+  }) => _send('PUT', '${_item(owner, repo, 'pulls', n)}/merge', {
+    'method': method,
+    if (title != null && title.trim().isNotEmpty) 'title': title,
+    if (sha != null && sha.isNotEmpty) 'sha': sha,
+  });
+
+  /// Edits an issue or pull request: state (+ reason), title, body, labels
+  /// (replaced) or assignees (replaced).
+  Future<void> updateItem(
+    String owner,
+    String repo,
+    int n, {
+    String? state,
+    String? stateReason,
+    String? title,
+    String? body,
+    List<String>? labels,
+    List<String>? assignees,
+  }) => _send('PATCH', _item(owner, repo, 'issues', n), {
+    'state': ?state,
+    'stateReason': ?stateReason,
+    'title': ?title,
+    'body': ?body,
+    'labels': ?labels,
+    'assignees': ?assignees,
+  });
+
+  Future<void> react(String owner, String repo, int n, String content) =>
+      _send('POST', '${_item(owner, repo, 'issues', n)}/reactions', {
+        'content': content,
+      });
+
+  Future<void> markReady(String owner, String repo, int n) =>
+      _send('POST', '${_item(owner, repo, 'pulls', n)}/ready');
+
+  /// The account's recent activity (pushes, pull requests, issues, reviews,
+  /// releases), newest first.
+  Future<List<GhActivity>> myEvents() async {
+    final j = await _get('/my/events');
+    return [for (final e in _list(j['items'])) GhActivity(e)];
   }
 }
