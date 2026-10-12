@@ -6,20 +6,23 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_scope.dart';
 import '../../core/constants/about.dart';
+import '../../core/constants/m3_copy.dart';
 import '../../core/constants/app_config.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/system_chrome.dart';
+import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/dot_grid_background.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../core/widgets/illustration.dart';
 import '../../data/usage.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../chat/widgets/open_url.dart';
 import '../settings/widgets/section_header.dart';
+import '../settings/widgets/settings_kit.dart';
 
 /// About sparky: hero, what it does, privacy, backend, credits, licenses
 /// and feedback.
@@ -161,202 +164,108 @@ class _AboutScreenState extends State<AboutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final usage = _scope?.usage;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayFor(context),
-      child: Scaffold(
-        backgroundColor: p.background,
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const AppIcon(AppIcons.back, size: AppIconSize.md),
-            tooltip: AppStrings.back,
-            onPressed: () {
-              Haptics.tap();
-              Navigator.pop(context);
-            },
-          ),
-          title: const Text(AboutStrings.title),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(AppBorder.thin),
-            child: Divider(color: p.border),
-          ),
-        ),
-        body: Stack(
+    return M3Page(
+      title: AboutCopy.title,
+      slivers: [
+        M3Body(
           children: [
-            const Positioned.fill(child: DotGridBackground()),
-            ListView(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                AppSpacing.xl,
-                AppSpacing.screenPadding,
-                MediaQuery.paddingOf(context).bottom + AppSpacing.xl,
+            Builder(builder: _hero),
+            const SettingsGroupHeader(AboutCopy.whatItDoes),
+            _ItemGroup(items: AboutStrings.features),
+            const SettingsGroupHeader(AboutCopy.privacy),
+            _ItemGroup(items: AboutStrings.privacyItems(_host)),
+            const SettingsGroupHeader(AboutCopy.backend),
+            if (usage == null)
+              _BackendCard(url: _baseUrl, health: null, onTap: _copyUrl)
+            else
+              ListenableBuilder(
+                listenable: usage,
+                builder: (context, _) => _BackendCard(
+                  url: _baseUrl,
+                  health: usage.health,
+                  onTap: _copyUrl,
+                ),
               ),
-              children: [
-                _hero(context),
-                const SectionHeader(
-                  AboutStrings.whatItDoes,
-                  icon: AboutIcons.whatItDoes,
-                ),
-                const _Panel(child: _ItemList(items: AboutStrings.features)),
-                const SectionHeader(
-                  AboutStrings.privacy,
-                  icon: AboutIcons.privacy,
-                ),
-                _Panel(
-                  child: _ItemList(
-                    items: AboutStrings.privacyItems(_host),
-                    compact: true,
-                  ),
-                ),
-                const SectionHeader(
-                  AboutStrings.backend,
-                  icon: AboutIcons.backend,
-                ),
-                if (usage == null)
-                  _BackendCard(url: _baseUrl, health: null, onTap: _copyUrl)
-                else
-                  ListenableBuilder(
-                    listenable: usage,
-                    builder: (context, _) => _BackendCard(
-                      url: _baseUrl,
-                      health: usage.health,
-                      onTap: _copyUrl,
-                    ),
-                  ),
-                const SectionHeader(
-                  AboutStrings.credits,
-                  icon: AboutIcons.credits,
-                ),
-                const _Panel(padded: false, child: _Credits()),
-                const SizedBox(height: AppSpacing.xl),
-                _ActionPill(
-                  label: AboutStrings.licenses,
-                  icon: AboutIcons.licenses,
-                  onTap: _openLicenses,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _ActionPill(
-                  label: AboutStrings.feedback,
-                  icon: AboutIcons.feedback,
-                  onTap: _sendFeedback,
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-                const _Footer(),
-              ],
+            const SettingsGroupHeader(AboutCopy.credits),
+            const _Credits(),
+            const SizedBox(height: AppSpacing.xl),
+            _ActionButton(
+              label: AboutCopy.licenses,
+              icon: AboutIcons.licenses,
+              onTap: _openLicenses,
             ),
+            const SizedBox(height: AppSpacing.md),
+            _ActionButton(
+              label: AboutCopy.feedback,
+              icon: AboutIcons.feedback,
+              onTap: _sendFeedback,
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+            const _Footer(),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _hero(BuildContext context) {
-    final p = context.palette;
-    return Column(
-      children: [
-        const Illustration(
-          kind: IllustrationKind.hello,
-          height: AboutSizes.illustration,
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        const Wordmark(size: AboutSizes.wordmark),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          AboutStrings.tagline,
-          textAlign: TextAlign.center,
-          style: context.text.body.copyWith(color: p.textSecondary),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: p.background,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(color: p.borderStrong, width: AppBorder.thin),
-          ),
-          child: Text(
-            AboutStrings.versionLine(_version, _build, _platform),
-            textAlign: TextAlign.center,
-            style: context.text.caption.copyWith(color: p.textSecondary),
-          ),
         ),
       ],
     );
   }
-}
 
-/// Opaque bordered surface so text reads over the dot grid.
-class _Panel extends StatelessWidget {
-  const _Panel({required this.child, this.padded = true});
-
-  final Widget child;
-  final bool padded;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return Container(
-      width: double.infinity,
-      padding: padded ? const EdgeInsets.all(AppSpacing.lg) : EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: p.border, width: AppBorder.thin),
+  /// Hero card: dot-matrix field with the illustration, wordmark, tagline and
+  /// a tiny mono version tag.
+  Widget _hero(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return M3Card(
+      padding: EdgeInsets.zero,
+      child: Stack(
+        children: [
+          const Positioned.fill(child: DotGridBackground()),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                children: [
+                  const Illustration(
+                    kind: IllustrationKind.hello,
+                    height: AboutSizes.illustration,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const Wordmark(size: AboutSizes.wordmark),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    AboutStrings.tagline,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  M3Tag(AboutStrings.versionLine(_version, _build, _platform)),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-      child: child,
     );
   }
 }
 
-/// Icon + title + one-line detail, stacked.
-class _ItemList extends StatelessWidget {
-  const _ItemList({required this.items, this.compact = false});
+/// Icon circle, title and one-line detail per row, in one rounded group.
+class _ItemGroup extends StatelessWidget {
+  const _ItemGroup({required this.items});
 
   final List<AboutItem> items;
 
-  /// Smaller icons for plain-language bullets.
-  final bool compact;
-
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < items.length; i++)
-          Padding(
-            padding: EdgeInsets.only(top: i == 0 ? 0 : AppSpacing.lg),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppIcon(
-                  items[i].icon,
-                  size: compact ? AppIconSize.sm : AppIconSize.md,
-                  color: compact ? p.textSecondary : p.textPrimary,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        items[i].title,
-                        style: context.text.bodySmall.copyWith(
-                          color: p.textPrimary,
-                          fontVariations: const [FontVariation.weight(600)],
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(items[i].detail, style: context.text.bodySmall),
-                    ],
-                  ),
-                ),
-              ],
+    return SettingsGroup(
+      entries: [
+        for (final item in items)
+          GroupEntry(
+            ListTile(
+              leading: SettingsIconCircle(item.icon),
+              title: Text(item.title),
+              subtitle: Text(item.detail),
             ),
           ),
       ],
@@ -379,63 +288,48 @@ class _BackendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (health) {
       null => (AppStrings.dash, p.textTertiary),
       HealthStatus(online: false) => (AppStrings.offline, p.accent),
       HealthStatus(ok: true) => (AppStrings.online, p.textPrimary),
       _ => (AppStrings.degraded, p.accent),
     };
-    return Material(
-      color: p.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        side: BorderSide(color: p.border, width: AppBorder.thin),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(AboutStrings.url, style: context.text.caption),
-                  const Spacer(),
-                  AppIcon(
-                    AboutIcons.copy,
-                    size: AppIconSize.xs,
-                    color: p.textTertiary,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text(AboutStrings.tapToCopy, style: context.text.caption),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                url,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: context.text.label,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Text(AboutStrings.status, style: context.text.caption),
-                  const Spacer(),
-                  StatusDot(color: color, hollow: health == null),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    label,
-                    style: context.text.caption.copyWith(color: color),
-                  ),
-                ],
-              ),
-            ],
+    return SettingsGroup(
+      entries: [
+        GroupEntry(
+          SettingsTile(
+            icon: AboutIcons.backend,
+            title: url,
+            summary: AboutCopy.urlHint,
+            trailing: AppIcon(
+              AboutIcons.copy,
+              size: AppIconSize.sm,
+              color: scheme.onSurfaceVariant,
+            ),
+            onTap: onTap,
           ),
         ),
-      ),
+        GroupEntry(
+          ListTile(
+            leading: const SettingsIconCircle(AboutIcons.backend),
+            title: const Text(AboutCopy.status),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                StatusDot(color: color, hollow: health == null),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge!.copyWith(color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -445,67 +339,35 @@ class _Credits extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
     const credits = AboutStrings.creditList;
-    return Column(
-      children: [
-        for (var i = 0; i < credits.length; i++) ...[
-          if (i > 0) Divider(height: AppBorder.thin, color: p.border),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: credits[i].url == null
+    return SettingsGroup(
+      entries: [
+        for (final credit in credits)
+          GroupEntry(
+            ListTile(
+              onTap: credit.url == null
                   ? null
-                  : () => openUrl(context, credits[i].url!),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
-                ),
-                child: Row(
-                  children: [
-                    AppIcon(
-                      credits[i].icon,
+                  : () => openUrl(context, credit.url!),
+              leading: SettingsIconCircle(credit.icon),
+              title: Text(credit.value),
+              subtitle: Text(credit.label),
+              trailing: credit.url == null
+                  ? null
+                  : AppIcon(
+                      AboutIcons.open,
                       size: AppIconSize.sm,
-                      color: p.textSecondary,
+                      color: scheme.onSurfaceVariant,
                     ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(credits[i].label, style: context.text.caption),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(
-                            credits[i].value,
-                            style: context.text.bodySmall.copyWith(
-                              color: p.textPrimary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (credits[i].url != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      AppIcon(
-                        AboutIcons.open,
-                        size: AppIconSize.sm,
-                        color: p.textTertiary,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
             ),
           ),
-        ],
       ],
     );
   }
 }
 
-class _ActionPill extends StatelessWidget {
-  const _ActionPill({
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
     required this.label,
     required this.icon,
     required this.onTap,
@@ -517,47 +379,40 @@ class _ActionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return SizedBox(
-      height: AppSizes.buttonHeight,
-      child: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          backgroundColor: p.background,
-          foregroundColor: p.textPrimary,
-          shape: const StadiumBorder(),
-          side: BorderSide(color: p.borderStrong, width: AppBorder.thin),
-        ),
-        onPressed: onTap,
-        icon: AppIcon(icon, size: AppIconSize.sm, color: p.textPrimary),
-        label: Text(
-          label,
-          style: context.text.button.copyWith(color: p.textPrimary),
-        ),
+    return FilledButton.tonalIcon(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(AppSizes.buttonHeight),
       ),
+      onPressed: onTap,
+      icon: AppIcon(icon, size: AppIconSize.sm),
+      label: Text(label),
     );
   }
 }
 
-/// MADE WITH [heart] — © 2026 sparky.
+/// MADE WITH [heart] - (c) 2026 sparky.
 class _Footer extends StatelessWidget {
   const _Footer();
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final style = AppTextStyles.caption.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: AppSpacing.xs,
       children: [
-        Text(AboutStrings.madeWith, style: context.text.caption),
+        Text(AboutStrings.madeWith, style: style),
         AppIcon(
           AboutIcons.heart,
           size: AppIconSize.xs,
           color: p.accent,
           semanticLabel: AboutStrings.love,
         ),
-        Text(AboutStrings.footerRest, style: context.text.caption),
+        Text(AboutStrings.footerRest, style: style),
       ],
     );
   }

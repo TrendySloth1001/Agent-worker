@@ -1,9 +1,12 @@
 import 'package:app/core/constants/about.dart';
+import 'package:app/core/constants/m3_copy.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/about/about_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
+import 'support/render.dart';
 
 void main() {
   for (final (name, theme) in [
@@ -43,9 +46,22 @@ void main() {
         scrollable: list,
       );
       await tester.pumpAndSettle();
-      expect(find.text(AboutStrings.feedback), findsOneWidget);
+      expect(find.text(AboutCopy.feedback), findsOneWidget);
       expect(find.text(AboutStrings.madeWith), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('about survives the 1.3 text scale', (tester) async {
+    PackageInfo.setMockInitialValues(
+      appName: 'sparky',
+      packageName: 'com.sparky.app',
+      version: '1.0.0',
+      buildNumber: '1',
+      buildSignature: '',
+    );
+    await pumpScreen(tester, const AboutScreen(), textScale: 1.3);
+    await scrollThrough(tester, steps: 12);
+    expect(tester.takeException(), isNull);
+  });
 }

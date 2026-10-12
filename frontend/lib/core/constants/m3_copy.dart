@@ -68,3 +68,15 @@ abstract final class TelemetryCopy {
   static const emptyLog = 'No events yet';
   static const bucketLabels = {'1m': '1 min', '5m': '5 min', '1h': '1 hour'};
 }
+
+abstract final class AboutCopy {
+  static const title = 'About';
+  static const whatItDoes = 'What it does';
+  static const privacy = 'Privacy';
+  static const backend = 'Backend';
+  static const credits = 'Credits';
+  static const licenses = 'Open-source licenses';
+  static const feedback = 'Send feedback';
+  static const status = 'Status';
+  static const urlHint = 'Backend URL, tap to copy';
+}
