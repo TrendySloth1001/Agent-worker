@@ -492,6 +492,62 @@ class DocRevision {
   );
 }
 
+/// One question about a highlighted passage and the model's answer.
+class DocQa {
+  const DocQa({
+    required this.id,
+    required this.question,
+    required this.answer,
+    this.at,
+  });
+
+  final String id;
+  final String question;
+  final String answer;
+  final DateTime? at;
+
+  factory DocQa.fromJson(Map<String, dynamic> j) => DocQa(
+    id: _str(j['id']),
+    question: _str(j['q']),
+    answer: _str(j['a']),
+    at: _date(j['at']),
+  );
+}
+
+/// Edits the reader can ask for on a selected passage.
+enum DocSelectionOp { explain, simplify, expand, cite, rewrite }
+
+/// A previewed change to one passage: nothing is saved until accepted.
+class DocSelectionEdit {
+  const DocSelectionEdit({
+    required this.op,
+    required this.original,
+    required this.replacement,
+    required this.markdown,
+  });
+
+  final DocSelectionOp op;
+
+  /// The passage as Markdown; empty when the edit only inserts.
+  final String original;
+  final String replacement;
+
+  /// The whole section after the change.
+  final String markdown;
+
+  bool get isInsert => original.isEmpty;
+
+  factory DocSelectionEdit.fromJson(Map<String, dynamic> j) => DocSelectionEdit(
+    op: DocSelectionOp.values.firstWhere(
+      (o) => o.name == j['op'],
+      orElse: () => DocSelectionOp.rewrite,
+    ),
+    original: _str(j['original']),
+    replacement: _str(j['replacement']),
+    markdown: _str(j['markdown']),
+  );
+}
+
 /// A highlighted passage, anchored by W3C text quote (prefix/quote/suffix).
 class DocHighlight {
   const DocHighlight({
@@ -502,6 +558,7 @@ class DocHighlight {
     this.suffix = '',
     this.color = 'accent',
     this.note,
+    this.thread = const [],
     this.createdAt,
   });
 
@@ -512,9 +569,26 @@ class DocHighlight {
   final String suffix;
   final String color;
   final String? note;
+
+  /// Questions asked about this passage with their answers, oldest first.
+  final List<DocQa> thread;
   final DateTime? createdAt;
 
   bool get hasNote => note != null && note!.trim().isNotEmpty;
+  bool get hasThread => thread.isNotEmpty;
+
+  /// Same passage with a different Q&A thread (the server's copy wins).
+  DocHighlight withThread(List<DocQa> next) => DocHighlight(
+    id: id,
+    sectionId: sectionId,
+    quote: quote,
+    prefix: prefix,
+    suffix: suffix,
+    color: color,
+    note: note,
+    thread: next,
+    createdAt: createdAt,
+  );
 
   factory DocHighlight.fromJson(Map<String, dynamic> j) => DocHighlight(
     id: _str(j['id']),
@@ -524,6 +598,10 @@ class DocHighlight {
     suffix: _str(j['suffix']),
     color: _str(j['color'], 'accent'),
     note: j['note'] as String?,
+    thread: [
+      for (final q in j['thread'] as List? ?? const [])
+        if (q is Map<String, dynamic>) DocQa.fromJson(q),
+    ],
     createdAt: _date(j['createdAt']),
   );
 

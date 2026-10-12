@@ -26,6 +26,7 @@ class FakeDocsServer {
   Map<String, dynamic> getBody = const {};
   List<Map<String, dynamic>> highlights = const [];
   int createStatus = 202;
+  int askStatus = 201;
 
   /// Frames streamed back by a section rewrite.
   List<String> rewriteFrames = const [];
@@ -59,6 +60,23 @@ class FakeDocsServer {
         Stream.fromIterable([for (final f in rewriteFrames) utf8.encode(f)]),
         200,
       );
+    }
+    if (path.endsWith('/ask')) {
+      if (askStatus != 201) {
+        return json({'error': {'message': 'down'}}, askStatus);
+      }
+      final q = jsonDecode(bodies.last) as Map<String, dynamic>;
+      return json({
+        'highlight': {
+          'id': 'ask1',
+          'sectionId': q['sectionId'],
+          'quote': q['quote'],
+          'color': 'ask',
+          'thread': [
+            {'id': 'q1', 'q': q['question'], 'a': 'Because [W1].', 'at': ''},
+          ],
+        },
+      }, 201);
     }
     if (path.endsWith('/highlights')) {
       if (req.method == 'POST') {

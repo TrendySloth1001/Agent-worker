@@ -21,8 +21,10 @@ import 'doc_controller.dart';
 import 'doc_export.dart';
 import 'doc_highlights.dart';
 import 'doc_progress.dart';
+import 'doc_qa.dart';
 import 'doc_registry.dart';
 import 'doc_section_menu.dart';
+import 'doc_selection_edit.dart';
 import 'doc_toc.dart';
 
 /// Opens the reader for doc [id] (live while it is being written).
@@ -57,6 +59,7 @@ class _DocScreenState extends State<DocScreen> {
   @override
   void initState() {
     super.initState();
+    _c.viewing = true;
     _c.attach();
     _c.loadHighlights();
     _scroll.addListener(_onScroll);
@@ -64,6 +67,9 @@ class _DocScreenState extends State<DocScreen> {
 
   @override
   void dispose() {
+    // After the tree is torn down: listeners rebuild on this notification.
+    final controller = _c;
+    Future.microtask(() => controller.viewing = false);
     // A running doc stays attached so the chat card keeps updating.
     if (!_c.doc.isRunning) _c.detach();
     _scroll.dispose();
@@ -119,6 +125,44 @@ class _DocScreenState extends State<DocScreen> {
       duration: AppDurations.slow,
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _openNotes() => showDocNotes(
+    context,
+    _c,
+    onJump: (sectionId) {
+      final i = _entryIds(_c.doc).indexOf(sectionId);
+      if (i >= 0) _jump(i);
+    },
+  );
+
+  Future<void> _addSection() async {
+    final body = _c.doc.body;
+    final input = await showDocAddSection(context);
+    if (input == null || !mounted) return;
+    final ok = await _c.addSection(
+      after: body.isEmpty ? null : body.last.id,
+      heading: input.$1,
+      goal: input.$2,
+    );
+    if (!ok && mounted) {
+      docToast(context, _c.lastError ?? DocStrings.addFailed);
+    }
+  }
+
+  Future<void> _continue() async {
+    final hint = await showDocTextPrompt(
+      context,
+      title: DocStrings.continueTitle,
+      hint: DocStrings.continueHint,
+      action: DocStrings.continueAction,
+      allowEmpty: true,
+    );
+    if (hint == null || !mounted) return;
+    final ok = await _c.continueWriting(hint: hint.isEmpty ? null : hint);
+    if (!ok && mounted) {
+      docToast(context, _c.lastError ?? DocStrings.addFailed);
+    }
   }
 
   void _openToc() => showDocToc(
@@ -181,6 +225,10 @@ class _DocScreenState extends State<DocScreen> {
                           ? () => exportDoc(context, _c.doc)
                           : null,
                       onToc: wide || entries.isEmpty ? null : _openToc,
+                      notes: _c.highlights.length,
+                      onNotes: _c.loaded && _c.doc.body.isNotEmpty
+                          ? _openNotes
+                          : null,
                     ),
                     Expanded(
                       child: wide
@@ -325,6 +373,30 @@ class _DocScreenState extends State<DocScreen> {
               ),
             ),
           ),
+        if (_c.loaded && !doc.isRunning && body.isNotEmpty && _canGrow(doc))
+          SliverToBoxAdapter(
+            child: _column(
+              Padding(
+                padding: const EdgeInsets.only(top: DocSizes.sectionGap),
+                child: Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    DocTextButton(
+                      label: DocStrings.continueWriting,
+                      icon: DocIcons.continueWriting,
+                      onTap: _c.isBusy ? null : _continue,
+                    ),
+                    DocTextButton(
+                      label: DocStrings.addSectionTitle,
+                      icon: DocIcons.add,
+                      onTap: _c.isBusy ? null : _addSection,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         SliverToBoxAdapter(
           child: SizedBox(
             height: DocSizes.bottomClear + MediaQuery.paddingOf(context).bottom,
@@ -334,6 +406,10 @@ class _DocScreenState extends State<DocScreen> {
     );
   }
 }
+
+/// Sections can be added once the document has finished (or stopped).
+bool _canGrow(Doc doc) =>
+    doc.status == DocStatus.done || doc.status == DocStatus.partial;
 
 class _PinnedProgress extends SliverPersistentHeaderDelegate {
   _PinnedProgress({required this.child});
@@ -366,12 +442,16 @@ class _TopBar extends StatelessWidget {
     required this.onBack,
     this.onExport,
     this.onToc,
+    this.onNotes,
+    this.notes = 0,
   });
 
   final String title;
   final VoidCallback onBack;
   final VoidCallback? onExport;
   final VoidCallback? onToc;
+  final VoidCallback? onNotes;
+  final int notes;
 
   @override
   Widget build(BuildContext context) {
@@ -418,6 +498,12 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           if (onToc != null) icon(DocIcons.toc, DocStrings.tocOpen, onToc),
+          if (onNotes != null)
+            icon(
+              notes > 0 ? DocIcons.qa : DocIcons.notes,
+              DocStrings.notesOpen,
+              onNotes,
+            ),
           icon(DocIcons.export, DocStrings.export, onExport),
         ],
       ),
@@ -572,14 +658,12 @@ class _DocSectionViewState extends State<DocSectionView> {
           action: DocStrings.apply,
           quote: quote,
         );
-        if (ask == null) return;
-        final ok = await _c.rewrite(
-          _s.id,
-          DocRewriteOp.custom,
-          instruction: ask,
-          selection: quote,
-        );
-        if (!ok && mounted) docToast(context, DocStrings.actionFailed);
+        if (ask == null || !mounted) return;
+        // The answer is shown in a thread sheet and kept as a Q&A card under
+        // the section; the section text is not touched.
+        await showDocAskSheet(context, _c, _s, quote: quote, question: ask);
+      case DocSelectionAction.edit:
+        await editDocPassage(context, _c, _s, quote);
       case DocSelectionAction.copyCite:
         await Clipboard.setData(
           ClipboardData(
@@ -650,6 +734,10 @@ class _DocSectionViewState extends State<DocSectionView> {
     final t = context.text;
     final s = _s;
     final highlights = _c.highlightsFor(s.id);
+    final plain = [
+      for (final h in highlights)
+        if (!h.hasNote && !h.hasThread && h.color != DocConfig.askColor) h,
+    ];
     final hasText = s.markdown.trim().isNotEmpty;
     final Widget body;
     if (s.isFailed && !hasText) {
@@ -739,13 +827,14 @@ class _DocSectionViewState extends State<DocSectionView> {
           Text(s.error!, style: t.caption.copyWith(color: p.accent)),
         ],
         DocMarginNotes(highlights: highlights, onRemove: _c.removeHighlight),
-        if (highlights.any((h) => !h.hasNote)) ...[
+        DocQaCards(controller: _c, section: s, highlights: highlights),
+        if (plain.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
           Align(
             alignment: Alignment.centerLeft,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => _manageHighlights(highlights),
+              onTap: () => _manageHighlights(plain),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                 child: Row(
@@ -758,7 +847,7 @@ class _DocSectionViewState extends State<DocSectionView> {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
-                      DocStrings.highlightCount(highlights.length),
+                      DocStrings.highlightCount(plain.length),
                       style: t.caption,
                     ),
                   ],

@@ -8,6 +8,7 @@ import 'package:app/data/docs_api.dart';
 import 'package:app/features/chat/share/chat_export.dart';
 import 'package:app/features/chat/share/chat_pdf.dart';
 import 'package:app/features/docs/doc_controller.dart';
+import 'package:app/features/docs/doc_diff.dart';
 import 'package:app/features/docs/doc_export.dart';
 import 'package:app/features/docs/doc_highlights.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -572,5 +573,49 @@ void main() {
     });
     expect(server.requests.single.method, 'POST');
     unawaited(Future<void>.value());
+  });
+
+  group('ask AI and passage edits', () {
+    test('an answer lands on a persistent highlight thread', () async {
+      final server = FakeDocsServer();
+      final c = DocController('d1', api: server.api());
+      final section = DocSection(
+        id: 's1',
+        heading: 'One',
+        markdown: 'TLS 1.3 removed RSA key exchange.',
+        status: DocSectionStatus.done,
+      );
+      c.doc.sections = [section];
+      final pending = c.ask(section, 'RSA key exchange', 'Why?');
+      // THINKING: the passage is already highlighted with the question.
+      expect(c.highlights.single.color, 'ask');
+      expect(c.pendingQuestion(c.highlights.single), 'Why?');
+      final saved = await pending;
+      expect(saved!.id, 'ask1');
+      expect(c.highlights.single.thread.single.question, 'Why?');
+      expect(c.highlights.single.thread.single.answer, 'Because [W1].');
+      expect(c.pendingQuestion(c.highlights.single), isNull);
+      // The section text was not rewritten.
+      expect(section.markdown, 'TLS 1.3 removed RSA key exchange.');
+      expect(server.requests.last.url.path, endsWith('/ask'));
+    });
+
+    test('a failed ask leaves no stray highlight', () async {
+      final server = FakeDocsServer()..askStatus = 502;
+      final c = DocController('d1', api: server.api());
+      final section = DocSection(id: 's1', markdown: 'Some text here.');
+      c.doc.sections = [section];
+      expect(await c.ask(section, 'text here', 'Why?'), isNull);
+      expect(c.highlights, isEmpty);
+      expect(c.lastError, isNotNull);
+    });
+
+    test('word diff marks removed and added words', () {
+      final d = docWordDiff('the quick brown fox', 'the slow brown fox')!;
+      expect(d.where((p) => p.$1 == DocDiffKind.removed).single.$2, 'quick ');
+      expect(d.where((p) => p.$1 == DocDiffKind.added).single.$2, 'slow ');
+      expect(d.first, (DocDiffKind.same, 'the '));
+      expect(docWordDiff('a ' * 500, 'b'), isNull);
+    });
   });
 }

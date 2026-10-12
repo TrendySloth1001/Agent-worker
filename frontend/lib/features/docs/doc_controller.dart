@@ -8,6 +8,7 @@ import '../../data/chat_api.dart';
 import '../../data/doc_models.dart';
 import '../../data/docs_api.dart';
 import '../chat/widgets/markdown/inline_image.dart';
+import 'doc_highlights.dart';
 
 /// Repaints one section only (the streaming one), never the whole reader.
 class _Tick extends ChangeNotifier {
@@ -56,6 +57,9 @@ class DocController extends ChangeNotifier {
       _ticks.putIfAbsent(sectionId, _Tick.new);
 
   bool isRewriting(String sectionId) => _rewriting.contains(sectionId);
+
+  /// A pipeline or a section rewrite is working.
+  bool get isBusy => doc.isRunning || _rewriting.isNotEmpty;
 
   // ---- connection -----------------------------------------------------------
 
@@ -112,7 +116,18 @@ class DocController extends ChangeNotifier {
       return;
     }
     reconnecting = false;
-    if (!loaded) unawaited(refresh(error: error));
+    // Out of quick retries: read the server's state; a doc that is still
+    // being written is re-attached later, so progress (and the finished
+    // notification) cannot get stuck on a dead stream.
+    unawaited(
+      refresh(error: error).then((_) {
+        if (_disposed || !_wantAttached || !doc.isRunning || fatal) return;
+        _retry = Timer(DocConfig.slowReconnect, () {
+          _attempt = 0;
+          _connect();
+        });
+      }),
+    );
     _notify();
   }
 
@@ -461,6 +476,207 @@ class DocController extends ChangeNotifier {
           cancelOnError: true,
         );
     return finished.future;
+  }
+
+  /// Plans and writes one more section at the end ([hint] steers the topic).
+  /// False when it could not start or failed; see [lastError].
+  Future<bool> continueWriting({String? hint}) async {
+    if (doc.isRunning || _rewriting.isNotEmpty) return false;
+    lastError = null;
+    final before = {for (final s in doc.sections) s.id};
+    String? sid;
+    var finished = false;
+    final done = Completer<bool>();
+    _api.continueWriting(id, hint: hint).listen(
+      (e) {
+        if (e is DocSnapshotEvent && sid == null) {
+          sid = e.doc.body
+              .map((s) => s.id)
+              .firstWhere((x) => !before.contains(x), orElse: () => '');
+          if (sid!.isEmpty) {
+            sid = null;
+          } else {
+            _rewriting.add(sid!);
+            e.doc.section(sid!)?.status = DocSectionStatus.writing;
+          }
+        }
+        if (e is DocSectionEvent && e.sectionId != sid) return;
+        apply(e, fromRewrite: true);
+      },
+      onError: (Object e) {
+        lastError = e is ApiException ? e.message : DocStrings.addFailed;
+        if (!done.isCompleted) done.complete(false);
+      },
+      onDone: () {
+        finished = true;
+        if (!done.isCompleted) done.complete(sid != null);
+      },
+      cancelOnError: true,
+    );
+    final ok = await done.future;
+    if (sid != null) {
+      _rewriting.remove(sid);
+      final s = doc.section(sid!);
+      if (s != null && s.isWriting) {
+        s.status = s.markdown.trim().isEmpty
+            ? DocSectionStatus.failed
+            : DocSectionStatus.done;
+      }
+      if (s != null && s.isDone) doc.version++;
+      _bump(sid!);
+    }
+    if (!finished && !ok) lastError ??= DocStrings.addFailed;
+    _notify();
+    return ok && (sid == null || (doc.section(sid!)?.isDone ?? false));
+  }
+
+  /// Adds a section after [after] (null: first) and writes it.
+  Future<bool> addSection({
+    required String? after,
+    required String heading,
+    required String goal,
+  }) async {
+    lastError = null;
+    if (doc.isRunning || _rewriting.isNotEmpty) return false;
+    final String sid;
+    try {
+      sid = await _api.addSection(
+        id,
+        after: after,
+        heading: heading,
+        goal: goal,
+      );
+      await refresh();
+    } catch (e) {
+      lastError = e is ApiException ? e.message : DocStrings.addFailed;
+      return false;
+    }
+    _bumpAll();
+    _notify();
+    return rewrite(sid, DocRewriteOp.regenerate);
+  }
+
+  /// The last error message from [continueWriting] or [addSection].
+  String? lastError;
+
+  // ---- passage edits (preview, accept, undo) -----------------------------------
+
+  final _undo = <String, String>{};
+
+  /// Asks the server for an edit of [quote]; nothing changes until
+  /// [applyEdit]. Throws [ApiException] with a readable message.
+  Future<DocSelectionEdit> previewSelection(
+    String sectionId,
+    DocSelectionOp op,
+    String quote, {
+    String? instruction,
+  }) => _api.previewSelection(
+    id,
+    sectionId,
+    op: op,
+    quote: quote,
+    instruction: instruction,
+  );
+
+  /// Saves an accepted edit, remembering the old text for [undoEdit].
+  Future<bool> applyEdit(String sectionId, DocSelectionEdit edit) async {
+    final s = doc.section(sectionId);
+    if (s == null) return false;
+    final previous = s.markdown;
+    final ok = await saveSection(sectionId, edit.markdown);
+    if (ok) _undo[sectionId] = previous;
+    return ok;
+  }
+
+  Future<bool> undoEdit(String sectionId) async {
+    final previous = _undo.remove(sectionId);
+    if (previous == null) return false;
+    return saveSection(sectionId, previous);
+  }
+
+  // ---- ask AI (Q&A on a passage) ----------------------------------------------
+
+  final _pending = <String, String>{};
+
+  String _askKey(DocHighlight h) =>
+      h.id.isNotEmpty ? h.id : 'local:${identityHashCode(h)}';
+
+  /// The question being answered for [h], or null.
+  String? pendingQuestion(DocHighlight h) => _pending[_askKey(h)];
+
+  /// Asks about [quote]. A new passage gets an ask-highlight at once (its
+  /// card shows THINKING); with [on] the answer joins that passage's thread.
+  /// The answer is saved server-side and lands in [highlights] even when
+  /// the asking sheet is closed. Returns the saved highlight, or null
+  /// (see [lastError]).
+  Future<DocHighlight?> ask(
+    DocSection section,
+    String quote,
+    String question, {
+    DocHighlight? on,
+  }) async {
+    lastError = null;
+    final fresh = on == null;
+    final target =
+        on ?? anchorHighlight(section, quote, color: DocConfig.askColor);
+    final key = _askKey(target);
+    if (_pending.containsKey(key)) return null;
+    if (fresh) highlights = [...highlights, target];
+    _pending[key] = question;
+    _bump(target.sectionId);
+    _notify();
+    try {
+      final saved = await _api.ask(
+        id,
+        sectionId: target.sectionId,
+        quote: target.quote,
+        question: question,
+        highlightId: target.id.isEmpty ? null : target.id,
+        prefix: target.prefix,
+        suffix: target.suffix,
+      );
+      highlights = [
+        for (final x in highlights)
+          if (identical(x, target) || (x.id.isNotEmpty && x.id == saved.id))
+            saved
+          else
+            x,
+      ];
+      Haptics.received();
+      return saved;
+    } catch (e) {
+      lastError = e is ApiException ? e.message : DocStrings.askFailed;
+      if (fresh) {
+        highlights = [
+          for (final x in highlights)
+            if (!identical(x, target)) x,
+        ];
+      }
+      Haptics.error();
+      return null;
+    } finally {
+      _pending.remove(key);
+      _bump(target.sectionId);
+      _notify();
+    }
+  }
+
+  /// Every highlight, note and question of the doc in reading order.
+  List<DocHighlight> get allHighlights {
+    final order = {for (final (i, s) in doc.body.indexed) s.id: i};
+    return [...highlights]..sort(
+      (a, b) => (order[a.sectionId] ?? 999).compareTo(order[b.sectionId] ?? 999),
+    );
+  }
+
+  bool _viewing = false;
+
+  /// The doc screen is on top (no notification needed when it finishes).
+  bool get viewing => _viewing;
+  set viewing(bool v) {
+    if (_viewing == v) return;
+    _viewing = v;
+    _notify();
   }
 
   /// Saves a manual edit (or a restored version).

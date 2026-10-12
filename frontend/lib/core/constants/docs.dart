@@ -216,6 +216,120 @@ abstract final class DocStrings {
     required String app,
   }) => '“${quote.trim()}”\n— $title, ${sectionNo(section)} $heading ($app)';
 
+  // Ask AI (Q&A on a passage)
+  static const askFailed = 'Could not get an answer. Try again.';
+  static const thinking = 'THINKING';
+  static const youAsked = 'YOU';
+  static const answerLabel = 'ANSWER';
+  static const followUpHint = 'Ask a follow-up';
+  static const askSend = 'ASK';
+  static const qaThread = 'Q&A';
+  static const retry = 'RETRY';
+  static const copyAnswer = 'COPY';
+  static const copiedAnswer = 'Answer copied.';
+  static const openThread = 'Open this Q&A';
+
+  /// "2 QUESTIONS".
+  static String qaCount(int n) => '$n ${n == 1 ? 'QUESTION' : 'QUESTIONS'}';
+
+  // Notes panel: every highlight, note and Q&A in the document
+  static const notesTitle = 'NOTES & Q&A';
+  static const notesOpen = 'Notes and questions';
+  static const notesEmpty =
+      'Nothing yet. Select text to highlight it, add a note or ask AI.';
+  static const notesQuestions = 'QUESTIONS';
+  static const notesNotes = 'NOTES';
+  static const notesHighlights = 'HIGHLIGHTS';
+  static const delete = 'DELETE';
+
+  // Selection edits
+  static const editPassage = 'EDIT…';
+  static const editPassageTitle = 'EDIT THIS PASSAGE';
+  static const opExplain = 'EXPLAIN';
+  static const opSimplify = 'SIMPLIFY';
+  static const opExpand = 'EXPAND';
+  static const opCite = 'ADD CITATIONS';
+  static const opRewrite = 'REWRITE…';
+  static const rewriteTitle = 'REWRITE THIS PASSAGE';
+  static const rewriteHint = 'e.g. Make it more formal';
+  static const previewTitle = 'PREVIEW';
+  static const previewBefore = 'BEFORE';
+  static const previewAfter = 'AFTER';
+  static const previewAdded = 'ADDED';
+  static const accept = 'ACCEPT';
+  static const discard = 'DISCARD';
+  static const working = 'WORKING';
+  static const undo = 'UNDO';
+  static const applied = 'Section updated.';
+  static const undone = 'Change undone.';
+  static const previewFailed = 'Could not prepare that change. Try again.';
+
+  static String opLabel(String op) => switch (op) {
+    'explain' => opExplain,
+    'simplify' => opSimplify,
+    'expand' => opExpand,
+    'cite' => opCite,
+    _ => opRewrite,
+  };
+
+  // Regenerate / add / continue
+  static const regenerateWith = 'REGENERATE WITH A NOTE…';
+  static const regenerateTitle = 'REGENERATE THIS SECTION';
+  static const regenerateHint = 'e.g. Focus more on security';
+  static const addBelow = 'ADD SECTION BELOW';
+  static const addSectionTitle = 'ADD A SECTION';
+  static const addHeadingHint = 'Heading';
+  static const addGoalHint = 'What should it cover? (optional)';
+  static const addAction = 'ADD & WRITE';
+  static const continueWriting = 'CONTINUE WRITING';
+  static const continueTitle = 'CONTINUE WRITING';
+  static const continueHint = 'Topic for the next section (optional)';
+  static const continueAction = 'WRITE';
+  static const addFailed = 'Could not add the section.';
+
+  // System notifications
+  static const notifyProgressChannel = 'Document progress';
+  static const notifyProgressChannelInfo =
+      'Ongoing progress while a document is being written.';
+  static const notifyDoneChannel = 'Document finished';
+  static const notifyDoneChannelInfo = 'Sent when a document is ready.';
+  static const notifyProgressTitle = 'Writing document';
+  static const notifyDoneTitle = 'Document ready';
+  static const notifyPartialTitle = 'Document stopped early';
+  static const notifyFailedTitle = 'Document failed';
+  static const notifyOutlineTitle = 'Outline ready to review';
+
+  /// Body of the ongoing progress notification.
+  static String notifyProgress({
+    required String title,
+    required int done,
+    required int total,
+    required String phase,
+  }) {
+    final name = title.trim().isEmpty ? '' : '${title.trim()}\n';
+    if (total > 0 && phase != 'context' && phase != 'outline') {
+      final current = (done + 1).clamp(1, total);
+      return '${name}Section $current/$total · $done done';
+    }
+    return '$name${DocStrings.phase(phase)}';
+  }
+
+  /// "Title · 3,420 words · 8 sections".
+  static String notifyDoneBody({
+    required String title,
+    required int words,
+    required int sections,
+  }) => [
+    if (title.trim().isNotEmpty) title.trim(),
+    '${thousands(words)} words',
+    '$sections sections',
+  ].join(sep);
+
+  /// Chat/app-shell chip while a document is written elsewhere.
+  static String backgroundRunning(int n) =>
+      n == 1 ? '1 DOC WRITING' : '$n DOCS WRITING';
+  static const backgroundOpen = 'Open the document being written';
+
   // Reader actions
   static const export = 'EXPORT';
   static const exportTitle = 'EXPORT DOCUMENT';
@@ -258,10 +372,17 @@ abstract final class DocConfig {
     Duration(seconds: 8),
   ];
 
+  /// Wait before re-attaching to a doc still being written, after the
+  /// quick retries failed.
+  static const slowReconnect = Duration(seconds: 20);
+
   /// No byte for this long on the event stream counts as dropped.
   static const streamIdle = Duration(seconds: 60);
   static const requestTimeout = Duration(seconds: 20);
   static const exportTimeout = Duration(seconds: 60);
+
+  /// ASK AI and selection previews wait for one model call (with fallback).
+  static const askTimeout = Duration(seconds: 150);
 
   /// Highlights longer than the inline mark syntax allows are split.
   static const markMaxChars = 150;
@@ -269,6 +390,9 @@ abstract final class DocConfig {
   /// Selection context kept on each side for re-anchoring.
   static const anchorContext = 32;
   static const highlightColor = 'accent';
+
+  /// Highlights created by ASK AI (they carry a Q&A thread).
+  static const askColor = 'ask';
 }
 
 /// Reader layout and typography.
@@ -338,6 +462,24 @@ abstract final class DocSizes {
   static const notePreviewLines = 3;
   static const versionPreviewLines = 6;
   static const quotePreviewChars = 44;
+
+  // Q&A cards, ask sheet, notes panel
+  static const askSheetFactor = 0.88;
+  static const qaQuoteLines = 2;
+  static const qaBar = 3.0;
+  static const askInputMaxLines = 4;
+  static const earlierCollapsed = 1;
+  static const noteRowQuoteLines = 2;
+  static const noteRowAnswerLines = 3;
+
+  // Passage edit preview
+  static const previewSheetFactor = 0.85;
+  static const previewTextLines = 40;
+
+  // Background indicator
+  static const chipHeight = 24.0;
+  static const chipPadH = 10.0;
+  static const chipDot = 6.0;
 }
 
 /// DOC mode icons (verified against hugeicons 1.2.0).
@@ -364,4 +506,10 @@ abstract final class DocIcons {
   static const close = AppIcons.close;
   static const back = AppIcons.back;
   static const open = AppIcons.chevronRight;
+  static const add = AppIcons.add;
+  static const accept = AppIcons.check;
+  static const notes = HugeIcons.strokeRoundedNote;
+  static const explain = HugeIcons.strokeRoundedBulb;
+  static const qa = HugeIcons.strokeRoundedBubbleChat;
+  static const continueWriting = HugeIcons.strokeRoundedPencilEdit02;
 }

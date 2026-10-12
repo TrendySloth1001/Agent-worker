@@ -12,6 +12,8 @@ import 'doc_controller.dart';
 
 enum _SectionAction {
   regenerate,
+  regenerateWith,
+  addBelow,
   expand,
   shorten,
   simplify,
@@ -50,11 +52,17 @@ Future<void> showDocSectionMenu(
     title: '${DocStrings.menuTitle} ${section.heading.toUpperCase()}',
     options: const [
       (_SectionAction.regenerate, DocIcons.regenerate, DocStrings.regenerate),
+      (
+        _SectionAction.regenerateWith,
+        DocIcons.regenerate,
+        DocStrings.regenerateWith,
+      ),
       (_SectionAction.expand, DocIcons.expand, DocStrings.expand),
       (_SectionAction.shorten, DocIcons.shorten, DocStrings.shorten),
       (_SectionAction.simplify, DocIcons.simplify, DocStrings.simplify),
       (_SectionAction.instruct, DocIcons.instruct, DocStrings.instruct),
       (_SectionAction.edit, DocIcons.edit, DocStrings.edit),
+      (_SectionAction.addBelow, DocIcons.add, DocStrings.addBelow),
       (_SectionAction.versions, DocIcons.versions, DocStrings.versions),
     ],
   );
@@ -71,6 +79,27 @@ Future<void> showDocSectionMenu(
   switch (action) {
     case _SectionAction.regenerate:
       await rewrite(DocRewriteOp.regenerate);
+    case _SectionAction.regenerateWith:
+      final text = await showDocTextPrompt(
+        context,
+        title: DocStrings.regenerateTitle,
+        hint: DocStrings.regenerateHint,
+        action: DocStrings.regenerate,
+      );
+      if (text != null) {
+        await rewrite(DocRewriteOp.regenerate, instruction: text);
+      }
+    case _SectionAction.addBelow:
+      final input = await showDocAddSection(context);
+      if (input == null || !context.mounted) return;
+      final ok = await controller.addSection(
+        after: section.id,
+        heading: input.$1,
+        goal: input.$2,
+      );
+      if (!ok && context.mounted) {
+        docToast(context, controller.lastError ?? DocStrings.addFailed);
+      }
     case _SectionAction.expand:
       await rewrite(DocRewriteOp.expand);
     case _SectionAction.shorten:
@@ -104,6 +133,7 @@ Future<String?> showDocTextPrompt(
   required String hint,
   required String action,
   String? quote,
+  bool allowEmpty = false,
 }) {
   final p = context.palette;
   return showModalBottomSheet<String>(
@@ -116,9 +146,119 @@ Future<String?> showDocTextPrompt(
       ),
       side: BorderSide(color: p.border),
     ),
-    builder: (sheet) =>
-        _TextPrompt(title: title, hint: hint, action: action, quote: quote),
+    builder: (sheet) => _TextPrompt(
+      title: title,
+      hint: hint,
+      action: action,
+      quote: quote,
+      allowEmpty: allowEmpty,
+    ),
   );
+}
+
+/// Heading and optional goal for a new section; null when cancelled.
+Future<(String, String)?> showDocAddSection(BuildContext context) {
+  final p = context.palette;
+  return showModalBottomSheet<(String, String)>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: p.surface,
+    shape: RoundedRectangleBorder(
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(AppRadius.lg),
+      ),
+      side: BorderSide(color: p.border),
+    ),
+    builder: (sheet) => const _AddSection(),
+  );
+}
+
+class _AddSection extends StatefulWidget {
+  const _AddSection();
+
+  @override
+  State<_AddSection> createState() => _AddSectionState();
+}
+
+class _AddSectionState extends State<_AddSection> {
+  final _heading = TextEditingController();
+  final _goal = TextEditingController();
+
+  @override
+  void dispose() {
+    _heading.dispose();
+    _goal.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final h = _heading.text.trim();
+    if (h.isEmpty) return;
+    Haptics.tap();
+    Navigator.pop(context, (h, _goal.text.trim()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.screenPadding),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(DocStrings.addSectionTitle, style: t.caption),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _heading,
+                autofocus: true,
+                style: t.body,
+                textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  hintText: DocStrings.addHeadingHint,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _goal,
+                minLines: 1,
+                maxLines: DocSizes.instructMaxLines,
+                style: t.body,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: DocStrings.addGoalHint,
+                ),
+                onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  DocTextButton(
+                    label: DocStrings.cancel,
+                    onTap: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  ListenableBuilder(
+                    listenable: _heading,
+                    builder: (context, _) => DocTextButton(
+                      label: DocStrings.addAction,
+                      filled: true,
+                      onTap: _heading.text.trim().isEmpty ? null : _submit,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _TextPrompt extends StatefulWidget {
@@ -127,10 +267,12 @@ class _TextPrompt extends StatefulWidget {
     required this.hint,
     required this.action,
     this.quote,
+    this.allowEmpty = false,
   });
 
   final String title, hint, action;
   final String? quote;
+  final bool allowEmpty;
 
   @override
   State<_TextPrompt> createState() => _TextPromptState();
@@ -147,7 +289,7 @@ class _TextPromptState extends State<_TextPrompt> {
 
   void _submit() {
     final v = _text.text.trim();
-    if (v.isEmpty) return;
+    if (v.isEmpty && !widget.allowEmpty) return;
     Haptics.tap();
     Navigator.pop(context, v);
   }
@@ -208,7 +350,9 @@ class _TextPromptState extends State<_TextPrompt> {
                     builder: (context, _) => DocTextButton(
                       label: widget.action,
                       filled: true,
-                      onTap: _text.text.trim().isEmpty ? null : _submit,
+                      onTap: _text.text.trim().isEmpty && !widget.allowEmpty
+                          ? null
+                          : _submit,
                     ),
                   ),
                 ],
