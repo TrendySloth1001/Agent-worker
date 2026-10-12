@@ -5,7 +5,7 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 export const SMALL_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
 
 /** One short completion under a hard deadline. Throws on timeout or upstream failure. */
-export async function askSmall(model: string, messages: Message[], purpose: string, timeoutMs: number): Promise<string> {
+export async function askSmall(model: string, messages: Message[], purpose: string, timeoutMs: number, opts: { maxTokens?: number; reasoningEffort?: "low" } = {}): Promise<string> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   const started = Date.now();
@@ -13,7 +13,7 @@ export async function askSmall(model: string, messages: Message[], purpose: stri
   const name = model.slice(provider.length + 1);
   let ttft: number | null = null;
   try {
-    const handle = await streamModel(model, messages, { signal: ctl.signal, firstByteMs: timeoutMs, idleMs: timeoutMs });
+    const handle = await streamModel(model, messages, { signal: ctl.signal, firstByteMs: timeoutMs, idleMs: timeoutMs, ...opts });
     let text = "";
     for await (const t of handle.tokens) {
       ttft ??= Date.now() - started;

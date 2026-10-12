@@ -127,6 +127,30 @@ export function applyCooldown(id: string, e: UpstreamError) {
 const CHAT_MAX_TOKENS: Record<string, number> = { default: 8192, debug: 8192, review: 8192, explain: 8192, design: 12288 };
 export const maxTokensForMode = (mode?: string): number => CHAT_MAX_TOKENS[mode ?? "default"] ?? 8192;
 
+const CHITCHAT_MAX_TOKENS = 1536;
+const CONCISE_MAX_TOKENS = 4096;
+
+/**
+ * The reply cap for a turn: the mode's cap, lowered for small talk (a few
+ * sentences) and for a "concise" profile. The cap counts against Groq's
+ * per-minute token window, so a tight one keeps the window free for other turns.
+ */
+export function maxTokensFor(o: { mode?: string; intent?: { top: string; confidence: number; uncertain: boolean }; length?: string }): number {
+  const base = maxTokensForMode(o.mode);
+  if (o.intent && !o.intent.uncertain && o.intent.confidence >= 0.6 && o.intent.top === "chitchat") return Math.min(base, CHITCHAT_MAX_TOKENS);
+  if (o.length === "concise" && (o.mode ?? "default") === "default") return Math.min(base, CONCISE_MAX_TOKENS);
+  return base;
+}
+
+/** Small, fast models that answer small talk as well as the big ones. */
+const SMALL_CHAT_MODELS = ["groq:openai/gpt-oss-20b", "nvidia:nvidia/nemotron-3.5-lightning-30b-a3b", "nvidia:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
+
+/** Auto for a trivial turn: the small models first (they keep the big models' rate-limit windows free), the rest after. */
+export function preferSmall(candidates: string[]): string[] {
+  const small = SMALL_CHAT_MODELS.filter((id) => candidates.includes(id));
+  return small.length ? [...small, ...candidates.filter((id) => !small.includes(id))] : candidates;
+}
+
 /**
  * Streams the first candidate that works. A failing candidate moves on silently
  * if it produced nothing; if it already produced text, Auto resets and moves

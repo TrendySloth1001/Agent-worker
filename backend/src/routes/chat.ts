@@ -5,19 +5,20 @@ import { MODELS } from "../models.js";
 import { AppError, errorBody } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
-import { pickCandidates, preferForPrompt, runChat, ChatFailure, maxTokensForMode } from "../llm/router.js";
+import { pickCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor } from "../llm/router.js";
 import { researchWeb, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
 import { githubGround } from "../github/grounding.js";
-import { decideSearch } from "../web/searchDecision.js";
-import { setTelemetry, withTelemetry } from "../db/usage.js";
+import { decideSearchLocal, type SearchDecision } from "../web/searchDecision.js";
+import { fitBudget } from "../web/budget.js";
+import { newTurnCounters, recordTurnSummary, setTelemetry, withTelemetry } from "../db/usage.js";
 import { findImages, type ImageResult } from "../web/images.js";
 import { intentHint } from "../prompts/intent.js";
 import { safetyNote } from "../nlp/pii.js";
 import { buildContextMessage, buildSystemPrompt, promptNeeds, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
 import { retrieve, type KbHit } from "../retrieval/search.js";
-import { embeddingsHealthy } from "../embeddings/index.js";
+import { embeddingsHealthy, embedQueries } from "../embeddings/index.js";
 import type { Message } from "../providers.js";
 import { ATTACH_PLACEHOLDER, loadRows, prepareMessages, waitForFiles } from "../files/context.js";
 import { initialEtaMs, isTrivialTurn, runRoundTable, UnresolvedFilter, type SeatResearchInput, type TableRun } from "../table/roundTable.js";
@@ -28,9 +29,10 @@ import { startMemoryTurn } from "../memory/turn.js";
 import { analyze } from "../nlp/index.js";
 import { languageInstruction } from "../nlp/language.js";
 import { shapeHint } from "../nlp/intent.js";
-import { generateFollowups } from "../assist/suggest.js";
+import { generateFollowups, worthFollowups } from "../assist/suggest.js";
+import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
-import { recallPastChats, type PastCitation } from "../recall/search.js";
+import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
 import { isUuid } from "../docs/store.js";
 
 // Vision-capable models, best first. Auto uses only these when a request has images or video frames.
@@ -101,6 +103,9 @@ const bodySchema = z.object({
   context: z.string().max(8000).optional(),
 });
 
+/** Messages of history kept for a confident small-talk turn. */
+const SMALL_TALK_TURNS = 6;
+
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/i;
 
 const hostOf = (url: string) => {
@@ -165,8 +170,16 @@ chatRouter.post("/", async (req, res) => {
   }
   const auto = !requested || visionSwitched;
   const requestId = Math.random().toString(36).slice(2, 10);
-  setTelemetry({ requestId, conversationId: body.conversationId });
+  const counters = newTurnCounters();
+  setTelemetry({ requestId, conversationId: body.conversationId, turn: counters });
   const started = Date.now();
+  let summarized = false;
+  /** One "turn cost" line + usage row per turn: calls made, tokens and time to first token. */
+  const summarize = (firstTokenAt: number | null) => {
+    if (summarized) return;
+    summarized = true;
+    recordTurnSummary({ ...counters, msToFirstToken: firstTokenAt ? firstTokenAt - started : null, totalMs: Date.now() - started }, (m, meta) => log.info(m, { requestId, ...meta }));
+  };
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const lastUserText = lastUser.trim() === ATTACH_PLACEHOLDER ? "" : lastUser;
   // Local NLP (no network, <1 ms): language, intent labels and entities for this turn.
@@ -218,8 +231,21 @@ chatRouter.post("/", async (req, res) => {
     );
 
     // ---- conversation context: built once, shared by every tool -------------
-    // Memory recall runs while the standalone question is being resolved.
-    const memoryP = memTurn?.recall() ?? Promise.resolve(null);
+    const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
+    const aboutAttachments = (lastUserMsg?.attachments?.length ?? 0) > 0;
+    const lastAssistant = [...body.messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
+    const smallTalk = nlp.intent.top === "chitchat" && !nlp.intent.uncertain && nlp.intent.confidence >= 0.6;
+
+    // ---- preflight: ONE small-model call replaces the standalone rewrite, search decision, web query plan and RAG variants.
+    // The local NLP and rules decide alone when they are confident; the model is asked only for what they cannot settle.
+    const wantWeb = body.webSearch && !aboutAttachments;
+    const webLocal: SearchDecision | null = wantWeb ? decideSearchLocal(lastUser, nlp.intent) : { search: false, query: "", reason: "none" };
+    const lastUserIdx = body.messages.map((m) => m.role).lastIndexOf("user");
+    const history = body.messages.slice(0, Math.max(lastUserIdx, 0)).map((m) => ({ role: m.role, content: m.content }));
+    let pre: Preflight | null = null;
+    if (preflightNeeds({ text: lastUserText, history, wantWeb, webLocal, smallTalk }).any) {
+      pre = await runPreflight({ text: lastUserText, history, wantWeb, webLocal });
+    }
     const attachmentInfo: AttachmentInfo[] = [...fileRows.values()].map((r) => ({ id: r.id, name: r.name, kind: r.kind }));
     const built = await buildTurnContext({
       messages: body.messages.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments })),
@@ -227,8 +253,15 @@ chatRouter.post("/", async (req, res) => {
       lastUserText,
       nlp,
       attachments: attachmentInfo,
-    });
-    const ctx = { ...built, memory: await memoryP };
+    }, pre ? { rewrite: async () => ({ standalone: pre!.standalone, queries: pre!.via === "model" ? pre!.queries : [], via: pre!.via }) } : undefined);
+    const ctx = { ...built, memory: null as string | null };
+    // One embedding call per turn: the texts the knowledge base, past-chat recall and memory recall all need are requested
+    // together now (misses are coalesced into one request; each consumer then reuses the cached vector).
+    const recallText = ctx.pastRef.explicit || (!smallTalk && !aboutAttachments && ctx.standalone.length >= 12) ? recallQueryText({ query: ctx.standalone.slice(0, 500), topic: ctx.pastRef.topic, explicit: ctx.pastRef.explicit }) : undefined;
+    const embedNow = embedTextsForTurn({ hasMemory: !!memTurn, knowledge: body.knowledge, ragRewrite: config.ragRewrite, smallTalk, aboutAttachments, lastUser, standalone: ctx.standalone, queries: ctx.queries, recallText });
+    if (embedNow.length) void embedQueries(embedNow).catch(() => {});
+    // Memory recall runs alongside the other tools; small talk needs no semantic match, so it skips the embedding.
+    const memoryP = memTurn?.recall(ctx.standalone.slice(0, 500), { embed: !smallTalk }) ?? Promise.resolve(null);
     log.info("turn context", {
       requestId,
       rewrite: ctx.rewrittenBy,
@@ -236,6 +269,7 @@ chatRouter.post("/", async (req, res) => {
       entities: ctx.topics.entities.length,
       past: ctx.pastRef.explicit,
       summary: !!ctx.summary,
+      preflight: pre ? pre.via : "skipped",
     });
 
     // ---- context: knowledge base + web (parallel, non-fatal) -------------
@@ -247,11 +281,11 @@ chatRouter.post("/", async (req, res) => {
 
     // A question about attached files is answered from the files, not the web
     // or the knowledge base (which only add unrelated sources).
-    const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
-    const aboutAttachments = (lastUserMsg?.attachments?.length ?? 0) > 0;
 
     const kbTask = async () => {
       if (!body.knowledge || aboutAttachments) return;
+      // Greetings and thanks never need the knowledge base.
+      if (smallTalk || (pre?.via === "model" && pre.needsKb === false)) return;
       sse.send("status", { phase: "retrieving" });
       let hits: KbHit[] = [];
       try {
@@ -294,11 +328,8 @@ chatRouter.post("/", async (req, res) => {
     // WEB on means "search when needed": explicit asks and time-sensitive
     // questions search directly, anything else is decided by a small model.
     // WEB off never searches (a pasted link is still read).
-    const lastAssistant = [...body.messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
-    const decision =
-      body.webSearch && !aboutAttachments
-        ? await decideSearch(ctx.rewrittenBy === "model" ? ctx.standalone : lastUser, lastAssistant, nlp.intent)
-        : { search: false, query: "", reason: "none" as const };
+    // Local rules first (also on the resolved standalone question), then the preflight's verdict; a failed preflight means no search.
+    const decision = decideWeb({ wantWeb, webLocal, standalone: ctx.standalone, rewrittenByModel: ctx.rewrittenBy === "model", pre, decideLocal: (q) => decideSearchLocal(q, nlp.intent) });
     const searching = decision.search;
     if (searching) log.info("web search", { requestId, reason: decision.reason });
 
@@ -312,7 +343,7 @@ chatRouter.post("/", async (req, res) => {
       const eta = () => Math.round(Math.max(initialEtaMs(true) - (Date.now() - at), 0));
       sse.send("table", { phase: "researching", elapsedMs: Date.now() - started, etaMs: eta() });
       try {
-        const queries = await planQueries(lastUserText, searchQuery(decision.query || lastUser), ctl.signal);
+        const queries = await planQueries(lastUserText, searchQuery(decision.query || lastUser), ctl.signal, pre?.via === "model" ? pre.queries : []);
         if (queries.length === 0) return [];
         sse.send("table", {
           phase: "researching",
@@ -336,6 +367,7 @@ chatRouter.post("/", async (req, res) => {
           ? researchWeb({
               question: searchQuery(lastUser),
               focused: decision.reason === "model" ? searchQuery(decision.query) : undefined,
+              preplanned: pre?.via === "model" && pre.queries.length ? { queries: pre.queries, fresh: pre.freshness } : undefined,
               context: {
                 previousUser: previousUser(body.messages),
                 previousAssistant: lastAssistant,
@@ -361,6 +393,8 @@ chatRouter.post("/", async (req, res) => {
         citations.push({ id, kind: "web", title: r.title, url: r.url, snippet: snippet(r.content), site: hostOf(r.url) });
         sharedWebIds.add(id);
       });
+      // About 2.5k tokens of web evidence in total: cut the sources to the passages that matter for the question.
+      fitBudget(webItems, ctx.standalone).forEach((w, i) => (webItems[i].text = w.text));
       // Seat results join the one citation list (deduped by URL, ids continue);
       // a seat sees the shared sources plus every result it found itself.
       const byUrl = new Map(webItems.map((w) => [urlKey(w.url), w.id]));
@@ -402,9 +436,10 @@ chatRouter.post("/", async (req, res) => {
     const recallTask = async () => {
       const explicit = ctx.pastRef.explicit;
       const chitchat = nlp.intent.top === "chitchat" && nlp.intent.confidence >= 0.6;
-      if (!explicit && (aboutAttachments || chitchat || ctx.standalone.length < 12)) return;
+      const modelSaysPast = pre?.via === "model" && pre.pastRef === true;
+      if (!explicit && !modelSaysPast && (aboutAttachments || chitchat || ctx.standalone.length < 12)) return;
       const exclude = body.conversationId && isUuid(body.conversationId) ? body.conversationId : undefined;
-      const r = await recallPastChats({ query: ctx.standalone, topic: ctx.pastRef.topic, explicit, excludeConversationId: exclude });
+      const r = await recallPastChats({ query: ctx.standalone.slice(0, 500), topic: ctx.pastRef.topic, explicit, excludeConversationId: exclude });
       pastBlock = r.block;
       for (const c of r.citations as PastCitation[]) {
         citations.push({ id: c.id, kind: "conversation", title: c.title, url: c.url, snippet: c.snippet, site: "chat", conversationId: c.conversationId });
@@ -412,6 +447,7 @@ chatRouter.post("/", async (req, res) => {
     };
 
     await Promise.all([kbTask(), webTask(), githubTask(), recallTask()]);
+    ctx.memory = await memoryP;
     if (ctl.signal.aborted) return;
     const rank = { kb: 0, web: 1, file: 2, conversation: 3 } as const;
     citations.sort((a, b) => rank[a.kind] - rank[b.kind]);
@@ -453,7 +489,14 @@ chatRouter.post("/", async (req, res) => {
     const shape = lastUserText ? shapeHint(nlp.intent) : null;
     if (shape) prompt.push({ role: "system", content: shape });
     if (githubHint) prompt.push({ role: "system", content: githubHint });
-    prompt.push(...prepared.messages);
+    // Small talk does not need the whole history: the last few turns are enough (fewer prompt tokens against Groq's per-minute window).
+    const noFiles = !prepared.messages.some((m) => (m.images?.length ?? 0) > 0) && attachmentIds.length === 0;
+    let turnsSent = prepared.messages;
+    if (smallTalk && noFiles && turnsSent.length > SMALL_TALK_TURNS) {
+      turnsSent = turnsSent.slice(-SMALL_TALK_TURNS);
+      while (turnsSent.length > 1 && turnsSent[0].role !== "user") turnsSent = turnsSent.slice(1);
+    }
+    prompt.push(...turnsSent);
 
     const promptChars = prompt.reduce((n, m) => n + m.content.length + (m.images?.length ?? 0) * 1500, 0);
 
@@ -467,12 +510,12 @@ chatRouter.post("/", async (req, res) => {
         // With seat research, seats share only the main sources; each adds its own.
         const tableContext = seatResearch.length ? buildContextMessage(kbItems, webItems.filter((w) => sharedWebIds.has(w.id)), docItems, githubItems) : context;
         const shared = prompt
-          .slice(1, prompt.length - prepared.messages.length)
+          .slice(1, prompt.length - turnsSent.length)
           .filter((m) => m.content !== hint)
           .map((m) => (m.content === context ? tableContext : m.content))
           .filter((c): c is string => !!c);
         table = await runRoundTable({
-          history: prepared.messages,
+          history: turnsSent,
           context: shared.join("\n\n") || null,
           research: seatResearch,
           startedAt: started,
@@ -496,8 +539,10 @@ chatRouter.post("/", async (req, res) => {
     const validTags = new Set(citations.map((c) => c.id));
     const keepValid = (s: string) => (table ? s.replace(/\[([KWDC]\d+)\]/g, (m, id: string) => (validTags.has(id) ? m : "")) : s);
     const chairAt = Date.now();
+    let firstTokenAt: number | null = null;
+    const trivialAuto = auto && smallTalk && !table && !wantsVision;
     const result = await withTelemetry({ purpose: table ? "table-chair" : "chat" }, () => runChat(
-      table ? table.candidates : auto ? preferForPrompt(candidates, promptChars) : candidates,
+      table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(candidates) : candidates, promptChars) : candidates,
       table ? [...prompt, table.chairMessage] : prompt,
       ctl.signal,
       {
@@ -511,6 +556,7 @@ chatRouter.post("/", async (req, res) => {
           if (!raw) return;
           const t = keepValid(tags.push(raw));
           if (!t) return;
+          firstTokenAt ??= Date.now();
           text += t;
           sse.send("delta", { text: t });
         },
@@ -523,7 +569,7 @@ chatRouter.post("/", async (req, res) => {
         onFallback: (from, to) => sse.send("notice", { code: "fallback", message: `${from} failed, trying ${to}.` }),
       },
       auto || !!table,
-      { maxTokens: maxTokensForMode(body.mode) },
+      { maxTokens: maxTokensFor({ mode: body.mode, intent: nlp.intent, length: body.profile?.length }) },
     ));
 
     const held = table ? unresolved.flush() : "";
@@ -541,7 +587,7 @@ chatRouter.post("/", async (req, res) => {
     }
 
     // Follow-up prompt chips: a fast model, bounded so it never holds `done` for long.
-    const followupsTask = text.trim().length >= 40 && lastUserText
+    const followupsTask = worthFollowups(text, nlp.intent) && lastUserText
       ? generateFollowups(lastUserText, text, 3_000, ctl.signal, nlp.language, renderContext(ctx, "followups") || undefined).catch(() => [] as string[])
       : Promise.resolve([] as string[]);
     // Give late images a moment so they arrive before `done`.
@@ -562,6 +608,7 @@ chatRouter.post("/", async (req, res) => {
     }
     sse.send("usage", { promptTokens: result.promptTokens, completionTokens: result.completionTokens });
     const latencyMs = Date.now() - started;
+    summarize(firstTokenAt);
     if (table) {
       recordLatency("chair", result.model, Date.now() - chairAt);
       table.finish(result.model, chairCalls, unresolved.items(), text);
@@ -580,6 +627,7 @@ chatRouter.post("/", async (req, res) => {
     sse.send("error", payload);
     log.warn("chat failed", { requestId, latencyMs: Date.now() - started, code: payload.error.code });
   } finally {
+    summarize(null);
     sse.end();
   }
 });

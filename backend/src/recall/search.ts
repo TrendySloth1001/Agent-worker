@@ -87,11 +87,16 @@ export type RecallInput = {
   excludeConversationId?: string;
 };
 
+/** The text a recall embeds: the question, led by the topic of an explicit "my chat about X" reference. */
+export function recallQueryText(input: Pick<RecallInput, "query" | "topic" | "explicit">): string {
+  return (input.explicit && (input.topic?.length ?? 0) >= 3 ? `${input.topic} ${input.query}` : input.query).trim().slice(0, 600);
+}
+
 /** Searches the caller's other chats. Never throws; a failure reads as "nothing found" (explicit asks say so honestly). */
 export async function recallPastChats(input: RecallInput): Promise<RecallResult> {
   const mode = input.explicit ? "explicit" : "auto";
   const empty: RecallResult = { block: input.explicit ? NOT_FOUND_NOTE : null, citations: [], found: 0, mode };
-  const query = (input.explicit && (input.topic?.length ?? 0) >= 3 ? `${input.topic} ${input.query}` : input.query).trim().slice(0, 600);
+  const query = recallQueryText(input);
   if (!query || !isDbUp()) return empty;
   try {
     const uid = currentUser()?.id ?? null;

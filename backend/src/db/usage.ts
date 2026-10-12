@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { db, isDbUp, Prisma } from "./prisma.js";
 import { currentUser } from "../auth/context.js";
 
-export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe" | "github";
+export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe" | "github" | "turn";
 type Event = {
   provider: "ollama" | "openrouter" | "groq" | "nvidia" | "github" | "web";
   model?: string;
@@ -47,7 +47,26 @@ export type TelemetryEvent = {
 
 // ---- ambient context ---------------------------------------------------------
 
-type Ctx = { purpose?: string; requestId?: string; conversationId?: string };
+/** Upstream calls made while serving one chat turn (see recordTurnSummary). */
+export type TurnCounters = { llmCalls: number; auxLlmCalls: number; embedCalls: number; searches: number; fetches: number; promptTokens: number; completionTokens: number };
+export const newTurnCounters = (): TurnCounters => ({ llmCalls: 0, auxLlmCalls: 0, embedCalls: 0, searches: 0, fetches: 0, promptTokens: 0, completionTokens: 0 });
+
+/** Purposes of the calls that write the answer itself; every other chat call is auxiliary. */
+const MAIN_PURPOSES = new Set(["chat", "table-chair"]);
+
+/** Adds one recorded event to a turn's counters. */
+export function tally(t: TurnCounters, kind: UsageKind, purpose: string, promptTokens?: number | null, completionTokens?: number | null): void {
+  if (kind === "chat") {
+    t.llmCalls++;
+    if (!MAIN_PURPOSES.has(purpose)) t.auxLlmCalls++;
+    t.promptTokens += promptTokens ?? 0;
+    t.completionTokens += completionTokens ?? 0;
+  } else if (kind === "embed") t.embedCalls++;
+  else if (kind === "search") t.searches++;
+  else if (kind === "fetch") t.fetches++;
+}
+
+type Ctx = { purpose?: string; requestId?: string; conversationId?: string; turn?: TurnCounters };
 const ctx = new AsyncLocalStorage<Ctx>();
 
 /** Runs [fn] with extra telemetry context (purpose, request/conversation id) for every event it records. */
@@ -101,12 +120,14 @@ export function recordUsage(e: Event): void {
   if (mem.length > 5000) mem.splice(0, mem.length - 5000);
   const c = ctx.getStore();
   const user = currentUser();
+  const purpose = e.purpose ?? c?.purpose ?? defaultPurpose(e.kind);
+  if (c?.turn) tally(c.turn, e.kind, purpose, e.promptTokens, e.completionTokens);
   const row: Row = {
     ts: new Date(),
     provider: e.provider,
     model: e.model ?? null,
     kind: e.kind,
-    purpose: e.purpose ?? c?.purpose ?? defaultPurpose(e.kind),
+    purpose,
     ok: e.ok,
     status: e.status ?? null,
     errorCode: e.ok ? null : (e.errorCode ?? errorCodeFor(e.status, e.errorMessage)).slice(0, 40),
@@ -126,6 +147,20 @@ export function recordUsage(e: Event): void {
   else timer ??= setTimeout(() => void flush(), FLUSH_MS);
 }
 
+export type TurnSummary = TurnCounters & { msToFirstToken: number | null; totalMs: number };
+
+/**
+ * One log line per chat turn with the number of upstream calls it made, plus a
+ * "turn-summary" usage row (count = auxiliary calls: LLM calls other than the
+ * answer, embeddings, searches and page fetches; ttft = ms to first token) so
+ * the owner can chart calls per turn next to the per-call events.
+ */
+export function recordTurnSummary(s: TurnSummary, logLine: (msg: string, meta: object) => void): void {
+  const aux = s.auxLlmCalls + s.embedCalls + s.searches + s.fetches;
+  logLine("turn cost", { ...s, auxCalls: aux });
+  recordUsage({ provider: "web", model: "turn", kind: "turn", ok: true, latencyMs: s.totalMs, ttftMs: s.msToFirstToken, count: aux });
+}
+
 /** A short machine code for a failed upstream call: http_429, timeout, empty, network. */
 export function errorCodeFor(status: number | undefined, message: string | undefined): string {
   if (status) return `http_${status}`;
@@ -137,7 +172,7 @@ export function errorCodeFor(status: number | undefined, message: string | undef
 }
 
 function defaultPurpose(kind: UsageKind): string {
-  return { chat: "chat", embed: "embedding", search: "web-search", fetch: "web-fetch", transcribe: "transcribe", github: "github" }[kind];
+  return { chat: "chat", embed: "embedding", search: "web-search", fetch: "web-fetch", transcribe: "transcribe", github: "github", turn: "turn-summary" }[kind];
 }
 
 /** Writes the queued events in one insert, off the request path. */

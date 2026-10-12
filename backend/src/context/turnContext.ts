@@ -35,7 +35,7 @@ export const TOOL_BUDGET_TOKENS: Record<ToolName, number> = {
   rag: 250,
   github: 150,
   images: 80,
-  followups: 700,
+  followups: 400,
   table: 900,
   doc: 800,
   recall: 200,
