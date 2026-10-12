@@ -33,6 +33,7 @@ import { shapeHint } from "../nlp/intent.js";
 import { kbRelevance, pickSuggestion, referencesKb, resolveWebMode, toolsNote, type SuggestToggle } from "../toggles/suggest.js";
 import { peekKb } from "../retrieval/peek.js";
 import { generateFollowups, worthFollowups } from "../assist/suggest.js";
+import { screenContextMessage, screenSchema } from "../context/screen.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
 import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
@@ -109,6 +110,8 @@ const bodySchema = z.object({
   roundTable: z.boolean().default(false),
   // Briefing from a merged chat, sent as background (never as a user/assistant turn).
   context: z.string().max(8000).optional(),
+  // Assistant overlay: the screen the user chose to share (text, app, URL); the screenshot is an attachment.
+  screen: screenSchema.optional(),
   // Connected-app items the user attached ("Ask Sparky about this page"): read live, cited as documents.
   apps: z
     .array(z.object({ provider: z.enum(["google_drive", "notion"]), id: z.string().min(10).max(200), title: z.string().max(200).optional() }))
@@ -162,7 +165,7 @@ chatRouter.post("/", async (req, res) => {
   // Long chats: older turns become a rolling summary, only recent turns are sent as messages.
   const compacted = await compactHistory(body.messages, body.conversationId);
   if (compacted) body.messages = compacted.recent;
-  if (body.messages.reduce((n, m) => n + m.content.length, 0) + (body.context?.length ?? 0) > 60_000) {
+  if (body.messages.reduce((n, m) => n + m.content.length, 0) + (body.context?.length ?? 0) + (body.screen?.text.length ?? 0) > 60_000) {
     throw new AppError(413, "payload_too_large", "Conversation is too long (limit 60k characters).");
   }
   const requested = body.model && body.model !== "auto" ? body.model : undefined;
@@ -544,6 +547,8 @@ chatRouter.post("/", async (req, res) => {
         content: `Background the user merged in from earlier conversations (a summary, not the full chats; use it as shared context):\n\n${body.context.trim()}`,
       });
     }
+    const screenNote = screenContextMessage(body.screen);
+    if (screenNote) prompt.push({ role: "system", content: screenNote });
     const context = buildContextMessage(kbItems, webItems, docItems, githubItems);
     if (context) prompt.push({ role: "system", content: context });
     const hint = lastUserText ? intentHint(lastUserText, nlp.intent) : null;
