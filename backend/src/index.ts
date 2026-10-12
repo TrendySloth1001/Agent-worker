@@ -22,7 +22,7 @@ import { githubRouter } from "./routes/github.js";
 import { connectionsRouter } from "./routes/connections.js";
 import { failInterrupted } from "./files/process.js";
 import { authPublicRouter, authRouter, requireUser } from "./routes/auth.js";
-import { chatLimit, docLimit } from "./auth/limits.js";
+import { aiBudget, chatLimit, docLimit } from "./auth/limits.js";
 import { docsRouter } from "./routes/docs.js";
 import { prismaStore as docStore } from "./docs/store.js";
 import { liveIds as liveDocIds } from "./docs/registry.js";
@@ -52,7 +52,16 @@ app.use("/auth", authRouter);
 app.post("/chat", rateLimit(20), chatLimit);
 app.post("/docs", rateLimit(5), docLimit);
 app.post("/docs/:id/sections/:sid/rewrite", rateLimit(20));
-app.post("/knowledge/sources", rateLimit(10));
+app.post("/knowledge/sources", rateLimit(10), aiBudget());
+// Other LLM/embedding work is metered per user per day (the owner is unlimited).
+app.post("/knowledge/notes", rateLimit(20), aiBudget());
+app.post("/knowledge/sources/:id/refresh", rateLimit(10), aiBudget());
+app.post("/knowledge/search", rateLimit(30), aiBudget());
+app.post("/assist/email", rateLimit(20), aiBudget());
+app.post("/assist/profile", rateLimit(20), aiBudget());
+app.post("/conversations/merge", rateLimit(10), aiBudget());
+app.post("/github/repos/:owner/:repo/pulls/:n/review", rateLimit(10), aiBudget());
+app.get("/images/search", rateLimit(30), aiBudget());
 app.post("/connections/github/device", rateLimit(10));
 
 app.use("/models", modelsRouter);
