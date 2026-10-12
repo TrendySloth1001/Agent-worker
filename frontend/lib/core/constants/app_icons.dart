@@ -28,6 +28,7 @@ abstract final class AppIcons {
   static const regenerate = HugeIcons.strokeRoundedRefresh;
   static const edit = HugeIcons.strokeRoundedPencilEdit01;
   static const delete = HugeIcons.strokeRoundedDelete02;
+  static const more = HugeIcons.strokeRoundedMoreVertical;
   static const pin = HugeIcons.strokeRoundedPin;
   static const unpin = HugeIcons.strokeRoundedPinOff;
   static const archive = HugeIcons.strokeRoundedArchive02;

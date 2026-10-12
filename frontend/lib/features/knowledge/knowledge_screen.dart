@@ -12,6 +12,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/illustration.dart';
 import '../../core/widgets/m3_kit_extras.dart';
+import '../../data/kb_source.dart';
 import '../../data/knowledge_api.dart';
 import '../settings/widgets/settings_kit.dart';
 import 'knowledge_controller.dart';
@@ -30,6 +31,8 @@ class KnowledgeScreen extends StatefulWidget {
 
 class _KnowledgeScreenState extends State<KnowledgeScreen> {
   KnowledgeController? _controller;
+  final _search = TextEditingController();
+  String _query = '';
 
   @override
   void didChangeDependencies() {
@@ -43,6 +46,7 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
 
   @override
   void dispose() {
+    _search.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -158,11 +162,63 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
         ),
       ];
     }
+    final query = _query.trim().toLowerCase();
+    final shown = [
+      for (final s in controller.sources)
+        if (query.isEmpty || _matches(s, query)) s,
+    ];
     return [
-      const SettingsGroupHeader(KnowledgeCopy.sources),
+      _SearchField(
+        controller: _search,
+        onChanged: (v) => setState(() => _query = v),
+      ),
+      if (shown.isEmpty)
+        Builder(
+          builder: (context) => Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xl),
+            child: M3Empty(
+              icon: AppIcons.search,
+              title: KnowledgeCopy.noMatches,
+              hint: KnowledgeCopy.noMatchesHint,
+            ),
+          ),
+        ),
+      for (final group in SourceGroup.values)
+        ..._group(controller, group, [
+          for (final s in shown)
+            if (SourceGroup.of(s.type) == group) s,
+        ]),
+      if (shown.isNotEmpty)
+        Builder(
+          builder: (context) => Padding(
+            padding: const EdgeInsets.all(SettingsSizes.headerInset),
+            child: Text(
+              KnowledgeCopy.swipeHint,
+              style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  bool _matches(KbSource s, String q) =>
+      (s.title ?? '').toLowerCase().contains(q) ||
+      s.uri.toLowerCase().contains(q) ||
+      kindLabel(s.type).toLowerCase().contains(q);
+
+  List<Widget> _group(
+    KnowledgeController controller,
+    SourceGroup group,
+    List<KbSource> items,
+  ) {
+    if (items.isEmpty) return const [];
+    return [
+      SettingsGroupHeader(group.title),
       SettingsGroup(
         entries: [
-          for (final source in controller.sources)
+          for (final source in items)
             GroupEntry(
               Dismissible(
                 key: ValueKey(source.id),
@@ -187,7 +243,7 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
                     Haptics.tap();
                     controller.refresh(source.id);
                   },
-                  onLongPress: () async {
+                  onDelete: () async {
                     if (await _confirmDelete()) controller.delete(source.id);
                   },
                 ),
@@ -195,17 +251,70 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
             ),
         ],
       ),
-      Builder(
-        builder: (context) => Padding(
-          padding: const EdgeInsets.all(SettingsSizes.headerInset),
-          child: Text(
-            KnowledgeCopy.swipeHint,
-            style: Theme.of(context).textTheme.bodySmall!.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+    ];
+  }
+}
+
+/// Filled, pill shaped search field (M3 search bar look).
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: SizedBox(
+        height: KnowledgeSizes.searchHeight,
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: KnowledgeCopy.searchHint,
+            filled: true,
+            fillColor: scheme.surfaceContainerHigh,
+            contentPadding: EdgeInsets.zero,
+            prefixIcon: AppIcon(
+              AppIcons.search,
+              size: AppIconSize.md,
+              color: scheme.onSurfaceVariant,
+            ),
+            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (context, v, _) => v.text.isEmpty
+                  ? const SizedBox.shrink()
+                  : IconButton(
+                      tooltip: KnowledgeCopy.clearSearch,
+                      icon: const AppIcon(AppIcons.close, size: AppIconSize.md),
+                      onPressed: () {
+                        Haptics.tap();
+                        controller.clear();
+                        onChanged('');
+                      },
+                    ),
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              borderSide: BorderSide(
+                color: context.palette.accent,
+                width: AppBorder.thick,
+              ),
             ),
           ),
         ),
       ),
-    ];
+    );
   }
 }

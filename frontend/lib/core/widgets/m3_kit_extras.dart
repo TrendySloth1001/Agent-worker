@@ -250,7 +250,10 @@ class M3Tag extends StatelessWidget {
             : scheme.surfaceContainerHighest,
       ),
       child: Center(
+        // Shrink-wrap both axes: a trailing slot hands us the row's full
+        // height, which would otherwise stretch the pill into a tall capsule.
         widthFactor: 1,
+        heightFactor: 1,
         child: Text(
           label,
           style: AppTextStyles.caption.copyWith(
