@@ -1,17 +1,7 @@
 package com.sparky.app
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.content.pm.ResolveInfo
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.os.Bundle
-import android.util.Base64
-import androidx.core.content.FileProvider
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -20,6 +10,7 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.lifecycleScope
+import com.sparky.app.assist.AssistantSetup
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -28,8 +19,6 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import java.io.ByteArrayOutputStream
-import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : FlutterActivity() {
@@ -37,11 +26,10 @@ class MainActivity : FlutterActivity() {
     private val authChannelName = "app/auth"
     private val linksChannelName = "app/links"
     private var linksChannel: MethodChannel? = null
+    private val assistant by lazy { AssistantSetup(this) }
 
     // A sparky:// link the app was opened with (cold start), until Dart asks.
     private var pendingLink: String? = null
-    private val iconPx = 96
-    private val maxDataUrlChars = 100_000
 
     // Back on the last screen sends the app to the background instead of
     // finishing the activity, so a running answer (e.g. a round table) keeps
@@ -68,10 +56,19 @@ class MainActivity : FlutterActivity() {
 
     /** The sparky:// URI of a VIEW intent (not when replayed from Recents). */
     private fun appLink(intent: Intent?): String? {
-        if (intent?.action != Intent.ACTION_VIEW) return null
+        if (intent == null) return null
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+        // The assistant's settings entry (Default apps > Digital assistant > gear).
+        if (intent.component?.className == AssistantSetup.SETTINGS_ALIAS) return AssistantSetup.SETTINGS_LINK
+        if (intent.action != Intent.ACTION_VIEW) return null
         val uri = intent.data ?: return null
         return if (uri.scheme == "sparky") uri.toString() else null
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (assistant.onActivityResult(requestCode)) return
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -90,7 +87,9 @@ class MainActivity : FlutterActivity() {
                 }
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result -> handle(call, result) }
+            .setMethodCallHandler(BrowsersHandler(this))
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AssistantSetup.CHANNEL)
+            .setMethodCallHandler(assistant)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, authChannelName)
             .setMethodCallHandler { call, result -> handleAuth(call, result) }
     }
@@ -161,162 +160,5 @@ class MainActivity : FlutterActivity() {
                 result.error("failed", (e.message ?: e.toString()).take(300), null)
             }
         }
-    }
-
-    private fun handle(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
-            "listBrowsers" -> Thread {
-                val out = try {
-                    listBrowsers()
-                } catch (e: Exception) {
-                    emptyList()
-                }
-                runOnUiThread { result.success(out) }
-            }.start()
-            "openUrl" -> {
-                val url = call.argument<String>("url")
-                if (url.isNullOrEmpty()) {
-                    result.success(false)
-                } else {
-                    result.success(openUrl(url, call.argument<String>("package")))
-                }
-            }
-            "resolvesUrl" -> {
-                val url = call.argument<String>("url")
-                result.success(if (url.isNullOrEmpty()) emptyList<String>() else resolvesUrl(url))
-            }
-            "openHtml" -> {
-                val html = call.argument<String>("html") ?: ""
-                val title = call.argument<String>("title") ?: ""
-                result.success(openHtml(html, title, call.argument<String>("package")))
-            }
-            else -> result.notImplemented()
-        }
-    }
-
-    /**
-     * Packages with an activity for [url] itself (e.g. the GitHub app for
-     * github.com/login/oauth/authorize), the one that would open it first.
-     */
-    private fun resolvesUrl(url: String): List<String> = try {
-        val pm = packageManager
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
-        val out = LinkedHashSet<String>()
-        pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
-            ?.takeIf { it != "android" }
-            ?.let { out.add(it) }
-        for (info in pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)) {
-            info.activityInfo?.packageName?.let { out.add(it) }
-        }
-        out.toList()
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    private fun browsableIntent(): Intent =
-        Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
-            .addCategory(Intent.CATEGORY_BROWSABLE)
-
-    private fun listBrowsers(): List<Map<String, Any?>> {
-        val pm = packageManager
-        val intent = browsableIntent()
-        val found: List<ResolveInfo> =
-            pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-        val defaultPkg = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-            ?.activityInfo?.packageName
-        val seen = HashSet<String>()
-        val list = ArrayList<Map<String, Any?>>()
-        for (info in found) {
-            val pkg = info.activityInfo?.packageName ?: continue
-            if (!seen.add(pkg)) continue
-            list.add(
-                mapOf(
-                    "package" to pkg,
-                    "label" to info.loadLabel(pm).toString(),
-                    "iconPng" to iconBase64(info.loadIcon(pm)),
-                    "isDefault" to (pkg == defaultPkg),
-                ),
-            )
-        }
-        list.sortWith(
-            compareByDescending<Map<String, Any?>> { it["isDefault"] as Boolean }
-                .thenBy { (it["label"] as String).lowercase() },
-        )
-        return list
-    }
-
-    private fun iconBase64(d: Drawable): String? = try {
-        val bmp = if (d is BitmapDrawable && d.bitmap.width == iconPx && d.bitmap.height == iconPx) {
-            d.bitmap
-        } else {
-            val b = Bitmap.createBitmap(iconPx, iconPx, Bitmap.Config.ARGB_8888)
-            val c = Canvas(b)
-            d.setBounds(0, 0, iconPx, iconPx)
-            d.draw(c)
-            b
-        }
-        val os = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.PNG, 100, os)
-        Base64.encodeToString(os.toByteArray(), Base64.NO_WRAP)
-    } catch (e: Exception) {
-        null
-    }
-
-    private fun start(intent: Intent): Boolean = try {
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-        true
-    } catch (e: ActivityNotFoundException) {
-        false
-    } catch (e: SecurityException) {
-        false
-    }
-
-    private fun openUrl(url: String, pkg: String?): Boolean {
-        val uri = Uri.parse(url)
-        if (!pkg.isNullOrEmpty()) {
-            val targeted = Intent(Intent.ACTION_VIEW, uri)
-                .addCategory(Intent.CATEGORY_BROWSABLE)
-                .setPackage(pkg)
-            if (start(targeted)) return true
-        }
-        val plain = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
-        if (start(plain)) return true
-        // Chosen browser is gone and there is no default: let the user pick.
-        return start(Intent.createChooser(Intent(Intent.ACTION_VIEW, uri), null))
-    }
-
-    private fun openHtml(html: String, title: String, pkg: String?): Boolean {
-        val uri = try {
-            val dir = File(cacheDir, "html").apply { mkdirs() }
-            val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-            dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
-            val safe = title.replace(Regex("[^A-Za-z0-9_-]+"), "-").trim('-').take(40)
-                .ifEmpty { "page" }
-            val file = File(dir, "$safe-${System.currentTimeMillis()}.html")
-            file.writeText(html, Charsets.UTF_8)
-            FileProvider.getUriForFile(this, "$packageName.files", file)
-        } catch (e: Exception) {
-            null
-        }
-        if (uri != null) {
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "text/html")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            if (!pkg.isNullOrEmpty()) {
-                intent.setPackage(pkg)
-                try {
-                    grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (e: Exception) {
-                }
-            }
-            if (start(intent)) return true
-        }
-        // Fallback: a data: URL for small pages.
-        if (html.length <= maxDataUrlChars) {
-            val b64 = Base64.encodeToString(html.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-            return openUrl("data:text/html;charset=utf-8;base64,$b64", pkg)
-        }
-        return false
     }
 }

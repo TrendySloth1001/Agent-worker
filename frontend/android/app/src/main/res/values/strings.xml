@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Name of sparky in Settings > Apps > Default apps > Digital assistant
+         app, and of its speech recognizer entry. -->
+    <string name="assistant_name">sparky</string>
+</resources>
