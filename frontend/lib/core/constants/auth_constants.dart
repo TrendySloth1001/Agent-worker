@@ -4,16 +4,17 @@ import 'package:hugeicons/hugeicons.dart';
 abstract final class AuthStrings {
   static const brand = 'sparky';
   static const tagline = 'Your engineering sidekick.';
-  static const loginTitle = 'Sign in';
-  static const loginSubtitle = 'Welcome back to sparky.';
-  static const registerTitle = 'Create account';
-  static const registerSubtitle = 'Make a sparky account. It takes a minute.';
+  static const loginTitle = 'Welcome back';
+  static const loginSubtitle = 'Sign in to pick up where you left off.';
+  static const registerTitle = 'Create your account';
+  static const registerSubtitle = 'Your chats, docs and code in one place.';
   static const name = 'Name';
   static const nameHint = 'Your name';
   static const email = 'Email';
   static const emailHint = 'you@example.com';
   static const password = 'Password';
   static const passwordHint = 'At least 8 characters';
+  static const newPasswordHint = 'Password (8+ characters)';
   static const confirm = 'Confirm password';
   static const confirmHint = 'Type it again';
   static const show = 'Show password';
@@ -25,6 +26,20 @@ abstract final class AuthStrings {
   static const haveAccount = 'Already have an account?';
   static const toLogin = 'Sign in';
   static const restoring = 'Signing in';
+  static const signingIn = 'Signing in…';
+  static const creatingAccount = 'Creating account…';
+  static const back = 'Back';
+  static const capsLock = 'Caps Lock is on.';
+
+  // "Trouble signing in?" (there is no email password reset).
+  static const trouble = 'Trouble signing in?';
+  static const troubleSubtitle = 'sparky can\'t reset passwords by email yet.';
+  static const troubleSso = 'Use GitHub or Google';
+  static const troubleSsoDetail =
+      'If it uses the same verified email as your account, you go '
+      'straight in.';
+  static const troubleSupport = 'Email support';
+  static const troubleSubject = 'sparky sign-in help';
 
   static const errEmail = 'Enter a valid email.';
   static const errPassword = 'Enter your password.';
@@ -89,6 +104,25 @@ abstract final class ProfileStrings {
 abstract final class AuthSizes {
   static const formMaxWidth = 420.0;
   static const fieldHeight = 52.0;
+
+  /// Sign-in / create-account headline.
+  static const headline = 34.0;
+
+  /// Primary and "Continue with" buttons.
+  static const buttonHeight = 52.0;
+
+  /// Vertical padding inside a field (with the 16dp body text: ~56dp).
+  static const fieldPadV = 16.0;
+
+  /// Spinner inside a loading button.
+  static const spinner = 18.0;
+
+  /// Width reserved on each side of a "Continue with" label, so the brand
+  /// marks line up and the label stays centered.
+  static const ssoSide = 44.0;
+
+  /// Error banner tint over the page.
+  static const errorTint = 0.12;
   static const avatarDrawer = 40.0;
   static const avatarProfile = 72.0;
   static const avatarUploadPx = 256;
@@ -126,4 +160,8 @@ abstract final class AuthIcons {
   static const account = HugeIcons.strokeRoundedUserCircle;
   static const usage = HugeIcons.strokeRoundedActivity01;
   static const photo = HugeIcons.strokeRoundedCamera01;
+  static const capsLock = HugeIcons.strokeRoundedArrowUp02;
+  static const help = HugeIcons.strokeRoundedHelpCircle;
+  static const sso = HugeIcons.strokeRoundedKey01;
+  static const support = HugeIcons.strokeRoundedMail01;
 }

@@ -30,9 +30,9 @@ abstract final class SsoFlowStatus {
 }
 
 abstract final class SsoStrings {
-  static const or = 'OR';
-  static const github = 'CONTINUE WITH GITHUB';
-  static const google = 'CONTINUE WITH GOOGLE';
+  static const or = 'or';
+  static const github = 'Continue with GitHub';
+  static const google = 'Continue with Google';
 
   // GitHub device-code sheet.
   static const sheetTitle = 'Continue with GitHub';
@@ -168,7 +168,7 @@ abstract final class SsoIcons {
 
 abstract final class SsoSizes {
   /// Brand mark inside a sign-in button.
-  static const mark = 18.0;
+  static const mark = 20.0;
 
   /// Brand mark on a Profile row.
   static const rowMark = 20.0;

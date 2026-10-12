@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,31 +15,51 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/dot_grid_background.dart';
 import '../../../core/widgets/illustration.dart';
 
-/// Dot-grid page with the big "sparky" wordmark over a centered form.
-/// Scrolls above the keyboard.
+/// Dot-grid auth page: a small brand bar, an optional centered
+/// illustration, one headline with a subtitle, the form, and [footer] pinned
+/// to the bottom. Scrolls above the keyboard; the illustration collapses
+/// while the keyboard is open or the screen is short.
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
     super.key,
     required this.title,
     required this.subtitle,
     required this.children,
+    this.footer,
+    this.illustration = true,
+    this.onBack,
   });
 
   final String title, subtitle;
   final List<Widget> children;
+
+  /// Pinned under the form (e.g. "New to sparky? Create account").
+  final Widget? footer;
+
+  /// Show the peep-with-a-laptop above the headline.
+  final bool illustration;
+
+  /// Shows a back button in the brand bar.
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     // Read above the Scaffold, which strips the inset from its body.
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final illustration =
-        keyboardOpen || screenHeight < IllustrationSizes.loginHiddenBelow
+    // Large text needs the room: measure the height in "1x text" units.
+    final screenHeight =
+        MediaQuery.sizeOf(context).height /
+        MediaQuery.textScalerOf(context).scale(1);
+    final art =
+        !illustration ||
+            keyboardOpen ||
+            screenHeight < IllustrationSizes.loginHiddenBelow
         ? 0.0
         : screenHeight < IllustrationSizes.loginCompactBelow
         ? IllustrationSizes.loginCompact
         : IllustrationSizes.login;
+    final bottomGap = keyboardOpen ? AppSpacing.lg : AppSpacing.xl;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: systemOverlayFor(context),
       child: Scaffold(
@@ -46,56 +68,68 @@ class AuthScaffold extends StatelessWidget {
           children: [
             const Positioned.fill(child: DotGridBackground()),
             SafeArea(
-              child: LayoutBuilder(
-                builder: (context, box) => SingleChildScrollView(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xl,
-                    vertical: AppSpacing.xl,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: box.maxHeight - AppSpacing.xl * 2,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: AuthSizes.formMaxWidth,
+              child: Column(
+                children: [
+                  _BrandBar(onBack: onBack),
+                  Expanded(
+                    // No intrinsics here: the error banner and illustration
+                    // animate their size, which intrinsic passes misjudge.
+                    child: LayoutBuilder(
+                      builder: (context, box) => SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          AppSpacing.xl,
+                          AppSpacing.sm,
+                          AppSpacing.xl,
+                          bottomGap,
                         ),
-                        child: AutofillGroup(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _AuthIllustration(height: illustration),
-                              const Wordmark(),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                AuthStrings.tagline,
-                                style: context.text.bodySmall,
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: AuthSizes.formMaxWidth,
+                              minHeight: math.max(
+                                0,
+                                box.maxHeight - AppSpacing.sm - bottomGap,
                               ),
-                              const SizedBox(height: AppSpacing.xxl),
-                              Semantics(
-                                header: true,
-                                child: Text(
-                                  title,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.headlineMedium,
-                                ),
+                            ),
+                            child: AutofillGroup(
+                              // Equal room above the form and between it and
+                              // the footer; scrolls once it no longer fits.
+                              child: Column(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const SizedBox.shrink(),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _AuthIllustration(height: art),
+                                      _Heading(
+                                        title: title,
+                                        subtitle: subtitle,
+                                      ),
+                                      const SizedBox(height: AppSpacing.xl),
+                                      ...children,
+                                    ],
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: AppSpacing.lg,
+                                    ),
+                                    child: footer ?? const SizedBox.shrink(),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(subtitle, style: context.text.bodySmall),
-                              const SizedBox(height: AppSpacing.xl),
-                              ...children,
-                            ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
@@ -105,7 +139,77 @@ class AuthScaffold extends StatelessWidget {
   }
 }
 
-/// The peep-with-a-laptop over the wordmark. Collapses to nothing
+/// "sparky•" at the top-left, as in the sidebar; a back button before it
+/// on pushed pages.
+class _BrandBar extends StatelessWidget {
+  const _BrandBar({this.onBack});
+
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final back = onBack;
+    return SizedBox(
+      height: AppSizes.appBarHeight,
+      child: Row(
+        children: [
+          if (back != null)
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.xs),
+              child: IconButton(
+                tooltip: AuthStrings.back,
+                icon: AppIcon(
+                  AppIcons.back,
+                  size: AppIconSize.lg,
+                  color: context.palette.textPrimary,
+                ),
+                onPressed: () {
+                  Haptics.tap();
+                  back();
+                },
+              ),
+            )
+          else
+            const SizedBox(width: AppSpacing.xl),
+          const Wordmark(size: AppFontSize.title, compact: true),
+        ],
+      ),
+    );
+  }
+}
+
+/// The one headline of the page and its subtitle, centered.
+class _Heading extends StatelessWidget {
+  const _Heading({required this.title, required this.subtitle});
+
+  final String title, subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: context.text.headline.copyWith(fontSize: AuthSizes.headline),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          subtitle,
+          textAlign: TextAlign.center,
+          style: context.text.body.copyWith(
+            color: context.palette.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The peep-with-a-laptop over the headline. Collapses to nothing
 /// ([height] 0) while the keyboard is open or on very short screens.
 class _AuthIllustration extends StatelessWidget {
   const _AuthIllustration({required this.height});
@@ -119,13 +223,12 @@ class _AuthIllustration extends StatelessWidget {
           ? Duration.zero
           : IllustrationDurations.resize,
       curve: Curves.easeOutCubic,
-      alignment: Alignment.topLeft,
+      alignment: Alignment.topCenter,
       child: height == 0
           ? const SizedBox(width: double.infinity)
           : Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Align(
-                alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+              child: Center(
                 child: Illustration(
                   kind: IllustrationKind.login,
                   height: height,
@@ -136,15 +239,49 @@ class _AuthIllustration extends StatelessWidget {
   }
 }
 
-/// "sparky" in Space Grotesk bold, with a red dot.
+/// "sparky" in Space Grotesk bold, with a red dot. [compact] draws the
+/// sidebar's brand: semibold with a round dot after it.
 class Wordmark extends StatelessWidget {
-  const Wordmark({super.key, this.size = AppFontSize.displayLarge});
+  const Wordmark({
+    super.key,
+    this.size = AppFontSize.displayLarge,
+    this.compact = false,
+  });
 
   final double size;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    if (compact) {
+      return Semantics(
+        label: AuthStrings.brand,
+        excludeSemantics: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              AuthStrings.brand,
+              style: context.text.title.copyWith(
+                fontSize: size,
+                fontVariations: const [FontVariation.weight(600)],
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Container(
+              width: AppSizes.dot,
+              height: AppSizes.dot,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: p.accent,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Text.rich(
       TextSpan(
         children: [
@@ -161,8 +298,10 @@ class Wordmark extends StatelessWidget {
   }
 }
 
-/// Filled tonal field (24dp radius) under a Space Grotesk label; the error
-/// shows inline below.
+/// Filled tonal pill field with a leading icon; the error shows inline
+/// below. With [showLabel] the label sits above the field (Profile sheets);
+/// without it the label is the hint. Password fields get show/hide and a
+/// Caps Lock note.
 class AuthField extends StatefulWidget {
   const AuthField({
     super.key,
@@ -181,13 +320,15 @@ class AuthField extends StatefulWidget {
     this.enabled = true,
     this.textCapitalization = TextCapitalization.none,
     this.maxLength,
+    this.showLabel = true,
+    this.gap = AppSpacing.lg,
   });
 
   final String label;
   final String? hint, error;
   final TextEditingController controller;
   final AppIconData icon;
-  final bool obscure, enabled;
+  final bool obscure, enabled, showLabel;
   final TextInputType? keyboardType;
   final Iterable<String>? autofillHints;
   final TextInputAction textInputAction;
@@ -196,35 +337,81 @@ class AuthField extends StatefulWidget {
   final TextCapitalization textCapitalization;
   final int? maxLength;
 
+  /// Space below the field.
+  final double gap;
+
   @override
   State<AuthField> createState() => _AuthFieldState();
 }
 
 class _AuthFieldState extends State<AuthField> {
   bool _hidden = true;
+  bool _capsLock = false;
+  FocusNode? _ownFocus;
+
+  FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.obscure) {
+      HardwareKeyboard.instance.addHandler(_onKey);
+      _focus.addListener(_syncCaps);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.obscure) {
+      HardwareKeyboard.instance.removeHandler(_onKey);
+      _focus.removeListener(_syncCaps);
+    }
+    _ownFocus?.dispose();
+    super.dispose();
+  }
+
+  bool _onKey(KeyEvent _) {
+    _syncCaps();
+    return false;
+  }
+
+  /// Caps Lock is only known with a hardware keyboard.
+  void _syncCaps() {
+    final on =
+        _focus.hasFocus &&
+        HardwareKeyboard.instance.lockModesEnabled.contains(
+          KeyboardLockMode.capsLock,
+        );
+    if (on != _capsLock && mounted) setState(() => _capsLock = on);
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final error = widget.error;
+    final scheme = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final error = widget.error;
+    final note = error ?? (_capsLock ? AuthStrings.capsLock : null);
+    final noteColor = error != null ? p.error : p.textSecondary;
     OutlineInputBorder border(Color c) => OutlineInputBorder(
       borderRadius: BorderRadius.circular(AppRadius.field),
       borderSide: BorderSide(color: c, width: AppBorder.thin),
     );
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: EdgeInsets.only(bottom: widget.gap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.label,
-            style: tt.labelLarge!.copyWith(color: p.textSecondary),
-          ),
-          const SizedBox(height: AppSpacing.xs + AppSpacing.xxs),
+          if (widget.showLabel) ...[
+            Text(
+              widget.label,
+              style: tt.labelLarge!.copyWith(color: p.textSecondary),
+            ),
+            const SizedBox(height: AppSpacing.xs + AppSpacing.xxs),
+          ],
           TextField(
             controller: widget.controller,
-            focusNode: widget.focusNode,
+            focusNode: _focus,
             enabled: widget.enabled,
             obscureText: widget.obscure && _hidden,
             enableSuggestions: !widget.obscure,
@@ -238,32 +425,41 @@ class _AuthFieldState extends State<AuthField> {
             maxLength: widget.maxLength,
             style: context.text.body,
             decoration: InputDecoration(
-              hintText: widget.hint,
+              hintText: widget.hint ?? (widget.showLabel ? null : widget.label),
               counterText: '',
+              contentPadding: widget.showLabel
+                  ? null
+                  : const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                      vertical: AuthSizes.fieldPadV,
+                    ),
               prefixIcon: Padding(
                 padding: const EdgeInsets.only(
-                  left: AppSpacing.lg,
-                  right: AppSpacing.sm,
+                  left: AppSpacing.lg + AppSpacing.xxs,
+                  right: AppSpacing.md,
                 ),
                 child: AppIcon(
                   widget.icon,
                   size: AppIconSize.md,
-                  color: p.textSecondary,
+                  color: error != null ? p.error : scheme.onSurfaceVariant,
                 ),
               ),
               prefixIconConstraints: const BoxConstraints(),
               suffixIcon: widget.obscure
-                  ? IconButton(
-                      tooltip: _hidden ? AuthStrings.show : AuthStrings.hide,
-                      icon: AppIcon(
-                        _hidden ? AuthIcons.show : AuthIcons.hide,
-                        size: AppIconSize.md,
-                        color: p.textSecondary,
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.xs),
+                      child: IconButton(
+                        tooltip: _hidden ? AuthStrings.show : AuthStrings.hide,
+                        icon: AppIcon(
+                          _hidden ? AuthIcons.show : AuthIcons.hide,
+                          size: AppIconSize.md,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        onPressed: () {
+                          Haptics.tap();
+                          setState(() => _hidden = !_hidden);
+                        },
                       ),
-                      onPressed: () {
-                        Haptics.tap();
-                        setState(() => _hidden = !_hidden);
-                      },
                     )
                   : null,
               enabledBorder: border(
@@ -275,16 +471,29 @@ class _AuthFieldState extends State<AuthField> {
           AnimatedSize(
             duration: AppDurations.fast,
             alignment: Alignment.topLeft,
-            child: error == null
+            child: note == null
                 ? const SizedBox(width: double.infinity)
                 : Padding(
                     padding: const EdgeInsets.only(
-                      top: AppSpacing.xs,
-                      left: AppSpacing.lg,
+                      top: AppSpacing.sm,
+                      left: AppSpacing.lg + AppSpacing.xxs,
+                      right: AppSpacing.lg,
                     ),
-                    child: Text(
-                      error,
-                      style: tt.bodySmall!.copyWith(color: p.error),
+                    child: Row(
+                      children: [
+                        AppIcon(
+                          error != null ? AppIcons.alert : AuthIcons.capsLock,
+                          size: AppIconSize.sm,
+                          color: noteColor,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            note,
+                            style: tt.bodySmall!.copyWith(color: noteColor),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
           ),
@@ -294,7 +503,8 @@ class _AuthFieldState extends State<AuthField> {
   }
 }
 
-/// Filled pill; shows a spinner while [loading].
+/// Filled pill; while [loading] it is disabled and shows a spinner (and
+/// [loadingLabel] when given).
 class PillButton extends StatelessWidget {
   const PillButton({
     super.key,
@@ -302,52 +512,75 @@ class PillButton extends StatelessWidget {
     required this.onPressed,
     this.loading = false,
     this.destructive = false,
+    this.loadingLabel,
+    this.height = AppSizes.buttonHeight,
   });
 
   final String label;
+  final String? loadingLabel;
   final VoidCallback? onPressed;
   final bool loading, destructive;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final bg = destructive ? p.error : p.textPrimary;
     final fg = destructive ? AppColors.white : p.textInverse;
+    final style = Theme.of(context).textTheme.titleMedium!.copyWith(color: fg);
+    final spinner = SizedBox.square(
+      key: const ValueKey('spinner'),
+      dimension: AuthSizes.spinner,
+      child: CircularProgressIndicator(strokeWidth: AppBorder.thick, color: fg),
+    );
+    final pending = loadingLabel;
     return SizedBox(
-      height: AppSizes.buttonHeight,
+      height: height,
       child: FilledButton(
         style: FilledButton.styleFrom(
           backgroundColor: bg,
           foregroundColor: fg,
           disabledBackgroundColor: loading ? bg : p.disabled,
+          disabledForegroundColor: loading ? fg : null,
           shape: const StadiumBorder(),
         ),
         onPressed: loading ? null : onPressed,
-        child: loading
-            ? SizedBox(
-                width: AppIconSize.md,
-                height: AppIconSize.md,
-                child: CircularProgressIndicator(
-                  strokeWidth: AppBorder.thick,
-                  color: fg,
+        child: AnimatedSwitcher(
+          duration: AppDurations.fast,
+          child: !loading
+              ? Text(label, key: const ValueKey('idle'), style: style)
+              : pending == null
+              ? spinner
+              : Row(
+                  key: const ValueKey('busy'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    spinner,
+                    const SizedBox(width: AppSpacing.md),
+                    Flexible(
+                      child: Text(
+                        pending,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: style,
+                      ),
+                    ),
+                  ],
                 ),
-              )
-            : Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium!.copyWith(color: fg),
-              ),
+        ),
       ),
     );
   }
 }
 
-/// Inline error banner above the button.
+/// Inline error banner: a tonal red card with an alert icon.
 class FormError extends StatelessWidget {
-  const FormError(this.message, {super.key});
+  const FormError(this.message, {super.key, this.gap = AppSpacing.lg});
 
   final String? message;
+
+  /// Space below the banner.
+  final double gap;
 
   @override
   Widget build(BuildContext context) {
@@ -355,35 +588,47 @@ class FormError extends StatelessWidget {
     final m = message;
     return AnimatedSize(
       duration: AppDurations.fast,
+      alignment: Alignment.topCenter,
       child: m == null
           ? const SizedBox(width: double.infinity)
-          : Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                color: Color.alphaBlend(
-                  p.error.withValues(alpha: 0.12),
-                  p.background,
+          : Semantics(
+              liveRegion: true,
+              child: Container(
+                width: double.infinity,
+                margin: EdgeInsets.only(bottom: gap),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
                 ),
-              ),
-              child: Row(
-                children: [
-                  AppIcon(AppIcons.alert, size: AppIconSize.sm, color: p.error),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      m,
-                      style: context.text.bodySmall.copyWith(
-                        color: p.textPrimary,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  color: Color.alphaBlend(
+                    p.error.withValues(alpha: AuthSizes.errorTint),
+                    p.background,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                      child: AppIcon(
+                        AppIcons.alert,
+                        size: AppIconSize.md,
+                        color: p.error,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Text(
+                        m,
+                        style: context.text.bodySmall.copyWith(
+                          color: p.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
     );
@@ -468,7 +713,8 @@ class StrengthHint extends StatelessWidget {
   }
 }
 
-/// "Question? ACTION" row under the form.
+/// "Question? Action" row at the foot of the page; the action is a real
+/// text button in the accent.
 class SwitchPrompt extends StatelessWidget {
   const SwitchPrompt({
     super.key,
@@ -483,29 +729,34 @@ class SwitchPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.lg),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(question, style: context.text.bodySmall),
-          TextButton(
-            onPressed: onTap == null
-                ? null
-                : () {
-                    Haptics.tap();
-                    onTap!();
-                  },
-            child: Text(
-              action,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall!.copyWith(color: p.textPrimary),
+    final tap = onTap;
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          question,
+          style: context.text.body.copyWith(color: p.textSecondary),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: p.accent,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          ),
+          onPressed: tap == null
+              ? null
+              : () {
+                  Haptics.tap();
+                  tap();
+                },
+          child: Text(
+            action,
+            style: Theme.of(context).textTheme.titleMedium!.copyWith(
+              color: tap == null ? p.disabled : p.accent,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
