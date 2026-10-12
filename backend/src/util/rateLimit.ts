@@ -7,7 +7,7 @@ import { AppError } from "./errors.js";
  * client; otherwise `req.ip` (honours `trust proxy`).
  */
 export const clientIp = (req: Request): string => {
-  const cf = req.headers["cf-connecting-ip"];
+  const cf = req.headers?.["cf-connecting-ip"];
   if (typeof cf === "string" && cf.trim()) return cf.trim();
   return req.ip ?? req.socket?.remoteAddress ?? "unknown";
 };
