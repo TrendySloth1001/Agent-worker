@@ -74,6 +74,9 @@ abstract final class HistoryStrings {
 }
 
 abstract final class HistorySizes {
+  /// Always-visible "Search chats" field under the wordmark.
+  static const searchPillHeight = 44.0;
+  static const newChatHeight = 40.0;
   /// One chat row.
   static const rowHeight = 56.0;
   static const headerHeight = 56.0;

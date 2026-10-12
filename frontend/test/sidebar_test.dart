@@ -199,7 +199,7 @@ void main() {
     tester,
   ) async {
     final (api, _) = await _pump(tester);
-    await tester.tap(find.bySemanticsLabel(HistoryStrings.search));
+    await tester.tap(find.text(HistoryStrings.searchHint));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'osl');
     await tester.pump();

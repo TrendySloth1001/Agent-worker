@@ -124,7 +124,8 @@ class _Destination extends StatelessWidget {
       label: label,
       excludeSemantics: true,
       child: Material(
-        color: selected ? scheme.secondaryContainer : scheme.surfaceContainer,
+        // Plain buttons: no fill unless this destination is active.
+        color: selected ? scheme.secondaryContainer : Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(DrawerMotion.footerTileRadius),
         ),

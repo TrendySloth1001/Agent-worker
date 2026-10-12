@@ -98,8 +98,27 @@ class HistoryHeader extends StatelessWidget {
 
   Widget _brandRow(BuildContext context) {
     final p = context.palette;
-    return Padding(
+    return Column(
       key: const ValueKey('brand'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _brandTitle(context, p),
+        // Always-visible search: one tap to start typing.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.md,
+            AppSpacing.xs,
+          ),
+          child: _SearchPill(onTap: onOpenSearch),
+        ),
+      ],
+    );
+  }
+
+  Widget _brandTitle(BuildContext context, AppPalette p) {
+    return Padding(
       padding: const EdgeInsets.only(
         left: AppSpacing.screenPadding,
         right: AppSpacing.xs,
@@ -136,16 +155,22 @@ class HistoryHeader extends StatelessWidget {
               ],
             ),
           ),
-          SidebarIconButton(
-            icon: HistoryIcons.search,
-            label: HistoryStrings.search,
-            onTap: onOpenSearch,
+          // A labelled primary action reads better than a bare icon.
+          FilledButton.tonalIcon(
+            onPressed: () {
+              Haptics.tap();
+              onNewChat();
+            },
+            icon: const AppIcon(HistoryIcons.newChat, size: AppIconSize.sm),
+            label: const Text(HistoryStrings.newChat),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              // The theme's buttons are full-width; this one hugs its label.
+              minimumSize: const Size(0, HistorySizes.newChatHeight),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            ),
           ),
-          SidebarIconButton(
-            icon: HistoryIcons.newChat,
-            label: HistoryStrings.newChat,
-            onTap: onNewChat,
-          ),
+          const SizedBox(width: AppSpacing.sm),
         ],
       ),
     );
@@ -221,6 +246,55 @@ class HistoryHeader extends StatelessWidget {
             onTap: onCloseSearch,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Tappable "Search chats" field that opens the inline search.
+class _SearchPill extends StatelessWidget {
+  const _SearchPill({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final shape = BorderRadius.circular(AppRadius.pill);
+    return Semantics(
+      button: true,
+      label: HistoryStrings.searchHint,
+      excludeSemantics: true,
+      child: Material(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: shape,
+        child: InkWell(
+          borderRadius: shape,
+          onTap: () {
+            Haptics.tap();
+            onTap();
+          },
+          child: SizedBox(
+            height: HistorySizes.searchPillHeight,
+            child: Row(
+              children: [
+                const SizedBox(width: AppSpacing.md),
+                AppIcon(
+                  HistoryIcons.search,
+                  size: AppIconSize.sm,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  HistoryStrings.searchHint,
+                  style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
