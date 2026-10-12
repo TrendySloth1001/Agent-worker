@@ -13,7 +13,15 @@ import { extractEntities, quoteNames } from "../nlp/entities.js";
 import { isEnglish, REPLY_LANG_MIN_CONFIDENCE, type LangResult } from "../nlp/language.js";
 
 export type SearchPlan = { queries: string[]; fresh: Freshness; intents: Intent[]; via: "heuristic" | "model" };
-export type PlanContext = { previousUser?: string; previousAssistant?: string; language?: LangResult };
+export type PlanContext = {
+  previousUser?: string;
+  previousAssistant?: string;
+  language?: LangResult;
+  /** The message as one self-contained question, resolved once per turn (src/context). */
+  standalone?: string;
+  /** Names the chat has been about (repos, products, people...), most relevant first. */
+  topics?: string[];
+};
 
 const PLAN_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
 const PLAN_MS = 2_500;
@@ -48,9 +56,14 @@ export function heuristicQueries(question: string, ctx: PlanContext = {}, now = 
   if (!q) q = clean(question);
   const words = q.split(/\s+/).filter(Boolean);
   const followUp = words.length < 4 || (words.length < 9 && FOLLOW_UP.test(q));
-  if (followUp && ctx.previousUser) {
+  const standalone = ctx.standalone ? stripFiller(clean(ctx.standalone)).replace(/[?!.]+$/, "").trim() : "";
+  if (followUp && standalone && standalone.toLowerCase() !== q.toLowerCase()) {
+    q = standalone;
+  } else if (followUp && ctx.previousUser) {
     const topic = stripFiller(clean(ctx.previousUser)).replace(/[?!.]+$/, "");
     if (topic) q = `${topic.split(/\s+/).slice(0, 12).join(" ")} ${q}`;
+  } else if (followUp && ctx.topics?.length) {
+    q = `${ctx.topics.slice(0, 2).join(" ")} ${q}`;
   }
   q = q.slice(0, MAX_QUERY);
   const queries = [q];
@@ -97,7 +110,7 @@ export function needsModel(question: string, ctx: PlanContext): boolean {
   const q = clean(question);
   const words = q.split(/\s+/).length;
   if (q.length > 160) return true;
-  return !!ctx.previousUser && (words < 4 || (words < 9 && FOLLOW_UP.test(q)));
+  return (!!ctx.previousUser || !!ctx.topics?.length) && (words < 4 || (words < 9 && FOLLOW_UP.test(q)));
 }
 
 /**
@@ -136,7 +149,7 @@ async function planSearchInner(question: string, ctx: PlanContext, signal?: Abor
         { role: "system", content: `${PROMPT}${languageNote(ctx.language)}\nToday's date is ${new Date().toISOString().slice(0, 10)}.` },
         {
           role: "user",
-          content: `${ctx.previousUser ? `Earlier user message: ${ctx.previousUser.slice(0, 400)}\n` : ""}${ctx.previousAssistant ? `Earlier assistant reply: ${ctx.previousAssistant.slice(0, 400)}\n` : ""}Latest message: ${question.slice(0, 1200)}`,
+          content: `${ctx.topics?.length ? `Topics from earlier in the chat: ${ctx.topics.join(", ").slice(0, 300)}\n` : ""}${ctx.standalone && ctx.standalone !== question ? `Likely standalone reading: ${ctx.standalone.slice(0, 300)}\n` : ""}${ctx.previousUser ? `Earlier user message: ${ctx.previousUser.slice(0, 400)}\n` : ""}${ctx.previousAssistant ? `Earlier assistant reply: ${ctx.previousAssistant.slice(0, 400)}\n` : ""}Latest message: ${question.slice(0, 1200)}`,
         },
       ];
       const raw = await ask(model, messages, { timeoutMs: PLAN_MS, maxTokens: 600, signal, purpose: "search-plan" });

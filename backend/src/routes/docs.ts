@@ -7,6 +7,7 @@ import { AppError } from "../util/errors.js";
 import { openSse } from "../util/sse.js";
 import { userOf, type AuthUser } from "../auth/context.js";
 import { refundDoc } from "../auth/limits.js";
+import { storedConversationContext } from "../context/stored.js";
 import { loadRows } from "../files/context.js";
 import { db } from "../db/prisma.js";
 import { cancelJob, liveJob, registerJob, runningPipelineFor, type LiveJob } from "../docs/registry.js";
@@ -93,6 +94,8 @@ docsRouter.post("/", async (req, res) => {
       const conv = await db().conversation.findFirst({ where: { id: body.conversationId, userId: user.id }, select: { id: true } });
       conversationId = conv?.id ?? null;
     }
+    // What the chat was about, so the outline and sections respect scope and decisions made there.
+    const chatContext = conversationId ? await storedConversationContext(conversationId, user.id).catch(() => "") : "";
     const doc = await store.create({
       userId: user.id,
       conversationId,
@@ -106,6 +109,7 @@ docsRouter.post("/", async (req, res) => {
         ...(attachments.length ? { attachments } : {}),
         ...(body.profile && Object.keys(body.profile).length ? { profile: body.profile } : {}),
         ...(body.reviewOutline ? { reviewOutline: true } : {}),
+        ...(chatContext ? { chatContext } : {}),
         ...(body.conversationId ? { conversationId: body.conversationId } : {}),
       },
     });

@@ -35,6 +35,8 @@ export type RetrieveOpts = {
   /** Recent conversation, used to turn a follow-up into standalone queries. */
   history?: HistoryMsg[];
   rewrite?: boolean;
+  /** Query variants already resolved for this turn (src/context): skips the rewrite call. */
+  rewrites?: string[];
   rerank?: boolean;
 };
 
@@ -130,8 +132,8 @@ export async function retrieve(queryText: string, opts: RetrieveOpts = {}): Prom
 
   // Follow-ups are rewritten into standalone queries (time-boxed, never fatal).
   const doRewrite = opts.rewrite ?? config.ragRewrite;
-  const rewrites = doRewrite && opts.history?.length ? await rewriteQueries(text, opts.history) : [];
-  const queries = [text, ...rewrites];
+  const rewrites = opts.rewrites ?? (doRewrite && opts.history?.length ? await rewriteQueries(text, opts.history) : []);
+  const queries = [...new Set([text, ...rewrites])];
   const tRewrite = Date.now() - t0;
 
   const vecs = (await embedQueries(queries)).map(toVector);

@@ -135,7 +135,7 @@ export function wantsGithubConnect(text: string): boolean {
   return !CONNECT_NOT.test(t.slice((m.index ?? 0) + m[0].length));
 }
 
-function repoRefs(text: string): RepoRef[] {
+export function repoRefs(text: string): RepoRef[] {
   const out: RepoRef[] = [];
   const add = (owner: string, repo: string) => {
     repo = repo.replace(/\.git$/, "").replace(/[.,;:]+$/, "");
@@ -238,6 +238,27 @@ export function githubIntent(text: string): GithubIntent | null {
     myIssues,
     myActivity,
   };
+}
+
+/** "that repo", "its latest commits": a message about a repository without naming one. */
+const REPO_REFERENT = /\b(that|this|the same|its|those|the)\s+(?:repo|repository|project|codebase)\b|\b(?:its|their)\s+\w+|\b(?:in|on|of|for|from)\s+(?:it|there)\b|\bwhat about (?:the )?(?:commits|prs|pull requests|issues|releases|contributors)\b/i;
+
+/**
+ * Resolves a reference to a repository discussed earlier ("show me its latest
+ * commits", "any open issues on that repo?") by appending the repo's name.
+ * [repos] are "owner/repo" from the conversation, most recent first. The text is
+ * returned unchanged when it already names a repo, is about the user's own
+ * GitHub data, or is not a short GitHub question.
+ */
+export function resolveRepoReference(text: string, repos: string[]): string {
+  const t = (text ?? "").trim();
+  if (!repos.length || !t || t.split(/\s+/).length > 25) return text;
+  if (repoRefs(t).length > 0 || !GH_WORDS.test(t) || !REPO_REFERENT.test(t)) return text;
+  const own = githubIntent(t);
+  if (own && (own.repos.length || own.mine || own.myRepo || own.myPulls || own.myIssues || own.myActivity)) return text;
+  // "any issues on that repo?" also reads as a repo search ("any ... repo"); "that/this/the same repo" is a reference, not a search.
+  if (own?.search && !/\b(?:that|this|the same|its)\s+(?:repo|repository|project|codebase)\b/i.test(t)) return text;
+  return `${t} ${repos[0]}`;
 }
 
 const CONNECT_BLOCK = "```github-connect\ngithub\n```";
@@ -372,10 +393,11 @@ async function resolveMyRepo(phrase: string, push: Push, signal?: AbortSignal): 
 }
 
 /** Fetches the GitHub sources for [text]; null when it is not about GitHub. */
-export async function githubGround(text: string, signal?: AbortSignal): Promise<GithubGrounding | null> {
+export async function githubGround(text: string, signal?: AbortSignal, ctx?: { repos?: string[] }): Promise<GithubGrounding | null> {
   const auth = await ghAuth();
   const canSeePrivate = !auth.publicOnly;
-  const intent = githubIntent(text);
+  // "that repo" resolves to the repository discussed earlier in the chat.
+  const intent = githubIntent(ctx?.repos?.length ? resolveRepoReference(text, ctx.repos) : text);
 
   if (wantsGithubConnect(text)) {
     return {

@@ -27,7 +27,7 @@ const MAX_SENTENCE = 300;
 function plain(s: string): string {
   return s
     .replace(/\{\{[^}]*\}\}/g, "")
-    .replace(/\s*\[[KWDG]\d+\]/g, "")
+    .replace(/\s*\[[KWDGC]\d+\]/g, "")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\*+|__|`/g, "")
     .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ x]\]\s*)?/i, "")

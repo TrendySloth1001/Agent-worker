@@ -88,7 +88,7 @@ function partialTail(s: string, tag: string): string {
 }
 
 function normalize(s: string): string {
-  return s.replace(/\[([KWDG]\d+(?:\s*[,;]\s*[KWDG]\d+)+)\]/g, (_m, list: string) =>
+  return s.replace(/\[([KWDGC]\d+(?:\s*[,;]\s*[KWDGC]\d+)+)\]/g, (_m, list: string) =>
     list
       .split(/\s*[,;]\s*/)
       .map((t) => `[${t}]`)

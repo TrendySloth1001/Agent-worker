@@ -29,6 +29,9 @@ import { analyze } from "../nlp/index.js";
 import { languageInstruction } from "../nlp/language.js";
 import { shapeHint } from "../nlp/intent.js";
 import { generateFollowups } from "../assist/suggest.js";
+import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
+import { recallPastChats, type PastCitation } from "../recall/search.js";
+import { isUuid } from "../docs/store.js";
 
 // Vision-capable models, best first. Auto uses only these when a request has images or video frames.
 const VISION_MODELS = [
@@ -40,7 +43,7 @@ const VISION_MODELS = [
 
 export type Citation = {
   id: string;
-  kind: "kb" | "web" | "file";
+  kind: "kb" | "web" | "file" | "conversation";
   title: string;
   url: string;
   snippet: string;
@@ -51,6 +54,8 @@ export type Citation = {
   sectionId?: string;
   /** Knowledge-base hits from an uploaded file. */
   fileId?: string;
+  /** Past-conversation hits (kind "conversation"): the chat, also in `url` as `chat:<id>`. */
+  conversationId?: string;
 };
 
 // Each profile field is lenient: an invalid value is dropped, never a 400.
@@ -212,6 +217,27 @@ chatRouter.post("/", async (req, res) => {
       citations.push({ id: d.id, kind: "file", title: d.title, url: d.url, snippet: snippet(d.text), site: "document" }),
     );
 
+    // ---- conversation context: built once, shared by every tool -------------
+    // Memory recall runs while the standalone question is being resolved.
+    const memoryP = memTurn?.recall() ?? Promise.resolve(null);
+    const attachmentInfo: AttachmentInfo[] = [...fileRows.values()].map((r) => ({ id: r.id, name: r.name, kind: r.kind }));
+    const built = await buildTurnContext({
+      messages: body.messages.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments })),
+      summary: compacted?.summary,
+      lastUserText,
+      nlp,
+      attachments: attachmentInfo,
+    });
+    const ctx = { ...built, memory: await memoryP };
+    log.info("turn context", {
+      requestId,
+      rewrite: ctx.rewrittenBy,
+      repos: ctx.topics.repos.length,
+      entities: ctx.topics.entities.length,
+      past: ctx.pastRef.explicit,
+      summary: !!ctx.summary,
+    });
+
     // ---- context: knowledge base + web (parallel, non-fatal) -------------
     const kbItems: ContextItem[] = [];
     const webItems: ContextItem[] = [];
@@ -230,10 +256,14 @@ chatRouter.post("/", async (req, res) => {
       let hits: KbHit[] = [];
       try {
         // With rewriting on, the raw question is sent and resolved against the history by a small model.
-        hits = await retrieve(config.ragRewrite && lastUser.trim() ? lastUser.trim().slice(0, 500) : retrievalQuery(body.messages), {
+        const raw = lastUser.trim().slice(0, 500);
+        // The standalone question and its variants were resolved once for the whole turn.
+        const rewrites = [ctx.standalone, ...ctx.queries].filter((q, i, a) => q && q !== raw && a.indexOf(q) === i).slice(0, 4);
+        hits = await retrieve(config.ragRewrite && raw ? raw : retrievalQuery(body.messages), {
           k: config.ragTopK,
           sourceIds: body.sourceIds,
           history: body.messages.slice(-7).map((m) => ({ role: m.role, content: m.content })),
+          ...(config.ragRewrite && raw ? { rewrites } : {}),
         });
       } catch (e) {
         const down = embeddingsHealthy() === "down";
@@ -267,7 +297,7 @@ chatRouter.post("/", async (req, res) => {
     const lastAssistant = [...body.messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
     const decision =
       body.webSearch && !aboutAttachments
-        ? await decideSearch(lastUser, lastAssistant, nlp.intent)
+        ? await decideSearch(ctx.rewrittenBy === "model" ? ctx.standalone : lastUser, lastAssistant, nlp.intent)
         : { search: false, query: "", reason: "none" as const };
     const searching = decision.search;
     if (searching) log.info("web search", { requestId, reason: decision.reason });
@@ -306,7 +336,13 @@ chatRouter.post("/", async (req, res) => {
           ? researchWeb({
               question: searchQuery(lastUser),
               focused: decision.reason === "model" ? searchQuery(decision.query) : undefined,
-              context: { previousUser: previousUser(body.messages), previousAssistant: lastAssistant, language: nlp.language },
+              context: {
+                previousUser: previousUser(body.messages),
+                previousAssistant: lastAssistant,
+                language: nlp.language,
+                standalone: ctx.rewrittenBy === "model" ? ctx.standalone : undefined,
+                topics: topicTerms(ctx, "web"),
+              },
               signal: ctl.signal,
             })
           : Promise.resolve([]),
@@ -351,7 +387,7 @@ chatRouter.post("/", async (req, res) => {
     const githubTask = async () => {
       if (aboutAttachments || !lastUserText) return;
       try {
-        const g = await githubGround(lastUserText, ctl.signal);
+        const g = await githubGround(lastUserText, ctl.signal, { repos: ctx.topics.repos });
         if (!g) return;
         githubItems.push(...g.items);
         githubHint = g.hint;
@@ -361,9 +397,23 @@ chatRouter.post("/", async (req, res) => {
       }
     };
 
-    await Promise.all([kbTask(), webTask(), githubTask()]);
+    // Past conversations: always searched when the user refers to one, otherwise only a clearly related chat is surfaced.
+    let pastBlock: string | null = null;
+    const recallTask = async () => {
+      const explicit = ctx.pastRef.explicit;
+      const chitchat = nlp.intent.top === "chitchat" && nlp.intent.confidence >= 0.6;
+      if (!explicit && (aboutAttachments || chitchat || ctx.standalone.length < 12)) return;
+      const exclude = body.conversationId && isUuid(body.conversationId) ? body.conversationId : undefined;
+      const r = await recallPastChats({ query: ctx.standalone, topic: ctx.pastRef.topic, explicit, excludeConversationId: exclude });
+      pastBlock = r.block;
+      for (const c of r.citations as PastCitation[]) {
+        citations.push({ id: c.id, kind: "conversation", title: c.title, url: c.url, snippet: c.snippet, site: "chat", conversationId: c.conversationId });
+      }
+    };
+
+    await Promise.all([kbTask(), webTask(), githubTask(), recallTask()]);
     if (ctl.signal.aborted) return;
-    const rank = { kb: 0, web: 1, file: 2 } as const;
+    const rank = { kb: 0, web: 1, file: 2, conversation: 3 } as const;
     citations.sort((a, b) => rank[a.kind] - rank[b.kind]);
     if (citations.length > 0) sse.send("sources", { citations });
 
@@ -374,16 +424,16 @@ chatRouter.post("/", async (req, res) => {
     // images inline itself, and generic searches return unrelated photos.
     const visual = /\b(images?|pictures?|photos?|illustrat\w*|drawings?|look(s)? like|what does .{1,40} look)\b/i.test(lastUser);
     const imagesTask: Promise<ImageResult[]> = searching && visual
-      ? findImages(lastUser, webItems.map((w) => ({ url: w.url, title: w.title }))).catch(() => [])
+      ? findImages(imageQuery(lastUser, ctx), webItems.map((w) => ({ url: w.url, title: w.title }))).catch(() => [])
       : Promise.resolve([]);
 
     // ---- generation -------------------------------------------------------
     // Optional prompt sections (HTML, GitHub, widget examples) only when the turn needs them.
     const needs = promptNeeds(`${previousUser(body.messages)}\n${lastUser}`, githubItems.length > 0, nlp.intent);
     const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile, undefined, needs) }];
-    const memoryBlock = await memTurn?.recall();
-    if (memoryBlock) prompt.push({ role: "system", content: memoryBlock });
+    if (ctx.memory) prompt.push({ role: "system", content: ctx.memory });
     if (compacted) prompt.push({ role: "system", content: summaryMessage(compacted.summary) });
+    if (pastBlock) prompt.push({ role: "system", content: pastBlock });
     if (body.context?.trim()) {
       prompt.push({
         role: "system",
@@ -444,7 +494,7 @@ chatRouter.post("/", async (req, res) => {
     const tags = new TagStream();
     // The chair only keeps tags that exist in the citation list.
     const validTags = new Set(citations.map((c) => c.id));
-    const keepValid = (s: string) => (table ? s.replace(/\[([KWD]\d+)\]/g, (m, id: string) => (validTags.has(id) ? m : "")) : s);
+    const keepValid = (s: string) => (table ? s.replace(/\[([KWDC]\d+)\]/g, (m, id: string) => (validTags.has(id) ? m : "")) : s);
     const chairAt = Date.now();
     const result = await withTelemetry({ purpose: table ? "table-chair" : "chat" }, () => runChat(
       table ? table.candidates : auto ? preferForPrompt(candidates, promptChars) : candidates,
@@ -492,7 +542,7 @@ chatRouter.post("/", async (req, res) => {
 
     // Follow-up prompt chips: a fast model, bounded so it never holds `done` for long.
     const followupsTask = text.trim().length >= 40 && lastUserText
-      ? generateFollowups(lastUserText, text, 3_000, ctl.signal, nlp.language).catch(() => [] as string[])
+      ? generateFollowups(lastUserText, text, 3_000, ctl.signal, nlp.language, renderContext(ctx, "followups") || undefined).catch(() => [] as string[])
       : Promise.resolve([] as string[]);
     // Give late images a moment so they arrive before `done`.
     const strip = await Promise.race([imagesTask, new Promise<ImageResult[]>((r) => setTimeout(() => r([]), 1_500))]);
@@ -500,7 +550,7 @@ chatRouter.post("/", async (req, res) => {
     const followups = await followupsTask;
     if (followups.length > 0) sse.send("suggestions", { items: followups });
     const sent = new Set(citations.map((c) => c.id));
-    const used = [...new Set([...text.matchAll(/\[([KWDG]\d+)\]/g)].map((m) => m[1]))].filter((id) => sent.has(id));
+    const used = [...new Set([...text.matchAll(/\[([KWDGC]\d+)\]/g)].map((m) => m[1]))].filter((id) => sent.has(id));
     try {
       const evidence = computeEvidence(
         text,

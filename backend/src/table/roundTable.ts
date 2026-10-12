@@ -191,7 +191,7 @@ function parsePoints(raw: unknown, valid: Set<string>): ReviewPoint[] {
       kind,
       claim,
       detail: typeof p.detail === "string" ? clip(p.detail.trim(), 300) : "",
-      sources: Array.isArray(p.sources) ? p.sources.filter((s: unknown): s is string => typeof s === "string" && /^[KWD]\d+$/.test(s.replace(/[[\]]/g, ""))).map((s: string) => s.replace(/[[\]]/g, "")).slice(0, 5) : [],
+      sources: Array.isArray(p.sources) ? p.sources.filter((s: unknown): s is string => typeof s === "string" && /^[KWDC]\d+$/.test(s.replace(/[[\]]/g, ""))).map((s: string) => s.replace(/[[\]]/g, "")).slice(0, 5) : [],
     });
     if (out.length >= MAX_POINTS) break;
   }
@@ -204,10 +204,10 @@ function draftsBlock(drafts: Draft[]): string {
 
 /** Removes citation tags that are not in `valid` (models copy example tags or invent them). */
 const stripTags = (text: string, valid: Set<string>) =>
-  text.replace(/[\[【]([KWD]\d+)[\]】]/g, (m, tag: string) => (valid.has(tag) ? m : "")).replace(/ +([.,;:])/g, "$1");
+  text.replace(/[\[【]([KWDC]\d+)[\]】]/g, (m, tag: string) => (valid.has(tag) ? m : "")).replace(/ +([.,;:])/g, "$1");
 
 /** Tags a text cites, first use first. */
-const citedTags = (text: string) => [...new Set([...text.matchAll(/\[([KWDG]\d+)\]/g)].map((m) => m[1]))];
+const citedTags = (text: string) => [...new Set([...text.matchAll(/\[([KWDGC]\d+)\]/g)].map((m) => m[1]))];
 
 /** A seat's own search results as a system message for its draft. */
 function researchMessage(r: SeatResearchInput): Message | null {
@@ -387,7 +387,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
 
   // ---- round 1: drafts ----------------------------------------------------
   emit({ phase: "drafting" });
-  const tags = new Set([...(input.context ?? "").matchAll(/^\[([KWD]\d+)\]/gm)].map((m) => m[1]));
+  const tags = new Set([...(input.context ?? "").matchAll(/^\[([KWDC]\d+)\]/gm)].map((m) => m[1]));
   const seats: TableSeat[] = [];
   const drafts: Draft[] = [];
   await Promise.allSettled(

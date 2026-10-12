@@ -88,6 +88,8 @@ export type DocOptions = {
   reviewOutline?: boolean;
   /** The conversation id the client sent (kept even when that chat is not saved yet). */
   conversationId?: string;
+  /** Short rendering of the chat this doc was requested from (src/context), used in the planning and section prompts. */
+  chatContext?: string;
   /** Ids of the doc-wide base search results (server-only bookkeeping). */
   sharedIds?: string[];
 };
