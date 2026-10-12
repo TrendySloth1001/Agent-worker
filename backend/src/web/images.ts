@@ -1,5 +1,6 @@
 import { fetchText, USER_AGENT } from "../ingest/fetcher.js";
 import { log } from "../util/logger.js";
+import { redactForExternal } from "../nlp/pii.js";
 
 export type ImageResult = {
   url: string;
@@ -139,7 +140,7 @@ async function commonsImages(query: string, limit: number): Promise<ImageResult[
  * Never throws; returns what it found in time.
  */
 export async function findImages(question: string, pages: Array<{ url: string; title: string }>): Promise<ImageResult[]> {
-  const topic = topicOf(question) || question.slice(0, 80);
+  const topic = redactForExternal(topicOf(question) || question.slice(0, 80));
   const quiet = (label: string) => (e: unknown) => {
     log.warn(`${label} image search failed`, { message: (e as Error).message.slice(0, 80) });
     return [] as ImageResult[];
@@ -178,7 +179,7 @@ export async function imagesForQuery(query: string, limit: number): Promise<Imag
   const key = `${query.toLowerCase()}|${limit}`;
   const hit = queryCache.get(key);
   if (hit && Date.now() - hit.at < QUERY_TTL_MS) return hit.images;
-  const topic = topicOf(query) || query.slice(0, 80);
+  const topic = redactForExternal(topicOf(query) || query.slice(0, 80));
   const [wiki, commons] = await Promise.all([
     wikipediaImages(topic, limit + 2).catch(() => [] as ImageResult[]),
     commonsImages(topic, limit + 2).catch(() => [] as ImageResult[]),

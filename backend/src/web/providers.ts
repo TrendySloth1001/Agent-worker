@@ -5,6 +5,7 @@ import pLimit from "p-limit";
 import { config } from "../config.js";
 import { recordUsage } from "../db/usage.js";
 import { log } from "../util/logger.js";
+import { redactForExternal } from "../nlp/pii.js";
 import { CircuitBreaker } from "./breaker.js";
 import { TtlLru } from "./lru.js";
 import { clip, isRateLimit, ollamaPost, statusOf } from "./ollama.js";
@@ -308,7 +309,9 @@ const EMPTY_TTL_MS = 60_000;
 export type CallOutcome = { provider: string; candidates: Candidate[]; ms: number; cached?: boolean; skipped?: "circuit"; error?: string };
 
 /** One provider call: cache, circuit breaker, timeout, telemetry. Never throws. */
-export async function callProvider(p: Provider, query: string, ctx: SearchCtx): Promise<CallOutcome> {
+export async function callProvider(p: Provider, rawQuery: string, ctx: SearchCtx): Promise<CallOutcome> {
+  // Third-party search engines never see emails, phone numbers, cards or keys.
+  const query = redactForExternal(rawQuery);
   const key = `${p.name}|${ctx.fresh}|${query.toLowerCase().replace(/\s+/g, " ").trim()}`;
   const hit = cache.get(key);
   if (hit) return { provider: p.name, candidates: hit, ms: 0, cached: true };

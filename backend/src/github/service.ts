@@ -1,11 +1,15 @@
 import { AppError } from "../util/errors.js";
+import { redactForExternal } from "../nlp/pii.js";
 import { gh, ghAuth, ghGraphql, lastRate, tokenScopes } from "./client.js";
 import { publicAttempts, queryTokens, rankNames, rankRepos, repairTypos, scoreRepo } from "./repoSearch.js";
 
 /** Compact, app-facing shapes of GitHub data (never the raw API dumps). */
 
 /** On the shared server token, non-owners search public repositories only. */
-const publicQ = async (q: string) => ((await ghAuth()).publicOnly ? `${q} is:public` : q);
+const publicQ = async (raw: string) => {
+  const q = redactForExternal(raw); // search text leaves the app: no PII
+  return (await ghAuth()).publicOnly ? `${q} is:public` : q;
+};
 const publicOnly = async () => (await ghAuth()).publicOnly;
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,100}$/;
@@ -169,7 +173,7 @@ export async function searchRepos(q: string, sort?: string, perPage?: unknown, s
 
 export async function searchCode(q: string, perPage?: unknown) {
   const n = clampInt(perPage, 10, 1, 30);
-  const d = await gh(`/search/code?q=${enc(q)}&per_page=${n}`, { accept: "application/vnd.github.text-match+json" });
+  const d = await gh(`/search/code?q=${enc(redactForExternal(q))}&per_page=${n}`, { accept: "application/vnd.github.text-match+json" });
   if (await publicOnly()) d.items = (d.items ?? []).filter((i: any) => i.repository?.private === false);
   return {
     total: d.total_count ?? 0,
@@ -201,7 +205,7 @@ export async function searchIssues(q: string, perPage?: unknown) {
 
 export async function searchCommits(q: string, perPage?: unknown) {
   const n = clampInt(perPage, 10, 1, 30);
-  const d = await gh(`/search/commits?q=${enc(q)}&per_page=${n}`);
+  const d = await gh(`/search/commits?q=${enc(redactForExternal(q))}&per_page=${n}`);
   if (await publicOnly()) d.items = (d.items ?? []).filter((c: any) => c.repository?.private === false);
   return {
     total: d.total_count ?? 0,
@@ -376,7 +380,7 @@ async function commitSearch(owner: string, repo: string, filter: string, after: 
   // Search returns at most 1,000 results (10 pages of 100).
   const per = Math.min(n, 100);
   const words = filter.replace(/\b(repo|org|user):\S+/gi, " ").trim();
-  const d = await gh(`/search/commits?q=${enc(`repo:${owner}/${repo} ${words}`)}&sort=committer-date&order=desc&per_page=${per}&page=${pageNo}`, { signal });
+  const d = await gh(`/search/commits?q=${enc(`repo:${owner}/${repo} ${redactForExternal(words)}`)}&sort=committer-date&order=desc&per_page=${per}&page=${pageNo}`, { signal });
   const items = ((d.items ?? []) as any[]).map((c) => ({ ...commitItem(c), additions: null as number | null, deletions: null as number | null }));
   const total = (d.total_count as number) ?? items.length;
   return { items, totalCount: total, nextCursor: items.length === per && pageNo * per < Math.min(total, 1000) ? `s:${pageNo + 1}` : null };

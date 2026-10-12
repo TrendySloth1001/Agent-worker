@@ -2,7 +2,9 @@
 // extractor model proposes, then validate it against the memories that already
 // exist. No I/O here, so every rule is unit-tested (test/memory.test.ts).
 
-export const KINDS = ["fact", "preference", "project", "instruction"] as const;
+import { hasSecret, sanitizeMemory } from "../nlp/pii.js";
+
+export const KINDS =["fact", "preference", "project", "instruction"] as const;
 export type Kind = (typeof KINDS)[number];
 
 export type ExistingMemory = { id: string; text: string; kind: Kind; pinned: boolean };
@@ -45,10 +47,10 @@ export function jaccard(a: string, b: string): number {
 const SENSITIVE = [
   /\b(password|passwd|passphrase|api[\s_-]?key|secret|token|private key)\b\s*(is|=|:)/i,
   /\b(sk|pk|ghp|gho|xox[bp]|AKIA)[-_][A-Za-z0-9_-]{16,}/,
-  /\b(?:\d[ -]?){13,19}\b/,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
 ];
-export const looksSensitive = (s: string) => SENSITIVE.some((r) => r.test(s));
+// Plus checksum-validated secrets: cards (Luhn), Aadhaar (Verhoeff), JWTs, keys, "password: x" (nlp/pii.ts).
+export const looksSensitive = (s: string) => SENSITIVE.some((r) => r.test(s)) || hasSecret(s);
 
 // ---- explicit "remember X" / "forget X" ---------------------------------------------
 
@@ -157,7 +159,7 @@ export function planOps(proposed: Op[], existing: ExistingMemory[], opts: PlanOp
   let total = opts.total;
   const cap = opts.maxMemories ?? MAX_MEMORIES;
 
-  for (const p of proposed) {
+  for (let p of proposed) {
     if (p.op === "DELETE") {
       const cur = byId.get(p.id);
       if (!cur || touched.has(p.id)) continue;
@@ -169,6 +171,10 @@ export function planOps(proposed: Op[], existing: ExistingMemory[], opts: PlanOp
       continue;
     }
     if (p.text.length < MIN_TEXT || looksSensitive(p.text)) continue;
+    // Contact details and ids are redacted unless the user explicitly said to remember.
+    const safe = sanitizeMemory(p.text, opts.explicit?.type === "remember");
+    if (safe === null) continue;
+    if (safe !== p.text) p = { ...p, text: safe };
 
     if (p.op === "UPDATE") {
       const cur = byId.get(p.id);

@@ -14,6 +14,7 @@ import { decideSearch } from "../web/searchDecision.js";
 import { setTelemetry, withTelemetry } from "../db/usage.js";
 import { findImages, type ImageResult } from "../web/images.js";
 import { intentHint } from "../prompts/intent.js";
+import { safetyNote } from "../nlp/pii.js";
 import { buildContextMessage, buildSystemPrompt, promptNeeds, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
 import { retrieve, type KbHit } from "../retrieval/search.js";
 import { embeddingsHealthy } from "../embeddings/index.js";
@@ -374,6 +375,9 @@ chatRouter.post("/", async (req, res) => {
     if (context) prompt.push({ role: "system", content: context });
     const hint = lastUserText ? intentHint(lastUserText) : null;
     if (hint) prompt.push({ role: "system", content: hint });
+    // Secrets in the user's message are not redacted (answers would break); the model is told not to echo them.
+    const secretNote = lastUserText ? safetyNote(lastUserText) : null;
+    if (secretNote) prompt.push({ role: "system", content: secretNote });
     if (githubHint) prompt.push({ role: "system", content: githubHint });
     prompt.push(...prepared.messages);
 
