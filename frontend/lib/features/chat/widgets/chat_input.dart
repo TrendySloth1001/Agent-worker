@@ -57,8 +57,6 @@ class ChatInput extends StatefulWidget {
     this.suggestion,
     this.onAcceptSuggestion,
     this.onDismissSuggestion,
-    this.hintText,
-    this.focusNode,
   });
 
   final void Function(String text, List<FileInfo> attachments) onSend;
@@ -108,12 +106,6 @@ class ChatInput extends StatefulWidget {
   final SuggestToggleEvent? suggestion;
   final VoidCallback? onAcceptSuggestion;
   final VoidCallback? onDismissSuggestion;
-
-  /// Placeholder override (a primed capability); defaults to "Ask anything".
-  final String? hintText;
-
-  /// Lets the screen focus the field (e.g. after a capability chip).
-  final FocusNode? focusNode;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -491,14 +483,13 @@ class _ChatInputState extends State<ChatInput> {
   Widget _textField(BuildContext context, bool dictating) {
     return TextField(
       controller: _controller,
-      focusNode: widget.focusNode,
       readOnly: dictating,
       minLines: 1,
       maxLines: 5,
       style: context.text.body,
       textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(
-        hintText: widget.hintText ?? AppStrings.inputHint,
+      decoration: const InputDecoration(
+        hintText: AppStrings.inputHint,
         isDense: true,
         contentPadding: _fieldPadding,
         filled: false,

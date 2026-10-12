@@ -29,8 +29,6 @@ import 'widgets/drawer_shell.dart';
 import 'widgets/background_table_chip.dart';
 import 'widgets/chat_input.dart';
 import 'widgets/empty_state.dart';
-import '../auth/auth_controller.dart';
-import '../../core/constants/home_copy.dart';
 import 'widgets/context_card.dart';
 import 'widgets/lineage_banner.dart';
 import 'widgets/message_bubble.dart';
@@ -55,11 +53,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// The user message being edited in place, if any.
   ChatMessage? _editing;
-
-  final _inputFocus = FocusNode();
-
-  /// Placeholder of the composer while a capability chip has primed it.
-  final _hint = ValueNotifier<String?>(null);
 
   /// Height of the floating input, which grows with its chips and text.
   final _inputHeight = ValueNotifier(AppSizes.bottomInset);
@@ -125,8 +118,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.dispose();
     _showScrollButton.dispose();
     _inputHeight.dispose();
-    _inputFocus.dispose();
-    _hint.dispose();
     super.dispose();
   }
 
@@ -177,51 +168,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Chips on the home screen: switch the feature on (or off) and, when on,
-  /// focus the composer with a hint for it.
-  void _prime(HomeCapability c) {
-    final ctl = _controller;
-    var on = false;
-    switch (c) {
-      case HomeCapability.doc:
-        ctl.toggleDoc();
-        on = ctl.doc;
-      case HomeCapability.roundTable:
-        ctl.toggleRoundTable();
-        on = ctl.roundTable;
-      case HomeCapability.knowledge:
-        ctl.toggleKnowledge();
-        on = ctl.knowledge;
-      case HomeCapability.web:
-        // Off steps to auto; any on state steps round to off.
-        final wasOn = ctl.webSearch;
-        ctl.cycleWebMode();
-        while (wasOn && ctl.webSearch) {
-          ctl.cycleWebMode();
-        }
-        on = ctl.webSearch;
-      case HomeCapability.github:
-        ctl.draft.value = HomeStrings.githubDraft;
-        on = true;
-    }
-    _hint.value = on ? c.hint : null;
-    if (on) _inputFocus.requestFocus();
-  }
-
-  bool _capabilityOn(HomeCapability c) => switch (c) {
-    HomeCapability.doc => _controller.doc,
-    HomeCapability.roundTable => _controller.roundTable,
-    HomeCapability.knowledge => _controller.knowledge,
-    HomeCapability.web => _controller.webSearch,
-    HomeCapability.github => false,
-  };
-
-  /// Starter long-press: the text goes to the composer to edit.
-  void _edit(String text) {
-    _controller.draft.value = text;
-    _inputFocus.requestFocus();
-  }
-
   void _scrollToBottom() {
     Haptics.tap();
     _scroll.animateTo(
@@ -244,7 +190,7 @@ class _ChatScreenState extends State<ChatScreen> {
         onOpening: () => _drawer.currentState?.refresh(),
         child: Scaffold(
           body: ListenableBuilder(
-            listenable: Listenable.merge([_controller, _inputHeight, _hint]),
+            listenable: Listenable.merge([_controller, _inputHeight]),
             builder: (context, _) {
               final isEmpty = _controller.messages.isEmpty;
               final bottomClear =
@@ -256,18 +202,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: ChatSwitchTransition(
                       token: _controller.conversationId,
                       child: isEmpty
-                          ? EmptyState(
-                              onSuggestion: _controller.send,
-                              onEdit: _edit,
-                              onCapability: _prime,
-                              isOn: _capabilityOn,
-                              recentLoader: () => ConversationsApi(
-                                scope.baseUrl,
-                              ).list(limit: HomeSizes.recentFetch),
-                              onOpenChat: _openChat,
-                              name: _firstName(scope),
-                              bottomClear: bottomClear,
-                            )
+                          ? EmptyState(onSuggestion: _controller.send)
                           : _messageList(padding, bottomClear),
                     ),
                   ),
@@ -304,8 +239,6 @@ class _ChatScreenState extends State<ChatScreen> {
                             knowledge: _controller.knowledge,
                             onToggleWebSearch: _controller.cycleWebMode,
                             suggestion: _controller.suggestion,
-                            hintText: isEmpty ? _hint.value : null,
-                            focusNode: _inputFocus,
                             onAcceptSuggestion: _controller.acceptSuggestion,
                             onDismissSuggestion: _controller.dismissSuggestion,
                             onToggleKnowledge: _controller.toggleKnowledge,
@@ -335,15 +268,6 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
-  }
-
-  /// First name for the greeting: the profile name, else the account's.
-  String? _firstName(AppScope scope) {
-    final full = scope.settings.name.trim().isNotEmpty
-        ? scope.settings.name
-        : AuthController.instance.user?.name ?? '';
-    final first = full.trim().split(RegExp(r'\s+')).first;
-    return first.isEmpty ? null : first;
   }
 
   Widget _messageList(EdgeInsets padding, double bottomClear) {
