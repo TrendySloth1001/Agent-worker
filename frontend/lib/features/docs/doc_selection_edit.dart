@@ -10,6 +10,7 @@ import '../chat/share/share_sheet.dart';
 import 'doc_controller.dart';
 import 'doc_diff.dart';
 import 'doc_section_menu.dart';
+import 'doc_text.dart';
 
 // Edit one selected passage: pick EXPLAIN / SIMPLIFY / EXPAND / ADD
 // CITATIONS / REWRITE, read a before/after preview, then ACCEPT (the
@@ -69,7 +70,7 @@ Future<void> editDocPassage(
     ..showSnackBar(
       SnackBar(
         backgroundColor: p.surfaceHigh,
-        content: Text(DocStrings.applied, style: context.text.label),
+        content: Text(DocStrings.applied, style: context.text.meta),
         action: SnackBarAction(
           label: DocStrings.undo,
           textColor: p.accent,
@@ -184,7 +185,7 @@ class _PreviewState extends State<_Preview> {
               child: Text(
                 '${DocStrings.previewTitle} · '
                 '${DocStrings.opLabel(widget.op.name)}',
-                style: t.caption,
+                style: t.meta,
               ),
             ),
             Flexible(
@@ -204,7 +205,7 @@ class _PreviewState extends State<_Preview> {
                       child: Center(
                         child: Text(
                           DocStrings.working,
-                          style: t.caption.copyWith(color: p.accent),
+                          style: t.meta.copyWith(color: p.accent),
                         ),
                       ),
                     )
@@ -326,7 +327,7 @@ class _Block extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(label, style: context.text.caption),
+          Text(label, style: context.text.meta),
           const SizedBox(height: AppSpacing.xs),
           child,
         ],

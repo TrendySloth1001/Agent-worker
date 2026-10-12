@@ -6,6 +6,7 @@ import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../data/doc_models.dart';
+import 'doc_text.dart';
 
 // Highlights: text-quote anchors (quote + prefix/suffix) drawn by wrapping
 // the quote in `==…==`, the reply markdown's existing highlight syntax.
@@ -245,7 +246,7 @@ class DocMarginNotes extends StatelessWidget {
                     ),
                     child: Text(
                       '${i + 1}',
-                      style: t.caption.copyWith(color: p.accent, height: 1),
+                      style: t.meta.copyWith(color: p.accent, height: 1),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),

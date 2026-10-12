@@ -8,6 +8,7 @@ import '../../core/widgets/app_icon.dart';
 import 'doc_controller.dart';
 import 'doc_registry.dart';
 import 'doc_screen.dart';
+import 'doc_text.dart';
 
 /// "1 DOC WRITING": a document still being written while the user is
 /// elsewhere (another chat, the chat list). Tap to open it. Renders nothing
@@ -81,7 +82,7 @@ class _Chip extends StatelessWidget {
                     '${DocStrings.backgroundRunning(count)}$progress',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.text.caption.copyWith(color: p.textPrimary),
+                    style: context.text.meta.copyWith(color: p.textPrimary),
                   ),
                 ),
               ],

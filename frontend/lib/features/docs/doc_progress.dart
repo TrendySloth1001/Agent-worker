@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/constants/settings_copy.dart';
+
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/docs.dart';
 import '../../core/theme/app_palette.dart';
@@ -119,9 +121,8 @@ class _DocProgressBarState extends State<DocProgressBar> {
         vertical: AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: p.border, width: AppBorder.thin),
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(SettingsSizes.groupOuterRadius),
       ),
       child: Row(
         children: [
@@ -139,7 +140,10 @@ class _DocProgressBarState extends State<DocProgressBar> {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: t.caption.copyWith(color: p.textPrimary),
+                        style: t.bodySmall.copyWith(
+                          color: p.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -150,7 +154,10 @@ class _DocProgressBarState extends State<DocProgressBar> {
                     detail,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: t.caption,
+                    style: t.bodySmall.copyWith(
+                      fontSize: DocSizes.metaSize,
+                      color: p.textSecondary,
+                    ),
                   ),
                 ],
                 const SizedBox(height: AppSpacing.xs),

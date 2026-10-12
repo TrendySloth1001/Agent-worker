@@ -10,6 +10,7 @@ import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/doc_models.dart';
 import '../chat/share/share_sheet.dart';
 import 'doc_controller.dart';
+import 'doc_text.dart';
 
 enum _SectionAction {
   regenerate,
@@ -32,7 +33,7 @@ void docToast(BuildContext context, String text) {
     ..showSnackBar(
       SnackBar(
         backgroundColor: p.surfaceHigh,
-        content: Text(text, style: t.label),
+        content: Text(text, style: t.meta),
       ),
     );
 }
@@ -50,7 +51,7 @@ Future<void> showDocSectionMenu(
   }
   final action = await showShareSheet<_SectionAction>(
     context,
-    title: '${DocStrings.menuTitle} ${section.heading.toUpperCase()}',
+    title: '${DocStrings.menuTitle} ${section.heading}',
     options: const [
       (_SectionAction.regenerate, DocIcons.regenerate, DocStrings.regenerate),
       (
@@ -193,7 +194,7 @@ class _AddSectionState extends State<_AddSection> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(DocStrings.addSectionTitle, style: t.caption),
+              Text(DocStrings.addSectionTitle, style: t.meta),
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: _heading,
@@ -290,7 +291,7 @@ class _TextPromptState extends State<_TextPrompt> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(widget.title, style: t.caption),
+              Text(widget.title, style: t.meta),
               if (widget.quote != null) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Container(
@@ -348,7 +349,7 @@ class _TextPromptState extends State<_TextPrompt> {
   }
 }
 
-/// Mono caps pill button; [filled] for the main action, null [onTap]
+/// Pill button (tonal, or solid when [filled]); [filled] for the main action, null [onTap]
 /// greys it out.
 class DocTextButton extends StatelessWidget {
   const DocTextButton({
@@ -389,14 +390,12 @@ class DocTextButton extends StatelessWidget {
           height: DocSizes.cardButtonHeight,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           decoration: BoxDecoration(
-            color: filled ? (enabled ? fill : p.surfaceHigh) : null,
+            color: filled
+                ? (enabled ? fill : p.surfaceHigh)
+                : (accent
+                      ? p.accent.withValues(alpha: M3Sizes.tagAlpha)
+                      : Theme.of(context).colorScheme.surfaceContainerHighest),
             borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(
-              color: filled
-                  ? (enabled ? fill : p.border)
-                  : (accent ? p.accent : p.borderStrong),
-              width: AppBorder.thin,
-            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -407,7 +406,8 @@ class DocTextButton extends StatelessWidget {
               ],
               Text(
                 label,
-                style: context.text.caption.copyWith(
+                style: context.text.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
                   color: filled && !enabled ? p.textTertiary : fg,
                 ),
               ),
@@ -483,10 +483,10 @@ class _DocSectionEditorState extends State<DocSectionEditor> {
                       Expanded(
                         child: Text(
                           '${DocStrings.editTitle} · '
-                          '${widget.section.heading.toUpperCase()}',
+                          '${widget.section.heading}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: t.caption,
+                          style: t.meta,
                         ),
                       ),
                       DocTextButton(
@@ -606,8 +606,8 @@ class _VersionsState extends State<_Versions> {
               ),
               child: Text(
                 '${DocStrings.versions} · '
-                '${widget.section.heading.toUpperCase()}',
-                style: t.caption,
+                '${widget.section.heading}',
+                style: t.meta,
               ),
             ),
             Flexible(
@@ -658,7 +658,7 @@ class _VersionsState extends State<_Versions> {
                                       r.reason,
                                       r.createdAt,
                                     ),
-                                    style: t.caption,
+                                    style: t.meta,
                                   ),
                                 ),
                                 DocTextButton(

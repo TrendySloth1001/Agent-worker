@@ -9,6 +9,7 @@ import '../../core/widgets/glass.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/doc_models.dart';
 import 'doc_progress.dart';
+import 'doc_text.dart';
 
 /// One line of the table of contents.
 typedef DocTocEntry = ({String number, String heading, String? status});
@@ -76,7 +77,7 @@ class DocTocList extends StatelessWidget {
                   width: DocSizes.referenceIdWidth,
                   child: Text(
                     e.number,
-                    style: t.caption.copyWith(
+                    style: t.meta.copyWith(
                       color: active ? p.accent : p.textTertiary,
                     ),
                   ),
@@ -130,7 +131,7 @@ class DocTocRail extends StatelessWidget {
               left: AppSpacing.md,
               bottom: AppSpacing.sm,
             ),
-            child: Text(DocStrings.contents, style: context.text.caption),
+            child: Text(DocStrings.contents, style: context.text.meta),
           ),
           Expanded(
             child: DocTocList(
@@ -194,7 +195,7 @@ class DocTocPill extends StatelessWidget {
                     color: p.textSecondary,
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(label, style: t.caption.copyWith(color: p.accent)),
+                  Text(label, style: t.meta.copyWith(color: p.accent)),
                   const SizedBox(width: AppSpacing.sm),
                   Flexible(
                     child: Text(
@@ -239,7 +240,7 @@ Future<void> showDocToc(
                 AppSpacing.screenPadding,
                 AppSpacing.sm,
               ),
-              child: Text(DocStrings.contents, style: sheet.text.caption),
+              child: Text(DocStrings.contents, style: sheet.text.meta),
             ),
             Flexible(
               child: Padding(

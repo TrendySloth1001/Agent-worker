@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -31,11 +30,10 @@ Future<void> loadAppFonts() async {
 
 /// Writes the current frame to `$shotDir/<name>.png` at 2x.
 Future<void> shot(WidgetTester tester, String name) async {
-  final boundary = tester.firstRenderObject<RenderRepaintBoundary>(
-    find.byType(RepaintBoundary).first,
-  );
+  final view = tester.binding.renderViews.first;
+  final layer = view.debugLayer! as OffsetLayer;
   await tester.runAsync(() async {
-    final image = await boundary.toImage(pixelRatio: 2);
+    final image = await layer.toImage(Offset.zero & view.size, pixelRatio: 2);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     Directory(shotDir).createSync(recursive: true);
     File('$shotDir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
