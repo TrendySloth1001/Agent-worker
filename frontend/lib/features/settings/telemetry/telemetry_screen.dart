@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/app_scope.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/m3_copy.dart';
@@ -13,31 +12,20 @@ import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/telemetry.dart';
 import '../../../data/telemetry_api.dart';
 import '../format.dart';
-import '../widgets/provider_card.dart';
-import '../widgets/settings_kit.dart';
 import '../widgets/usage_states.dart';
-import 'telemetry_charts.dart';
 import 'telemetry_controller.dart';
 import 'telemetry_format.dart';
+import 'telemetry_grouping.dart';
 import 'telemetry_widgets.dart';
 
-/// Owner-only: every model call, minute by minute. With [model] set it is
-/// that model's detail screen (its own series and events, no breakdowns).
+/// Owner-only: every model call, minute by minute. Plain type and hairlines,
+/// no cards: summary, activity, providers, models, cost per message, errors,
+/// users and the latest calls.
 class TelemetryScreen extends StatefulWidget {
-  const TelemetryScreen({
-    super.key,
-    this.provider,
-    this.model,
-    this.title,
-    this.api,
-  });
-
-  final String? provider, model, title;
+  const TelemetryScreen({super.key, this.api});
 
   /// Test seam; defaults to the app's API.
   final TelemetryApi? api;
-
-  bool get isDetail => model != null || provider != null;
 
   @override
   State<TelemetryScreen> createState() => _TelemetryScreenState();
@@ -46,16 +34,16 @@ class TelemetryScreen extends StatefulWidget {
 class _TelemetryScreenState extends State<TelemetryScreen> {
   late final TelemetryController _c;
   final Set<String> _open = {};
+  Metric _metric = Metric.requests;
+  bool _allCalls = false;
   Timer? _tick;
   DateTime _now = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _c = TelemetryController(
-      widget.api ?? TelemetryApi(AppConfig.apiBaseUrl),
-      locked: TelemetryFilters(provider: widget.provider, model: widget.model),
-    )..start();
+    _c = TelemetryController(widget.api ?? TelemetryApi(AppConfig.apiBaseUrl))
+      ..start();
     _tick = Timer.periodic(TelemetryDurations.countdownTick, (_) {
       final cooling =
           _c.overview?.models.any((m) => m.cooldownLeft(_now) != null) ?? false;
@@ -71,52 +59,66 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     super.dispose();
   }
 
+  void _toggle(String key) => setState(() {
+    if (!_open.remove(key)) _open.add(key);
+  });
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _c,
-      builder: (context, _) => NotificationListener<ScrollNotification>(
-        onNotification: (n) {
-          if (n.metrics.extentAfter < TelemetrySizes.loadMoreThreshold &&
-              _c.hasMore &&
-              !_c.loadingMore) {
-            unawaited(_c.loadMore());
-          }
-          return false;
-        },
-        child: M3Page(
-          title: widget.title ?? TelemetryStrings.title,
-          onRefresh: _c.reload,
-          actions: [LiveDot(state: _c.live, paused: _c.paused)],
-          slivers: [
-            _pad(Builder(builder: _header)),
-            if (_c.overview == null)
-              _pad(Builder(builder: _placeholder))
-            else ...[
-              _pad(Builder(builder: (ctx) => _body(ctx, _c.overview!))),
-              _pad(Builder(builder: _logHeader)),
-              _log(),
-              _pad(Builder(builder: _logFooter)),
-            ],
-          ],
-        ),
+      builder: (context, _) => M3Page(
+        title: TelemetryStrings.title,
+        onRefresh: _c.reload,
+        actions: [LiveDot(state: _c.live, paused: _c.paused)],
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.screenPadding,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: Builder(
+                builder: (context) => _c.overview == null
+                    ? _placeholder(context)
+                    : _body(context, _c.overview!),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _pad(Widget child) => SliverPadding(
-    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
-    sliver: SliverToBoxAdapter(child: child),
-  );
-
-  // ---- header: window, big numbers, filters ----------------------------------
-
-  Widget _header(BuildContext context) {
+  Widget _placeholder(BuildContext context) {
+    if (_c.error != null && !_c.loading) {
+      return Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.lg),
+        child: UsageError(onRetry: _c.reload, loading: _c.loading),
+      );
+    }
     return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.sm),
-      child: SizedBox(
-        width: double.infinity,
-        child: SegmentedButton<String>(
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: LinearProgressIndicator(
+        minHeight: AppBorder.thin,
+        color: context.palette.accent,
+        backgroundColor: context.palette.border,
+      ),
+    );
+  }
+
+  // ---- body ---------------------------------------------------------------------
+
+  Widget _body(BuildContext context, TelemetryOverview o) {
+    final a = o.totals;
+    final p = context.palette;
+    final provider = _c.filters.provider;
+    final models = groupModels(o.models);
+    final errors = groupErrors(o.topErrors);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: AppSpacing.sm),
+        SegmentedButton<String>(
           showSelectedIcon: false,
           segments: [
             for (final w in TelemetryWindows.all)
@@ -131,212 +133,99 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
             _c.setWindow(v.first);
           },
         ),
-      ),
-    );
-  }
-
-  Widget _placeholder(BuildContext context) {
-    if (_c.error != null && !_c.loading) {
-      return Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.lg),
-        child: UsageError(onRetry: _c.reload, loading: _c.loading),
-      );
-    }
-    return const Padding(
-      padding: EdgeInsets.only(top: AppSpacing.lg),
-      child: SkeletonCard(height: AppSizes.statusStripSkeletonHeight),
-    );
-  }
-
-  Widget _body(BuildContext context, TelemetryOverview o) {
-    final a = o.totals;
-    final scope = AppScope.of(context);
-    final providers = scope.usage.usage?.providers ?? const [];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+        const SizedBox(height: AppSpacing.xs),
+        FilterBar(
+          kinds: {?_c.filters.kind, for (final x in o.kinds) x.name}.toList(),
+          kind: _c.filters.kind,
+          onKind: _c.setKind,
+          provider: provider,
+          onClearProvider: () => _c.setProvider(null),
+        ),
         if (_c.error != null) ...[
-          const SizedBox(height: AppSpacing.md),
           UsageError(onRetry: _c.reload, stale: true, loading: _c.loading),
-        ],
-        const SizedBox(height: AppSpacing.lg),
-        StatGrid(
-          tiles: [
-            StatTile(TelemetryStrings.requests, grouped(a.requests)),
-            StatTile(
-              TelemetryStrings.failed,
-              grouped(a.failed),
-              alert: a.failed > 0,
-              sub: pct(a.failureRate),
-            ),
-            StatTile(
-              TelemetryStrings.tokensIn,
-              compact(a.tokensIn),
-              sub: grouped(a.tokensIn),
-            ),
-            StatTile(
-              TelemetryStrings.tokensOut,
-              compact(a.tokensOut),
-              sub: grouped(a.tokensOut),
-            ),
-            StatTile(
-              TelemetryStrings.p50,
-              ms(a.latencyP50),
-              sub: '${TelemetryStrings.p95} ${ms(a.latencyP95)}',
-            ),
-            StatTile(
-              TelemetryStrings.ttft,
-              ms(a.ttftP50),
-              sub: '${TelemetryStrings.avg} ${ms(a.ttftAvg)}',
-            ),
-          ],
-        ),
-        if (!widget.isDetail) ...[
           const SizedBox(height: AppSpacing.md),
-          ChipRow(
-            label: TelemetryCopy.filterProvider,
-            values: [for (final x in o.providers) x.name],
-            selected: _c.filters.provider,
-            onSelect: _c.setProvider,
-            display: providerLabel,
-          ),
         ],
-        const SizedBox(height: AppSpacing.sm),
-        ChipRow(
-          label: TelemetryCopy.filterKind,
-          values: {?_c.filters.kind, for (final x in o.kinds) x.name}.toList(),
-          selected: _c.filters.kind,
-          onSelect: _c.setKind,
-        ),
-        SettingsGroupHeader(TelemetryCopy.charts),
-        if (_c.series != null) _charts(context, _c.series!),
-        if (!widget.isDetail) ...[
-          SettingsGroupHeader(TelemetryCopy.models),
-          for (final m in o.models) ...[
-            ModelRow(
-              key: ValueKey(m.id),
-              model: m,
-              now: _now,
-              onOpen: () => _openModel(m),
+        const SizedBox(height: AppSpacing.md),
+        SummaryRow(
+          stats: [
+            SummaryStat(compact(a.requests), TelemetryCopy.summaryRequests),
+            SummaryStat(
+              compact(a.failed),
+              TelemetryCopy.summaryFailed,
+              sub: pct(a.failureRate),
+              alert: a.failed > 0 && a.failureRate > TelemetrySizes.failWarn,
             ),
-            const SizedBox(height: AppSpacing.md),
+            SummaryStat(compact(a.tokens), TelemetryCopy.summaryTokens),
+            SummaryStat(ms(a.latencyP50), TelemetryCopy.summaryP50, unit: true),
           ],
-        ],
-        if (o.totals.requests == 0)
-          const M3Empty(icon: TelemetryIcons.chart, title: TelemetryCopy.empty),
-        if (!widget.isDetail) ...[
-          SettingsGroupHeader(TelemetryCopy.providers),
-          M3Group(
-            children: [
-              for (final x in o.providers)
-                AggLine(
-                  name: providerLabel(x.name),
-                  agg: x.agg,
-                  icon: TelemetryIcons.provider(x.name),
-                ),
-            ],
+        ),
+        if (a.unknown > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Text(
+              '${grouped(a.unknown)} ${TelemetryCopy.unknownNote}',
+              style: TType.secondary(context, color: p.textTertiary),
+            ),
           ),
-          for (final pr in providers) ...[
-            const SizedBox(height: AppSpacing.md),
-            ProviderCard(key: ValueKey(pr.id), provider: pr),
-          ],
-        ],
-        if (o.kinds.isNotEmpty) ...[
-          SettingsGroupHeader(TelemetryCopy.kinds),
-          M3Group(
-            children: [
-              for (final x in o.kinds.take(TelemetrySizes.kindsShown))
-                AggLine(name: kindLabel(x.name), agg: x.agg),
-            ],
+        if (a.requests == 0)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xl),
+            child: Text(
+              TelemetryCopy.empty,
+              textAlign: TextAlign.center,
+              style: TType.secondary(context),
+            ),
           ),
-        ],
-        if (!widget.isDetail && o.users.isNotEmpty) ...[
-          SettingsGroupHeader(TelemetryCopy.users),
-          M3Group(
-            children: [
-              for (final u in o.users.take(TelemetrySizes.usersShown))
-                UserLine(user: u),
-            ],
-          ),
-        ],
-        if (o.topErrors.isNotEmpty) ...[
-          SettingsGroupHeader(TelemetryCopy.topErrors),
-          M3Group(
-            children: [
-              for (final e in o.topErrors.take(TelemetrySizes.topErrorsShown))
-                ErrorLine(error: e),
-            ],
-          ),
-        ],
+        _activity(context),
+        if (o.providers.isNotEmpty) _providers(context, o),
+        if (models.groups.isNotEmpty) _models(context, models, errors),
+        if (provider == null && o.turns != null) _turns(context, o.turns!),
+        if (errors.isNotEmpty) _errors(context, errors),
+        if (provider == null && o.users.isNotEmpty) _users(context, o),
+        _calls(context),
       ],
     );
   }
 
-  Widget _charts(BuildContext context, TelemetrySeries s) {
+  Widget _activity(BuildContext context) {
     final p = context.palette;
-    final scheme = Theme.of(context).colorScheme;
-    return M3Card(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: [
-                for (final b in TelemetryBuckets.all)
-                  ButtonSegment(
-                    value: b,
-                    label: Text(TelemetryCopy.bucketLabels[b]!),
-                  ),
-              ],
-              selected: {s.bucket},
-              onSelectionChanged: (v) {
-                Haptics.tap();
-                _c.setBucket(v.first);
-              },
+    final s = _c.series;
+    return TSection(
+      title: TelemetryCopy.activity,
+      trailing: Wrap(
+        spacing: AppSpacing.md,
+        children: switch (_metric) {
+          Metric.requests => [
+            LegendItem(
+              p.textSecondary,
+              TelemetryStrings.legendOk.toLowerCase(),
             ),
+            LegendItem(p.accent, TelemetryStrings.legendFailed.toLowerCase()),
+          ],
+          Metric.tokens => const [],
+          Metric.latency => [
+            LegendItem(p.textPrimary, TelemetryStrings.legendLatency),
+            LegendItem(p.textTertiary, TelemetryStrings.legendTtft),
+          ],
+        },
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MetricTabs(
+            value: _metric,
+            onChanged: (m) => setState(() => _metric = m),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          _chartTitle(context, TelemetryCopy.chartRequests, [
-            (p.textSecondary, TelemetryStrings.legendOk),
-            (p.accent, TelemetryStrings.legendFailed),
-          ]),
-          RequestBars(series: s),
-          const SizedBox(height: AppSpacing.lg),
-          _chartTitle(context, TelemetryCopy.chartTokens, [
-            (p.textPrimary, TelemetryStrings.legendIn),
-            (p.accent, TelemetryStrings.legendOut),
-          ]),
-          SeriesLines(
-            series: s,
-            first: (x) => x.tokensIn,
-            second: (x) => x.tokensOut,
-            firstLabel: TelemetryStrings.legendIn,
-            secondLabel: TelemetryStrings.legendOut,
-            format: (v) => compact(v.round()),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _chartTitle(context, TelemetryCopy.chartLatency, [
-            (p.textPrimary, TelemetryStrings.legendLatency),
-            (p.accent, TelemetryStrings.legendTtft),
-          ]),
-          SeriesLines(
-            series: s,
-            first: (x) => x.latencyP50,
-            second: (x) => x.ttftP50,
-            firstLabel: TelemetryStrings.legendLatency,
-            secondLabel: TelemetryStrings.legendTtft,
-            format: (v) => ms(v.round()),
-          ),
+          const Hairline(),
+          const SizedBox(height: AppSpacing.md),
+          if (s != null) ActivityChart(series: s, metric: _metric),
           if (_c.loading)
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: LinearProgressIndicator(
-                minHeight: AppSizes.attachProgress,
+                minHeight: AppBorder.thin,
                 color: p.accent,
-                backgroundColor: scheme.surfaceContainerHighest,
+                backgroundColor: p.border,
               ),
             ),
         ],
@@ -344,138 +233,175 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     );
   }
 
-  Widget _chartTitle(
-    BuildContext context,
-    String title,
-    List<(Color, String)> legend,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
+  Widget _providers(BuildContext context, TelemetryOverview o) {
+    return TSection(
+      title: TelemetryCopy.providers,
+      child: PlainList(
         children: [
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleSmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          for (final x in o.providers)
+            ProviderRow(
+              key: ValueKey('provider-${x.name}'),
+              provider: x,
+              selected: _c.filters.provider == x.name,
+              detail: rateLimitLine(o.models, x.name, _now),
+              onTap: () =>
+                  _c.setProvider(_c.filters.provider == x.name ? null : x.name),
             ),
-          ),
-          ChartLegend(items: legend),
         ],
       ),
     );
   }
 
-  void _openModel(ModelTelemetry m) {
-    Haptics.tap();
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => TelemetryScreen(
-          provider: m.provider,
-          model: m.model,
-          title: m.name,
-        ),
+  Widget _models(
+    BuildContext context,
+    ({List<ModelGroup> groups, int hidden}) models,
+    List<ErrorGroup> errors,
+  ) {
+    return TSection(
+      title: TelemetryCopy.models,
+      note: models.hidden > 0
+          ? '${TelemetryCopy.modelsUnused}: ${models.hidden}'
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const ModelColumns(),
+          const Hairline(),
+          PlainList(
+            children: [
+              for (final g in models.groups)
+                ModelRow(
+                  key: ValueKey('model-${g.key}'),
+                  group: g,
+                  now: _now,
+                  open: _open.contains('model-${g.key}'),
+                  errors: [
+                    for (final e in errors)
+                      if (e.model == g.key) e,
+                  ],
+                  onTap: () => _toggle('model-${g.key}'),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  // ---- live log ---------------------------------------------------------------
-
-  Widget _logHeader(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SettingsGroupHeader(
-          widget.isDetail ? TelemetryCopy.recentEvents : TelemetryCopy.log,
-        ),
-        Wrap(
-          spacing: AppSpacing.xs + AppSpacing.xxs,
-          runSpacing: AppSpacing.xs + AppSpacing.xxs,
-          children: [
-            TelemetryChip(
-              label: TelemetryCopy.failedOnly,
-              icon: TelemetryIcons.failed,
-              alert: true,
-              selected: _c.failedOnly,
-              onTap: () => _c.setFailedOnly(!_c.failedOnly),
-            ),
-            TelemetryChip(
-              label: _c.paused
-                  ? '${TelemetryCopy.resume}'
-                        '${_c.heldCount > 0 ? ' +${_c.heldCount} ${TelemetryStrings.newEvents}' : ''}'
-                  : TelemetryCopy.pause,
-              icon: _c.paused ? TelemetryIcons.resume : TelemetryIcons.pause,
-              selected: _c.paused,
-              onTap: _c.togglePause,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-      ],
+  Widget _turns(BuildContext context, TurnTelemetry t) {
+    return TSection(
+      title: TelemetryCopy.perTurn,
+      note: TelemetryCopy.turnExtraNote,
+      child: SummaryRow(
+        stats: [
+          SummaryStat(compact(t.turns), TelemetryCopy.turnMessages),
+          SummaryStat(
+            t.auxAvg.toStringAsFixed(1),
+            TelemetryCopy.turnExtraCalls,
+            sub: '${TelemetryStrings.avg.toLowerCase()}, max ${t.auxMax}',
+          ),
+          SummaryStat(
+            ms(t.ttftAvg),
+            TelemetryCopy.turnTtft,
+            unit: true,
+            sub: '${TelemetryStrings.p50.toLowerCase()} ${ms(t.ttftP50)}',
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _log() {
+  Widget _errors(BuildContext context, List<ErrorGroup> errors) {
+    return TSection(
+      title: TelemetryCopy.errors,
+      child: PlainList(
+        children: [
+          for (final e in errors.take(TelemetrySizes.topErrorsShown))
+            ErrorRow(
+              key: ValueKey('error-${e.code}-${e.model}'),
+              group: e,
+              now: _now,
+              open: _open.contains('error-${e.code}-${e.model}'),
+              onTap: () => _toggle('error-${e.code}-${e.model}'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _users(BuildContext context, TelemetryOverview o) {
+    return TSection(
+      title: TelemetryCopy.users,
+      child: PlainList(
+        children: [
+          for (final u in o.users.take(TelemetrySizes.usersShown))
+            UserRow(user: u),
+        ],
+      ),
+    );
+  }
+
+  Widget _calls(BuildContext context) {
     final list = _c.events;
-    if (list.isEmpty) {
-      return _pad(
-        const M3Empty(icon: TelemetryIcons.log, title: TelemetryCopy.emptyLog),
-      );
-    }
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
-      sliver: SliverList.builder(
-        itemCount: list.length,
-        itemBuilder: (context, i) {
-          final e = list[i];
-          return M3Cell(
-            key: ValueKey(e.id),
-            index: i,
-            count: list.length,
-            selected: _c.fresh.contains(e.id),
-            child: EventRow(
-              event: e,
-              open: _open.contains(e.id),
-              fresh: _c.fresh.contains(e.id),
-              onTap: () => setState(
-                () =>
-                    _open.contains(e.id) ? _open.remove(e.id) : _open.add(e.id),
+    final shown = _allCalls
+        ? list.take(TelemetrySizes.callsShown + TelemetrySizes.callsMore)
+        : list.take(TelemetrySizes.callsShown);
+    return TSection(
+      title: TelemetryCopy.recentCalls,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextAction(
+            label: TelemetryCopy.failedOnly,
+            active: _c.failedOnly,
+            onTap: () => _c.setFailedOnly(!_c.failedOnly),
+          ),
+          TextAction(
+            label: _c.paused
+                ? '${TelemetryCopy.resume}${_c.heldCount > 0 ? ' +${_c.heldCount}' : ''}'
+                : TelemetryCopy.pause,
+            active: _c.paused,
+            onTap: _c.togglePause,
+          ),
+        ],
+      ),
+      child: list.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+              child: Text(
+                TelemetryCopy.emptyLog,
+                style: TType.secondary(context),
               ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PlainList(
+                  children: [
+                    for (final e in shown)
+                      CallRow(
+                        key: ValueKey('call-${e.id}'),
+                        event: e,
+                        open: _open.contains('call-${e.id}'),
+                        onTap: () => _toggle('call-${e.id}'),
+                      ),
+                  ],
+                ),
+                if (list.length > TelemetrySizes.callsShown)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 0),
+                      child: TextAction(
+                        label: _allCalls
+                            ? TelemetryCopy.showLess
+                            : TelemetryCopy.showMore,
+                        onTap: () => setState(() => _allCalls = !_allCalls),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _logFooter(BuildContext context) {
-    final p = context.palette;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.md),
-      child: Center(
-        child: _c.loadingMore
-            ? SizedBox.square(
-                dimension: AppIconSize.sm,
-                child: CircularProgressIndicator(
-                  strokeWidth: AppBorder.thick,
-                  color: p.accent,
-                ),
-              )
-            : _c.hasMore
-            ? TelemetryChip(
-                label: TelemetryCopy.loadMore,
-                selected: false,
-                onTap: _c.loadMore,
-              )
-            : Text(
-                _c.events.isEmpty ? '' : TelemetryCopy.noMore,
-                style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-      ),
     );
   }
 }

@@ -25,13 +25,21 @@ const LABEL = Prisma.sql`coalesce(purpose, kind)`;
 // Older rows stored some models with their provider prefix ("groq:openai/gpt-oss-20b").
 const MODEL = Prisma.sql`(CASE WHEN model LIKE provider || ':%' THEN substr(model, length(provider) + 2) ELSE model END)`;
 const TOKENS = Prisma.sql`coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)`;
+/**
+ * A call failed only when the upstream said so: status >= 400 or an error code.
+ * Legacy rows have ok=false with neither; they count as "unknown", not failed.
+ */
+const FAILED = Prisma.sql`(coalesce(status >= 400, false) OR error_code IS NOT NULL)`;
+const UNKNOWN = Prisma.sql`(NOT ok AND NOT ${FAILED})`;
+/** Per-turn summary rows (kind "turn") are reported separately, never as calls. */
+const NOT_TURN = Prisma.sql`kind <> 'turn'`;
 
 function conditions(f: Filters): Prisma.Sql[] {
-  const c: Prisma.Sql[] = [];
+  const c: Prisma.Sql[] = [NOT_TURN];
   if (f.model) c.push(Prisma.sql`${MODEL} = ${f.model}`);
   if (f.provider) c.push(Prisma.sql`provider = ${f.provider}`);
   if (f.kind) c.push(Prisma.sql`(${LABEL} = ${f.kind} OR kind = ${f.kind})`);
-  if (f.ok !== undefined) c.push(Prisma.sql`ok = ${f.ok}`);
+  if (f.ok !== undefined) c.push(f.ok ? Prisma.sql`(ok AND NOT ${FAILED})` : FAILED);
   if (f.userId) c.push(Prisma.sql`user_id = ${f.userId}::uuid`);
   return c;
 }
@@ -56,8 +64,9 @@ const iso = (v: Date | null | undefined) => (v ? new Date(v).toISOString() : nul
 // One aggregate row shape shared by totals and every breakdown.
 const AGG = Prisma.sql`
   count(*)::int AS requests,
-  count(*) FILTER (WHERE ok)::int AS ok,
-  count(*) FILTER (WHERE NOT ok)::int AS failed,
+  count(*) FILTER (WHERE ok AND NOT ${FAILED})::int AS ok,
+  count(*) FILTER (WHERE ${FAILED})::int AS failed,
+  count(*) FILTER (WHERE ${UNKNOWN})::int AS unknown,
   coalesce(sum(prompt_tokens),0)::bigint AS tokens_in,
   coalesce(sum(completion_tokens),0)::bigint AS tokens_out,
   coalesce(sum(count),0)::bigint AS units,
@@ -72,6 +81,7 @@ type AggRow = {
   requests: number;
   ok: number;
   failed: number;
+  unknown: number;
   tokens_in: bigint;
   tokens_out: bigint;
   units: bigint;
@@ -87,6 +97,8 @@ export type Agg = {
   requests: number;
   ok: number;
   failed: number;
+  /** Legacy rows with ok=false but no status and no error code. */
+  unknown: number;
   failureRate: number;
   tokensIn: number;
   tokensOut: number;
@@ -107,6 +119,7 @@ function agg(r: AggRow | undefined): Agg {
     requests,
     ok: n(r?.ok),
     failed,
+    unknown: n(r?.unknown),
     failureRate: requests ? Math.round((failed / requests) * 10_000) / 10_000 : 0,
     tokensIn: n(r?.tokens_in),
     tokensOut: n(r?.tokens_out),
@@ -123,17 +136,33 @@ function agg(r: AggRow | undefined): Agg {
 export type ModelAgg = Agg & {
   provider: string;
   model: string | null;
+  /** Raw call kinds seen for this model ("search", "fetch", ...): labels model-less rows. */
+  kinds: string[];
   failuresByCode: Record<string, number>;
   lastError: { at: string; code: string | null; status: number | null; message: string | null; kind: string } | null;
 };
 
 export type UserAgg = { userId: string | null; email: string | null; name: string | null; role: string | null; window: Agg; today: { requests: number; tokens: number; failed: number } };
 
+export type TurnAgg = {
+  turns: number;
+  auxCalls: number;
+  auxAvg: number;
+  auxMax: number;
+  ttftAvg: number | null;
+  ttftP50: number | null;
+  latencyP50: number | null;
+};
+
+export const SPARK_POINTS = 24;
+
 export type Overview = {
   window: Window;
   generatedAt: string;
   totals: Agg;
-  providers: Array<Agg & { provider: string }>;
+  providers: Array<Agg & { provider: string; spark: number[] }>;
+  /** Chat turns (kind "turn" rows): auxiliary calls and time to first token. Null when none. */
+  turns: TurnAgg | null;
   models: ModelAgg[];
   kinds: Array<Agg & { kind: string }>;
   users: UserAgg[];
@@ -142,31 +171,52 @@ export type Overview = {
 
 export async function overview(c: Client, w: Window, f: Filters = {}): Promise<Overview> {
   const where = whereWindow(w, f);
-  const [totals, providers, models, codes, lastErrors, kinds, users, today, errors] = await Promise.all([
+  const [totals, providers, models, codes, lastErrors, kinds, users, today, errors, spark, turnRows] = await Promise.all([
     c.$queryRaw<AggRow[]>`SELECT ${AGG} FROM usage_events WHERE ${where}`,
     c.$queryRaw<Array<AggRow & { provider: string }>>`SELECT provider, ${AGG} FROM usage_events WHERE ${where} GROUP BY provider ORDER BY count(*) DESC`,
-    c.$queryRaw<Array<AggRow & { provider: string; model: string | null }>>`
-      SELECT provider, ${MODEL} AS model, ${AGG} FROM usage_events WHERE ${where} GROUP BY 1, 2 ORDER BY count(*) DESC`,
+    c.$queryRaw<Array<AggRow & { provider: string; model: string | null; kinds: string[] }>>`
+      SELECT provider, ${MODEL} AS model, array_agg(DISTINCT kind) AS kinds, ${AGG} FROM usage_events WHERE ${where} GROUP BY 1, 2 ORDER BY count(*) DESC`,
     c.$queryRaw<Array<{ provider: string; model: string | null; code: string; c: number }>>`
       SELECT provider, ${MODEL} AS model, coalesce(error_code, 'http_' || status, 'error') AS code, count(*)::int AS c
-        FROM usage_events WHERE ${where} AND NOT ok GROUP BY 1, 2, 3`,
+        FROM usage_events WHERE ${where} AND ${FAILED} GROUP BY 1, 2, 3`,
     c.$queryRaw<Array<{ provider: string; model: string | null; ts: Date; error_code: string | null; status: number | null; error_message: string | null; label: string }>>`
       SELECT DISTINCT ON (provider, ${MODEL}) provider, ${MODEL} AS model, ts, error_code, status, error_message, ${LABEL} AS label
-        FROM usage_events WHERE ${where} AND NOT ok ORDER BY provider, ${MODEL}, ts DESC`,
+        FROM usage_events WHERE ${where} AND ${FAILED} ORDER BY provider, ${MODEL}, ts DESC`,
     c.$queryRaw<Array<AggRow & { label: string }>>`SELECT ${LABEL} AS label, ${AGG} FROM usage_events WHERE ${where} GROUP BY 1 ORDER BY count(*) DESC`,
     c.$queryRaw<Array<AggRow & { user_id: string | null; email: string | null; name: string | null; role: string | null }>>`
       SELECT e.user_id, u.email::text AS email, u.name, u.role, ${AGG}
         FROM usage_events e LEFT JOIN users u ON u.id = e.user_id
        WHERE ${where} GROUP BY e.user_id, u.email, u.name, u.role ORDER BY count(*) DESC LIMIT 100`,
     c.$queryRaw<Array<{ user_id: string | null; r: number; t: bigint; f: number }>>`
-      SELECT user_id, count(*)::int AS r, coalesce(sum(${TOKENS}),0)::bigint AS t, count(*) FILTER (WHERE NOT ok)::int AS f
+      SELECT user_id, count(*)::int AS r, coalesce(sum(${TOKENS}),0)::bigint AS t, count(*) FILTER (WHERE ${FAILED})::int AS f
         FROM usage_events
        WHERE ${Prisma.join([Prisma.sql`ts >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`, ...conditions(f)], " AND ")}
        GROUP BY user_id`,
     c.$queryRaw<Array<{ provider: string; model: string | null; code: string | null; msg: string | null; c: number; last: Date }>>`
       SELECT provider, ${MODEL} AS model, coalesce(error_code, 'http_' || status, 'error') AS code, left(error_message, 160) AS msg, count(*)::int AS c, max(ts) AS last
-        FROM usage_events WHERE ${where} AND NOT ok GROUP BY 1, 2, 3, 4 ORDER BY c DESC, last DESC LIMIT 20`,
+        FROM usage_events WHERE ${where} AND ${FAILED} GROUP BY 1, 2, 3, 4 ORDER BY c DESC, last DESC LIMIT 60`,
+    c.$queryRaw<Array<{ provider: string; b: number; c: number }>>`
+      SELECT provider, least(${SPARK_POINTS - 1}, floor(extract(epoch FROM (ts - (now() - ${WINDOWS[w]}::interval))) / ${WINDOW_SECONDS[w] / SPARK_POINTS})::int) AS b, count(*)::int AS c
+        FROM usage_events WHERE ${where} GROUP BY 1, 2`,
+    c.$queryRaw<Array<{ turns: number; aux: bigint; aux_max: number | null; ttft_avg: unknown; ttft_p50: unknown; lat_p50: unknown }>>`
+      SELECT count(*)::int AS turns, coalesce(sum(count),0)::bigint AS aux, max(count) AS aux_max, avg(ttft_ms) AS ttft_avg,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY ttft_ms) AS ttft_p50,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS lat_p50
+        FROM usage_events WHERE kind = 'turn' AND ts >= now() - ${WINDOWS[w]}::interval
+         ${f.userId ? Prisma.sql`AND user_id = ${f.userId}::uuid` : Prisma.empty}`,
   ]);
+
+  const sparkMap = new Map<string, number[]>();
+  for (const r of spark) {
+    const a = sparkMap.get(r.provider) ?? new Array<number>(SPARK_POINTS).fill(0);
+    a[Math.max(0, r.b)] += r.c;
+    sparkMap.set(r.provider, a);
+  }
+  const t = turnRows[0];
+  const turns: TurnAgg | null =
+    t && t.turns > 0
+      ? { turns: t.turns, auxCalls: n(t.aux), auxAvg: Math.round((n(t.aux) / t.turns) * 10) / 10, auxMax: n(t.aux_max), ttftAvg: nn(t.ttft_avg), ttftP50: nn(t.ttft_p50), latencyP50: nn(t.lat_p50) }
+      : null;
 
   const key = (p: string, m: string | null) => `${p}\u0000${m ?? ""}`;
   const codeMap = new Map<string, Record<string, number>>();
@@ -183,12 +233,14 @@ export async function overview(c: Client, w: Window, f: Filters = {}): Promise<O
     window: w,
     generatedAt: new Date().toISOString(),
     totals: agg(totals[0]),
-    providers: providers.map((r) => ({ provider: r.provider, ...agg(r) })),
+    providers: providers.map((r) => ({ provider: r.provider, ...agg(r), spark: sparkMap.get(r.provider) ?? new Array<number>(SPARK_POINTS).fill(0) })),
+    turns,
     models: models.map((r) => {
       const le = lastMap.get(key(r.provider, r.model));
       return {
         provider: r.provider,
         model: r.model,
+        kinds: r.kinds ?? [],
         ...agg(r),
         failuresByCode: codeMap.get(key(r.provider, r.model)) ?? {},
         lastError: le ? { at: iso(le.ts)!, code: le.error_code, status: le.status, message: le.error_message, kind: le.label } : null,
@@ -218,7 +270,7 @@ export async function timeseries(c: Client, w: Window, b: Bucket, f: Filters = {
     ), e AS (
       SELECT date_bin(${step}::interval, ts, TIMESTAMPTZ '2000-01-01') AS t,
              count(*)::int AS r,
-             count(*) FILTER (WHERE NOT ok)::int AS f,
+             count(*) FILTER (WHERE ${FAILED})::int AS f,
              coalesce(sum(prompt_tokens),0)::bigint AS ti,
              coalesce(sum(completion_tokens),0)::bigint AS "to",
              percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50,

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
@@ -9,16 +11,65 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/dot_meter.dart';
-import '../../../core/widgets/icon_label.dart';
-import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/telemetry.dart';
 import '../format.dart';
-import '../widgets/section_header.dart';
+import 'telemetry_charts.dart';
 import 'telemetry_controller.dart';
 import 'telemetry_format.dart';
+import 'telemetry_grouping.dart';
 
-/// Pulsing red dot while the stream is connected; hollow otherwise.
+/// Text styles of the plain layout: Space Grotesk, tabular figures.
+abstract final class TType {
+  static const _tabular = [FontFeature.tabularFigures()];
+
+  static TextStyle _grotesk(double size, int weight, Color color) =>
+      AppTextStyles.body.copyWith(
+        fontSize: size,
+        height: 1.25,
+        color: color,
+        fontVariations: [FontVariation.weight(weight.toDouble())],
+        fontFeatures: _tabular,
+      );
+
+  /// Big summary figure.
+  static TextStyle big(BuildContext c, {Color? color}) => _grotesk(
+    TelemetrySizes.summaryNumber,
+    600,
+    color ?? c.palette.textPrimary,
+  );
+
+  /// Row title.
+  static TextStyle title(BuildContext c, {Color? color}) =>
+      _grotesk(AppFontSize.body, 500, color ?? c.palette.textPrimary);
+
+  /// Row figure.
+  static TextStyle figure(BuildContext c, {Color? color}) =>
+      _grotesk(AppFontSize.body, 600, color ?? c.palette.textPrimary);
+
+  /// Secondary line under a title.
+  static TextStyle secondary(BuildContext c, {Color? color}) =>
+      _grotesk(AppFontSize.label, 400, color ?? c.palette.textSecondary);
+
+  /// Section header.
+  static TextStyle section(BuildContext c) =>
+      _grotesk(AppFontSize.bodySmall, 600, c.palette.textSecondary);
+
+  /// Tiny timestamp: the one place Space Mono is allowed.
+  static TextStyle stamp(BuildContext c) => AppTextStyles.caption.copyWith(
+    color: c.palette.textTertiary,
+    letterSpacing: 0,
+  );
+}
+
+/// Width of a figure column, grown with the text scale (up to a limit).
+double colWidth(BuildContext context, double w) {
+  final f =
+      MediaQuery.textScalerOf(context).scale(AppFontSize.body) /
+      AppFontSize.body;
+  return w * math.min(f, 1.2);
+}
+
+/// Red dot and "LIVE" in the app bar; hollow and grey when not streaming.
 class LiveDot extends StatefulWidget {
   const LiveDot({super.key, required this.state, required this.paused});
 
@@ -68,26 +119,20 @@ class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
             : Border.all(color: p.textTertiary, width: AppSizes.statusRing),
       ),
     );
-    return Container(
-      margin: const EdgeInsets.only(right: AppSpacing.sm),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.screenPadding),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           on ? FadeTransition(opacity: _c, child: dot) : dot,
-          const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
+          const SizedBox(width: AppSpacing.sm),
           Text(
             label,
-            style: AppTextStyles.caption.copyWith(
-              color: on ? p.accent : p.textTertiary,
-            ),
+            style: TType.secondary(context, color: on ? p.accent : null)
+                .copyWith(
+                  letterSpacing: 1.2,
+                  fontVariations: const [FontVariation.weight(700)],
+                ),
           ),
         ],
       ),
@@ -95,541 +140,732 @@ class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
   }
 }
 
-/// One big Space Grotesk number with a tiny mono caption above it.
-class StatTile extends StatelessWidget {
-  const StatTile(
-    this.label,
-    this.value, {
-    super.key,
-    this.alert = false,
-    this.sub,
-  });
-
-  final String label, value;
-  final String? sub;
-  final bool alert;
+/// A hairline between rows.
+class Hairline extends StatelessWidget {
+  const Hairline({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final scheme = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTextStyles.caption.copyWith(color: scheme.onSurfaceVariant),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text(
-            value,
-            style: tt.headlineSmall!.copyWith(
-              color: alert ? p.accent : scheme.onSurface,
-            ),
-          ),
-        ),
-        if (sub != null)
-          Text(
-            sub!,
-            style: tt.bodySmall!.copyWith(
-              color: alert ? p.accent : scheme.onSurfaceVariant,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Divider(
+    height: AppBorder.thin,
+    thickness: AppBorder.thin,
+    color: context.palette.border,
+  );
 }
 
-/// Tiles in rounded tonal containers, in a fixed number of columns, wrapping
-/// on narrow screens.
-class StatGrid extends StatelessWidget {
-  const StatGrid({super.key, required this.tiles, this.color});
+/// A section: plain title (and an optional trailing action), then content.
+class TSection extends StatelessWidget {
+  const TSection({
+    super.key,
+    required this.title,
+    this.trailing,
+    required this.child,
+    this.note,
+  });
 
-  final List<Widget> tiles;
+  final String title;
+  final Widget? trailing;
+  final Widget child;
 
-  /// Tile background; defaults to the grouped container tone.
-  final Color? color;
+  /// Small supporting line under the title.
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
-    final bg = color ?? Theme.of(context).colorScheme.surfaceContainer;
-    return LayoutBuilder(
-      builder: (context, c) {
-        final cols = (c.maxWidth / TelemetrySizes.statTileMinWidth)
-            .floor()
-            .clamp(1, TelemetrySizes.statColumns);
-        final w = (c.maxWidth - AppSpacing.sm * (cols - 1)) / cols;
-        return Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: TelemetrySizes.sectionTop),
+        Row(
           children: [
-            for (final t in tiles)
-              SizedBox(
-                width: w,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(AppRadius.lg),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: t,
-                  ),
-                ),
-              ),
+            Expanded(child: Text(title, style: TType.section(context))),
+            ?trailing,
           ],
-        );
-      },
-    );
-  }
-}
-
-/// M3 filter chip that inverts when selected.
-class TelemetryChip extends StatelessWidget {
-  const TelemetryChip({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.icon,
-    this.alert = false,
-  });
-
-  final String label;
-  final bool selected, alert;
-  final AppIconData? icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final fg = selected
-        ? p.textInverse
-        : (alert ? p.accent : Theme.of(context).colorScheme.onSurface);
-    final fill = alert ? p.accent : p.textPrimary;
-    return FilterChip(
-      label: Text(label),
-      avatar: icon == null
-          ? null
-          : AppIcon(icon!, size: AppIconSize.sm, color: fg),
-      selected: selected,
-      showCheckmark: false,
-      shape: const StadiumBorder(),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      side: BorderSide(
-        color: selected
-            ? Colors.transparent
-            : (alert ? p.accent : p.borderStrong),
-      ),
-      backgroundColor: Colors.transparent,
-      selectedColor: fill,
-      labelStyle: Theme.of(context).textTheme.labelLarge!.copyWith(color: fg),
-      onSelected: (_) {
-        Haptics.tap();
-        onTap();
-      },
-    );
-  }
-}
-
-/// A horizontally scrolling row of single-choice chips; null is ALL.
-class ChipRow extends StatelessWidget {
-  const ChipRow({
-    super.key,
-    required this.label,
-    required this.values,
-    required this.selected,
-    required this.onSelect,
-    this.display = kindLabel,
-  });
-
-  final String label;
-  final List<String> values;
-  final String? selected;
-  final ValueChanged<String?> onSelect;
-  final String Function(String) display;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: TelemetrySizes.chipHeight,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          Center(
+        ),
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
             child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge!.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              note!,
+              style: TType.secondary(
+                context,
+                color: context.palette.textTertiary,
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
-          TelemetryChip(
-            label: TelemetryCopy.filterAll,
-            selected: selected == null,
-            onTap: () => onSelect(null),
-          ),
-          for (final v in values) ...[
-            const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
-            TelemetryChip(
-              label: display(v),
-              selected: selected == v,
-              onTap: () => onSelect(selected == v ? null : v),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Small tag: OK in neutral, a failure code in red.
-class StatusTag extends StatelessWidget {
-  const StatusTag({super.key, required this.ok, this.code});
-
-  final bool ok;
-  final String? code;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final text = ok
-        ? TelemetryStrings.statusOk
-        : (code ?? TelemetryStrings.statusFailed).toUpperCase();
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: context.text.caption.copyWith(
-        color: ok ? p.textSecondary : p.accent,
-      ),
-    );
-  }
-}
-
-/// Every model: requests, failure rate, tokens, latency, cooldown, rate
-/// limit. Tap expands the details; DETAILS opens the model screen.
-class ModelRow extends StatefulWidget {
-  const ModelRow({
-    super.key,
-    required this.model,
-    required this.now,
-    required this.onOpen,
-  });
-
-  final ModelTelemetry model;
-  final DateTime now;
-  final VoidCallback onOpen;
-
-  @override
-  State<ModelRow> createState() => _ModelRowState();
-}
-
-class _ModelRowState extends State<ModelRow> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final m = widget.model;
-    final a = m.agg;
-    final p = context.palette;
-    final t = context.text;
-    final cd = m.cooldownLeft(widget.now);
-    final failing = a.failed > 0;
-    return M3Card(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      onTap: () {
-        Haptics.tap();
-        setState(() => _open = !_open);
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: IconLabel(
-                  icon: TelemetryIcons.provider(m.provider),
-                  text: m.name,
-                  style: t.label,
-                  iconSize: AppIconSize.sm,
-                  expand: true,
-                ),
-              ),
-              if (cd != null) ...[
-                const SizedBox(width: AppSpacing.sm),
-                IconLabel(
-                  icon: TelemetryIcons.cooldown,
-                  text: '${TelemetryStrings.cooldown} ${countdown(cd)}',
-                  style: t.caption,
-                  color: p.accent,
-                ),
-              ] else if (a.requests == 0) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  m.inRegistry
-                      ? TelemetryStrings.unused
-                      : TelemetryStrings.notRouted,
-                  style: t.caption,
-                ),
-              ],
-            ],
-          ),
-          Text(
-            '${providerLabel(m.provider)}${TelemetryStrings.separator}'
-            '${m.model ?? TelemetryStrings.noModel}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: t.caption,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          StatGrid(
-            color: Theme.of(context).colorScheme.surfaceContainerHigh,
-            tiles: [
-              StatTile(TelemetryStrings.requests, grouped(a.requests)),
-              StatTile(
-                TelemetryStrings.failureRate,
-                pct(a.failureRate),
-                alert: failing,
-                sub: '${a.failed} ${TelemetryStrings.failed}',
-              ),
-              StatTile(
-                TelemetryStrings.tokensShort,
-                compact(a.tokens),
-                sub: inOut(a.tokensIn, a.tokensOut),
-              ),
-              StatTile(
-                TelemetryStrings.p50,
-                ms(a.latencyP50),
-                sub: '${TelemetryStrings.p95} ${ms(a.latencyP95)}',
-              ),
-              StatTile(
-                TelemetryStrings.ttft,
-                ms(a.ttftP50),
-                sub: '${TelemetryStrings.avg} ${ms(a.ttftAvg)}',
-              ),
-              StatTile(
-                TelemetryStrings.lastCall,
-                a.lastAt == null ? AppStrings.dash : clock(a.lastAt!),
-                sub: a.lastAt == null ? null : agoLabel(a.lastAt!, widget.now),
-              ),
-            ],
-          ),
-          if (m.rateLimit != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            _rate(context, m.rateLimit!),
-          ],
-          AnimatedSize(
-            duration: AppDurations.normal,
-            curve: Curves.easeOut,
-            alignment: Alignment.topCenter,
-            child: _open
-                ? _details(context, m)
-                : const SizedBox(width: double.infinity),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _rate(BuildContext context, TelemetryRateLimit r) {
-    final p = context.palette;
-    final limit = r.limitRequests;
-    final left = r.remainingRequests;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(TelemetryStrings.rateLimit, style: context.text.caption),
-        const SizedBox(height: AppSpacing.xs),
-        if (limit != null && left != null && limit > 0)
-          DotMeter(
-            fraction: 1 - left / limit,
-            litColor: left == 0 ? p.accent : p.textPrimary,
-          ),
-        InfoRow(
-          TelemetryStrings.rateRequests,
-          '${grouped(left)}${TelemetryStrings.slash}${grouped(limit)}',
-          valueColor: left == 0 ? p.accent : null,
-        ),
-        if (r.limitTokens != null)
-          InfoRow(
-            TelemetryStrings.rateTokens,
-            '${grouped(r.remainingTokens)}${TelemetryStrings.slash}'
-            '${grouped(r.limitTokens)}',
-          ),
-        if (r.resetsAt != null)
-          InfoRow(TelemetryStrings.rateResets, resetsLabel(r.resetsAt!)),
-      ],
-    );
-  }
-
-  Widget _details(BuildContext context, ModelTelemetry m) {
-    final p = context.palette;
-    final t = context.text;
-    final e = m.lastError;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: AppSpacing.md),
-        Divider(color: p.border, height: AppBorder.thin),
-        if (m.failuresByCode.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.md),
-          Text(TelemetryStrings.failuresByCode, style: t.caption),
-          for (final c in m.failuresByCode.entries)
-            InfoRow(
-              c.key.toUpperCase(),
-              grouped(c.value),
-              valueColor: p.accent,
-            ),
-        ],
-        if (e != null) ...[
-          const SizedBox(height: AppSpacing.md),
-          Text(TelemetryStrings.lastError, style: t.caption),
-          InfoRow(
-            clock(e.at),
-            '${(e.code ?? TelemetryStrings.statusFailed).toUpperCase()}'
-            '${TelemetryStrings.separator}${kindLabel(e.kind ?? '')}',
-            valueColor: p.accent,
-          ),
-          if (e.message != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            SelectableText(e.message!, style: t.bodySmall),
-          ],
-        ],
-        InfoRow(
-          TelemetryStrings.latency,
-          '${TelemetryStrings.avg} ${ms(m.agg.latencyAvg)}',
-        ),
-        if (m.agg.units != m.agg.requests)
-          InfoRow(TelemetryStrings.units, grouped(m.agg.units)),
-        const SizedBox(height: AppSpacing.md),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TelemetryChip(
-            label: TelemetryCopy.openDetail,
-            icon: TelemetryIcons.chevron,
-            selected: false,
-            onTap: widget.onOpen,
-          ),
-        ),
+        const SizedBox(height: AppSpacing.sm),
+        child,
       ],
     );
   }
 }
 
-/// One line of the live log; tap shows every field.
-class EventRow extends StatelessWidget {
-  const EventRow({
+/// Rows separated by hairlines (none above the first or below the last).
+class PlainList extends StatelessWidget {
+  const PlainList({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) const Hairline(),
+          children[i],
+        ],
+      ],
+    );
+  }
+}
+
+/// A flat text action ("Pause", "Show more").
+class TextAction extends StatelessWidget {
+  const TextAction({
     super.key,
-    required this.event,
-    required this.open,
-    required this.fresh,
+    required this.label,
     required this.onTap,
+    this.active = false,
   });
 
-  final TelemetryEvent event;
-  final bool open, fresh;
+  final String label;
   final VoidCallback onTap;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
-    final e = event;
     final p = context.palette;
-    final t = context.text;
-    final tokens = e.tokens;
     return InkWell(
       onTap: () {
         Haptics.tap();
         onTap();
       },
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(
-              color: e.ok ? Colors.transparent : p.accent,
-              width: AppBorder.thick,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: TelemetrySizes.tabHeight),
+        child: Padding(
+          padding: const EdgeInsets.only(left: AppSpacing.lg),
+          child: Align(
+            alignment: Alignment.centerRight,
+            widthFactor: 1,
+            child: Text(
+              label,
+              style: TType.secondary(
+                context,
+                color: active ? p.accent : p.textPrimary,
+              ).copyWith(fontVariations: const [FontVariation.weight(600)]),
             ),
           ),
         ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.md,
+      ),
+    );
+  }
+}
+
+// ---- summary ------------------------------------------------------------------
+
+class SummaryStat {
+  const SummaryStat(
+    this.value,
+    this.label, {
+    this.sub,
+    this.alert = false,
+    this.unit = false,
+  });
+
+  /// The value ends in a unit (ms, s) that is drawn small.
+  final bool unit;
+  final String value, label;
+  final String? sub;
+  final bool alert;
+}
+
+/// One row of big numbers with small labels and thin vertical dividers.
+class SummaryRow extends StatelessWidget {
+  const SummaryRow({super.key, required this.stats});
+
+  final List<SummaryStat> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < stats.length; i++) ...[
+            if (i > 0)
+              VerticalDivider(
+                width: AppBorder.thin,
+                thickness: AppBorder.thin,
+                color: p.border,
+              ),
+            Expanded(child: _cell(context, stats[i], first: i == 0)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _value(BuildContext context, SummaryStat s) {
+    final big = TType.big(context, color: s.alert ? p(context).accent : null);
+    final m = s.unit ? RegExp(r'^([\d.,]+)(\D+)$').firstMatch(s.value) : null;
+    if (m == null) return Text(s.value, maxLines: 1, style: big);
+    return Text.rich(
+      TextSpan(
+        text: m.group(1),
+        children: [
+          TextSpan(
+            text: m.group(2),
+            style: big.copyWith(fontSize: AppFontSize.body),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      style: big,
+    );
+  }
+
+  AppPalette p(BuildContext context) => context.palette;
+
+  Widget _cell(BuildContext context, SummaryStat s, {required bool first}) {
+    final p = context.palette;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: first ? 0 : AppSpacing.md,
+        right: AppSpacing.xs,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: _value(context, s),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            s.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TType.secondary(context),
+          ),
+          if (s.sub != null)
+            Text(
+              s.sub!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TType.secondary(
+                context,
+                color: s.alert ? p.accent : p.textTertiary,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---- activity -------------------------------------------------------------------
+
+enum Metric { requests, tokens, latency }
+
+/// Flat text tabs with an underline under the chosen one.
+class MetricTabs extends StatelessWidget {
+  const MetricTabs({super.key, required this.value, required this.onChanged});
+
+  final Metric value;
+  final ValueChanged<Metric> onChanged;
+
+  static const _labels = {
+    Metric.requests: TelemetryCopy.metricRequests,
+    Metric.tokens: TelemetryCopy.metricTokens,
+    Metric.latency: TelemetryCopy.metricLatency,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Row(
+      children: [
+        for (final m in Metric.values)
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xl),
+              child: InkWell(
+                onTap: () {
+                  Haptics.tap();
+                  onChanged(m);
+                },
+                child: Container(
+                  height: TelemetrySizes.tabHeight,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: m == value ? p.textPrimary : Colors.transparent,
+                        width: TelemetrySizes.tabUnderline,
+                      ),
+                    ),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _labels[m]!,
+                      style: TType.title(
+                        context,
+                        color: m == value ? p.textPrimary : p.textTertiary,
+                      ).copyWith(fontSize: AppFontSize.bodySmall),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A dot and a word, for chart legends.
+class LegendItem extends StatelessWidget {
+  const LegendItem(this.color, this.label, {super.key});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: AppSizes.quotaDot,
+        height: AppSizes.quotaDot,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
+      Text(label, style: TType.secondary(context)),
+    ],
+  );
+}
+
+/// The one chart: requests (failures in red), tokens or latency.
+class ActivityChart extends StatelessWidget {
+  const ActivityChart({super.key, required this.series, required this.metric});
+
+  final TelemetrySeries series;
+  final Metric metric;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (metric) {
+      Metric.requests => ActivityBars(
+        series: series,
+        value: (x) => x.requests,
+        failed: (x) => x.failed,
+        format: (v) => compact(v.round()),
+        label: TelemetryCopy.metricRequests.toLowerCase(),
+      ),
+      Metric.tokens => ActivityBars(
+        series: series,
+        value: (x) => x.tokensIn + x.tokensOut,
+        format: (v) => compact(v.round()),
+        label: TelemetryCopy.metricTokens.toLowerCase(),
+      ),
+      Metric.latency => LatencyLines(series: series),
+    };
+  }
+}
+
+// ---- filters -----------------------------------------------------------------------
+
+/// Kind menu and, when a provider is chosen, a way to clear it.
+class FilterBar extends StatelessWidget {
+  const FilterBar({
+    super.key,
+    required this.kinds,
+    required this.kind,
+    required this.onKind,
+    this.provider,
+    this.onClearProvider,
+  });
+
+  final List<String> kinds;
+  final String? kind;
+  final ValueChanged<String?> onKind;
+  final String? provider;
+  final VoidCallback? onClearProvider;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Row(
+      children: [
+        PopupMenuButton<String?>(
+          tooltip: TelemetryCopy.kindMenu,
+          position: PopupMenuPosition.under,
+          onSelected: (v) {
+            Haptics.tap();
+            onKind(v);
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem<String?>(
+              value: null,
+              child: Text(TelemetryCopy.kindAll, style: TType.title(context)),
+            ),
+            for (final k in kinds)
+              PopupMenuItem<String?>(
+                value: k,
+                child: Text(
+                  kindLabel(k),
+                  style: TType.title(
+                    context,
+                    color: k == kind ? p.accent : null,
+                  ),
+                ),
+              ),
+          ],
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: TelemetrySizes.tabHeight,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${TelemetryCopy.kindMenu}  ',
+                  style: TType.secondary(context),
+                ),
+                Text(
+                  kind == null ? TelemetryCopy.kindAll : kindLabel(kind!),
+                  style: TType.secondary(
+                    context,
+                    color: p.textPrimary,
+                  ).copyWith(fontVariations: const [FontVariation.weight(600)]),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                AppIcon(
+                  AppIcons.expand,
+                  size: AppIconSize.sm,
+                  color: p.textSecondary,
+                ),
+              ],
+            ),
+          ),
         ),
+        const Spacer(),
+        if (provider != null)
+          InkWell(
+            onTap: () {
+              Haptics.tap();
+              onClearProvider?.call();
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: TelemetrySizes.tabHeight,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    providerLabel(provider!),
+                    style: TType.secondary(context, color: p.textPrimary)
+                        .copyWith(
+                          fontVariations: const [FontVariation.weight(600)],
+                        ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  AppIcon(
+                    AppIcons.close,
+                    size: AppIconSize.sm,
+                    color: p.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ---- rows ---------------------------------------------------------------------------
+
+/// Failure rate; red only above [TelemetrySizes.failWarn].
+Color failColor(BuildContext context, TelemetryAgg a) =>
+    a.failureRate > TelemetrySizes.failWarn
+    ? context.palette.accent
+    : context.palette.textTertiary;
+
+/// The Groq-style rate-limit line: "7.6k / 8k tokens left · resets in 1m".
+String? rateLimitLine(
+  Iterable<ModelTelemetry> models,
+  String provider,
+  DateTime now,
+) {
+  TelemetryRateLimit? best;
+  var bestRatio = 2.0;
+  for (final m in models) {
+    final r = m.rateLimit;
+    if (m.provider != provider || r == null) continue;
+    final lim = r.limitTokens ?? r.limitRequests;
+    final rem = r.remainingTokens ?? r.remainingRequests;
+    if (lim == null || rem == null || lim == 0) continue;
+    final ratio = rem / lim;
+    if (ratio < bestRatio) {
+      bestRatio = ratio;
+      best = r;
+    }
+  }
+  if (best == null) return null;
+  final tokens = best.limitTokens != null && best.remainingTokens != null;
+  final left = tokens ? best.remainingTokens! : best.remainingRequests!;
+  final limit = tokens ? best.limitTokens! : best.limitRequests!;
+  final unit = tokens ? TelemetryCopy.tokensLeft : TelemetryCopy.requestsLeft;
+  final reset = best.resetsAt;
+  return [
+    '${compact(left)} / ${compact(limit)} $unit',
+    if (reset != null && reset.isAfter(now))
+      '${TelemetryCopy.resetsIn} ${shortSpan(reset.difference(now))}',
+  ].join(TelemetryStrings.separator);
+}
+
+/// One provider: icon, name, sparkline, requests and failure rate.
+class ProviderRow extends StatelessWidget {
+  const ProviderRow({
+    super.key,
+    required this.provider,
+    required this.selected,
+    required this.onTap,
+    this.detail,
+  });
+
+  final NamedAgg provider;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// Rate-limit line, when the provider reports one.
+  final String? detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final a = provider.agg;
+    return InkWell(
+      onTap: () {
+        Haptics.tap();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: TelemetrySizes.rowPad),
+        child: Row(
+          children: [
+            AppIcon(
+              TelemetryIcons.provider(provider.name),
+              size: TelemetrySizes.providerIcon,
+              color: selected ? p.accent : p.textSecondary,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    providerLabel(provider.name),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TType.title(context),
+                  ),
+                  if (detail != null)
+                    Text(detail!, maxLines: 2, style: TType.secondary(context)),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Sparkline(values: provider.spark),
+            const SizedBox(width: AppSpacing.md),
+            SizedBox(
+              width: colWidth(context, TelemetrySizes.colRequests),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(compact(a.requests), style: TType.figure(context)),
+                  Text(
+                    pct(a.failureRate),
+                    style: TType.secondary(
+                      context,
+                      color: failColor(context, a),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Column captions above the models list.
+class ModelColumns extends StatelessWidget {
+  const ModelColumns({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget col(String t, double w) => SizedBox(
+      width: colWidth(context, w),
+      child: Text(
+        t,
+        textAlign: TextAlign.end,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TType.secondary(context, color: context.palette.textTertiary),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Row(
+        children: [
+          const Spacer(),
+          col(TelemetryCopy.colRequests, TelemetrySizes.colRequests + 8),
+          col(TelemetryCopy.colFail, TelemetrySizes.colFail),
+          col(TelemetryCopy.colP50, TelemetrySizes.colP50),
+        ],
+      ),
+    );
+  }
+}
+
+/// A key and value on one line (inline detail).
+class KeyValue extends StatelessWidget {
+  const KeyValue(this.label, this.value, {super.key, this.color});
+
+  final String label, value;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TType.secondary(context)),
+          const SizedBox(width: AppSpacing.lg),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: TType.secondary(
+                context,
+                color: color ?? context.palette.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One model: name and providers, requests, failure rate and p50; tap for
+/// first token, tokens, last call and recent errors.
+class ModelRow extends StatelessWidget {
+  const ModelRow({
+    super.key,
+    required this.group,
+    required this.open,
+    required this.onTap,
+    required this.now,
+    this.errors = const [],
+  });
+
+  final ModelGroup group;
+  final bool open;
+  final VoidCallback onTap;
+  final DateTime now;
+  final List<ErrorGroup> errors;
+
+  @override
+  Widget build(BuildContext context) {
+    final a = group.agg;
+    return InkWell(
+      onTap: () {
+        Haptics.tap();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: TelemetrySizes.rowPad),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                SizedBox(
-                  width: TelemetrySizes.eventTimeWidth,
-                  child: Text(
-                    clock(e.ts),
-                    style: t.caption.copyWith(color: p.textPrimary),
-                  ),
-                ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: TelemetrySizes.eventKindMax,
-                  ),
-                  child: Text(
-                    kindLabel(e.purpose),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: t.caption,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text(
-                    e.model ?? providerLabel(e.provider),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: t.caption.copyWith(color: p.textSecondary),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TType.title(context),
+                      ),
+                      Text(
+                        [
+                          for (final p in group.providers) providerLabel(p),
+                        ].join(TelemetryStrings.separator),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TType.secondary(context),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
                 SizedBox(
-                  width: TelemetrySizes.eventStatusWidth,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: StatusTag(ok: e.ok, code: e.errorCode),
+                  width: colWidth(context, TelemetrySizes.colRequests + 8),
+                  child: Text(
+                    compact(a.requests),
+                    textAlign: TextAlign.end,
+                    style: TType.figure(context),
+                  ),
+                ),
+                SizedBox(
+                  width: colWidth(context, TelemetrySizes.colFail),
+                  child: Text(
+                    pct(a.failureRate),
+                    textAlign: TextAlign.end,
+                    style: TType.secondary(
+                      context,
+                      color: failColor(context, a),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: colWidth(context, TelemetrySizes.colP50),
+                  child: Text(
+                    ms(a.latencyP50),
+                    textAlign: TextAlign.end,
+                    style: TType.secondary(
+                      context,
+                      color: context.palette.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.xxs),
-            Row(
-              children: [
-                const SizedBox(width: TelemetrySizes.eventTimeWidth),
-                Expanded(
-                  child: Text(
-                    [
-                      ms(e.latencyMs),
-                      if (e.ttftMs != null)
-                        '${TelemetryStrings.ttft} ${ms(e.ttftMs)}',
-                      if (tokens > 0)
-                        '${compact(tokens)} ${TelemetryStrings.tokensShort}',
-                      if (e.attempt != null && e.attempt! > 1)
-                        '${TelemetryStrings.times}${e.attempt}',
-                      e.userEmail ?? TelemetryStrings.system,
-                    ].join(TelemetryStrings.separator),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: t.caption,
-                  ),
-                ),
-              ],
+            AnimatedSize(
+              duration: TelemetryDurations.expand,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: open
+                  ? _details(context)
+                  : const SizedBox(width: double.infinity),
             ),
-            if (open) _details(context),
           ],
         ),
       ),
@@ -637,164 +873,214 @@ class EventRow extends StatelessWidget {
   }
 
   Widget _details(BuildContext context) {
-    final e = event;
     final p = context.palette;
-    String v(Object? x) => x == null ? AppStrings.dash : '$x';
+    final a = group.agg;
+    final codes = group.failuresByCode.entries.toList()
+      ..sort((x, y) => y.value.compareTo(x.value));
+    final cool = group.cooldownLeft(now);
+    final last = group.lastError;
     return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      padding: const EdgeInsets.only(top: AppSpacing.md),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          InfoRow(TelemetryStrings.fieldTime, e.ts.toIso8601String()),
-          InfoRow(TelemetryStrings.fieldProvider, providerLabel(e.provider)),
-          InfoRow(TelemetryStrings.fieldModel, v(e.model)),
-          InfoRow(TelemetryStrings.fieldKind, e.kind.toUpperCase()),
-          InfoRow(TelemetryStrings.fieldPurpose, kindLabel(e.purpose)),
-          InfoRow(
-            TelemetryStrings.fieldStatus,
-            '${e.ok ? TelemetryStrings.statusOk : TelemetryStrings.statusFailed}'
-            '${e.status == null ? '' : ' ${e.status}'}',
-            valueColor: e.ok ? null : p.accent,
+          KeyValue(
+            TelemetryCopy.detailTtft,
+            '${ms(a.ttftP50)}${TelemetryStrings.separator}${TelemetryStrings.avg.toLowerCase()} ${ms(a.ttftAvg)}',
           ),
-          if (!e.ok) ...[
-            InfoRow(
-              TelemetryStrings.fieldError,
-              v(e.errorCode?.toUpperCase()),
-              valueColor: p.accent,
+          KeyValue(
+            TelemetryCopy.detailLatency,
+            '${ms(a.latencyP50)}${TelemetryStrings.slash}${ms(a.latencyP95)}',
+          ),
+          KeyValue(TelemetryCopy.detailTokens, inOut(a.tokensIn, a.tokensOut)),
+          KeyValue(
+            TelemetryCopy.detailLastCall,
+            a.lastAt == null
+                ? TelemetryCopy.detailNever
+                : agoShort(a.lastAt!, now),
+          ),
+          if (a.unknown > 0)
+            KeyValue(TelemetryCopy.noStatus, grouped(a.unknown)),
+          if (cool != null)
+            KeyValue(
+              TelemetryCopy.detailCooldown,
+              countdown(cool),
+              color: p.accent,
             ),
-            if (e.errorMessage != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              SelectableText(e.errorMessage!, style: context.text.bodySmall),
-            ],
-          ],
-          InfoRow(TelemetryStrings.fieldLatency, ms(e.latencyMs)),
-          InfoRow(TelemetryStrings.fieldTtft, ms(e.ttftMs)),
-          InfoRow(
-            TelemetryStrings.fieldTokens,
-            '${grouped(e.promptTokens)}${TelemetryStrings.slash}'
-            '${grouped(e.completionTokens)}',
-          ),
-          InfoRow(TelemetryStrings.fieldCount, '${e.count}'),
-          InfoRow(TelemetryStrings.fieldAttempt, v(e.attempt)),
-          InfoRow(
-            TelemetryStrings.fieldUser,
-            e.userEmail ?? e.userId ?? TelemetryStrings.system,
-          ),
-          InfoRow(TelemetryStrings.fieldRequest, v(e.requestId)),
-          InfoRow(TelemetryStrings.fieldConversation, v(e.conversationId)),
-          InfoRow(TelemetryStrings.fieldId, e.id),
+          if (codes.isNotEmpty)
+            KeyValue(
+              TelemetryCopy.detailErrors,
+              [
+                for (final e in codes)
+                  '${e.key} ${TelemetryStrings.times}${e.value}',
+              ].join(TelemetryStrings.separator),
+              color: p.accent,
+            ),
+          if (last != null)
+            KeyValue(
+              TelemetryCopy.detailLastError,
+              '${agoShort(last.at, now)}'
+              '${last.message == null ? '' : '\n${last.message}'}',
+            ),
+          for (final e in errors)
+            for (final m in e.messages.keys.take(1))
+              KeyValue(e.code, '${TelemetryStrings.times}${e.count}  $m'),
         ],
       ),
     );
   }
 }
 
-/// Requests, failures and tokens for one named slice (provider or kind).
-class AggLine extends StatelessWidget {
-  const AggLine({super.key, required this.name, required this.agg, this.icon});
+/// A failure group: code in red, model, count and last seen; tap for messages.
+class ErrorRow extends StatelessWidget {
+  const ErrorRow({
+    super.key,
+    required this.group,
+    required this.open,
+    required this.onTap,
+    required this.now,
+  });
 
-  final String name;
-  final TelemetryAgg agg;
-  final AppIconData? icon;
+  final ErrorGroup group;
+  final bool open;
+  final VoidCallback onTap;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            AppIcon(icon!, size: AppIconSize.sm, color: p.textSecondary),
-            const SizedBox(width: AppSpacing.md),
+    final messages = group.messages.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return InkWell(
+      onTap: () {
+        Haptics.tap();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: TelemetrySizes.rowPad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group.code,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TType.title(context, color: p.accent),
+                      ),
+                      Text(
+                        group.model,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TType.secondary(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${TelemetryStrings.times}${grouped(group.count)}',
+                      style: TType.figure(context),
+                    ),
+                    if (group.lastAt != null)
+                      Text(
+                        agoShort(group.lastAt!, now),
+                        style: TType.secondary(context, color: p.textTertiary),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            AnimatedSize(
+              duration: TelemetryDurations.expand,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: open && messages.isNotEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.sm),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final m in messages)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppSpacing.xs,
+                              ),
+                              child: Text(
+                                '${m.key}  ${TelemetryStrings.times}${m.value}',
+                                style: TType.secondary(context),
+                              ),
+                            ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
           ],
-          Expanded(
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Flexible(
-            flex: 2,
-            child: Text(
-              [
-                grouped(agg.requests),
-                if (agg.failed > 0)
-                  '${agg.failed} ${TelemetryStrings.statusFailed}',
-                '${compact(agg.tokens)} ${TelemetryStrings.tokensShort}',
-                ms(agg.latencyP50),
-              ].join(TelemetryStrings.separator),
-              textAlign: TextAlign.end,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: t.caption.copyWith(
-                color: agg.failed > 0 ? p.accent : p.textSecondary,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Who called: today and in the window.
-class UserLine extends StatelessWidget {
-  const UserLine({super.key, required this.user});
+/// Who called: email, role, and requests in range.
+class UserRow extends StatelessWidget {
+  const UserRow({super.key, required this.user});
 
   final UserTelemetry user;
 
   @override
   Widget build(BuildContext context) {
     final u = user;
-    final t = context.text;
     final p = context.palette;
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.symmetric(vertical: TelemetrySizes.rowPad),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  u.email ?? TelemetryStrings.system,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  u.email ?? TelemetryCopy.system,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: t.label,
+                  style: TType.title(context),
                 ),
-              ),
-              if (u.role != null) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Text(u.role!.toUpperCase(), style: t.caption),
+                Text(
+                  [
+                    if (u.role != null) u.role!,
+                    '${TelemetryCopy.today} ${grouped(u.todayRequests)}'
+                        '${u.todayFailed > 0 ? ' · ${u.todayFailed} ${TelemetryCopy.summaryFailed.toLowerCase()}' : ''}',
+                  ].join(TelemetryStrings.separator),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TType.secondary(
+                    context,
+                    color: u.todayFailed > 0 ? p.accent : null,
+                  ),
+                ),
               ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(compact(u.window.requests), style: TType.figure(context)),
+              Text(
+                '${compact(u.window.tokens)} ${TelemetryStrings.tokensShort.toLowerCase()}',
+                style: TType.secondary(context, color: p.textTertiary),
+              ),
             ],
-          ),
-          InfoRow(
-            TelemetryStrings.today,
-            '${grouped(u.todayRequests)} ${TelemetryStrings.requests}'
-            '${TelemetryStrings.separator}${compact(u.todayTokens)} '
-            '${TelemetryStrings.tokensShort}'
-            '${u.todayFailed > 0 ? '${TelemetryStrings.separator}${u.todayFailed} ${TelemetryStrings.failed}' : ''}',
-            valueColor: u.todayFailed > 0 ? p.accent : null,
-          ),
-          InfoRow(
-            TelemetryStrings.inWindow,
-            '${grouped(u.window.requests)} ${TelemetryStrings.requests}'
-            '${TelemetryStrings.separator}${compact(u.window.tokens)} '
-            '${TelemetryStrings.tokensShort}'
-            '${u.window.failed > 0 ? '${TelemetryStrings.separator}${u.window.failed} ${TelemetryStrings.failed}' : ''}',
-            valueColor: u.window.failed > 0 ? p.accent : null,
           ),
         ],
       ),
@@ -802,66 +1088,108 @@ class UserLine extends StatelessWidget {
   }
 }
 
-/// A grouped failure: code, model, count and the message.
-class ErrorLine extends StatelessWidget {
-  const ErrorLine({super.key, required this.error});
+/// One recent call; failures show a code, tap for the details.
+class CallRow extends StatelessWidget {
+  const CallRow({
+    super.key,
+    required this.event,
+    required this.open,
+    required this.onTap,
+  });
 
-  final TopError error;
+  final TelemetryEvent event;
+  final bool open;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final e = error;
-    final t = context.text;
+    final e = event;
     final p = context.palette;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              AppIcon(AppIcons.alert, size: AppIconSize.xs, color: p.accent),
-              const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
-              Flexible(
-                flex: 2,
-                child: Text(
-                  (e.code ?? TelemetryStrings.statusFailed).toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.caption.copyWith(color: p.accent),
+    final tokens = e.tokens;
+    return InkWell(
+      onTap: () {
+        Haptics.tap();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: TelemetrySizes.eventTimeWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                    child: Text(clock(e.ts), style: TType.stamp(context)),
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  '${providerLabel(e.provider)}${TelemetryStrings.separator}'
-                  '${e.model ?? TelemetryStrings.noModel}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.caption,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        e.model ?? providerLabel(e.provider),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TType.title(
+                          context,
+                        ).copyWith(fontSize: AppFontSize.bodySmall),
+                      ),
+                      Text(
+                        [
+                          kindLabel(e.purpose),
+                          ms(e.latencyMs),
+                          if (tokens > 0)
+                            '${compact(tokens)} ${TelemetryStrings.tokensShort.toLowerCase()}',
+                        ].join(TelemetryStrings.separator),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TType.secondary(context),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Text(
-                '${TelemetryStrings.times}${grouped(e.count)}',
-                style: t.caption.copyWith(color: p.textPrimary),
-              ),
-            ],
-          ),
-          if (e.message != null)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xxs),
-              child: Text(
-                e.message!,
-                maxLines: TelemetrySizes.errorLines,
-                overflow: TextOverflow.ellipsis,
-                style: t.bodySmall,
-              ),
+                if (e.failed)
+                  Padding(
+                    padding: const EdgeInsets.only(left: AppSpacing.sm),
+                    child: Text(
+                      e.errorCode ?? '${e.status}',
+                      style: TType.secondary(context, color: p.accent),
+                    ),
+                  )
+                else if (e.unknown)
+                  Padding(
+                    padding: const EdgeInsets.only(left: AppSpacing.sm),
+                    child: Text(
+                      AppStrings.dash,
+                      style: TType.secondary(context, color: p.textTertiary),
+                    ),
+                  ),
+              ],
             ),
-          if (e.lastAt != null) Text(agoLabel(e.lastAt!), style: t.caption),
-        ],
+            if (open)
+              Padding(
+                padding: const EdgeInsets.only(
+                  top: AppSpacing.xs,
+                  left: TelemetrySizes.eventTimeWidth,
+                ),
+                child: Text(
+                  [
+                    providerLabel(e.provider),
+                    if (e.status != null) '${e.status}',
+                    if (e.ttftMs != null)
+                      '${TelemetryStrings.ttft.toLowerCase()} ${ms(e.ttftMs)}',
+                    e.userEmail ?? TelemetryCopy.system,
+                    ?e.errorMessage,
+                  ].join(TelemetryStrings.separator),
+                  style: TType.secondary(context),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

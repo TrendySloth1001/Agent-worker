@@ -142,22 +142,49 @@ abstract final class TelemetryStrings {
   static const statusFailed = 'FAIL';
 
   // Units.
-  static const ms = 'MS';
-  static const seconds = 'S';
+  static const ms = 'ms';
+  static const seconds = 's';
   static const percent = '%';
   static const tokensShort = 'TOK';
   static const slash = ' / ';
   static const times = '×';
   static const separator = ' · ';
   static const noModel = '(no model)';
+  static const providerNames = {
+    'groq': 'Groq',
+    'nvidia': 'NVIDIA',
+    'openrouter': 'OpenRouter',
+    'ollama': 'Ollama',
+    'github': 'GitHub',
+    'web': 'Web',
+  };
 }
 
 abstract final class TelemetrySizes {
+  // Plain layout.
+  static const sectionTop = 32.0;
+  static const rowPad = 14.0;
+  static const summaryNumber = 26.0;
+  static const summaryMinHeight = 72.0;
+  static const sparkWidth = 56.0;
+  static const sparkHeight = 24.0;
+  static const sparkStroke = 1.5;
+  static const colRequests = 52.0;
+  static const colFail = 48.0;
+  static const colP50 = 52.0;
+  static const providerIcon = 20.0;
+  static const tabUnderline = 2.0;
+  static const tabHeight = 40.0;
+  static const callsShown = 8;
+  static const callsMore = 30;
+  static const failWarn = 0.05;
+  static const gridAlpha = 0.4;
+
   static const statTileMinWidth = 96.0;
   static const statColumns = 3;
   static const chartHeight = 150.0;
   static const chartLeftAxis = 36.0;
-  static const chartBottomAxis = 18.0;
+  static const chartBottomAxis = 26.0;
   static const chartXLabels = 4;
   static const chartYTicks = 3;
   static const chartLineWidth = 2.5;
@@ -195,6 +222,7 @@ abstract final class TelemetrySizes {
 abstract final class TelemetryDurations {
   static const timeout = Duration(seconds: 15);
   static const pulse = Duration(milliseconds: 900);
+  static const expand = Duration(milliseconds: 200);
 
   /// Live events trigger a refresh of totals and charts at most this often.
   static const liveRefresh = Duration(seconds: 8);

@@ -67,6 +67,57 @@ abstract final class TelemetryCopy {
   static const empty = 'No calls in this window';
   static const emptyLog = 'No events yet';
   static const bucketLabels = {'1m': '1 min', '5m': '5 min', '1h': '1 hour'};
+
+  // Redesigned plain layout.
+  static const activity = 'Activity';
+  static const metricRequests = 'Requests';
+  static const metricTokens = 'Tokens';
+  static const metricLatency = 'Latency';
+  static const summaryRequests = 'Requests';
+  static const summaryFailed = 'Failed';
+  static const summaryTokens = 'Tokens';
+  static const summaryP50 = 'p50 latency';
+  static const unknownNote = 'without a recorded outcome (older rows)';
+  static const kindMenu = 'Kind';
+  static const kindAll = 'All kinds';
+  static const providerFiltered = 'Showing';
+  static const clearFilter = 'Clear';
+  static const colRequests = 'Calls';
+  static const colFail = 'Failed';
+  static const colP50 = 'p50';
+  static const modelsUnused = 'Unused models hidden';
+  static const webSearch = 'Web search';
+  static const pageFetch = 'Page fetch';
+  static const embeddings = 'Embeddings';
+  static const transcription = 'Transcription';
+  static const github = 'GitHub';
+  static const other = 'Other';
+  static const perTurn = 'Cost per message';
+  static const turnMessages = 'Messages';
+  static const turnExtraCalls = 'Extra calls';
+  static const turnTtft = 'First token';
+  static const turnExtraNote = 'Extra calls: other models, embeddings, searches and page fetches.';
+  static const errors = 'Errors';
+  static const recentCalls = 'Recent calls';
+  static const showMore = 'Show more';
+  static const showLess = 'Show less';
+  static const detailTtft = 'Time to first token';
+  static const detailTokens = 'Tokens in / out';
+  static const detailLastCall = 'Last call';
+  static const detailLatency = 'Latency p50 / p95';
+  static const detailErrors = 'Errors';
+  static const detailLastError = 'Last error';
+  static const detailCooldown = 'Cooling down';
+  static const detailNever = 'Never';
+  static const tokensLeft = 'tokens left';
+  static const requestsLeft = 'requests left';
+  static const resetsIn = 'resets in';
+  static const ago = 'ago';
+  static const calls = 'calls';
+  static const today = 'Today';
+  static const inWindow = 'In range';
+  static const system = 'System and background';
+  static const noStatus = 'no status';
 }
 
 abstract final class AboutCopy {

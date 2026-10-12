@@ -1,4 +1,5 @@
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/constants/telemetry.dart';
 import '../format.dart';
 
@@ -41,8 +42,26 @@ String countdown(Duration d) {
 String inOut(int a, int b) =>
     '${compact(a)}${TelemetryStrings.slash}${compact(b)}';
 
-/// Display name of a provider id.
-String providerLabel(String id) => id.toUpperCase();
+/// Display name of a provider id: groq -> Groq, nvidia -> NVIDIA.
+String providerLabel(String id) =>
+    TelemetryStrings.providerNames[id] ??
+    (id.isEmpty ? id : '${id[0].toUpperCase()}${id.substring(1)}');
 
-/// Purpose labels arrive kebab-cased: table-draft -> TABLE DRAFT.
-String kindLabel(String k) => k.replaceAll('-', ' ').toUpperCase();
+/// Purpose labels arrive kebab-cased: table-draft -> Table draft.
+String kindLabel(String k) {
+  final s = k.replaceAll('-', ' ');
+  return s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+}
+
+/// 5m, 2h, 3d: a short span in lower case.
+String shortSpan(Duration d) {
+  if (d.inDays >= 1) return '${d.inDays}d';
+  if (d.inHours >= 1) return '${d.inHours}h';
+  return '${d.inMinutes < 1 ? 1 : d.inMinutes}m';
+}
+
+/// 5m ago.
+String agoShort(DateTime at, DateTime now) {
+  final d = now.difference(at);
+  return '${shortSpan(d.isNegative ? Duration.zero : d)} ${TelemetryCopy.ago}';
+}

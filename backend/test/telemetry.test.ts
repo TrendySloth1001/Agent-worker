@@ -164,3 +164,35 @@ test("events: newest first, cursor paging and filters", needsDb, async () => {
     assert.ok(legacy.events.every((e) => e.model === "b"));
   });
 });
+
+test("overview: legacy rows without status or error are unknown, turn rows are summarised apart", needsDb, async () => {
+  await rolledBack(async (c) => {
+    const provider = `t-${randomUUID().slice(0, 8)}`;
+    const ts = new Date(Date.now() - 60_000);
+    // Same statement as migration 20261013100000 (rolled back with the rest), for databases that predate it.
+    await c.$executeRawUnsafe(`ALTER TABLE usage_events DROP CONSTRAINT IF EXISTS usage_events_kind_check`);
+    await c.$executeRawUnsafe(`ALTER TABLE usage_events ADD CONSTRAINT usage_events_kind_check CHECK (kind IN ('chat','embed','search','fetch','transcribe','github','turn'))`);
+    await c.usageEvent.createMany({
+      data: [
+        { provider, kind: "chat", model: "a", ok: true, status: 200, ts },
+        { provider, kind: "chat", model: "a", ok: false, status: 503, ts },
+        { provider, kind: "chat", model: "a", ok: false, errorCode: "timeout", ts },
+        { provider, kind: "chat", model: "a", ok: false, ts }, // legacy: neither status nor error
+        { provider, kind: "turn", model: "turn", purpose: "turn-summary", ok: true, count: 4, ttftMs: 800, latencyMs: 3000, ts },
+        { provider, kind: "turn", model: "turn", purpose: "turn-summary", ok: true, count: 2, ttftMs: 400, latencyMs: 2000, ts },
+      ],
+    });
+    const o = await overview(c, "1h", { provider });
+    assert.equal(o.totals.requests, 4);
+    assert.equal(o.totals.failed, 2);
+    assert.equal(o.totals.unknown, 1);
+    assert.equal(o.totals.ok, 1);
+    assert.equal(o.providers[0].spark.length, 24);
+    assert.equal(o.providers[0].spark.reduce((s, x) => s + x, 0), 4);
+    assert.equal(o.turns?.turns, 2);
+    assert.equal(o.turns?.auxAvg, 3);
+    assert.equal(o.turns?.ttftAvg, 600);
+    const failed = await events(c, 50, null, { provider, ok: false });
+    assert.equal(failed.events.length, 2);
+  });
+});
