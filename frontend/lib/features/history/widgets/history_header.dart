@@ -56,6 +56,7 @@ class SidebarIconButton extends StatelessWidget {
 
 /// Top of the sidebar: the wordmark with search and new chat, or the search
 /// field once it is open, or BACK + ARCHIVED while the archive is shown.
+/// [selectionBar], when set, replaces all of them (chats are being picked).
 class HistoryHeader extends StatelessWidget {
   const HistoryHeader({
     super.key,
@@ -68,6 +69,7 @@ class HistoryHeader extends StatelessWidget {
     required this.onCloseSearch,
     required this.onNewChat,
     required this.onBack,
+    this.selectionBar,
   });
 
   final bool searchOpen;
@@ -79,6 +81,7 @@ class HistoryHeader extends StatelessWidget {
   final VoidCallback onCloseSearch;
   final VoidCallback onNewChat;
   final VoidCallback onBack;
+  final Widget? selectionBar;
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +90,12 @@ class HistoryHeader extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: HistorySizes.headerHeight),
       child: AnimatedSwitcher(
         duration: reduce ? Duration.zero : HistoryDurations.swap,
-        child: searchOpen
+        child: selectionBar != null
+            ? KeyedSubtree(
+                key: const ValueKey('selection'),
+                child: selectionBar!,
+              )
+            : searchOpen
             ? _searchRow(context)
             : archived
             ? _archivedRow(context)

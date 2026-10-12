@@ -111,6 +111,9 @@ class ConversationList extends StatelessWidget {
       onArchive: () => onArchive(c),
       onRename: (title) => onRename(c, title),
       onCancelRename: controller.cancelRename,
+      selecting: controller.selecting,
+      selected: controller.isSelected(c.id),
+      onToggle: () => controller.toggleSelected(c.id),
     );
 
     final slivers = <Widget>[];

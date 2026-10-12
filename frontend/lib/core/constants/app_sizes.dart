@@ -200,6 +200,9 @@ abstract final class AppDurations {
   /// Saving may also name the chat with a model, so it gets longer.
   static const conversationTimeout = Duration(seconds: 40);
   static const mergeTimeout = Duration(seconds: 60);
+
+  /// Deleting many chats removes their files too.
+  static const bulkDeleteTimeout = Duration(seconds: 120);
   static const imageFade = Duration(milliseconds: 200);
   static const iconFetchTimeout = Duration(seconds: 8);
   static const searchDebounce = Duration(milliseconds: 300);

@@ -7,6 +7,7 @@ import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/about.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/chat_cleanup.dart';
 import '../../core/constants/connections.dart';
 import '../../core/constants/memory.dart';
 import '../../core/constants/notify_copy.dart';
@@ -32,6 +33,7 @@ import 'settings_controller.dart';
 import 'telemetry/telemetry_screen.dart';
 import 'widgets/appearance_tiles.dart';
 import 'widgets/connections_section.dart';
+import 'widgets/delete_chats.dart';
 import 'widgets/model_choice.dart';
 import 'widgets/notify_tiles.dart';
 import 'widgets/personalization.dart';
@@ -473,6 +475,17 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 onTap: () =>
                     Navigator.push(c, settingsRoute(const KnowledgeScreen())),
               ),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: ChatCleanupStrings.section,
+          items: [
+            const SettingItem(
+              id: 'delete-chats',
+              title: ChatCleanupStrings.deleteAll,
+              keywords: ChatCleanupStrings.deleteAllKeywords,
+              build: _deleteChatsTile,
             ),
           ],
         ),
@@ -1114,3 +1127,5 @@ class _SectionView extends StatelessWidget {
 Widget _permissionTile(BuildContext context) => const NotifyPermissionTile();
 
 Widget _testTile(BuildContext context) => const NotifyTestTile();
+
+Widget _deleteChatsTile(BuildContext context) => const DeleteAllChatsTile();
