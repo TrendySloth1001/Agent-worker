@@ -25,7 +25,8 @@ String citeDomain(Citation c) {
 /// Short label for a source: `developer.mozilla.org` -> `mozilla`.
 String citeShortName(Citation c) {
   // The user's own docs and files are named by their title, not a domain.
-  final own = c.kind == CitationKind.doc ||
+  final own =
+      c.kind == CitationKind.doc ||
       c.kind == CitationKind.file ||
       (c.kind == CitationKind.kb && (c.site == 'doc' || c.site == 'file'));
   if (own && c.title.trim().isNotEmpty) {

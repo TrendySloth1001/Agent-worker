@@ -32,7 +32,8 @@ class SourceTile extends StatelessWidget {
   final VoidCallback onLongPress;
 
   /// Notes, files and docs have an internal id as address, not worth showing.
-  bool get _hasInternalUri => const {'note', 'file', 'doc'}.contains(source.type);
+  bool get _hasInternalUri =>
+      const {'note', 'file', 'doc'}.contains(source.type);
 
   String _status() {
     switch (source.status) {

@@ -63,7 +63,9 @@ class FakeDocsServer {
     }
     if (path.endsWith('/ask')) {
       if (askStatus != 201) {
-        return json({'error': {'message': 'down'}}, askStatus);
+        return json({
+          'error': {'message': 'down'},
+        }, askStatus);
       }
       final q = jsonDecode(bodies.last) as Map<String, dynamic>;
       return json({

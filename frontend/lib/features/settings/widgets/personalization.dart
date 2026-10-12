@@ -4,6 +4,7 @@ import '../../../core/app_scope.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -13,17 +14,18 @@ import '../../../data/assist_api.dart';
 import '../../../data/chat_api.dart';
 import '../settings_controller.dart';
 
-/// Rows for the PERSONALIZATION section of Settings.
-class PersonalizationRows extends StatelessWidget {
-  const PersonalizationRows({super.key});
+/// Tone ids to display labels.
+const toneLabels = {
+  'friendly': AppStrings.toneFriendly,
+  'professional': AppStrings.toneProfessional,
+  'casual': AppStrings.toneCasual,
+  'direct': AppStrings.toneDirect,
+  'enthusiastic': AppStrings.toneEnthusiastic,
+};
 
-  static const _toneLabels = {
-    'friendly': AppStrings.toneFriendly,
-    'professional': AppStrings.toneProfessional,
-    'casual': AppStrings.toneCasual,
-    'direct': AppStrings.toneDirect,
-    'enthusiastic': AppStrings.toneEnthusiastic,
-  };
+/// The "You" rows: name, role, about, sign-off.
+class ProfileRows extends StatelessWidget {
+  const ProfileRows({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +34,7 @@ class PersonalizationRows extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _FieldRow(
-          label: AppStrings.profileName,
+          label: SettingsStrings.nameLabel,
           icon: AppIcons.profileName,
           value: s.name,
           hint: AppStrings.nameHint,
@@ -40,7 +42,7 @@ class PersonalizationRows extends StatelessWidget {
           onSave: s.setName,
         ),
         _FieldRow(
-          label: AppStrings.profileRole,
+          label: SettingsStrings.roleLabel,
           icon: AppIcons.profileRole,
           value: s.role,
           hint: AppStrings.roleHint,
@@ -48,7 +50,7 @@ class PersonalizationRows extends StatelessWidget {
           onSave: s.setRole,
         ),
         _FieldRow(
-          label: AppStrings.profileAbout,
+          label: SettingsStrings.aboutYouLabel,
           icon: AppIcons.profileAbout,
           value: s.about,
           hint: AppStrings.aboutHint,
@@ -58,15 +60,39 @@ class PersonalizationRows extends StatelessWidget {
           onSave: s.setAbout,
         ),
         _FieldRow(
-          label: AppStrings.profileLanguage,
+          label: SettingsStrings.signatureLabel,
+          icon: AppIcons.profileSignature,
+          value: s.signature,
+          hint: AppStrings.signatureHint,
+          max: AppSizes.profileSignatureMax,
+          multiline: true,
+          onSave: s.setSignature,
+        ),
+      ],
+    );
+  }
+}
+
+/// Language and free-form instructions for replies.
+class ReplyTextRows extends StatelessWidget {
+  const ReplyTextRows({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context).settings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _FieldRow(
+          label: SettingsStrings.languageLabel,
           icon: AppIcons.profileLanguage,
           value: s.language,
-          hint: AppStrings.languageHint,
+          hint: SettingsStrings.languageHint,
           max: AppSizes.profileLanguageMax,
           onSave: s.setLanguage,
         ),
         _FieldRow(
-          label: AppStrings.profileInstructions,
+          label: SettingsStrings.instructionsLabel,
           icon: AppIcons.profileInstructions,
           value: s.customInstructions,
           hint: AppStrings.instructionsHint,
@@ -75,21 +101,26 @@ class PersonalizationRows extends StatelessWidget {
           aiField: ProfileAiStrings.fieldInstructions,
           onSave: s.setCustomInstructions,
         ),
-        _FieldRow(
-          label: AppStrings.profileSignature,
-          icon: AppIcons.profileSignature,
-          value: s.signature,
-          hint: AppStrings.signatureHint,
-          max: AppSizes.profileSignatureMax,
-          multiline: true,
-          onSave: s.setSignature,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Text(AppStrings.profileTone, style: context.text.label),
+      ],
+    );
+  }
+}
+
+/// Fine tone and length controls (under "Customise").
+class ToneLengthControls extends StatelessWidget {
+  const ToneLengthControls({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context).settings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(SettingsStrings.toneLabel, style: context.text.label),
         const SizedBox(height: AppSpacing.sm),
         _toneChips(context, s),
         const SizedBox(height: AppSpacing.lg),
-        Text(AppStrings.profileLength, style: context.text.label),
+        Text(SettingsStrings.lengthLabel, style: context.text.label),
         const SizedBox(height: AppSpacing.sm),
         Segmented<String>(
           value: s.length,
@@ -118,28 +149,33 @@ class PersonalizationRows extends StatelessWidget {
       children: [
         for (final id in SettingsController.tones)
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () {
               Haptics.tap();
               s.setTone(s.tone == id ? '' : id);
             },
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.xs,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-                color: s.tone == id ? p.textPrimary : Colors.transparent,
-                border: Border.all(
-                  color: s.tone == id ? p.textPrimary : p.borderStrong,
-                  width: AppBorder.thin,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: AppSizes.minTap),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.xs,
                 ),
-              ),
-              child: IconLabel(
-                icon: AppIcons.tone(id),
-                text: _toneLabels[id]!,
-                style: context.text.caption,
-                color: s.tone == id ? p.textInverse : p.textSecondary,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  color: s.tone == id ? p.textPrimary : Colors.transparent,
+                  border: Border.all(
+                    color: s.tone == id ? p.textPrimary : p.borderStrong,
+                    width: AppBorder.thin,
+                  ),
+                ),
+                child: IconLabel(
+                  icon: AppIcons.tone(id),
+                  text: toneLabels[id]!,
+                  style: context.text.caption,
+                  color: s.tone == id ? p.textInverse : p.textSecondary,
+                ),
               ),
             ),
           ),
@@ -180,13 +216,13 @@ class _FieldRow extends StatelessWidget {
         Haptics.tap();
         _showEditor(context);
       },
-      child: SizedBox(
-        height: AppSizes.sourceRowHeight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: AppSizes.minTap),
         child: Row(
           children: [
             AppIcon(icon, size: AppIconSize.xs, color: p.textSecondary),
             const SizedBox(width: AppSpacing.sm),
-            Text(label, style: t.label),
+            Flexible(child: Text(label, style: t.label)),
             const SizedBox(width: AppSpacing.lg),
             Expanded(
               child: Text(

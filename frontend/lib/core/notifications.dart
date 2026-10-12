@@ -278,7 +278,9 @@ class AppNotifications with WidgetsBindingObserver {
   }) async {
     await cancelDocProgress();
     await _show(
-      id: NotifyConfig.docDoneBase + (docId.hashCode & NotifyConfig.docDoneMask),
+      id:
+          NotifyConfig.docDoneBase +
+          (docId.hashCode & NotifyConfig.docDoneMask),
       title: title,
       body: body,
       payload: NotifyConfig.docPayload + docId,

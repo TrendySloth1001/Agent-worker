@@ -105,6 +105,17 @@ class _AppState extends State<App> {
           themeMode: widget.settings.themeMode,
           navigatorKey: _navigator,
           scaffoldMessengerKey: AppMessenger.key,
+          builder: (context, child) {
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(
+                textScaler: TextScaler.linear(
+                  media.textScaler.scale(1) * widget.settings.textScaleFactor,
+                ),
+              ),
+              child: child!,
+            );
+          },
           home: const AuthGate(),
         ),
       ),

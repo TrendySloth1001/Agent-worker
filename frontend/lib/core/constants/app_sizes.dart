@@ -97,6 +97,9 @@ abstract final class AppSizes {
   static const mermaidMaxInlineHeight = 360.0;
   static const sourceRowHeight = 40.0;
   static const rowHeight = 52.0;
+
+  /// Minimum touch target (Android guideline).
+  static const minTap = 48.0;
   static const drawerWidthFactor = 0.85;
   static const drawerMaxWidth = 340.0;
   static const drawerButtonHeight = 40.0;

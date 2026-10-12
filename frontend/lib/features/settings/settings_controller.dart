@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_prefs.dart';
 import '../../core/constants/app_sizes.dart';
+import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 
 /// Persisted user preferences.
@@ -26,6 +27,11 @@ class SettingsController extends ChangeNotifier {
     tone = tones.contains(savedTone) ? savedTone! : '';
     final savedLength = _prefs?.getString(AppPrefs.profileLength);
     length = lengths.contains(savedLength) ? savedLength! : 'detailed';
+    final savedScale = _prefs?.getString(AppPrefs.textScale);
+    textScale = SettingsSizes.textScales.containsKey(savedScale)
+        ? savedScale!
+        : 'normal';
+    modelChoice = _prefs?.getString(AppPrefs.modelChoice) ?? 'auto';
     browserPackage = _prefs?.getString(AppPrefs.browserPackage) ?? '';
     browserLabel = _prefs?.getString(AppPrefs.browserLabel) ?? '';
     Haptics.enabled = hapticsOn;
@@ -70,6 +76,12 @@ class SettingsController extends ChangeNotifier {
   late String name, role, about, language, customInstructions, signature;
   late String tone;
   late String length;
+
+  /// One of [SettingsSizes.textScales]' keys.
+  late String textScale;
+
+  /// 'auto', 'fast', 'smart' or a raw model id.
+  late String modelChoice;
 
   /// Remembered browser for external links. Empty means the system default.
   late String browserPackage, browserLabel;
@@ -207,6 +219,73 @@ class SettingsController extends ChangeNotifier {
     browserLabel = package.isEmpty ? '' : label;
     _prefs?.setString(AppPrefs.browserPackage, browserPackage);
     _prefs?.setString(AppPrefs.browserLabel, browserLabel);
+    notifyListeners();
+  }
+
+  double get textScaleFactor => SettingsSizes.textScales[textScale] ?? 1.0;
+
+  void setTextScale(String id) {
+    if (!SettingsSizes.textScales.containsKey(id)) return;
+    textScale = id;
+    _prefs?.setString(AppPrefs.textScale, id);
+    notifyListeners();
+  }
+
+  void setModelChoice(String id) {
+    modelChoice = id.isEmpty ? 'auto' : id;
+    _prefs?.setString(AppPrefs.modelChoice, modelChoice);
+    notifyListeners();
+  }
+
+  /// The model id to request, or null to let the server pick (Auto).
+  String? get modelId => switch (modelChoice) {
+    'auto' => null,
+    'fast' => SettingsSizes.fastModelId,
+    'smart' => SettingsSizes.smartModelId,
+    final raw => raw,
+  };
+
+  /// Applies a reply-style preset (tone and length together).
+  void applyReplyStyle(String tone, String length) {
+    this.tone = tone;
+    this.length = length;
+    _prefs?.setString(AppPrefs.profileTone, tone);
+    _prefs?.setString(AppPrefs.profileLength, length);
+    notifyListeners();
+  }
+
+  /// Puts every preference back to its default. Name, role, about, language,
+  /// instructions and signature are the user's own words and stay.
+  void resetToDefaults() {
+    themeMode = ThemeMode.system;
+    hapticsOn = true;
+    Haptics.enabled = true;
+    defaultWebSearch = false;
+    defaultKnowledge = false;
+    defaultRoundTable = false;
+    notifyRoundTable = true;
+    mode = modes.first;
+    tone = '';
+    length = 'detailed';
+    textScale = 'normal';
+    modelChoice = 'auto';
+    autocompleteOn = true;
+    for (final key in [
+      AppPrefs.themeMode,
+      AppPrefs.haptics,
+      AppPrefs.defaultWebSearch,
+      AppPrefs.defaultKnowledge,
+      AppPrefs.defaultRoundTable,
+      AppPrefs.notifyRoundTable,
+      AppPrefs.mode,
+      AppPrefs.profileTone,
+      AppPrefs.profileLength,
+      AppPrefs.textScale,
+      AppPrefs.modelChoice,
+      AppPrefs.autocomplete,
+    ]) {
+      _prefs?.remove(key);
+    }
     notifyListeners();
   }
 

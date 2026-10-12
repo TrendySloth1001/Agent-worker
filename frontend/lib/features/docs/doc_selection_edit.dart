@@ -304,10 +304,7 @@ class _PreviewState extends State<_Preview> {
             else if (!removed && kind == DocDiffKind.added)
               TextSpan(
                 text: text,
-                style: TextStyle(
-                  color: p.accent,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: p.accent, fontWeight: FontWeight.w600),
               ),
         ],
       ),
