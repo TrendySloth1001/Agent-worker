@@ -80,3 +80,14 @@ abstract final class AboutCopy {
   static const status = 'Status';
   static const urlHint = 'Backend URL, tap to copy';
 }
+
+/// Sentence-case copy of the GitHub connect panels.
+abstract final class ConnectCopy {
+  static const enterCode = 'Enter this code on GitHub';
+  static const openGithub = 'Open GitHub';
+  static const waiting = 'Waiting for approval…';
+  static const cancel = 'Cancel';
+  static const webWaiting = 'Waiting for GitHub…';
+  static const openAgain = 'Open again';
+  static const useCode = 'Use a code instead';
+}
