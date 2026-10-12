@@ -68,6 +68,7 @@ app.post("/assist/email", rateLimit(20), aiBudget());
 app.post("/assist/profile", rateLimit(20), aiBudget());
 app.post("/assist/transcribe", rateLimit(20), aiBudget());
 app.post("/conversations/merge", rateLimit(10), aiBudget());
+app.post("/conversations/bulk-delete", rateLimit(10));
 app.post("/github/repos/:owner/:repo/pulls/:n/review", rateLimit(10), aiBudget());
 app.get("/images/search", rateLimit(30), aiBudget());
 app.post("/connections/github/device", rateLimit(10));

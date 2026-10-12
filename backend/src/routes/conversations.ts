@@ -7,16 +7,14 @@ import { AppError } from "../util/errors.js";
 import { fallbackTitle, generateTitle } from "../conversations/title.js";
 import { takeAi } from "../auth/limits.js";
 import { mergeBriefing, type MergeChat } from "../conversations/merge.js";
-import { deleteFile, getFileRow } from "../files/store.js";
+import { conversationIdsFor, deleteConversations } from "../conversations/delete.js";
 import { userOf } from "../auth/context.js";
-import { cancelIndex, scheduleIndex } from "../recall/index.js";
+import { scheduleIndex } from "../recall/index.js";
 import { searchConversationIds, snippetsFor } from "../conversations/search.js";
 
 export const conversationsRouter = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// `files.id::text` is lowercase, so only lowercase ids ever matched a row.
-const FILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const citationSchema = z
   .object({
@@ -241,6 +239,33 @@ conversationsRouter.post("/merge", async (req, res) => {
   res.status(201).json(await loadConversation(created.id, uid));
 });
 
+/** Most chats one bulk delete names by id. */
+export const BULK_DELETE_MAX = 500;
+export const bulkDeleteSchema = z.union([
+  z.object({ ids: z.array(z.string().regex(UUID_RE, "Invalid chat id")).min(1).max(BULK_DELETE_MAX) }).strict(),
+  z
+    .object({
+      all: z.literal(true),
+      includeArchived: z.boolean().default(true),
+      includePinned: z.boolean().default(true),
+      archivedOnly: z.boolean().default(false),
+    })
+    .strict(),
+]);
+
+// POST /conversations/bulk-delete {ids} | {all: true, includeArchived?, includePinned?, archivedOnly?}
+// Deletes the caller's chats (others' ids are ignored) exactly like DELETE /:id, files included.
+conversationsRouter.post("/bulk-delete", async (req, res) => {
+  db();
+  const body = bulkDeleteSchema.parse(req.body);
+  const uid = userOf(req).id;
+  const ids =
+    "ids" in body
+      ? body.ids.map((i) => i.toLowerCase())
+      : await conversationIdsFor(uid, { includeArchived: body.includeArchived, includePinned: body.includePinned, archivedOnly: body.archivedOnly });
+  res.json({ deleted: await deleteConversations(ids, uid) });
+});
+
 // POST /conversations/:id/fork {at}: a copy of the first `at` saved messages.
 conversationsRouter.post("/:id/fork", async (req, res) => {
   db();
@@ -377,44 +402,7 @@ conversationsRouter.patch("/:id", async (req, res) => {
 
 conversationsRouter.delete("/:id", async (req, res) => {
   db();
-  const id = idParam(req.params.id);
-  const uid = userOf(req).id;
-  const own = await db().conversation.findFirst({ where: { id, userId: uid }, select: { id: true } });
-  if (!own) return void res.status(204).end();
-  // Files attached in this chat go with it (storage objects and rows).
-  const [msgs, files] = await Promise.all([
-    db().conversationMessage.findMany({ where: { conversationId: id }, select: { attachments: true } }),
-    db().storedFile.findMany({ where: { conversationId: id }, select: { id: true } }),
-  ]);
-  const attached = new Set<string>();
-  for (const m of msgs) {
-    if (!Array.isArray(m.attachments)) continue;
-    for (const a of m.attachments) {
-      // Same as `a ? 'id'` / `a->>'id'`: any attachment object with an id (as text).
-      if (a && typeof a === "object" && !Array.isArray(a) && "id" in a && a.id != null) {
-        attached.add(typeof a.id === "string" ? a.id : JSON.stringify(a.id));
-      }
-    }
-  }
-  for (const f of files) attached.add(f.id);
-  cancelIndex(id);
-  // The recall index rows go with the chat (ON DELETE CASCADE).
-  await db().conversation.deleteMany({ where: { id } });
-  for (const fileId of attached) {
-    // Forks share attachments by reference: a file another chat still uses stays, owned by that chat.
-    // Raw: jsonb containment (`@>`) over the attachments array has no Prisma filter.
-    const users = await db().$queryRaw<Array<{ conversation_id: string }>>`
-      SELECT m.conversation_id FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id
-       WHERE m.attachments @> jsonb_build_array(jsonb_build_object('id', ${fileId}::text)) AND c.user_id IS NOT DISTINCT FROM ${uid}::uuid LIMIT 1`;
-    if (users[0]) {
-      // File ids are uuids; anything else in the JSON cannot match a files row.
-      if (FILE_ID_RE.test(fileId)) {
-        await db().storedFile.updateMany({ where: { id: fileId, conversationId: id, userId: uid }, data: { conversationId: users[0].conversation_id } });
-      }
-      continue;
-    }
-    const row = await getFileRow(fileId).catch(() => null);
-    if (row) await deleteFile(row).catch(() => undefined);
-  }
+  // Files attached in this chat go with it (storage objects and rows); see deleteConversations.
+  await deleteConversations([idParam(req.params.id)], userOf(req).id);
   res.status(204).end();
 });
