@@ -12,10 +12,11 @@ class KbSource {
     required this.chunkCount,
     required this.error,
     required this.lastIngestedAt,
+    this.iconUrl,
   });
 
   final String id, type, uri, status;
-  final String? title, error;
+  final String? title, error, iconUrl;
   final int? progressDone, progressTotal;
   final int docCount, chunkCount;
   final DateTime? lastIngestedAt;
@@ -35,6 +36,7 @@ class KbSource {
       docCount: j['docCount'] as int? ?? 0,
       chunkCount: j['chunkCount'] as int? ?? 0,
       error: j['error'] as String?,
+      iconUrl: j['iconUrl'] as String?,
       lastIngestedAt: DateTime.tryParse(j['lastIngestedAt'] as String? ?? ''),
     );
   }

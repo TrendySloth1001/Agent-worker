@@ -138,6 +138,10 @@ abstract final class AppIcons {
   static const sourceNews = HugeIcons.strokeRoundedNews01;
   static const sourceReddit = HugeIcons.strokeRoundedReddit;
   static const sourceNote = HugeIcons.strokeRoundedNote01;
+  static const filePdf = HugeIcons.strokeRoundedPdf01;
+  static const fileWord = HugeIcons.strokeRoundedDoc01;
+  static const fileText = HugeIcons.strokeRoundedTxt01;
+  static const fileMarkdown = HugeIcons.strokeRoundedDocumentCode;
   static const sourceAuto = HugeIcons.strokeRoundedMagicWand01;
 
   /// Icon for a knowledge source type id.
@@ -151,6 +155,16 @@ abstract final class AppIcons {
     'doc' => doc,
     _ => sourceWeb,
   };
+
+  /// Icon for an uploaded document by its file name (pdf, docx, md, txt), else the generic file icon.
+  static AppIconData fileKind(String? name) =>
+      switch (name?.split('.').last.toLowerCase()) {
+        'pdf' => filePdf,
+        'doc' || 'docx' || 'rtf' || 'odt' => fileWord,
+        'md' || 'markdown' => fileMarkdown,
+        'txt' || 'text' || 'log' => fileText,
+        _ => file,
+      };
 
   /// Icon for a chat mode id.
   static AppIconData mode(String id) => switch (id) {

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { db, type Prisma } from "../db/prisma.js";
 import { connectors, detectType, SOURCE_TYPES, type AddableType } from "../ingest/connectors/index.js";
+import { storeIcon } from "../ingest/icon.js";
 import { indexNow, isKnowledgeDoc } from "../ingest/indexer.js";
 import { enqueue } from "../ingest/queue.js";
 import { retrieve } from "../retrieval/search.js";
@@ -21,6 +22,7 @@ const SOURCE_SELECT = {
   title: true,
   status: true,
   error: true,
+  iconUrl: true,
   progressDone: true,
   progressTotal: true,
   docCount: true,
@@ -43,6 +45,7 @@ function toSource(r: SourceRow) {
     docCount: r.docCount,
     chunkCount: r.chunkCount,
     error: r.error ?? null,
+    iconUrl: r.iconUrl ?? null,
     lastIngestedAt: r.lastIngestedAt ? r.lastIngestedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   };
@@ -83,6 +86,7 @@ knowledgeRouter.post("/sources", async (req, res) => {
     data: { type, uri: resolved.uri, title: resolved.title ?? null, options: json({ ...(resolved.options ?? {}), limit: body.limit }), userId: uid },
     select: SOURCE_SELECT,
   });
+  void storeIcon(ins.id, type, resolved.uri);
   enqueue(ins.id);
   res.status(202).json({ source: toSource(ins) });
 });
