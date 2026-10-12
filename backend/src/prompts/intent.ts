@@ -3,6 +3,8 @@
  * the model toward the right widget. Pure and regex-based so it is cheap and
  * testable. Returns null when nothing matches. Order = priority.
  */
+import { hasIntent, type IntentResult } from "../nlp/intent.js";
+
 type Rule = { re: RegExp; hint: string };
 
 // Only explicit asks trigger a hint: loose words ("trend", "how does X work")
@@ -64,7 +66,10 @@ function looksCasual(text: string): boolean {
   return CASUAL_RE.test(text);
 }
 
-export function intentHint(text: string): string | null {
+const QUIZ_HINT = "The user asked to be quizzed: a short intro line, then a ```quiz block (4-8 questions, one * correct answer each, a why: line each).";
+
+/** [intent] (the local classifier) fills in when no regex rule matched, e.g. a non-English ask. */
+export function intentHint(text: string, intent?: IntentResult): string | null {
   const t = (text ?? "").trim().slice(0, 600);
   if (!t) return null;
   const hits: string[] = [];
@@ -73,6 +78,10 @@ export function intentHint(text: string): string | null {
       hits.push(r.hint);
       break;
     }
+  }
+  if (hits.length === 0 && intent) {
+    if (hasIntent(intent, "ui", 0.75)) hits.push(HTML_HINT);
+    else if (hasIntent(intent, "quiz", 0.8)) hits.push(QUIZ_HINT);
   }
   if (looksCasual(t)) {
     hits.push(

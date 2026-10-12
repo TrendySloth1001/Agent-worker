@@ -1,4 +1,5 @@
 import { HTML_RULE } from "./html.js";
+import { hasIntent, type IntentResult } from "../nlp/intent.js";
 export type Mode = "default" | "debug" | "review" | "design" | "explain";
 export const MODES: Mode[] = ["default", "debug", "review", "design", "explain"];
 
@@ -164,11 +165,14 @@ const GITHUB_NEED_RE = /\b(github|git|repos?|repositor(y|ies)|commits?|branch(es
 const WIDGET_NEED_RE = /\b(quiz|test me|flash ?cards?|calculat\w*|chart|graph|plot|visuali[sz]\w*|timeline|history of|roadmap|stats|kpi|metrics|checklist|to-?do|compare|comparison|vs\.?|versus|pros|cons|tree|hierarch\w*|structure|progress|rating|score|flow|diagram|steps?|process|trend|breakdown|share)\b/i;
 
 /** Which optional sections a request needs, from the user's recent text. */
-export function promptNeeds(text: string, hasGithubContext = false): PromptNeeds {
+export function promptNeeds(text: string, hasGithubContext = false, intent?: IntentResult): PromptNeeds {
+  // Small talk needs none of the optional sections.
+  if (intent && intent.top === "chitchat" && !intent.uncertain && intent.confidence >= 0.6) return { html: false, github: hasGithubContext, widgetExamples: false };
+  const i = (l: Parameters<typeof hasIntent>[1]) => !!intent && hasIntent(intent, l, 0.6);
   return {
-    html: HTML_NEED_RE.test(text),
-    github: hasGithubContext || GITHUB_NEED_RE.test(text),
-    widgetExamples: WIDGET_NEED_RE.test(text),
+    html: HTML_NEED_RE.test(text) || i("ui"),
+    github: hasGithubContext || GITHUB_NEED_RE.test(text) || i("github"),
+    widgetExamples: WIDGET_NEED_RE.test(text) || i("quiz") || i("compare") || i("math") || i("ui") || i("image") || i("longdoc"),
   };
 }
 

@@ -10,6 +10,7 @@ import { joinOverlap, mmr, parseVector, rrfFuse } from "./fusion.js";
 import { fuzzyTerms, needsFuzzy, synonymsOf } from "../nlp/text.js";
 import { rerank } from "./rerank.js";
 import { rewriteQueries, type HistoryMsg } from "./rewrite.js";
+import { extractEntities, quotableNames } from "../nlp/entities.js";
 
 export type KbHit = {
   chunkId: number;
@@ -71,8 +72,15 @@ export function keywordQuery(q: string): string {
     .map((w) => w.replace(/^[.+-]+|[.+-]+$/g, ""))
     .filter((w) => w.length >= 3)
     .slice(0, 12);
+  if (words.length === 0) return "";
   const syn = words.flatMap((w) => synonymsOf(w)).filter((s) => !/\s/.test(s));
-  return [...new Set([...words, ...syn])].join(" or ");
+  // Exact names (multi-word people/orgs/products, owner/repo) also match as phrases, which ranks chunks that contain them whole higher.
+  const phrases = quotableNames(extractEntities(q))
+    .map((n) => n.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim())
+    .filter((p, i, a) => p.includes(" ") && a.indexOf(p) === i)
+    .slice(0, 3)
+    .map((p) => `"${p}"`);
+  return [...new Set([...words, ...syn]), ...phrases].join(" or ");
 }
 
 function hostOf(url: string): string {
