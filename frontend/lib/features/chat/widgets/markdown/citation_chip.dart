@@ -69,14 +69,30 @@ String _clip(String s) => s.length <= MdSizes.citeNameMaxChars
     ? s
     : s.substring(0, MdSizes.citeNameMaxChars);
 
+/// A run of citation tags: `[W1][W3]`, `[W1] [W3]` or `[W1], [W3]`.
 final _run = RegExp(
-  r'\[[KWGC]\d{1,2}\](?!\()(?:[ \t,]*\[[KWGC]\d{1,2}\](?!\())*',
+  r'\[[KWDGC]\d{1,3}\](?!\()(?:[ \t,]*\[[KWDGC]\d{1,3}\](?!\())*',
 );
-final _tag = RegExp(r'\[([KWGC]\d{1,2})\]');
+final _tag = RegExp(r'\[([KWDGC]\d{1,3})\]');
+
+/// `[W1, W3]` / `[W1; W3]`, a list inside one pair of brackets.
+final _listed = RegExp(
+  r'\[([KWDGC]\d{1,3}(?:[ \t]*[,;][ \t]*[KWDGC]\d{1,3})+)\](?!\()',
+);
 final _fence = RegExp(r'^\s*(```|~~~)');
 
-/// Collapses runs of citation tags that point at the same site into one tag
-/// and drops tags with unknown ids. Fenced code is left alone.
+/// Separates the ids of one grouped tag: `[W1+W3]`.
+const citeGroupSeparator = '+';
+
+/// A trailing, still-open tag (`[W`, `[W1`) while a reply streams. It is
+/// hidden until the closing bracket arrives, so no raw fragment flashes.
+final _openTag = RegExp(r'\[(?:[KWDGC]\d{0,3})?$');
+
+String hidePartialCitation(String text) => text.replaceFirst(_openTag, '');
+
+/// Turns each run of citation tags into ONE grouped tag, `[W1+W3]`, which
+/// renders as a single chip with stacked logos. Tags of the same site fold
+/// into one, unknown ids drop. Fenced code is left alone.
 String prepareCitations(String text, List<Citation> citations) {
   if (!text.contains('[')) return text;
   final byId = {for (final c in citations) c.id: c};
@@ -92,26 +108,29 @@ String prepareCitations(String text, List<Citation> citations) {
       out.add(line);
       continue;
     }
+    final split = line.replaceAllMapped(
+      _listed,
+      (m) => m[1]!.split(RegExp(r'[,;]')).map((t) => '[${t.trim()}]').join(),
+    );
     out.add(
-      line.replaceAllMapped(_run, (m) {
+      split.replaceAllMapped(_run, (m) {
         final kept = <String>[];
-        String? last;
+        final seen = <String>{};
         for (final t in _tag.allMatches(m[0]!)) {
           final c = byId[t[1]];
           if (c == null) continue;
-          final key = '${c.isKb}:${citeShortName(c)}';
-          if (key == last) continue;
-          last = key;
-          kept.add('[${c.id}]');
+          if (seen.add('${c.kind.name}:${citeShortName(c)}')) kept.add(c.id);
         }
-        return kept.join(' ');
+        return kept.isEmpty ? '' : '[${kept.join(citeGroupSeparator)}]';
       }),
     );
   }
   return out.join('\n');
 }
 
-/// Site logo, or a web / knowledge icon when it cannot load.
+/// Site logo. While it loads, or when it cannot (offline, no icon), a
+/// monogram of the site name stands in. Logos are cached by Flutter's image
+/// cache, so one site's icon is fetched once however often it is cited.
 class SiteFavicon extends StatelessWidget {
   const SiteFavicon({super.key, required this.citation, required this.size});
 
@@ -125,11 +144,13 @@ class SiteFavicon extends StatelessWidget {
     if (citation.kind == CitationKind.conversation) {
       return AppIcon(AppIcons.chat, size: size, color: p.textTertiary);
     }
-    final fallback = AppIcon(
-      citation.isKb ? AppIcons.knowledge : AppIcons.web,
-      size: size,
-      color: p.textTertiary,
-    );
+    final fallback = domain.isEmpty
+        ? AppIcon(
+            citation.isKb ? AppIcons.knowledge : AppIcons.web,
+            size: size,
+            color: p.textTertiary,
+          )
+        : _Monogram(name: citeShortName(citation), size: size);
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.sm),
       child: SizedBox.square(
@@ -139,6 +160,9 @@ class SiteFavicon extends StatelessWidget {
             : Image.network(
                 AppConfig.faviconUrl(domain),
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
+                frameBuilder: (_, child, frame, sync) =>
+                    sync || frame != null ? child : fallback,
                 errorBuilder: (_, _, _) => fallback,
               ),
       ),
@@ -146,13 +170,49 @@ class SiteFavicon extends StatelessWidget {
   }
 }
 
-/// Compact inline pill: favicon + short site name. Tap opens the link,
-/// long-press copies it.
+/// First letter of a site on a tinted tile.
+class _Monogram extends StatelessWidget {
+  const _Monogram({required this.name, required this.size});
+
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final letter = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
+    return ColoredBox(
+      color: p.surfaceHigh,
+      child: Center(
+        child: Text(
+          letter,
+          style: context.text.caption.copyWith(
+            color: p.textSecondary,
+            fontSize: size * MdSizes.monogramScale,
+            height: 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact inline pill: favicon + short site name. Several sources cited
+/// together ([more]) show stacked logos and "+N". Tap opens the source,
+/// long-press copies its link.
 class CitationChip extends StatelessWidget {
-  const CitationChip({super.key, required this.citation, required this.onTap});
+  const CitationChip({
+    super.key,
+    required this.citation,
+    required this.onTap,
+    this.more = const [],
+  });
 
   final Citation citation;
   final VoidCallback onTap;
+
+  /// Other sources cited at the same spot.
+  final List<Citation> more;
 
   Future<void> _copy(BuildContext context) async {
     Haptics.tap();
@@ -172,10 +232,11 @@ class CitationChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     final t = context.text;
+    final shown = [citation, ...more].take(MdSizes.citeStackMax).toList();
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      onLongPress: () => _copy(context),
+      onLongPress: more.isEmpty ? () => _copy(context) : null,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: AppSizes.citeMinTap),
         child: Padding(
@@ -196,7 +257,38 @@ class CitationChip extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SiteFavicon(citation: citation, size: MdSizes.citeFavicon),
+                  SizedBox(
+                    width:
+                        MdSizes.citeFavicon +
+                        (shown.length - 1) * MdSizes.citeStackStep,
+                    height: MdSizes.citeFavicon,
+                    child: Stack(
+                      children: [
+                        // The first source sits on top of the stack.
+                        for (var i = shown.length - 1; i >= 0; i--)
+                          Positioned(
+                            left: i * MdSizes.citeStackStep,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
+                                ),
+                                border: more.isEmpty
+                                    ? null
+                                    : Border.all(
+                                        color: p.surface,
+                                        width: AppBorder.thin,
+                                      ),
+                              ),
+                              child: SiteFavicon(
+                                citation: shown[i],
+                                size: MdSizes.citeFavicon,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(width: AppSpacing.xs),
                   Flexible(
                     child: Text(
@@ -209,6 +301,16 @@ class CitationChip extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (more.isNotEmpty) ...[
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(
+                      '+${more.length}',
+                      style: t.caption.copyWith(
+                        color: p.textTertiary,
+                        height: 1,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

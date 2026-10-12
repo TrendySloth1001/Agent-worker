@@ -7,6 +7,7 @@ import '../../../../core/theme/app_palette.dart';
 import '../../../../data/chat_event.dart';
 import '../open_url.dart';
 import 'citation_chip.dart';
+import 'citation_group_sheet.dart';
 import 'citation_syntax.dart';
 import 'evidence_sheet.dart';
 import 'highlight_syntax.dart';
@@ -46,7 +47,9 @@ class AppMarkdown extends StatelessWidget {
       // elements.
       key: ValueKey(streaming),
       source: emojiToIcons(
-        streaming ? hidePartialMath(hidePartialIcon(data)) : data,
+        streaming
+            ? hidePartialCitation(hidePartialMath(hidePartialIcon(data)))
+            : data,
       ),
       citations: citations,
       evidence: evidence,
@@ -255,6 +258,8 @@ class _Flow extends StatelessWidget {
           citations: citations,
           onTap: (context, citation) =>
               showEvidenceSheet(context, citation, evidence),
+          onTapGroup: (context, group) =>
+              showCitationGroupSheet(context, group, evidence),
         ),
       },
       onTapLink: (text, href, title) {

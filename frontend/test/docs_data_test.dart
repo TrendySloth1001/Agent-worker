@@ -504,16 +504,26 @@ void main() {
     expect(md, contains('## Abstract\n\nSalt matters.'));
     // The server's own heading line is not repeated.
     expect('## Why it matters'.allMatches(md).length, 1);
+    // Tags become numbered superscript links; the numbers follow first use.
     expect(
       md,
-      contains('Fluids [W2](https://heart.org). Nerves [W1](https://who.int).'),
+      contains(
+        'Fluids<sup>[1](#ref-1)</sup>. Nerves<sup>[2](#ref-2)</sup>. '
+        'Notes<sup>[3](#ref-3)</sup>.',
+      ),
     );
+    expect(md, isNot(contains('[W')));
     expect(md, isNot(contains('{{icon')));
-    // References: cited only, first-use order, KB marked.
+    // References: cited only, first-use order, named by site, KB marked.
     final refs = md.substring(md.indexOf('## References'));
-    expect(refs.indexOf('[W2]'), lessThan(refs.indexOf('[W1]')));
-    expect(refs, contains('[K1] My notes. Knowledge base.'));
-    expect(refs, isNot(contains('[W3]')));
+    expect(refs.indexOf('heart'), lessThan(refs.indexOf('who')));
+    expect(
+      refs,
+      contains('1. <a id="ref-1"></a>**heart** · AHA <https://heart.org>'),
+    );
+    expect(refs, contains('3. <a id="ref-3"></a>'));
+    expect(refs, contains('My notes. Knowledge base.'));
+    expect(refs, isNot(contains('Unused')));
     expect('## References'.allMatches(md).length, 1);
     expect(md, contains('## Glossary\n\n- **Na**: Sodium.'));
     expect(docFileName(sampleDoc(), 'md'), 'sodium-and-health.md');
