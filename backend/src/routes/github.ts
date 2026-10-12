@@ -67,7 +67,7 @@ githubRouter.get("/search/issues", async (req, res) => {
   await send(res, await svc.searchIssues(query(req), req.query.per_page), "search");
 });
 githubRouter.get("/search/commits", async (req, res) => {
-  await send(res, await svc.searchCommits(query(req), req.query.per_page), "search");
+  await send(res, await svc.searchCommits(query(req), req.query.per_page, str(req.query.sort)), "search");
 });
 
 // ---- repository ---------------------------------------------------------
