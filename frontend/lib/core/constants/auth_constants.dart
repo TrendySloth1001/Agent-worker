@@ -140,6 +140,11 @@ abstract final class AuthDurations {
 
   /// Refresh the access token when it has less than this left.
   static const refreshSkew = Duration(seconds: 60);
+
+  /// After a refused refresh, how long to look for a token the other copy
+  /// (app or assistant overlay) rotated in the meantime.
+  static const syncPoll = Duration(milliseconds: 500);
+  static const syncPolls = 6;
 }
 
 /// Secure-storage keys.

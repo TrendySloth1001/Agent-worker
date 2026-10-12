@@ -38,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SettingsCategory.search,
     ],
     [
+      SettingsCategory.assistant,
       SettingsCategory.apps,
       SettingsCategory.storage,
       SettingsCategory.notifications,

@@ -188,11 +188,22 @@ class AuthController extends ChangeNotifier {
 
   /// One refresh at a time: concurrent callers share it, so a rotated
   /// refresh token is never presented twice.
-  Future<bool> refresh() => _refreshing ??= _doRefresh().whenComplete(() {
+  Future<bool> refresh() => _refreshing ??= _doRefresh(true).whenComplete(() {
     _refreshing = null;
   });
 
-  Future<bool> _doRefresh() async {
+  Future<bool> _doRefresh(bool mayRetry) async {
+    // The assistant overlay runs a second copy of this controller (its own
+    // isolate) on the same stored session: whichever refreshed last holds
+    // the live token, so start from what storage has now.
+    final (read, stored) = await _storedRefresh();
+    if (read) {
+      if (stored == null) {
+        if (_refresh != null) await signOut(callServer: false);
+        return false;
+      }
+      _refresh = stored;
+    }
     final token = _refresh;
     if (token == null) return false;
     final http.Response res;
@@ -212,9 +223,64 @@ class AuthController extends ChangeNotifier {
       return true;
     }
     if (res.statusCode == 401 || res.statusCode == 400) {
+      // The other copy may have rotated this token a moment ago: adopt its
+      // newer one instead of signing out.
+      if (mayRetry && await _rotatedElsewhere(token)) return _doRefresh(false);
       await signOut(callServer: false, reason: AuthStrings.sessionExpired);
     }
     return false;
+  }
+
+  /// (could read, stored refresh token). A failed read keeps memory's.
+  Future<(bool, String?)> _storedRefresh() async {
+    try {
+      return (true, await _storage.read(key: AuthKeys.refreshToken));
+    } catch (_) {
+      return (false, null);
+    }
+  }
+
+  /// Waits briefly for storage to hold a token other than [used].
+  Future<bool> _rotatedElsewhere(String used) async {
+    for (var i = 0; i < AuthDurations.syncPolls; i++) {
+      final (read, stored) = await _storedRefresh();
+      if (!read) return false;
+      if (stored != null && stored != used) return true;
+      await Future<void>.delayed(AuthDurations.syncPoll);
+    }
+    return false;
+  }
+
+  /// Picks up a sign-in, sign-out or account switch made by the other copy
+  /// (app or assistant overlay) since this one last looked.
+  Future<void> syncFromStorage() async {
+    final (read, stored) = await _storedRefresh();
+    if (!read || stored == _refresh) return;
+    if (stored == null) {
+      _access = null;
+      _accessExpires = null;
+      _refresh = null;
+      user = null;
+      _setSignedOut();
+      return;
+    }
+    String? cachedId;
+    try {
+      final cached = await _storage.read(key: AuthKeys.user);
+      if (cached != null) {
+        cachedId = AuthUser.fromJson(
+          jsonDecode(cached) as Map<String, dynamic>,
+        ).id;
+      }
+    } catch (_) {}
+    if (status == AuthStatus.signedIn && cachedId == user?.id) {
+      // Same account, newer token: the access token stays valid meanwhile.
+      _refresh = stored;
+      return;
+    }
+    _access = null;
+    _accessExpires = null;
+    await restore();
   }
 
   // ---- sign out -------------------------------------------------------

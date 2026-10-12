@@ -47,6 +47,68 @@
               android:name="flutter_deeplinking_enabled"
               android:value="false" />
         </activity>
+        <!-- Digital assistant: the gear next to sparky in Settings > Apps >
+             Default apps > Digital assistant app opens Settings > Assistant. -->
+        <activity-alias
+            android:name=".AssistantSettings"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:label="@string/assistant_name" />
+        <!-- The assistant overlay: see-through, its own task, never in Recents.
+             Opened by the assistant session (power-button hold), by ASSIST /
+             VOICE_COMMAND intents as a fallback, or by Settings > Assistant > Try it. -->
+        <activity
+            android:name=".assist.AssistActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.sparky.app.assist"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
+            android:resizeableActivity="true"
+            android:theme="@style/AssistTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <!-- Digital assistant registration (Default apps > Digital assistant app). -->
+        <service
+            android:name=".assist.SparkyVoiceInteractionService"
+            android:label="@string/assistant_name"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/assistant_service" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".assist.SparkySessionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+        <!-- Required for an assistant to be selectable; forwards to the device's
+             real recognizer so dictation keeps working everywhere. -->
+        <service
+            android:name=".assist.SparkyRecognitionService"
+            android:label="@string/assistant_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
         <service
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
             android:exported="false"
@@ -83,6 +145,11 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- Assistant overlay: the name of the app on screen ("Share screen"). -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <!-- speech_to_text finds the device's speech recognizer (Android 11+). -->
         <intent>
             <action android:name="android.speech.RecognitionService" />

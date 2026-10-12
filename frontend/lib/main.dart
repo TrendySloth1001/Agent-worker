@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'assist/assist_links.dart';
 import 'core/app_messenger.dart';
 import 'core/app_scope.dart';
 import 'core/constants/app_config.dart';
@@ -19,6 +20,10 @@ import 'features/settings/usage_controller.dart';
 import 'features/connections/connections_controller.dart';
 import 'features/docs/doc_registry.dart';
 
+// The assistant overlay's entrypoint: exported so it is compiled into the
+// app (AssistEngine.kt starts it by name in its own engine).
+export 'assist/assist_main.dart' show assistMain;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsController.load();
@@ -34,6 +39,8 @@ Future<void> main() async {
   // GitHub one-tap sign-in: deep links back from GitHub, incl. a cold start.
   GithubWebAuth.instance.init();
   ConnectorAuth.instance.init();
+  // "Open in sparky" from the assistant overlay, and its settings gear.
+  AssistLinks.init();
   runApp(App(settings: settings));
 }
 
