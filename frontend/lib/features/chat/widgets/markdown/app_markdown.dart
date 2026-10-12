@@ -102,6 +102,7 @@ class _Flow extends StatelessWidget {
     required this.streaming,
     this.evidence = const [],
     this.cell,
+    this.numeric = false,
   });
 
   final String source;
@@ -112,18 +113,29 @@ class _Flow extends StatelessWidget {
   /// null = body text, otherwise a table cell (true = header cell).
   final bool? cell;
 
-  Widget _inline(BuildContext context, String text, {bool? cell}) => _Flow(
+  /// A number cell: right-aligned with tabular figures.
+  final bool numeric;
+
+  Widget _inline(
+    BuildContext context,
+    String text, {
+    bool? cell,
+    bool numeric = false,
+  }) => _Flow(
     source: text,
     citations: citations,
     evidence: evidence,
     streaming: streaming,
     cell: cell,
+    numeric: numeric,
   );
 
   @override
   Widget build(BuildContext context) {
     final cell = this.cell;
-    if (cell != null) return _markdown(context, source, cell: cell);
+    if (cell != null) {
+      return _markdown(context, source, cell: cell, numeric: numeric);
+    }
 
     final blocks = parseBlocks(source);
     if (blocks.length == 1 && blocks.first is MdText) {
@@ -158,8 +170,9 @@ class _Flow extends StatelessWidget {
         ),
         MdTableBlock() => MdTable(
           block: b,
-          renderCell: (t, {required header}) =>
-              _inline(context, t, cell: header),
+          streaming: streaming,
+          renderCell: (t, {required header, numeric = false}) =>
+              _inline(context, t, cell: header, numeric: numeric),
         ),
         MdMathBlock() => MathBlock(tex: b.tex),
         MdImageBlock() => InlineImageBlock(query: b.query, caption: b.caption),
@@ -180,6 +193,7 @@ class _Flow extends StatelessWidget {
     BuildContext context,
     String text, {
     bool? cell,
+    bool numeric = false,
     TextStyle? textStyle,
   }) {
     var sheet = AppMarkdown.styleSheet(context);
@@ -193,8 +207,13 @@ class _Flow extends StatelessWidget {
     if (cell != null) {
       final p = context.palette;
       final t = context.text;
-      final bodyStyle = t.bodySmall.copyWith(color: p.textPrimary);
+      final bodyStyle = t.bodySmall.copyWith(
+        color: p.textPrimary,
+        height: MdTableSizes.lineHeight,
+        fontFeatures: numeric ? const [FontFeature.tabularFigures()] : null,
+      );
       sheet = sheet.copyWith(
+        textAlign: numeric ? WrapAlignment.end : WrapAlignment.start,
         p: cell ? bodyStyle.copyWith(fontWeight: FontWeight.w700) : bodyStyle,
         strong: bodyStyle.copyWith(fontWeight: FontWeight.w700),
         em: bodyStyle.copyWith(fontStyle: FontStyle.italic),
