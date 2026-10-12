@@ -532,10 +532,12 @@ model DocHighlight {
 
 // ---- long-term memory (src/memory) --------------------------------------------------
 
-/// CHECK kind IN ('fact','preference','project','instruction').
+/// CHECK kind IN ('identity','fact','preference','project','instruction').
 /// `embedding` is nullable (embeddings may be down when a memory is written);
 /// the HNSW index memories_embedding_hnsw exists in SQL only. Read and write it
 /// with $queryRaw / $executeRaw (src/memory/store.ts).
+/// `slot` (src/memory/slots.ts: name, location, work, tool:<tech>, ...) is
+/// unique per user through the partial index memories_user_slot (SQL only).
 model Memory {
   id             String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId         String                       @map("user_id") @db.Uuid
@@ -545,6 +547,8 @@ model Memory {
   /// Conversation the memory was learned in (no FK: the chat may be deleted).
   sourceConversationId String?                @map("source_conversation_id") @db.Uuid
   pinned         Boolean                      @default(false)
+  /// One memory per slot per user (e.g. "name", "location", "tool:neovim"); null for free-form notes.
+  slot           String?
   createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   lastUsedAt     DateTime?                    @map("last_used_at") @db.Timestamptz(6)

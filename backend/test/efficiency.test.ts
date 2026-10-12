@@ -10,6 +10,7 @@ import { fitBudget, snippetAnswers } from "../src/web/budget.js";
 import { enoughFree, freeFirst } from "../src/web/pipeline.js";
 import { heuristicQueries, isComparison, planFromPreflight } from "../src/web/plan.js";
 import { extractionPlan, TurnBatcher } from "../src/memory/batcher.js";
+import { analyzeMemory } from "../src/nlp/memoryIntent.js";
 import { worthFollowups } from "../src/assist/suggest.js";
 import { maxTokensFor, preferSmall } from "../src/llm/router.js";
 import { newTurnCounters, tally } from "../src/db/usage.js";
@@ -214,14 +215,17 @@ test("fitBudget cuts web evidence to the budget, best sources keep the most, sma
 
 // ---- memory batching ------------------------------------------------------------
 
-test("extractionPlan: skip chit-chat, short and non-personal turns; batch personal statements; explicit runs at once", () => {
-  assert.equal(extractionPlan("thanks!", false, intent("chitchat") as never), "skip");
-  assert.equal(extractionPlan("ok", false), "skip");
-  assert.equal(extractionPlan("How do I reverse a linked list in Python?", false, intent("code") as never), "skip");
-  assert.equal(extractionPlan("I'm a backend engineer at Acme and I use Postgres daily", false, intent("explain") as never), "batch");
-  assert.equal(extractionPlan("my team uses Flutter for the mobile app", false), "batch");
-  assert.equal(extractionPlan("remember that I like tea", true), "now");
-  assert.equal(extractionPlan("hi", true), "now");
+test("extractionPlan: no LLM for chit-chat, questions or facts the rules read; batch other personal statements; unresolved explicit asks run at once", () => {
+  const plan = (t: string) => extractionPlan(analyzeMemory(t));
+  assert.equal(plan("thanks!"), "skip");
+  assert.equal(plan("ok"), "skip");
+  assert.equal(plan("How do I reverse a linked list in Python?"), "skip");
+  // Rule-based slots (role, employer, tools): saved without any model call.
+  assert.equal(plan("I'm a backend engineer at Acme and I use Postgres daily"), "skip");
+  assert.equal(plan("remember that I like tea"), "skip");
+  assert.equal(plan("my team uses Flutter for the mobile app"), "batch");
+  assert.equal(plan("remember that the office closes early every Friday"), "now");
+  assert.equal(plan("remember me"), "skip");
 });
 
 test("TurnBatcher runs once per N items of a key, or when idle", async () => {
