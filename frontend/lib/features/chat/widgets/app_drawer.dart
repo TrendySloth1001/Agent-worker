@@ -13,7 +13,7 @@ import '../../docs/doc_screen.dart';
 import '../../history/history_controller.dart';
 import '../../history/widgets/chat_actions.dart';
 import '../../history/widgets/conversation_list.dart';
-import '../../history/widgets/docs_sheet.dart';
+import '../../docs/docs_list_screen.dart';
 import '../../history/widgets/history_footer.dart';
 import '../../history/widgets/history_header.dart';
 import '../../knowledge/knowledge_screen.dart';
@@ -158,7 +158,7 @@ class AppDrawerState extends State<AppDrawer> {
 
   Future<void> _openDocs() async {
     final navigator = Navigator.of(context);
-    final doc = await showDocsSheet(context, api: widget.docsApi);
+    final doc = await showDocsList(context, api: widget.docsApi);
     if (doc == null || !mounted) return;
     _closeDrawer();
     if (!navigator.mounted) return;
