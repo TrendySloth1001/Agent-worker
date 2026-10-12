@@ -42,3 +42,29 @@ abstract final class KnowledgeCopy {
 abstract final class KnowledgeSizes {
   static const progressHeight = 4.0;
 }
+
+abstract final class TelemetryCopy {
+  static const charts = 'Per minute';
+  static const chartRequests = 'Requests and failures';
+  static const chartTokens = 'Tokens';
+  static const chartLatency = 'Latency p50 and TTFT';
+  static const models = 'Models';
+  static const providers = 'Providers';
+  static const kinds = 'By kind';
+  static const users = 'Users';
+  static const topErrors = 'Top errors';
+  static const log = 'Live log';
+  static const recentEvents = 'Recent events';
+  static const failedOnly = 'Failed only';
+  static const pause = 'Pause';
+  static const resume = 'Resume';
+  static const loadMore = 'Load older';
+  static const noMore = 'End of log';
+  static const openDetail = 'Details';
+  static const filterProvider = 'Provider';
+  static const filterKind = 'Kind';
+  static const filterAll = 'All';
+  static const empty = 'No calls in this window';
+  static const emptyLog = 'No events yet';
+  static const bucketLabels = {'1m': '1 min', '5m': '5 min', '1h': '1 hour'};
+}

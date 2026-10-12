@@ -8,6 +8,7 @@ import '../constants/app_strings.dart';
 import '../constants/settings_copy.dart';
 import '../haptics.dart';
 import '../theme/app_palette.dart';
+import '../theme/app_text_styles.dart';
 import '../theme/app_theme.dart';
 import '../theme/system_chrome.dart';
 import 'app_icon.dart';
@@ -202,11 +203,13 @@ class M3Card extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(M3Sizes.heroPadding),
     this.high = false,
+    this.onTap,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final bool high;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -217,7 +220,11 @@ class M3Card extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(M3Sizes.heroRadius)),
       ),
-      child: Padding(padding: padding, child: child),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(padding: padding, child: child),
+      ),
     );
   }
 }
@@ -246,7 +253,7 @@ class M3Tag extends StatelessWidget {
         widthFactor: 1,
         child: Text(
           label,
-          style: context.text.caption.copyWith(
+          style: AppTextStyles.caption.copyWith(
             color: accent ? p.accent : scheme.onSurfaceVariant,
           ),
         ),

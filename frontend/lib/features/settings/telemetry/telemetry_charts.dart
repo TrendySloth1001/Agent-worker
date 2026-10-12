@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/telemetry.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_text_styles.dart';
 import '../../../data/telemetry.dart';
 import '../format.dart';
 import 'telemetry_format.dart';
@@ -38,7 +39,9 @@ FlTitlesData _titles(
   double step,
   String Function(double) yLabel,
 ) {
-  final style = context.text.caption;
+  final style = AppTextStyles.caption.copyWith(
+    color: Theme.of(context).colorScheme.onSurfaceVariant,
+  );
   final n = points.length;
   final every = math.max(1, (n / TelemetrySizes.chartXLabels).ceil());
   return FlTitlesData(
@@ -74,8 +77,9 @@ FlTitlesData _titles(
   );
 }
 
-TextStyle _tip(BuildContext context) =>
-    context.text.caption.copyWith(color: context.palette.textPrimary);
+TextStyle _tip(BuildContext context) => Theme.of(
+  context,
+).textTheme.bodySmall!.copyWith(color: Theme.of(context).colorScheme.onSurface);
 
 /// Requests per bucket, stacked: OK part neutral, failed part red.
 class RequestBars extends StatelessWidget {
@@ -146,9 +150,10 @@ class RequestBars extends StatelessWidget {
               ],
               barTouchData: BarTouchData(
                 touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (_) => p.surfaceHigh,
-                  tooltipBorder: BorderSide(color: p.borderStrong),
-                  tooltipBorderRadius: BorderRadius.circular(AppRadius.sm),
+                  getTooltipColor: (_) =>
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  tooltipBorder: BorderSide(color: p.border),
+                  tooltipBorderRadius: BorderRadius.circular(AppRadius.md),
                   fitInsideHorizontally: true,
                   fitInsideVertically: true,
                   getTooltipItem: (group, gi, rod, ri) {
@@ -241,9 +246,10 @@ class SeriesLines extends StatelessWidget {
             ],
             lineTouchData: LineTouchData(
               touchTooltipData: LineTouchTooltipData(
-                getTooltipColor: (_) => p.surfaceHigh,
-                tooltipBorder: BorderSide(color: p.borderStrong),
-                tooltipBorderRadius: BorderRadius.circular(AppRadius.sm),
+                getTooltipColor: (_) =>
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                tooltipBorder: BorderSide(color: p.border),
+                tooltipBorderRadius: BorderRadius.circular(AppRadius.md),
                 fitInsideHorizontally: true,
                 fitInsideVertically: true,
                 getTooltipItems: (spots) => [
@@ -285,7 +291,7 @@ class ChartLegend extends StatelessWidget {
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: AppSpacing.xs),
-              Text(label, style: context.text.caption),
+              Text(label, style: Theme.of(context).textTheme.labelMedium),
             ],
           ),
       ],

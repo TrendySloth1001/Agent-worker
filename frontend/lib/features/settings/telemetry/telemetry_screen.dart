@@ -1,24 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/constants/app_config.dart';
-import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
-import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/constants/telemetry.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
-import '../../../core/theme/system_chrome.dart';
-import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/segmented.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../data/telemetry.dart';
 import '../../../data/telemetry_api.dart';
 import '../format.dart';
 import '../widgets/provider_card.dart';
-import '../widgets/section_header.dart';
+import '../widgets/settings_kit.dart';
 import '../widgets/usage_states.dart';
 import 'telemetry_charts.dart';
 import 'telemetry_controller.dart';
@@ -28,9 +24,18 @@ import 'telemetry_widgets.dart';
 /// Owner-only: every model call, minute by minute. With [model] set it is
 /// that model's detail screen (its own series and events, no breakdowns).
 class TelemetryScreen extends StatefulWidget {
-  const TelemetryScreen({super.key, this.provider, this.model, this.title});
+  const TelemetryScreen({
+    super.key,
+    this.provider,
+    this.model,
+    this.title,
+    this.api,
+  });
 
   final String? provider, model, title;
+
+  /// Test seam; defaults to the app's API.
+  final TelemetryApi? api;
 
   bool get isDetail => model != null || provider != null;
 
@@ -48,7 +53,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   void initState() {
     super.initState();
     _c = TelemetryController(
-      TelemetryApi(AppConfig.apiBaseUrl),
+      widget.api ?? TelemetryApi(AppConfig.apiBaseUrl),
       locked: TelemetryFilters(provider: widget.provider, model: widget.model),
     )..start();
     _tick = Timer.periodic(TelemetryDurations.countdownTick, (_) {
@@ -68,69 +73,32 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayFor(context),
-      child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const AppIcon(AppIcons.back, size: AppIconSize.md),
-            tooltip: AppStrings.back,
-            onPressed: () {
-              Haptics.tap();
-              Navigator.pop(context);
-            },
-          ),
-          title: Text(
-            widget.title ?? TelemetryStrings.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          actions: [
-            ListenableBuilder(
-              listenable: _c,
-              builder: (context, _) => Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.lg),
-                child: LiveDot(state: _c.live, paused: _c.paused),
-              ),
-            ),
+    return ListenableBuilder(
+      listenable: _c,
+      builder: (context, _) => NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          if (n.metrics.extentAfter < TelemetrySizes.loadMoreThreshold &&
+              _c.hasMore &&
+              !_c.loadingMore) {
+            unawaited(_c.loadMore());
+          }
+          return false;
+        },
+        child: M3Page(
+          title: widget.title ?? TelemetryStrings.title,
+          onRefresh: _c.reload,
+          actions: [LiveDot(state: _c.live, paused: _c.paused)],
+          slivers: [
+            _pad(Builder(builder: _header)),
+            if (_c.overview == null)
+              _pad(Builder(builder: _placeholder))
+            else ...[
+              _pad(Builder(builder: (ctx) => _body(ctx, _c.overview!))),
+              _pad(Builder(builder: _logHeader)),
+              _log(),
+              _pad(Builder(builder: _logFooter)),
+            ],
           ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(AppBorder.thin),
-            child: Divider(color: p.border),
-          ),
-        ),
-        body: ListenableBuilder(
-          listenable: _c,
-          builder: (context, _) => RefreshIndicator(
-            color: p.accent,
-            backgroundColor: p.surface,
-            onRefresh: _c.reload,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n.metrics.extentAfter < TelemetrySizes.loadMoreThreshold &&
-                    _c.hasMore &&
-                    !_c.loadingMore) {
-                  unawaited(_c.loadMore());
-                }
-                return false;
-              },
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  _pad(_header(context)),
-                  if (_c.overview == null)
-                    _pad(_placeholder(context))
-                  else ...[
-                    _pad(_body(context, _c.overview!)),
-                    _pad(_logHeader(context)),
-                    _log(context),
-                    _pad(_logFooter(context)),
-                  ],
-                ],
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -145,14 +113,24 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
 
   Widget _header(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.md),
-      child: Segmented<String>(
-        value: _c.window,
-        onChanged: _c.setWindow,
-        options: [
-          for (final w in TelemetryWindows.all)
-            (w, TelemetryStrings.windowLabels[w]!),
-        ],
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<String>(
+          showSelectedIcon: false,
+          segments: [
+            for (final w in TelemetryWindows.all)
+              ButtonSegment(
+                value: w,
+                label: Text(TelemetryStrings.windowLabels[w]!),
+              ),
+          ],
+          selected: {_c.window},
+          onSelectionChanged: (v) {
+            Haptics.tap();
+            _c.setWindow(v.first);
+          },
+        ),
       ),
     );
   }
@@ -182,43 +160,41 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
           UsageError(onRetry: _c.reload, stale: true, loading: _c.loading),
         ],
         const SizedBox(height: AppSpacing.lg),
-        FlatCard(
-          child: StatGrid(
-            tiles: [
-              StatTile(TelemetryStrings.requests, grouped(a.requests)),
-              StatTile(
-                TelemetryStrings.failed,
-                grouped(a.failed),
-                alert: a.failed > 0,
-                sub: pct(a.failureRate),
-              ),
-              StatTile(
-                TelemetryStrings.tokensIn,
-                compact(a.tokensIn),
-                sub: grouped(a.tokensIn),
-              ),
-              StatTile(
-                TelemetryStrings.tokensOut,
-                compact(a.tokensOut),
-                sub: grouped(a.tokensOut),
-              ),
-              StatTile(
-                TelemetryStrings.p50,
-                ms(a.latencyP50),
-                sub: '${TelemetryStrings.p95} ${ms(a.latencyP95)}',
-              ),
-              StatTile(
-                TelemetryStrings.ttft,
-                ms(a.ttftP50),
-                sub: '${TelemetryStrings.avg} ${ms(a.ttftAvg)}',
-              ),
-            ],
-          ),
+        StatGrid(
+          tiles: [
+            StatTile(TelemetryStrings.requests, grouped(a.requests)),
+            StatTile(
+              TelemetryStrings.failed,
+              grouped(a.failed),
+              alert: a.failed > 0,
+              sub: pct(a.failureRate),
+            ),
+            StatTile(
+              TelemetryStrings.tokensIn,
+              compact(a.tokensIn),
+              sub: grouped(a.tokensIn),
+            ),
+            StatTile(
+              TelemetryStrings.tokensOut,
+              compact(a.tokensOut),
+              sub: grouped(a.tokensOut),
+            ),
+            StatTile(
+              TelemetryStrings.p50,
+              ms(a.latencyP50),
+              sub: '${TelemetryStrings.p95} ${ms(a.latencyP95)}',
+            ),
+            StatTile(
+              TelemetryStrings.ttft,
+              ms(a.ttftP50),
+              sub: '${TelemetryStrings.avg} ${ms(a.ttftAvg)}',
+            ),
+          ],
         ),
         if (!widget.isDetail) ...[
           const SizedBox(height: AppSpacing.md),
           ChipRow(
-            label: TelemetryStrings.filterProvider,
+            label: TelemetryCopy.filterProvider,
             values: [for (final x in o.providers) x.name],
             selected: _c.filters.provider,
             onSelect: _c.setProvider,
@@ -227,21 +203,15 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         ],
         const SizedBox(height: AppSpacing.sm),
         ChipRow(
-          label: TelemetryStrings.filterKind,
+          label: TelemetryCopy.filterKind,
           values: {?_c.filters.kind, for (final x in o.kinds) x.name}.toList(),
           selected: _c.filters.kind,
           onSelect: _c.setKind,
         ),
-        const SectionHeader(
-          TelemetryStrings.charts,
-          icon: TelemetryIcons.chart,
-        ),
+        SettingsGroupHeader(TelemetryCopy.charts),
         if (_c.series != null) _charts(context, _c.series!),
         if (!widget.isDetail) ...[
-          const SectionHeader(
-            TelemetryStrings.models,
-            icon: TelemetryIcons.models,
-          ),
+          SettingsGroupHeader(TelemetryCopy.models),
           for (final m in o.models) ...[
             ModelRow(
               key: ValueKey(m.id),
@@ -253,26 +223,18 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
           ],
         ],
         if (o.totals.requests == 0)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-            child: Text(TelemetryStrings.empty, style: context.text.caption),
-          ),
+          const M3Empty(icon: TelemetryIcons.chart, title: TelemetryCopy.empty),
         if (!widget.isDetail) ...[
-          const SectionHeader(
-            TelemetryStrings.providers,
-            icon: TelemetryIcons.providers,
-          ),
-          FlatCard(
-            child: Column(
-              children: [
-                for (final x in o.providers)
-                  AggLine(
-                    name: providerLabel(x.name),
-                    agg: x.agg,
-                    icon: TelemetryIcons.provider(x.name),
-                  ),
-              ],
-            ),
+          SettingsGroupHeader(TelemetryCopy.providers),
+          M3Group(
+            children: [
+              for (final x in o.providers)
+                AggLine(
+                  name: providerLabel(x.name),
+                  agg: x.agg,
+                  icon: TelemetryIcons.provider(x.name),
+                ),
+            ],
           ),
           for (final pr in providers) ...[
             const SizedBox(height: AppSpacing.md),
@@ -280,45 +242,30 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
           ],
         ],
         if (o.kinds.isNotEmpty) ...[
-          const SectionHeader(
-            TelemetryStrings.kinds,
-            icon: TelemetryIcons.kinds,
-          ),
-          FlatCard(
-            child: Column(
-              children: [
-                for (final x in o.kinds.take(TelemetrySizes.kindsShown))
-                  AggLine(name: kindLabel(x.name), agg: x.agg),
-              ],
-            ),
+          SettingsGroupHeader(TelemetryCopy.kinds),
+          M3Group(
+            children: [
+              for (final x in o.kinds.take(TelemetrySizes.kindsShown))
+                AggLine(name: kindLabel(x.name), agg: x.agg),
+            ],
           ),
         ],
         if (!widget.isDetail && o.users.isNotEmpty) ...[
-          const SectionHeader(
-            TelemetryStrings.users,
-            icon: TelemetryIcons.users,
-          ),
-          FlatCard(
-            child: Column(
-              children: [
-                for (final u in o.users.take(TelemetrySizes.usersShown))
-                  UserLine(user: u),
-              ],
-            ),
+          SettingsGroupHeader(TelemetryCopy.users),
+          M3Group(
+            children: [
+              for (final u in o.users.take(TelemetrySizes.usersShown))
+                UserLine(user: u),
+            ],
           ),
         ],
         if (o.topErrors.isNotEmpty) ...[
-          const SectionHeader(
-            TelemetryStrings.topErrors,
-            icon: TelemetryIcons.errors,
-          ),
-          FlatCard(
-            child: Column(
-              children: [
-                for (final e in o.topErrors.take(TelemetrySizes.topErrorsShown))
-                  ErrorLine(error: e),
-              ],
-            ),
+          SettingsGroupHeader(TelemetryCopy.topErrors),
+          M3Group(
+            children: [
+              for (final e in o.topErrors.take(TelemetrySizes.topErrorsShown))
+                ErrorLine(error: e),
+            ],
           ),
         ],
       ],
@@ -327,34 +274,38 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
 
   Widget _charts(BuildContext context, TelemetrySeries s) {
     final p = context.palette;
-    return FlatCard(
+    final scheme = Theme.of(context).colorScheme;
+    return M3Card(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            height: TelemetrySizes.chipHeight,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final b in TelemetryBuckets.all) ...[
-                  TelemetryChip(
-                    label: TelemetryStrings.bucketLabels[b]!,
-                    selected: s.bucket == b,
-                    onTap: () => _c.setBucket(b),
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                for (final b in TelemetryBuckets.all)
+                  ButtonSegment(
+                    value: b,
+                    label: Text(TelemetryCopy.bucketLabels[b]!),
                   ),
-                  const SizedBox(width: AppSpacing.xs + AppSpacing.xxs),
-                ],
               ],
+              selected: {s.bucket},
+              onSelectionChanged: (v) {
+                Haptics.tap();
+                _c.setBucket(v.first);
+              },
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          _chartTitle(context, TelemetryStrings.chartRequests, [
+          _chartTitle(context, TelemetryCopy.chartRequests, [
             (p.textSecondary, TelemetryStrings.legendOk),
             (p.accent, TelemetryStrings.legendFailed),
           ]),
           RequestBars(series: s),
           const SizedBox(height: AppSpacing.lg),
-          _chartTitle(context, TelemetryStrings.chartTokens, [
+          _chartTitle(context, TelemetryCopy.chartTokens, [
             (p.textPrimary, TelemetryStrings.legendIn),
             (p.accent, TelemetryStrings.legendOut),
           ]),
@@ -367,7 +318,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
             format: (v) => compact(v.round()),
           ),
           const SizedBox(height: AppSpacing.lg),
-          _chartTitle(context, TelemetryStrings.chartLatency, [
+          _chartTitle(context, TelemetryCopy.chartLatency, [
             (p.textPrimary, TelemetryStrings.legendLatency),
             (p.accent, TelemetryStrings.legendTtft),
           ]),
@@ -385,7 +336,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
               child: LinearProgressIndicator(
                 minHeight: AppSizes.attachProgress,
                 color: p.accent,
-                backgroundColor: p.border,
+                backgroundColor: scheme.surfaceContainerHighest,
               ),
             ),
         ],
@@ -405,9 +356,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
           Expanded(
             child: Text(
               title,
-              style: context.text.caption.copyWith(
-                color: context.palette.textPrimary,
-              ),
+              style: Theme.of(context).textTheme.titleSmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -438,18 +387,15 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionHeader(
-          widget.isDetail
-              ? TelemetryStrings.recentEvents
-              : TelemetryStrings.log,
-          icon: TelemetryIcons.log,
+        SettingsGroupHeader(
+          widget.isDetail ? TelemetryCopy.recentEvents : TelemetryCopy.log,
         ),
         Wrap(
           spacing: AppSpacing.xs + AppSpacing.xxs,
           runSpacing: AppSpacing.xs + AppSpacing.xxs,
           children: [
             TelemetryChip(
-              label: TelemetryStrings.failedOnly,
+              label: TelemetryCopy.failedOnly,
               icon: TelemetryIcons.failed,
               alert: true,
               selected: _c.failedOnly,
@@ -457,9 +403,9 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
             ),
             TelemetryChip(
               label: _c.paused
-                  ? '${TelemetryStrings.resume}'
+                  ? '${TelemetryCopy.resume}'
                         '${_c.heldCount > 0 ? ' +${_c.heldCount} ${TelemetryStrings.newEvents}' : ''}'
-                  : TelemetryStrings.pause,
+                  : TelemetryCopy.pause,
               icon: _c.paused ? TelemetryIcons.resume : TelemetryIcons.pause,
               selected: _c.paused,
               onTap: _c.togglePause,
@@ -471,14 +417,11 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     );
   }
 
-  Widget _log(BuildContext context) {
+  Widget _log() {
     final list = _c.events;
     if (list.isEmpty) {
       return _pad(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-          child: Text(TelemetryStrings.emptyLog, style: context.text.caption),
-        ),
+        const M3Empty(icon: TelemetryIcons.log, title: TelemetryCopy.emptyLog),
       );
     }
     return SliverPadding(
@@ -487,13 +430,19 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         itemCount: list.length,
         itemBuilder: (context, i) {
           final e = list[i];
-          return EventRow(
+          return M3Cell(
             key: ValueKey(e.id),
-            event: e,
-            open: _open.contains(e.id),
-            fresh: _c.fresh.contains(e.id),
-            onTap: () => setState(
-              () => _open.contains(e.id) ? _open.remove(e.id) : _open.add(e.id),
+            index: i,
+            count: list.length,
+            selected: _c.fresh.contains(e.id),
+            child: EventRow(
+              event: e,
+              open: _open.contains(e.id),
+              fresh: _c.fresh.contains(e.id),
+              onTap: () => setState(
+                () =>
+                    _open.contains(e.id) ? _open.remove(e.id) : _open.add(e.id),
+              ),
             ),
           );
         },
@@ -504,10 +453,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   Widget _logFooter(BuildContext context) {
     final p = context.palette;
     return Padding(
-      padding: EdgeInsets.only(
-        top: AppSpacing.md,
-        bottom: MediaQuery.paddingOf(context).bottom + AppSpacing.xl,
-      ),
+      padding: const EdgeInsets.only(top: AppSpacing.md),
       child: Center(
         child: _c.loadingMore
             ? SizedBox.square(
@@ -519,13 +465,15 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
               )
             : _c.hasMore
             ? TelemetryChip(
-                label: TelemetryStrings.loadMore,
+                label: TelemetryCopy.loadMore,
                 selected: false,
                 onTap: _c.loadMore,
               )
             : Text(
-                _c.events.isEmpty ? '' : TelemetryStrings.noMore,
-                style: context.text.caption,
+                _c.events.isEmpty ? '' : TelemetryCopy.noMore,
+                style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
       ),
     );
