@@ -56,8 +56,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    AppScope.of(context).usage.refresh();
-    ConnectionsController.instance.refresh();
+    final usage = AppScope.of(context).usage;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      usage.refresh();
+      ConnectionsController.instance.refresh();
+    });
   }
 
   @override
@@ -115,18 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _query.toLowerCase(),
     );
     if (hits.isEmpty && !resetHit) {
-      return [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-          child: Text(
-            SettingsStrings.noResults,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ];
+      return [const SettingsEmptyState(SettingsStrings.noResults)];
     }
     return [
       const SettingsGroupHeader(SettingsStrings.searchResults),

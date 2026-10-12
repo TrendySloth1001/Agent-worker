@@ -6,6 +6,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../data/ai_model.dart';
 import 'settings_kit.dart';
 
@@ -60,17 +61,29 @@ class SpecificModelTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).settings;
-    final raw = !_presets.contains(s.modelChoice);
-    return SettingsTile(
-      icon: SettingsIcons.listModels,
-      title: SettingsStrings.allModels,
-      summary: raw ? s.modelChoice : SettingsStrings.allModelsHelp,
-      onTap: () => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (_) => const _ModelSheet(),
-      ),
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) {
+        final raw = !_presets.contains(s.modelChoice);
+        return SettingsTile(
+          icon: SettingsIcons.listModels,
+          title: SettingsStrings.allModels,
+          summary: raw ? s.modelChoice : SettingsStrings.allModelsHelp,
+          trailing: raw
+              ? AppIcon(
+                  AppIcons.check,
+                  size: AppIconSize.lg,
+                  color: context.palette.accent,
+                )
+              : null,
+          onTap: () => showModalBottomSheet<void>(
+            context: context,
+            isScrollControlled: true,
+            useSafeArea: true,
+            builder: (_) => const _ModelSheet(),
+          ),
+        );
+      },
     );
   }
 }
@@ -114,14 +127,18 @@ class _ModelSheetState extends State<_ModelSheet> {
             ),
           );
         } else {
-          body = RadioGroup<String>(
-            groupValue: s.modelChoice,
-            onChanged: (v) {
-              if (v == null) return;
-              Haptics.tap();
-              s.setModelChoice(v);
-              Navigator.pop(context);
-            },
+          body = ListenableBuilder(
+            listenable: s,
+            builder: (context, child) => RadioGroup<String>(
+              groupValue: s.modelChoice,
+              onChanged: (v) {
+                if (v == null) return;
+                Haptics.tap();
+                s.setModelChoice(v);
+                Navigator.pop(context);
+              },
+              child: child!,
+            ),
             child: Column(
               children: [
                 for (final m in snap.data!)
