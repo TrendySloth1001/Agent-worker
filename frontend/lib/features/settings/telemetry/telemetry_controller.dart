@@ -214,7 +214,7 @@ class TelemetryController extends ChangeNotifier {
   void _onEvent(TelemetryEvent e) {
     if (!filters.matches(e)) return;
     _scheduleRefresh();
-    if (failedOnly && e.ok) return;
+    if (failedOnly && !e.failed) return;
     if (paused) {
       _held.insert(0, e);
       if (_held.length > TelemetrySizes.maxEvents) _held.removeLast();

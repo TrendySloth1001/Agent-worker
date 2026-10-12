@@ -21,6 +21,7 @@ class TelemetryAgg {
     this.requests = 0,
     this.ok = 0,
     this.failed = 0,
+    this.unknown = 0,
     this.failureRate = 0,
     this.tokensIn = 0,
     this.tokensOut = 0,
@@ -37,6 +38,7 @@ class TelemetryAgg {
     requests: _i(j['requests']),
     ok: _i(j['ok']),
     failed: _i(j['failed']),
+    unknown: _i(j['unknown']),
     failureRate: _d(j['failureRate']),
     tokensIn: _i(j['tokensIn']),
     tokensOut: _i(j['tokensOut']),
@@ -49,7 +51,8 @@ class TelemetryAgg {
     lastAt: _t(j['lastAt']),
   );
 
-  final int requests, ok, failed, tokensIn, tokensOut, units;
+  /// [unknown]: legacy rows with ok=false but neither a status nor an error.
+  final int requests, ok, failed, unknown, tokensIn, tokensOut, units;
   final double failureRate;
   final int? latencyAvg, latencyP50, latencyP95, ttftAvg, ttftP50;
   final DateTime? lastAt;
@@ -118,6 +121,7 @@ class ModelTelemetry {
     required this.agg,
     required this.failuresByCode,
     required this.inRegistry,
+    this.kinds = const [],
     this.lastError,
     this.cooldownEnds,
     this.rateLimit,
@@ -136,6 +140,11 @@ class ModelTelemetry {
           if (e.value is num) e.key: (e.value as num).toInt(),
       },
       inRegistry: j['inRegistry'] == true,
+      kinds: [
+        if (j['kinds'] is List)
+          for (final k in j['kinds'] as List)
+            if (k is String) k,
+      ],
       lastError: TelemetryLastError.fromJson(j['lastError']),
       // Server clock may differ: anchor the countdown to the local fetch time.
       cooldownEnds: ms > 0 ? fetchedAt.add(Duration(milliseconds: ms)) : null,
@@ -148,6 +157,9 @@ class ModelTelemetry {
   final TelemetryAgg agg;
   final Map<String, int> failuresByCode;
   final bool inRegistry;
+
+  /// Raw call kinds seen (search, fetch, ...): names model-less rows.
+  final List<String> kinds;
   final TelemetryLastError? lastError;
   final DateTime? cooldownEnds;
   final TelemetryRateLimit? rateLimit;
@@ -160,9 +172,44 @@ class ModelTelemetry {
 }
 
 class NamedAgg {
-  const NamedAgg(this.name, this.agg);
+  const NamedAgg(this.name, this.agg, [this.spark = const []]);
   final String name;
   final TelemetryAgg agg;
+
+  /// Requests per bucket across the window (providers only).
+  final List<double> spark;
+}
+
+/// Chat turns: how many extra calls a message costs and how fast it starts.
+class TurnTelemetry {
+  const TurnTelemetry({
+    required this.turns,
+    required this.auxCalls,
+    required this.auxAvg,
+    required this.auxMax,
+    this.ttftAvg,
+    this.ttftP50,
+    this.latencyP50,
+  });
+
+  static TurnTelemetry? fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final turns = _i(raw['turns']);
+    if (turns == 0) return null;
+    return TurnTelemetry(
+      turns: turns,
+      auxCalls: _i(raw['auxCalls']),
+      auxAvg: _d(raw['auxAvg']),
+      auxMax: _i(raw['auxMax']),
+      ttftAvg: _ni(raw['ttftAvg']),
+      ttftP50: _ni(raw['ttftP50']),
+      latencyP50: _ni(raw['latencyP50']),
+    );
+  }
+
+  final int turns, auxCalls, auxMax;
+  final double auxAvg;
+  final int? ttftAvg, ttftP50, latencyP50;
 }
 
 class UserTelemetry {
@@ -230,6 +277,7 @@ class TelemetryOverview {
     required this.kinds,
     required this.users,
     required this.topErrors,
+    this.turns,
   });
 
   factory TelemetryOverview.fromJson(Map<String, dynamic> j) {
@@ -239,7 +287,11 @@ class TelemetryOverview {
       totals: TelemetryAgg.fromJson(_m(j['totals'])),
       providers: [
         for (final p in _l(j['providers']))
-          NamedAgg(_s(p['provider']) ?? '', TelemetryAgg.fromJson(p)),
+          NamedAgg(_s(p['provider']) ?? '', TelemetryAgg.fromJson(p), [
+            if (p['spark'] is List)
+              for (final v in p['spark'] as List)
+                if (v is num) v.toDouble(),
+          ]),
       ],
       models: [
         for (final m in _l(j['models'])) ModelTelemetry.fromJson(m, now),
@@ -250,6 +302,7 @@ class TelemetryOverview {
       ],
       users: [for (final u in _l(j['users'])) UserTelemetry.fromJson(u)],
       topErrors: [for (final e in _l(j['topErrors'])) TopError.fromJson(e)],
+      turns: TurnTelemetry.fromJson(j['turns']),
     );
   }
 
@@ -259,6 +312,7 @@ class TelemetryOverview {
   final List<ModelTelemetry> models;
   final List<UserTelemetry> users;
   final List<TopError> topErrors;
+  final TurnTelemetry? turns;
 }
 
 class SeriesPoint {
@@ -357,6 +411,11 @@ class TelemetryEvent {
   final int count;
 
   int get tokens => (promptTokens ?? 0) + (completionTokens ?? 0);
+
+  /// Failed only with a status >= 400 or an error code; ok=false without
+  /// either is a legacy row of unknown outcome.
+  bool get failed => (status ?? 0) >= 400 || errorCode != null;
+  bool get unknown => !ok && !failed;
 
   /// Numeric id for ordering; events kept in memory server-side have none.
   int get order => int.tryParse(id) ?? 0;

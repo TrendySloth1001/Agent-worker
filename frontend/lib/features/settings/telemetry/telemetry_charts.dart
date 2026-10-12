@@ -8,7 +8,6 @@ import '../../../core/constants/telemetry.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/telemetry.dart';
-import '../format.dart';
 import 'telemetry_format.dart';
 
 /// A rounded step so the y axis shows about [TelemetrySizes.chartYTicks] lines.
@@ -22,14 +21,20 @@ double _step(double max) {
   return 10 * mag;
 }
 
+/// Hairline horizontal gridlines only.
 FlGridData _grid(AppPalette p, double step) => FlGridData(
   drawVerticalLine: false,
   horizontalInterval: step,
   getDrawingHorizontalLine: (_) => FlLine(
-    color: p.border.withValues(alpha: TelemetrySizes.chartGridAlpha),
+    color: p.border.withValues(alpha: TelemetrySizes.gridAlpha),
     strokeWidth: AppBorder.thin,
-    dashArray: TelemetrySizes.gridDash,
   ),
+);
+
+TextStyle _axis(BuildContext context) => AppTextStyles.bodySmall.copyWith(
+  fontSize: AppFontSize.caption,
+  color: Theme.of(context).colorScheme.onSurfaceVariant,
+  fontFeatures: const [FontFeature.tabularFigures()],
 );
 
 FlTitlesData _titles(
@@ -39,9 +44,7 @@ FlTitlesData _titles(
   double step,
   String Function(double) yLabel,
 ) {
-  final style = AppTextStyles.caption.copyWith(
-    color: Theme.of(context).colorScheme.onSurfaceVariant,
-  );
+  final style = _axis(context);
   final n = points.length;
   final every = math.max(1, (n / TelemetrySizes.chartXLabels).ceil());
   return FlTitlesData(
@@ -81,116 +84,123 @@ TextStyle _tip(BuildContext context) => Theme.of(
   context,
 ).textTheme.bodySmall!.copyWith(color: Theme.of(context).colorScheme.onSurface);
 
-/// Requests per bucket, stacked: OK part neutral, failed part red.
-class RequestBars extends StatelessWidget {
-  const RequestBars({super.key, required this.series});
+/// One bar per bucket; the failed share of it is drawn in red.
+class ActivityBars extends StatelessWidget {
+  const ActivityBars({
+    super.key,
+    required this.series,
+    required this.value,
+    required this.format,
+    required this.label,
+    this.failed,
+  });
 
   final TelemetrySeries series;
+
+  /// Bar height of a bucket.
+  final num Function(SeriesPoint) value;
+
+  /// Failed part of [value] (requests only).
+  final num Function(SeriesPoint)? failed;
+  final String Function(num) format;
+
+  /// Tooltip noun: "requests", "tokens".
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final pts = series.points;
-    final top = pts.fold<int>(0, (m, x) => math.max(m, x.requests));
-    final step = _step(top.toDouble());
+    final top = pts.fold<double>(0, (m, x) => math.max(m, value(x).toDouble()));
+    final step = _step(top);
     final maxY = math.max(step, (top / step).ceil() * step);
-    return SizedBox(
-      height: TelemetrySizes.chartHeight,
-      child: LayoutBuilder(
-        builder: (context, c) {
-          final slot =
-              (c.maxWidth - TelemetrySizes.chartLeftAxis) /
-              math.max(1, pts.length);
-          final w = (slot * TelemetrySizes.chartBarFill).clamp(
-            TelemetrySizes.chartBarMin,
-            TelemetrySizes.chartBarMax,
-          );
-          return BarChart(
-            duration: Duration.zero,
-            BarChartData(
-              minY: 0,
-              maxY: maxY,
-              alignment: BarChartAlignment.spaceBetween,
-              gridData: _grid(p, step),
-              borderData: FlBorderData(show: false),
-              titlesData: _titles(
-                context,
-                pts,
-                series.bucket,
-                step,
-                (v) => compact(v.round()),
-              ),
-              barGroups: [
-                for (var i = 0; i < pts.length; i++)
-                  BarChartGroupData(
-                    x: i,
-                    barRods: [
-                      BarChartRodData(
-                        toY: pts[i].requests.toDouble(),
-                        width: w,
-                        borderRadius: BorderRadius.circular(
-                          TelemetrySizes.chartBarRadius,
-                        ),
-                        color: p.textPrimary,
-                        rodStackItems: [
-                          BarChartRodStackItem(
-                            0,
-                            (pts[i].requests - pts[i].failed).toDouble(),
-                            p.textSecondary,
-                          ),
-                          BarChartRodStackItem(
-                            (pts[i].requests - pts[i].failed).toDouble(),
-                            pts[i].requests.toDouble(),
-                            p.accent,
-                          ),
-                        ],
-                      ),
-                    ],
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.md),
+      child: SizedBox(
+        height: TelemetrySizes.chartHeight,
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final slot =
+                (c.maxWidth - TelemetrySizes.chartLeftAxis) /
+                math.max(1, pts.length);
+            final w = (slot * TelemetrySizes.chartBarFill).clamp(
+              TelemetrySizes.chartBarMin,
+              TelemetrySizes.chartBarMax,
+            );
+            return BarChart(
+              duration: Duration.zero,
+              BarChartData(
+                minY: 0,
+                maxY: maxY,
+                alignment: BarChartAlignment.spaceBetween,
+                gridData: _grid(p, step),
+                borderData: FlBorderData(show: false),
+                titlesData: _titles(
+                  context,
+                  pts,
+                  series.bucket,
+                  step,
+                  (v) => format(v),
+                ),
+                barGroups: [
+                  for (var i = 0; i < pts.length; i++) _group(i, pts[i], w, p),
+                ],
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) =>
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    tooltipBorderRadius: BorderRadius.circular(AppRadius.md),
+                    fitInsideHorizontally: true,
+                    fitInsideVertically: true,
+                    getTooltipItem: (group, gi, rod, ri) {
+                      final x = pts[group.x];
+                      final f = failed?.call(x) ?? 0;
+                      return BarTooltipItem(
+                        '${clock(x.t)}\n${format(value(x))} $label'
+                        '${f > 0 ? '\n${format(f)} ${TelemetryStrings.legendFailed.toLowerCase()}' : ''}',
+                        _tip(context),
+                      );
+                    },
                   ),
-              ],
-              barTouchData: BarTouchData(
-                touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (_) =>
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
-                  tooltipBorder: BorderSide(color: p.border),
-                  tooltipBorderRadius: BorderRadius.circular(AppRadius.md),
-                  fitInsideHorizontally: true,
-                  fitInsideVertically: true,
-                  getTooltipItem: (group, gi, rod, ri) {
-                    final x = pts[group.x];
-                    return BarTooltipItem(
-                      '${clock(x.t)}\n'
-                      '${x.requests} ${TelemetryStrings.requests}\n'
-                      '${x.failed} ${TelemetryStrings.failed}',
-                      _tip(context),
-                    );
-                  },
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
+    );
+  }
+
+  BarChartGroupData _group(int i, SeriesPoint x, double w, AppPalette p) {
+    final v = value(x).toDouble();
+    final f = (failed?.call(x) ?? 0).toDouble().clamp(0, v);
+    return BarChartGroupData(
+      x: i,
+      barRods: [
+        BarChartRodData(
+          toY: v,
+          width: w,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(TelemetrySizes.chartBarRadius),
+          ),
+          color: p.textSecondary,
+          rodStackItems: f > 0
+              ? [
+                  BarChartRodStackItem(0, v - f, p.textSecondary),
+                  BarChartRodStackItem(v - f, v, p.accent),
+                ]
+              : const [],
+        ),
+      ],
     );
   }
 }
 
-/// Up to two line series over the same buckets (second one dashed red).
-class SeriesLines extends StatelessWidget {
-  const SeriesLines({
-    super.key,
-    required this.series,
-    required this.first,
-    required this.second,
-    required this.firstLabel,
-    required this.secondLabel,
-    required this.format,
-  });
+/// Median latency (solid) and time to first token (dashed) per bucket.
+class LatencyLines extends StatelessWidget {
+  const LatencyLines({super.key, required this.series});
 
   final TelemetrySeries series;
-  final num? Function(SeriesPoint) first, second;
-  final String firstLabel, secondLabel;
-  final String Function(num) format;
 
   @override
   Widget build(BuildContext context) {
@@ -198,13 +208,13 @@ class SeriesLines extends StatelessWidget {
     final pts = series.points;
     double top = 0;
     for (final x in pts) {
-      top = math.max(top, (first(x) ?? 0).toDouble());
-      top = math.max(top, (second(x) ?? 0).toDouble());
+      top = math.max(top, (x.latencyP50 ?? 0).toDouble());
+      top = math.max(top, (x.ttftP50 ?? 0).toDouble());
     }
     final step = _step(top);
     final maxY = math.max(step, (top / step).ceil() * step);
     LineChartBarData line(
-      num? Function(SeriesPoint) f,
+      int? Function(SeriesPoint) f,
       Color color,
       bool dash,
     ) => LineChartBarData(
@@ -223,7 +233,7 @@ class SeriesLines extends StatelessWidget {
     return SizedBox(
       height: TelemetrySizes.chartHeight,
       child: Padding(
-        padding: const EdgeInsets.only(right: AppSpacing.sm),
+        padding: const EdgeInsets.only(right: AppSpacing.md),
         child: LineChart(
           duration: Duration.zero,
           LineChartData(
@@ -238,17 +248,16 @@ class SeriesLines extends StatelessWidget {
               pts,
               series.bucket,
               step,
-              (v) => format(v),
+              (v) => ms(v.round()),
             ),
             lineBarsData: [
-              line(first, p.textPrimary, false),
-              line(second, p.accent, true),
+              line((x) => x.latencyP50, p.textPrimary, false),
+              line((x) => x.ttftP50, p.textTertiary, true),
             ],
             lineTouchData: LineTouchData(
               touchTooltipData: LineTouchTooltipData(
                 getTooltipColor: (_) =>
                     Theme.of(context).colorScheme.surfaceContainerHighest,
-                tooltipBorder: BorderSide(color: p.border),
                 tooltipBorderRadius: BorderRadius.circular(AppRadius.md),
                 fitInsideHorizontally: true,
                 fitInsideVertically: true,
@@ -256,8 +265,8 @@ class SeriesLines extends StatelessWidget {
                   for (final s in spots)
                     LineTooltipItem(
                       '${s.barIndex == 0 ? '${clock(pts[s.spotIndex].t)}\n' : ''}'
-                      '${s.barIndex == 0 ? firstLabel : secondLabel} '
-                      '${format(s.y)}',
+                      '${s.barIndex == 0 ? TelemetryStrings.legendLatency : TelemetryStrings.legendTtft} '
+                      '${ms(s.y.round())}',
                       _tip(context),
                     ),
                 ],
@@ -270,31 +279,62 @@ class SeriesLines extends StatelessWidget {
   }
 }
 
-/// Small legend: a swatch and a mono caption per series.
-class ChartLegend extends StatelessWidget {
-  const ChartLegend({super.key, required this.items});
+/// A tiny line of values, no axes (one provider's traffic over the range).
+class Sparkline extends StatelessWidget {
+  const Sparkline({super.key, required this.values});
 
-  final List<(Color, String)> items;
+  final List<double> values;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppSpacing.md,
-      children: [
-        for (final (color, label) in items)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: AppSizes.quotaDot,
-                height: AppSizes.quotaDot,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(label, style: Theme.of(context).textTheme.labelMedium),
-            ],
-          ),
-      ],
+    final p = context.palette;
+    return SizedBox(
+      width: TelemetrySizes.sparkWidth,
+      height: TelemetrySizes.sparkHeight,
+      child: CustomPaint(
+        painter: _SparkPainter(values, p.textSecondary, p.border),
+      ),
     );
   }
+}
+
+class _SparkPainter extends CustomPainter {
+  _SparkPainter(this.values, this.line, this.base);
+
+  final List<double> values;
+  final Color line, base;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final top = values.fold<double>(0, math.max);
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = TelemetrySizes.sparkStroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = top == 0 ? base : line;
+    if (values.length < 2) {
+      canvas.drawLine(
+        Offset(0, size.height),
+        Offset(size.width, size.height),
+        stroke,
+      );
+      return;
+    }
+    final inset = TelemetrySizes.sparkStroke;
+    final h = size.height - inset * 2;
+    final path = Path();
+    for (var i = 0; i < values.length; i++) {
+      final x = size.width * i / (values.length - 1);
+      final y = top == 0
+          ? size.height - inset
+          : inset + h * (1 - values[i] / top);
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(_SparkPainter old) =>
+      old.values != values || old.line != line || old.base != base;
 }
