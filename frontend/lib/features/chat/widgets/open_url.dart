@@ -4,6 +4,7 @@ import '../../../core/app_scope.dart';
 import '../../../core/platform/browsers.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
+import '../../../core/notifications.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/browser_picker.dart';
 import '../../../data/files_api.dart';
@@ -23,6 +24,12 @@ Future<void> openUrl(
   if (url.startsWith('doc:')) {
     final id = url.substring(4).split('#').first;
     if (id.isNotEmpty) await openDoc(context, id);
+    return;
+  }
+  // An earlier chat the assistant recalled opens in the chat screen.
+  if (url.startsWith('chat:')) {
+    final id = url.substring(5).split('#').first;
+    if (id.isNotEmpty) AppNotifications.instance.opened.value = id;
     return;
   }
   var target = url;
@@ -61,7 +68,9 @@ Future<void> openUrlWith(BuildContext context, String url) async {
 /// it). Does nothing when the picker is dismissed.
 Future<void> visitUrl(BuildContext context, String url) async {
   // In-app targets need no browser.
-  if (url.startsWith('doc:') || url.startsWith('note:')) {
+  if (url.startsWith('doc:') ||
+      url.startsWith('note:') ||
+      url.startsWith('chat:')) {
     return openUrl(context, url);
   }
   final package = await pickOrRemembered(context);

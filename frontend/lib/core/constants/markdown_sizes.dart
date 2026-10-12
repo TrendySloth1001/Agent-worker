@@ -20,6 +20,9 @@ abstract final class MdSizes {
   static const citeChipMaxWidth = 140.0;
   static const citeNameMaxChars = 18;
 
+  /// Longer, because the "Chat · " prefix of a past-chat source takes seven.
+  static const citeChatNameMaxChars = 26;
+
   /// Second-level labels that belong to the TLD (bbc.co.uk -> bbc).
   static const citeTldSecondLevel = {
     'co',

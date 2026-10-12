@@ -277,7 +277,7 @@ Future<void> shareText(String text, {String? subject}) async {
   await SharePlus.instance.share(ShareParams(text: text, subject: subject));
 }
 
-final _citeRe = RegExp(r'\[([KWDG]\d{1,2})\](?!\()');
+final _citeRe = RegExp(r'\[([KWDGC]\d{1,2})\](?!\()');
 final _iconRe = RegExp(r'\{\{icon:[^}\n]*\}\} ?');
 final _imageRe = RegExp(r'\{\{image:([^}|]{1,120})(?:\|([^}]{1,160}))?\}\}');
 final _fenceLineRe = RegExp(r'^\s*(`{3,}|~{3,})');

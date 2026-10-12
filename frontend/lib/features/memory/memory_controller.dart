@@ -13,6 +13,7 @@ class MemoryController extends ChangeNotifier {
   final MemoryApi _api;
 
   bool enabled = true;
+  bool chatRecall = true;
   List<MemoryItem> items = [];
   int total = 0;
   String query = '';
@@ -43,6 +44,7 @@ class MemoryController extends ChangeNotifier {
       final page = await _api.list(query: query);
       if (gen != _generation) return;
       enabled = page.enabled;
+      chatRecall = page.chatRecall;
       total = page.total;
       items = page.items;
     } catch (_) {
@@ -70,6 +72,22 @@ class MemoryController extends ChangeNotifier {
       return true;
     } catch (_) {
       enabled = before;
+      _notify();
+      return false;
+    }
+  }
+
+  /// Returns false (and keeps the old value) when the server refuses.
+  Future<bool> setChatRecall(bool value) async {
+    final before = chatRecall;
+    chatRecall = value;
+    _notify();
+    try {
+      chatRecall = await _api.setChatRecall(value);
+      _notify();
+      return true;
+    } catch (_) {
+      chatRecall = before;
       _notify();
       return false;
     }

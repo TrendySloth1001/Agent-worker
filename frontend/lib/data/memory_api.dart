@@ -36,8 +36,12 @@ class MemoryPage {
     required this.enabled,
     required this.total,
     required this.items,
+    this.chatRecall = true,
   });
   final bool enabled;
+
+  /// Whether past chats are indexed and searched ("have we talked about this?").
+  final bool chatRecall;
   final int total;
   final List<MemoryItem> items;
 }
@@ -81,6 +85,7 @@ class MemoryApi {
     );
     return MemoryPage(
       enabled: j['enabled'] != false,
+      chatRecall: j['chatRecall'] != false,
       total: (j['total'] as num?)?.toInt() ?? 0,
       items: [
         for (final i in j['items'] as List? ?? const [])
@@ -94,6 +99,13 @@ class MemoryApi {
       await _send('PUT', '/settings', body: {'enabled': enabled}),
     );
     return j['enabled'] != false;
+  }
+
+  Future<bool> setChatRecall(bool enabled) async {
+    final j = _json(
+      await _send('PUT', '/settings', body: {'chatRecall': enabled}),
+    );
+    return j['chatRecall'] != false;
   }
 
   Future<MemoryItem> create(String text) async =>

@@ -12,6 +12,11 @@ abstract final class MemoryStrings {
   static const toggleHint =
       'Sparky saves lasting facts and preferences from your chats and uses '
       'them in new ones. You can also say "remember ..." or "forget ...".';
+  static const recallToggle = 'RECALL PAST CHATS';
+  static const recallHint =
+      'Lets Sparky look through your other chats when you ask "did we talk '
+      'about this before?" or when one is clearly related. Only your own '
+      'chats are searched. Turning it off removes the search index.';
   static const entry = 'WHAT SPARKY REMEMBERS';
   static const searchHint = 'Search memories';
   static const addHint = 'Something to remember';

@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 /// Where a cited source comes from: the knowledge base (`K<n>`), the web
-/// (`W<n>`), an attached file (`D<n>`) or a generated document.
+/// (`W<n>`), an attached file (`D<n>`), a generated document or one of the
+/// user's earlier chats (`C<n>`, url `chat:<conversationId>`).
 enum CitationKind {
   web,
   kb,
   file,
-  doc;
+  doc,
+  conversation;
 
   /// Stored JSON values are the enum names; anything unknown reads as web.
   static CitationKind parse(Object? raw) {

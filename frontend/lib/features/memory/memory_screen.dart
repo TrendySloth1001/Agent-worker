@@ -96,6 +96,13 @@ class _MemoryScreenState extends State<MemoryScreen> {
     }
   }
 
+  Future<void> _toggleRecall(bool value) async {
+    final ok = await _c.setChatRecall(value);
+    if (mounted && !ok) {
+      storageNotice(context, MemoryStrings.saveFailed, error: true);
+    }
+  }
+
   Future<void> _delete(MemoryItem m) async {
     Haptics.tap();
     final ok = await _c.delete(m);
@@ -196,6 +203,14 @@ class _MemoryScreenState extends State<MemoryScreen> {
                   onChanged: _toggle,
                 ),
                 Text(MemoryStrings.toggleHint, style: context.text.caption),
+                const SizedBox(height: AppSpacing.md),
+                ToggleRow(
+                  label: MemoryStrings.recallToggle,
+                  icon: AppIcons.chat,
+                  value: _c.chatRecall,
+                  onChanged: _toggleRecall,
+                ),
+                Text(MemoryStrings.recallHint, style: context.text.caption),
                 const SizedBox(height: AppSpacing.lg),
                 TextField(
                   controller: _search,

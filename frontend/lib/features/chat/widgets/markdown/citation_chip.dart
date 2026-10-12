@@ -25,6 +25,15 @@ String citeDomain(Citation c) {
 /// Short label for a source: `developer.mozilla.org` -> `mozilla`.
 String citeShortName(Citation c) {
   // The user's own docs and files are named by their title, not a domain.
+  if (c.kind == CitationKind.conversation) {
+    final name = c.title.trim().isEmpty
+        ? AppStrings.chatSourceUntitled
+        : c.title.trim();
+    final label = '${AppStrings.chatSourcePrefix}$name';
+    return label.length <= MdSizes.citeChatNameMaxChars
+        ? label
+        : label.substring(0, MdSizes.citeChatNameMaxChars);
+  }
   final own =
       c.kind == CitationKind.doc ||
       c.kind == CitationKind.file ||
@@ -61,9 +70,9 @@ String _clip(String s) => s.length <= MdSizes.citeNameMaxChars
     : s.substring(0, MdSizes.citeNameMaxChars);
 
 final _run = RegExp(
-  r'\[[KWG]\d{1,2}\](?!\()(?:[ \t,]*\[[KWG]\d{1,2}\](?!\())*',
+  r'\[[KWGC]\d{1,2}\](?!\()(?:[ \t,]*\[[KWGC]\d{1,2}\](?!\())*',
 );
-final _tag = RegExp(r'\[([KWG]\d{1,2})\]');
+final _tag = RegExp(r'\[([KWGC]\d{1,2})\]');
 final _fence = RegExp(r'^\s*(```|~~~)');
 
 /// Collapses runs of citation tags that point at the same site into one tag
@@ -113,6 +122,9 @@ class SiteFavicon extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     final domain = citeDomain(citation);
+    if (citation.kind == CitationKind.conversation) {
+      return AppIcon(AppIcons.chat, size: size, color: p.textTertiary);
+    }
     final fallback = AppIcon(
       citation.isKb ? AppIcons.knowledge : AppIcons.web,
       size: size,

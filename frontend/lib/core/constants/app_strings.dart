@@ -205,6 +205,10 @@ abstract final class AppStrings {
   static const deleteChatTitle = 'DELETE CHAT';
   static const deleteChatBody = 'This chat and its messages will be removed.';
   static const chatLoadFailed = 'Could not open this chat.';
+
+  /// Source chip of an earlier chat the assistant recalled.
+  static const chatSourcePrefix = 'Chat · ';
+  static const chatSourceUntitled = 'Untitled';
   static const months = [
     'JAN',
     'FEB',

@@ -832,7 +832,7 @@ class ChatController extends ChangeNotifier {
   /// Markdown, widget tags and citation tags stripped for a preview line.
   static String _plain(String md) => md
       .replaceAll(RegExp(r'\{\{[^}]*\}\}'), '')
-      .replaceAll(RegExp(r'\[[KWDG]\d+\]'), '')
+      .replaceAll(RegExp(r'\[[KWDGC]\d+\]'), '')
       .replaceAll(RegExp(r'[#*_`>|]+'), '')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
