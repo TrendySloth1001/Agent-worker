@@ -38,10 +38,22 @@ ConversationSummary _c(
   title: title,
   preview: 'last words of $title',
   messageCount: 4,
-  updatedAt: DateTime.now().subtract(ago),
+  updatedAt: pinned ? DateTime.now().subtract(ago) : _stable(ago),
   pinned: pinned,
   origin: origin,
 );
+
+/// [ago] back from now, placed so its date group does not depend on the
+/// clock: today never crosses midnight, older chats sit at noon.
+DateTime _stable(Duration ago) {
+  final now = DateTime.now();
+  final midnight = DateTime(now.year, now.month, now.day);
+  if (ago.inDays == 0) {
+    final at = now.subtract(ago);
+    return at.isBefore(midnight) ? midnight : at;
+  }
+  return DateTime(now.year, now.month, now.day - ago.inDays, 12);
+}
 
 Future<void> _fonts() async {
   for (final (family, files) in [
@@ -86,7 +98,7 @@ void main() {
           'p2',
           'Quarterly budget model',
           pinned: true,
-          ago: const Duration(days: 9),
+          ago: const Duration(days: 5),
         ),
         _c(
           'a',
