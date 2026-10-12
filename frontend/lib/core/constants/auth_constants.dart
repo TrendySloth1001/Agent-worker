@@ -1,3 +1,4 @@
+import 'app_config.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 /// Accounts: sign-in, sign-up and the profile screen.
@@ -164,4 +165,19 @@ abstract final class AuthIcons {
   static const help = HugeIcons.strokeRoundedHelpCircle;
   static const sso = HugeIcons.strokeRoundedKey01;
   static const support = HugeIcons.strokeRoundedMail01;
+}
+
+/// "By continuing, you agree to …" under the sign-in and create-account forms.
+/// The pages are served by the backend, so the links follow [AppConfig.apiBaseUrl].
+abstract final class AuthLegal {
+  static const lead = 'By continuing, you agree to sparky\'s ';
+  static const terms = 'Terms of Service';
+  static const and = ' and ';
+  static const privacy = 'Privacy Policy';
+  static const end = '.';
+  static const termsPath = '/terms';
+  static const privacyPath = '/privacy';
+  static Uri termsUrl() => Uri.parse('${AppConfig.apiBaseUrl}$termsPath');
+  static Uri privacyUrl() => Uri.parse('${AppConfig.apiBaseUrl}$privacyPath');
+  static const openFailed = 'Could not open the page.';
 }

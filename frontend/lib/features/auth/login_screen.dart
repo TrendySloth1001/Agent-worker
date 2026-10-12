@@ -84,10 +84,17 @@ class _LoginScreenState extends State<LoginScreen> {
     return AuthScaffold(
       title: AuthStrings.loginTitle,
       subtitle: AuthStrings.loginSubtitle,
-      footer: SwitchPrompt(
-        question: AuthStrings.noAccount,
-        action: AuthStrings.toRegister,
-        onTap: _loading ? null : _toRegister,
+      footer: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SwitchPrompt(
+            question: AuthStrings.noAccount,
+            action: AuthStrings.toRegister,
+            onTap: _loading ? null : _toRegister,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const LegalNote(),
+        ],
       ),
       children: [
         FormError(_formError),

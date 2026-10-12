@@ -88,10 +88,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       subtitle: AuthStrings.registerSubtitle,
       illustration: false,
       onBack: Navigator.of(context).canPop() ? back : null,
-      footer: SwitchPrompt(
-        question: AuthStrings.haveAccount,
-        action: AuthStrings.toLogin,
-        onTap: _loading ? null : back,
+      footer: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SwitchPrompt(
+            question: AuthStrings.haveAccount,
+            action: AuthStrings.toLogin,
+            onTap: _loading ? null : back,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const LegalNote(),
+        ],
       ),
       children: [
         FormError(_formError),

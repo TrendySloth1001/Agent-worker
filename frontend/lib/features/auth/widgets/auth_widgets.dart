@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_icons.dart';
@@ -757,6 +759,66 @@ class SwitchPrompt extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "By continuing, you agree to sparky's Terms of Service and Privacy
+/// Policy." with both names as links that open in the browser.
+class LegalNote extends StatefulWidget {
+  const LegalNote({super.key});
+
+  @override
+  State<LegalNote> createState() => _LegalNoteState();
+}
+
+class _LegalNoteState extends State<LegalNote> {
+  late final _terms = TapGestureRecognizer()
+    ..onTap = () => _open(AuthLegal.termsUrl());
+  late final _privacy = TapGestureRecognizer()
+    ..onTap = () => _open(AuthLegal.privacyUrl());
+
+  @override
+  void dispose() {
+    _terms.dispose();
+    _privacy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _open(Uri uri) async {
+    Haptics.tap();
+    var ok = false;
+    try {
+      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!ok && mounted) {
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(const SnackBar(content: Text(AuthLegal.openFailed)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final base = context.text.bodySmall.copyWith(color: p.textTertiary);
+    final link = base.copyWith(
+      color: p.textSecondary,
+      decoration: TextDecoration.underline,
+      decorationColor: p.textTertiary,
+    );
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          const TextSpan(text: AuthLegal.lead),
+          TextSpan(text: AuthLegal.terms, style: link, recognizer: _terms),
+          const TextSpan(text: AuthLegal.and),
+          TextSpan(text: AuthLegal.privacy, style: link, recognizer: _privacy),
+          const TextSpan(text: AuthLegal.end),
+        ],
+      ),
+      textAlign: TextAlign.center,
     );
   }
 }
