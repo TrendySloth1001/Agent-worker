@@ -25,9 +25,6 @@ class ChartFullscreen extends StatelessWidget {
             Container(
               height: 56,
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: p.border)),
-              ),
               child: Row(
                 children: [
                   IconButton(
@@ -46,7 +43,7 @@ class ChartFullscreen extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.text.label,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
                 ],

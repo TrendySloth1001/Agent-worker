@@ -24,17 +24,9 @@ Future<GithubWebSheetResult> showGithubWebSheet(
   required String mode,
 }) async {
   Haptics.tap();
-  final p = context.palette;
   final r = await showModalBottomSheet<GithubWebSheetResult>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
     builder: (context) => _GithubWebSheet(title: title, mode: mode),
   );
   return r ?? GithubWebSheetResult.closed;
@@ -81,24 +73,12 @@ class _GithubWebSheetState extends State<_GithubWebSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     return SafeArea(
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: AppSpacing.sm),
-            Center(
-              child: Container(
-                width: ConnectSizes.sheetHandleWidth,
-                height: ConnectSizes.sheetHandleHeight,
-                decoration: BoxDecoration(
-                  color: p.borderStrong,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-            ),
             ListenableBuilder(
               listenable: _web,
               builder: (context, _) => AnimatedSize(

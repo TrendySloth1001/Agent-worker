@@ -15,6 +15,7 @@ import '../rich/diff_block.dart';
 import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
 import 'github_connect_card.dart';
+import '../../../../core/widgets/m3_kit_extras.dart';
 
 // ---- block parsing -----------------------------------------------------------
 
@@ -279,12 +280,10 @@ Future<void> ghVisit(BuildContext context, String url) =>
 Future<void> ghCopy(BuildContext context, String text) async {
   await Clipboard.setData(ClipboardData(text: text));
   if (!context.mounted) return;
-  final p = context.palette;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      backgroundColor: p.surfaceHigh,
       duration: AppDurations.copiedFeedback,
-      content: Text(AppStrings.copied, style: context.text.label),
+      content: Text(AppStrings.copied),
     ),
   );
 }
@@ -914,16 +913,8 @@ Future<String?> ghPickOne(
   String? selected,
 }) {
   final p = context.palette;
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<String>(
+    context,
     builder: (context) {
       final t = context.text;
       final media = MediaQuery.of(context);

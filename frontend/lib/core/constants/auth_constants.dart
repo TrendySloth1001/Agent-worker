@@ -97,6 +97,7 @@ abstract final class AuthSizes {
   static const strengthBar = 3.0;
   static const minPassword = 8;
   static const nameMax = 60;
+  static const splashProgress = 120.0;
 }
 
 abstract final class AuthDurations {

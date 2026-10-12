@@ -18,6 +18,7 @@ import '../open_url.dart';
 import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
 import 'github_common.dart';
+import '../../../../core/widgets/m3_kit_extras.dart';
 
 /// ```github-connect block: links the user's own GitHub account with the
 /// OAuth device flow (code on screen, approve on github.com).
@@ -41,35 +42,14 @@ class GithubConnectCard extends StatelessWidget {
 Future<void> showGithubConnectSheet(BuildContext context) {
   Haptics.tap();
   final p = context.palette;
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<void>(
+    context,
     builder: (context) => SafeArea(
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: AppSpacing.sm),
-            Center(
-              child: Container(
-                width: ConnectSizes.sheetHandleWidth,
-                height: ConnectSizes.sheetHandleHeight,
-                decoration: BoxDecoration(
-                  color: p.borderStrong,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-            ),
-            GithubConnectPanel(paper: p.surface),
-          ],
+          children: [GithubConnectPanel(paper: p.surface)],
         ),
       ),
     ),
@@ -99,14 +79,8 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
   void _toast(String text) {
     final m = ScaffoldMessenger.maybeOf(context);
     if (m == null) return;
-    final p = context.palette;
     m.hideCurrentSnackBar();
-    m.showSnackBar(
-      SnackBar(
-        backgroundColor: p.surfaceHigh,
-        content: Text(text, style: context.text.label),
-      ),
-    );
+    m.showSnackBar(SnackBar(content: Text(text)));
   }
 
   Future<void> _connect() async {
@@ -123,30 +97,19 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
   }
 
   Future<void> _disconnect() async {
-    final p = context.palette;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: p.surface,
-        title: Text(ConnectStrings.disconnectTitle, style: context.text.title),
-        content: Text(
-          ConnectStrings.disconnectBody,
-          style: context.text.bodySmall,
-        ),
+        title: const Text(ConnectStrings.disconnectTitle),
+        content: const Text(ConnectStrings.disconnectBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              ConnectStrings.disconnectKeep,
-              style: context.text.button.copyWith(color: p.textSecondary),
-            ),
+            child: const Text(ConnectStrings.disconnectKeep),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              ConnectStrings.disconnect,
-              style: context.text.button.copyWith(color: p.accent),
-            ),
+            child: const Text(ConnectStrings.disconnect),
           ),
         ],
       ),
@@ -311,7 +274,8 @@ class _Connected extends StatelessWidget {
                       Flexible(
                         child: Text(
                           ConnectStrings.authOk,
-                          style: t.caption.copyWith(color: p.textSecondary),
+                          style: Theme.of(context).textTheme.bodySmall!
+                              .copyWith(color: p.textSecondary),
                         ),
                       ),
                     ],
@@ -321,7 +285,6 @@ class _Connected extends StatelessWidget {
             ),
             PopupMenuButton<int>(
               tooltip: ConnectStrings.more,
-              color: p.surfaceRaised,
               icon: AppIcon(
                 ConnectIcons.more,
                 size: AppIconSize.sm,
@@ -337,12 +300,13 @@ class _Connected extends StatelessWidget {
                       AppIcon(
                         ConnectIcons.disconnect,
                         size: AppIconSize.sm,
-                        color: p.accent,
+                        color: p.error,
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Text(
                         ConnectStrings.disconnect,
-                        style: t.caption.copyWith(color: p.accent),
+                        style: Theme.of(context).textTheme.bodyLarge!
+                            .copyWith(color: p.error),
                       ),
                     ],
                   ),

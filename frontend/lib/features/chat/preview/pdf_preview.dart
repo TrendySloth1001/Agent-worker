@@ -5,7 +5,6 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
-import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../data/files_api.dart';
 import 'preview_actions.dart';
@@ -60,9 +59,10 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
       onPageChanged: (n) {
         if (n != null && mounted && n != _page) setState(() => _page = n);
       },
-      errorBannerBuilder: (context, error, stackTrace, ref) => _Failed(
+      errorBannerBuilder: (context, error, stackTrace, ref) => PreviewMessage(
+        title: AppStrings.previewLoadFailed,
+        error: true,
         onRetry: () {
-          Haptics.tap();
           setState(() => _url = null);
           _resolve(force: true);
         },
@@ -82,9 +82,10 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
         params: params,
       );
     } else if (_failed) {
-      body = _Failed(
+      body = PreviewMessage(
+        title: AppStrings.previewLoadFailed,
+        error: true,
         onRetry: () {
-          Haptics.tap();
           setState(() => _failed = false);
           _resolve(force: true);
         },
@@ -108,9 +109,8 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
                     vertical: AppSpacing.xs,
                   ),
                   decoration: BoxDecoration(
-                    color: p.surface,
-                    border: Border.all(color: p.border, width: AppBorder.thin),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                   child: Text(
                     AppStrings.previewPage(_page, _pages),
@@ -119,36 +119,6 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Failed extends StatelessWidget {
-  const _Failed({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            AppStrings.previewLoadFailed,
-            style: context.text.label.copyWith(color: p.error),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          TextButton(
-            onPressed: onRetry,
-            child: Text(
-              AppStrings.retry,
-              style: context.text.label.copyWith(color: p.accent),
-            ),
-          ),
         ],
       ),
     );

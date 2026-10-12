@@ -196,21 +196,13 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(
-                          width: AppIconSize.md,
-                          height: AppIconSize.md,
-                          child: CircularProgressIndicator(
-                            strokeWidth: AppSizes.attachProgress,
-                            color: p.accent,
-                          ),
-                        ),
+                        const CircularProgressIndicator(),
                         if (_processing) ...[
                           const SizedBox(height: AppSpacing.sm),
                           Text(
                             AppStrings.previewProcessing,
-                            style: context.text.label.copyWith(
-                              color: p.textSecondary,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium!
+                                .copyWith(color: p.textSecondary),
                           ),
                         ],
                       ],
@@ -252,7 +244,10 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.screenPadding),
           decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: p.border)),
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppRadius.sheet),
+            ),
           ),
           child: !_transcriptDone
               ? Text(AppStrings.previewTranscript, style: t.caption)
@@ -265,7 +260,11 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Flexible(
                       child: SingleChildScrollView(
-                        child: SelectableText(_transcript!, style: t.bodySmall),
+                        child: SelectableText(
+                          _transcript!,
+                          style: Theme.of(context).textTheme.bodyMedium!
+                              .copyWith(color: p.textSecondary),
+                        ),
                       ),
                     ),
                   ],
@@ -275,31 +274,18 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     );
   }
 
-  Widget _error(AppPalette p) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(
-        AppStrings.previewLoadFailed,
-        style: context.text.label.copyWith(color: p.error),
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      TextButton(
-        onPressed: () {
-          Haptics.tap();
-          _video?.removeListener(_tick);
-          _video?.dispose();
-          setState(() {
-            _video = null;
-            _failed = false;
-          });
-          _start(force: true);
-        },
-        child: Text(
-          AppStrings.retry,
-          style: context.text.label.copyWith(color: p.accent),
-        ),
-      ),
-    ],
+  Widget _error(AppPalette p) => PreviewMessage(
+    title: AppStrings.previewLoadFailed,
+    error: true,
+    onRetry: () {
+      _video?.removeListener(_tick);
+      _video?.dispose();
+      setState(() {
+        _video = null;
+        _failed = false;
+      });
+      _start(force: true);
+    },
   );
 
   Widget _controls(AppPalette p) {
@@ -317,7 +303,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
         height: AppSizes.previewControlsHeight,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: p.border)),
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
         ),
         child: Row(
           children: [
@@ -332,34 +318,20 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
               onPressed: ready ? _toggle : null,
             ),
             Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: AppSizes.previewSeekTrack,
-                  activeTrackColor: p.accent,
-                  inactiveTrackColor: p.border,
-                  thumbColor: p.accent,
-                  overlayShape: SliderComponentShape.noOverlay,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: AppSizes.previewSeekThumb,
-                    elevation: 0,
-                    pressedElevation: 0,
-                  ),
-                ),
-                child: Slider(
-                  min: 0,
-                  max: total <= 0 ? 1 : total,
-                  value: pos,
-                  onChangeStart: ready ? (_) => _dragging = true : null,
-                  onChanged: ready ? (v) => setState(() => _dragMs = v) : null,
-                  onChangeEnd: ready
-                      ? (v) async {
-                          Haptics.tap();
-                          await c.seekTo(Duration(milliseconds: v.round()));
-                          _dragging = false;
-                          if (mounted) setState(() {});
-                        }
-                      : null,
-                ),
+              child: Slider(
+                min: 0,
+                max: total <= 0 ? 1 : total,
+                value: pos,
+                onChangeStart: ready ? (_) => _dragging = true : null,
+                onChanged: ready ? (v) => setState(() => _dragMs = v) : null,
+                onChangeEnd: ready
+                    ? (v) async {
+                        Haptics.tap();
+                        await c.seekTo(Duration(milliseconds: v.round()));
+                        _dragging = false;
+                        if (mounted) setState(() {});
+                      }
+                    : null,
               ),
             ),
             Text(

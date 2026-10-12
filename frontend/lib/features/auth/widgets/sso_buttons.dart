@@ -186,7 +186,6 @@ class SsoButton extends StatelessWidget {
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           shape: const StadiumBorder(),
-          backgroundColor: p.surface,
           foregroundColor: p.textPrimary,
           side: BorderSide(
             color: active ? p.borderStrong : p.border,
@@ -219,9 +218,9 @@ class SsoButton extends StatelessWidget {
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: context.text.button.copyWith(
-                          color: p.textPrimary,
-                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.titleSmall!.copyWith(color: p.textPrimary),
                       ),
                     ),
                   ],

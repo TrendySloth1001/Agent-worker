@@ -93,8 +93,8 @@ class _RoundTablePanelState extends State<RoundTablePanel> {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: p.border, width: AppBorder.thin),
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -231,7 +231,7 @@ class _DotMeter extends StatelessWidget {
                 width: TableMeterSizes.cell,
                 height: TableMeterSizes.cell,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadius.none),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                   color: i < filled
                       ? p.textPrimary
                       : i == filled && blink
@@ -317,17 +317,21 @@ class _PanelAction extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: active ? p.accent : p.borderStrong,
-            width: AppBorder.thin,
-          ),
+          color: active
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             AppIcon(icon, size: AppIconSize.xs, color: color),
             const SizedBox(width: AppSpacing.xs),
-            Text(label, style: context.text.caption.copyWith(color: color)),
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge!.copyWith(color: color),
+            ),
           ],
         ),
       ),
@@ -344,7 +348,6 @@ class QueryChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
     return Wrap(
       spacing: AppSpacing.xs,
       runSpacing: AppSpacing.xs,
@@ -360,7 +363,7 @@ class QueryChips extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppRadius.pill),
-              border: Border.all(color: p.border, width: AppBorder.thin),
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -376,7 +379,9 @@ class QueryChips extends StatelessWidget {
                     q,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: t.caption.copyWith(color: p.textSecondary),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelMedium!.copyWith(color: p.textSecondary),
                   ),
                 ),
               ],

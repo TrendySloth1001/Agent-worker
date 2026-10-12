@@ -5,7 +5,6 @@ import '../../../core/platform/browsers.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/notifications.dart';
-import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/browser_picker.dart';
 import '../../../data/files_api.dart';
 import '../../docs/doc_screen.dart';
@@ -48,13 +47,9 @@ Future<void> openUrl(
   }
   if (opened || !context.mounted) return;
   Haptics.error();
-  final p = context.palette;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      backgroundColor: p.surfaceHigh,
-      content: Text(AppStrings.cantOpenLink, style: context.text.label),
-    ),
-  );
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(AppStrings.cantOpenLink)));
 }
 
 /// Long-press "Open with...": pick a browser, then open [url] in it.

@@ -7,6 +7,9 @@ abstract final class AppColors {
   static const white = Color(0xFFFFFFFF);
   static const red = Color(0xFFD71921);
 
+  /// Snackbar action on the dark snackbar of the light theme: a lifted red.
+  static const snackAccentOnDark = Color(0xFFFF6B6B);
+
   // Dark
   static const darkBackground = black;
   static const darkSurface = Color(0xFF0A0A0A);

@@ -91,7 +91,7 @@ class WidgetGalleryScreen extends StatelessWidget {
       backgroundColor: p.background,
       appBar: AppBar(
         backgroundColor: p.background,
-        title: Text(StructStrings.galleryTitle, style: context.text.title),
+        title: const Text(StructStrings.galleryTitle),
       ),
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.screenPadding),

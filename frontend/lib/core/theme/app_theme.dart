@@ -14,7 +14,11 @@ abstract final class AppTheme {
   static ThemeData _build(AppPalette p) {
     final text = AppTextTheme.from(p);
     final brightness = p.isDark ? Brightness.dark : Brightness.light;
+    final scheme = _scheme(p, brightness);
+    final textTheme = _textTheme(p, brightness);
+    final bodyFont = textTheme.labelLarge!;
     return ThemeData(
+      useMaterial3: true,
       brightness: brightness,
       fontFamily: AppFonts.body,
       scaffoldBackgroundColor: p.background,
@@ -22,53 +26,42 @@ abstract final class AppTheme {
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
       extensions: [p, text],
-      colorScheme: ColorScheme(
-        brightness: brightness,
-        primary: p.textPrimary,
-        onPrimary: p.textInverse,
-        secondary: p.accent,
-        onSecondary: AppColors.white,
-        surface: p.surface,
-        onSurface: p.textPrimary,
-        error: p.error,
-        onError: AppColors.white,
-        outline: p.border,
-      ),
-      textTheme: TextTheme(
-        displayLarge: text.display,
-        headlineMedium: text.headline,
-        titleMedium: text.title,
-        bodyLarge: text.body,
-        bodyMedium: text.body,
-        bodySmall: text.bodySmall,
-        labelLarge: text.label,
-        labelSmall: text.caption,
-      ),
+      colorScheme: scheme,
+      textTheme: textTheme,
+      primaryTextTheme: textTheme,
       appBarTheme: AppBarTheme(
         backgroundColor: p.background,
         foregroundColor: p.textPrimary,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         toolbarHeight: AppSizes.appBarHeight,
-        titleTextStyle: text.label,
+        titleTextStyle: textTheme.titleLarge,
       ),
       dividerTheme: DividerThemeData(
         color: p.border,
         thickness: AppBorder.thin,
         space: AppBorder.thin,
       ),
+      // Filled tonal fields with the 24dp field radius; the border only
+      // appears for focus and errors.
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: p.surfaceRaised,
-        hintStyle: text.body.copyWith(color: p.textTertiary),
+        fillColor: scheme.surfaceContainerHigh,
+        hintStyle: textTheme.bodyLarge!.copyWith(color: p.textTertiary),
+        labelStyle: textTheme.bodyLarge!.copyWith(color: p.textSecondary),
+        errorStyle: textTheme.bodySmall!.copyWith(color: p.error),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
           vertical: AppSpacing.md,
         ),
-        border: _outline(p.border),
-        enabledBorder: _outline(p.border),
+        border: _outline(Colors.transparent),
+        enabledBorder: _outline(Colors.transparent),
+        disabledBorder: _outline(Colors.transparent),
         focusedBorder: _outline(p.textPrimary),
+        errorBorder: _outline(p.error),
+        focusedErrorBorder: _outline(p.error),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -76,7 +69,22 @@ abstract final class AppTheme {
           foregroundColor: p.textInverse,
           disabledBackgroundColor: p.disabled,
           minimumSize: const Size.fromHeight(AppSizes.buttonHeight),
-          textStyle: text.button,
+          textStyle: text.button.copyWith(fontFamily: AppFonts.body),
+          shape: const StadiumBorder(),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: p.accent,
+          textStyle: bodyFont,
+          shape: const StadiumBorder(),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: p.textPrimary,
+          side: BorderSide(color: p.borderStrong),
+          textStyle: bodyFont,
           shape: const StadiumBorder(),
         ),
       ),
@@ -85,6 +93,203 @@ abstract final class AppTheme {
         selectionColor: p.borderStrong,
         selectionHandleColor: p.accent,
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.dialog),
+        ),
+        titleTextStyle: textTheme.headlineSmall,
+        contentTextStyle: textTheme.bodyMedium!.copyWith(
+          color: p.textSecondary,
+        ),
+      ),
+      // Floating, rounded, with the action in the accent colour.
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: p.isDark ? p.surfaceHigh : p.textPrimary,
+        contentTextStyle: textTheme.bodyMedium!.copyWith(
+          color: p.isDark ? p.textPrimary : p.textInverse,
+        ),
+        actionTextColor: p.isDark ? p.accent : AppColors.snackAccentOnDark,
+        disabledActionTextColor: p.textTertiary,
+        elevation: 0,
+        insetPadding: const EdgeInsets.all(AppSpacing.lg),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.snackBar),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: scheme.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
+        elevation: 3,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.menu),
+        ),
+        textStyle: textTheme.bodyLarge,
+        labelTextStyle: WidgetStatePropertyAll(textTheme.bodyLarge),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainer),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.menu),
+            ),
+          ),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: scheme.surfaceContainerLow,
+        showDragHandle: true,
+        dragHandleColor: p.borderStrong,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadius.sheet),
+          ),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: Colors.transparent,
+        selectedColor: scheme.secondaryContainer,
+        surfaceTintColor: Colors.transparent,
+        side: BorderSide(color: p.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        labelStyle: textTheme.labelLarge,
+        elevation: 0,
+        pressElevation: 0,
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: p.isDark ? p.surfaceHigh : p.textPrimary,
+          borderRadius: BorderRadius.circular(AppRadius.sm * 2),
+        ),
+        textStyle: textTheme.bodySmall!.copyWith(
+          color: p.isDark ? p.textPrimary : p.textInverse,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs + AppSpacing.xxs,
+        ),
+      ),
+      // M3 2024 progress: rounded track with a gap and a stop dot.
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        // ignore: deprecated_member_use
+        year2023: false,
+        color: p.accent,
+        linearTrackColor: scheme.surfaceContainerHighest,
+        circularTrackColor: Colors.transparent,
+        refreshBackgroundColor: scheme.surfaceContainerHigh,
+      ),
+      sliderTheme: SliderThemeData(
+        // ignore: deprecated_member_use
+        year2023: false,
+        activeTrackColor: p.accent,
+        inactiveTrackColor: scheme.surfaceContainerHighest,
+        thumbColor: p.accent,
+        activeTickMarkColor: AppColors.white,
+        inactiveTickMarkColor: p.textTertiary,
+        valueIndicatorColor: p.textPrimary,
+        valueIndicatorTextStyle: textTheme.labelLarge!.copyWith(
+          color: p.textInverse,
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected)
+              ? AppColors.white
+              : p.textSecondary,
+        ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected)
+              ? p.accent
+              : scheme.surfaceContainerHighest,
+        ),
+        trackOutlineColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected)
+              ? Colors.transparent
+              : p.borderStrong,
+        ),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected) ? p.accent : p.textSecondary,
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (s) =>
+              s.contains(WidgetState.selected) ? p.accent : Colors.transparent,
+        ),
+        checkColor: const WidgetStatePropertyAll(AppColors.white),
+        side: BorderSide(color: p.borderStrong, width: AppBorder.thick),
+      ),
+    );
+  }
+
+  /// The app palette mapped onto a full Material 3 [ColorScheme]: the red
+  /// accent is the primary, neutrals fill the surfaceContainer levels.
+  static ColorScheme _scheme(AppPalette p, Brightness brightness) {
+    final dark = p.isDark;
+    return ColorScheme(
+      brightness: brightness,
+      primary: p.accent,
+      onPrimary: AppColors.white,
+      primaryContainer: Color.alphaBlend(
+        p.accent.withValues(alpha: 0.16),
+        p.background,
+      ),
+      onPrimaryContainer: p.textPrimary,
+      secondary: p.textPrimary,
+      onSecondary: p.textInverse,
+      secondaryContainer: dark ? p.surfaceHigh : p.surfaceRaised,
+      onSecondaryContainer: p.textPrimary,
+      tertiary: p.textSecondary,
+      onTertiary: p.textInverse,
+      error: p.error,
+      onError: AppColors.white,
+      surface: p.background,
+      onSurface: p.textPrimary,
+      onSurfaceVariant: p.textSecondary,
+      surfaceContainerLowest: p.background,
+      surfaceContainerLow: p.surface,
+      surfaceContainer: dark ? p.surfaceRaised : p.surface,
+      surfaceContainerHigh: dark ? p.surfaceHigh : p.surfaceRaised,
+      surfaceContainerHighest: dark ? p.border : p.surfaceHigh,
+      outline: p.borderStrong,
+      outlineVariant: p.border,
+      inverseSurface: p.textPrimary,
+      onInverseSurface: p.textInverse,
+      inversePrimary: p.accent,
+      shadow: AppColors.black,
+      scrim: AppColors.black,
+      surfaceTint: Colors.transparent,
+    );
+  }
+
+  /// The Material 3 type scale in Space Grotesk. Mono stays out of it; tiny
+  /// metadata labels use [AppTextTheme.label] and [AppTextTheme.caption].
+  static TextTheme _textTheme(AppPalette p, Brightness brightness) {
+    TextStyle weight(TextStyle s, double w) =>
+        s.copyWith(fontVariations: [FontVariation.weight(w)]);
+    final type = ThemeData(
+      brightness: brightness,
+      fontFamily: AppFonts.body,
+    ).textTheme.apply(bodyColor: p.textPrimary, displayColor: p.textPrimary);
+    return type.copyWith(
+      headlineMedium: weight(type.headlineMedium!, 600),
+      headlineSmall: weight(type.headlineSmall!, 600),
+      titleLarge: weight(type.titleLarge!, 600),
+      titleMedium: weight(type.titleMedium!, 500),
+      titleSmall: weight(type.titleSmall!, 500),
+      labelLarge: weight(type.labelLarge!, 500),
+      labelMedium: weight(type.labelMedium!, 500),
     );
   }
 

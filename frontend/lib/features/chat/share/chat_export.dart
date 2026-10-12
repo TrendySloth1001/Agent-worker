@@ -10,7 +10,6 @@ import '../../../core/app_scope.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
-import '../../../core/theme/app_palette.dart';
 import '../../../data/chat_event.dart';
 import '../../../data/chat_message.dart';
 import '../../../data/conversations_api.dart';
@@ -187,16 +186,9 @@ Future<void> exportChat(
   );
   if (format == null || !context.mounted) return;
   final messenger = ScaffoldMessenger.of(context);
-  final palette = context.palette;
-  final text = context.text;
   void toast(String s) => messenger
     ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        backgroundColor: palette.surfaceHigh,
-        content: Text(s, style: text.label),
-      ),
-    );
+    ..showSnackBar(SnackBar(content: Text(s)));
   toast(ShareStrings.exporting);
   try {
     final chat = ExportChat(

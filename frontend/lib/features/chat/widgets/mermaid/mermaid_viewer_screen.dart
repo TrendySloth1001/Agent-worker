@@ -52,10 +52,6 @@ class _MermaidViewerScreenState extends State<MermaidViewerScreen> {
               ),
             ),
           ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(AppBorder.thin),
-            child: Divider(color: p.border),
-          ),
         ),
         body: _failed
             ? ListView(

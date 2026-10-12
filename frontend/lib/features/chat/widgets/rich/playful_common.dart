@@ -164,11 +164,10 @@ class PlayfulButton extends StatelessWidget {
       ),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: primary ? p.accent : null,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: primary
-            ? null
-            : Border.all(color: p.borderStrong, width: AppBorder.thin),
+        color: primary
+            ? p.accent
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -184,10 +183,9 @@ class PlayfulButton extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: context.text.caption.copyWith(
-                  color: fg,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge!.copyWith(color: fg),
               ),
             ),
         ],

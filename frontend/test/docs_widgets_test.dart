@@ -1,4 +1,5 @@
 import 'package:app/core/constants/docs.dart';
+import 'package:app/core/widgets/m3_kit_extras.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/data/doc_models.dart';
 import 'package:app/data/files_api.dart';
@@ -359,7 +360,9 @@ void main() {
     await tester.enterText(find.byType(TextField), 'write a guide to salt');
     await tester.pump();
     expect(find.text(DocStrings.suggest), findsNothing);
-    await tester.tap(find.text(DocStrings.lengthLong));
+    final long = find.text(sentenceCase(DocStrings.lengthLong));
+    await tester.ensureVisible(long);
+    await tester.tap(long);
     expect(length, DocConfig.lengthLong);
     expect(tester.takeException(), isNull);
   });

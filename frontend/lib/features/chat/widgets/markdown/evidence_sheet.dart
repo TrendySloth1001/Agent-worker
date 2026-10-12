@@ -11,6 +11,7 @@ import '../../../../core/widgets/app_icon.dart';
 import '../../../../data/chat_event.dart';
 import '../open_url.dart';
 import 'citation_chip.dart';
+import '../../../../core/widgets/m3_kit_extras.dart';
 
 /// Opens the sheet that shows which passage of a source backs a claim.
 Future<void> showEvidenceSheet(
@@ -18,22 +19,13 @@ Future<void> showEvidenceSheet(
   Citation citation,
   List<Evidence> evidence,
 ) {
-  final p = context.palette;
   final items = [
     for (final e in evidence)
       if (e.tag == citation.id) e,
   ].take(MdSizes.evidenceMaxItems).toList();
   Haptics.tap();
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
+  return showM3Sheet<void>(
+    context,
     builder: (sheet) => _EvidenceSheet(
       citation: citation,
       items: items,
@@ -149,16 +141,9 @@ class _EvidenceSheet extends StatelessWidget {
 
   Future<void> _toast(BuildContext context, String value, String note) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
-    final p = context.palette;
-    final style = context.text.label;
     Navigator.pop(context);
     await Clipboard.setData(ClipboardData(text: value));
-    messenger?.showSnackBar(
-      SnackBar(
-        backgroundColor: p.surfaceHigh,
-        content: Text(note, style: style),
-      ),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(note)));
   }
 }
 

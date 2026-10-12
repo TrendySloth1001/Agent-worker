@@ -21,6 +21,12 @@ abstract final class AppRadius {
 
   /// Text fields: a pill at one line, a rounded box when multi-line.
   static const field = 24.0;
+
+  /// Material 3 shapes: dialogs, sheets, menus and floating snackbars.
+  static const dialog = 28.0;
+  static const sheet = 28.0;
+  static const menu = 16.0;
+  static const snackBar = 16.0;
 }
 
 abstract final class AppFontSize {
