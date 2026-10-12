@@ -29,6 +29,8 @@ import { startMemoryTurn } from "../memory/turn.js";
 import { analyze } from "../nlp/index.js";
 import { languageInstruction } from "../nlp/language.js";
 import { shapeHint } from "../nlp/intent.js";
+import { kbRelevance, pickSuggestion, referencesKb, resolveWebMode, toolsNote, type SuggestToggle } from "../toggles/suggest.js";
+import { peekKb } from "../retrieval/peek.js";
 import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
@@ -92,7 +94,12 @@ const bodySchema = z.object({
   model: z.string().optional(),
   // Telemetry only: which saved conversation this turn belongs to.
   conversationId: z.string().max(64).optional(),
-  webSearch: z.boolean().default(false),
+  // Legacy on/off; `webMode` supersedes it: auto (the harness decides), on (always search), off (never).
+  webSearch: z.boolean().optional(),
+  webMode: z.enum(["auto", "on", "off"]).optional(),
+  // Smart suggestions: offer the knowledge base / a Doc instead of assuming. `suppressSuggest` lists the kinds already offered in this conversation.
+  smartSuggestions: z.boolean().default(true),
+  suppressSuggest: z.array(z.enum(["kb", "doc"])).max(4).default([]),
   knowledge: z.boolean().default(false),
   sourceIds: z.array(z.string()).max(50).optional(),
   mode: z.enum(MODES as [string, ...string[]]).default("default"),
@@ -238,8 +245,14 @@ chatRouter.post("/", async (req, res) => {
 
     // ---- preflight: ONE small-model call replaces the standalone rewrite, search decision, web query plan and RAG variants.
     // The local NLP and rules decide alone when they are confident; the model is asked only for what they cannot settle.
-    const wantWeb = body.webSearch && !aboutAttachments;
-    const webLocal: SearchDecision | null = wantWeb ? decideSearchLocal(lastUser, nlp.intent) : { search: false, query: "", reason: "none" };
+    const webMode = resolveWebMode(body);
+    const wantWeb = webMode !== "off" && !aboutAttachments;
+    // On: always search (except small talk); auto: the local rules / preflight decide; off: never.
+    const webLocal: SearchDecision | null = !wantWeb
+      ? { search: false, query: "", reason: "none" }
+      : webMode === "on" && lastUserText && !smallTalk
+        ? { search: true, query: lastUserText.slice(0, 200), reason: "explicit" }
+        : decideSearchLocal(lastUser, nlp.intent);
     const lastUserIdx = body.messages.map((m) => m.role).lastIndexOf("user");
     const history = body.messages.slice(0, Math.max(lastUserIdx, 0)).map((m) => ({ role: m.role, content: m.content }));
     let pre: Preflight | null = null;
@@ -446,7 +459,39 @@ chatRouter.post("/", async (req, res) => {
       }
     };
 
-    await Promise.all([kbTask(), webTask(), githubTask(), recallTask()]);
+    // Smart suggestions: never silently switches a tool on; the app asks the user (see toggles/suggest.ts).
+    const suggestTask = async (): Promise<SuggestToggle | null> => {
+      if (!body.smartSuggestions || !lastUserText || smallTalk) return null;
+      try {
+        const explicitKb = referencesKb(lastUserText);
+        const askKb = !body.knowledge && !aboutAttachments && (!body.suppressSuggest.includes("kb") || explicitKb);
+        const peek = askKb
+          ? await Promise.race([peekKb(ctx.standalone), new Promise<null>((r) => setTimeout(() => r(null), 1_500))])
+          : null;
+        return pickSuggestion({
+          smart: true,
+          kbOn: body.knowledge,
+          docOn: false,
+          suppressed: body.suppressSuggest,
+          text: lastUserText,
+          intent: nlp.intent,
+          kb: peek ? kbRelevance(peek.hits) : null,
+          kbHasContent: !!peek?.hasContent,
+          hasAttachments: aboutAttachments,
+        });
+      } catch (e) {
+        log.warn("suggest toggle failed", { requestId, message: (e as Error).message?.slice(0, 120) });
+        return null;
+      }
+    };
+
+    const [, , , , suggestion] = await Promise.all([kbTask(), webTask(), githubTask(), recallTask(), suggestTask()]);
+    if (suggestion && !ctl.signal.aborted) {
+      sse.send("suggest_toggle", suggestion);
+      log.info("suggest_toggle", { requestId, conversationId: body.conversationId, event: "shown", kind: suggestion.kind, reason: suggestion.reason });
+    }
+    // Which tools actually ran this turn (the app shows "Searched the web" after an automatic search).
+    sse.send("tools", { web: searching && webItems.length > 0, webMode, kb: body.knowledge && kbItems.length > 0 });
     ctx.memory = await memoryP;
     if (ctl.signal.aborted) return;
     const rank = { kb: 0, web: 1, file: 2, conversation: 3 } as const;
@@ -489,6 +534,15 @@ chatRouter.post("/", async (req, res) => {
     const shape = lastUserText ? shapeHint(nlp.intent) : null;
     if (shape) prompt.push({ role: "system", content: shape });
     if (githubHint) prompt.push({ role: "system", content: githubHint });
+    prompt.push({
+      role: "system",
+      content: toolsNote({
+        web: searching && webItems.length > 0 ? "searched" : webMode === "off" ? "off" : "auto-none",
+        kb: body.knowledge ? "on" : "off",
+        kbSuggested: suggestion?.kind === "kb",
+        docSuggested: suggestion?.kind === "doc",
+      }),
+    });
     // Small talk does not need the whole history: the last few turns are enough (fewer prompt tokens against Groq's per-minute window).
     const noFiles = !prepared.messages.some((m) => (m.images?.length ?? 0) > 0) && attachmentIds.length === 0;
     let turnsSent = prepared.messages;
@@ -630,4 +684,17 @@ chatRouter.post("/", async (req, res) => {
     summarize(null);
     sse.end();
   }
+});
+
+// The app reports what the user did with a `suggest_toggle` prompt (the "shown" side is logged when it is sent).
+const suggestionOutcome = z.object({
+  kind: z.enum(["kb", "doc"]),
+  outcome: z.enum(["accepted", "dismissed"]),
+  conversationId: z.string().max(64).optional(),
+});
+chatRouter.post("/suggestion", (req, res) => {
+  const p = suggestionOutcome.safeParse(req.body);
+  if (!p.success) throw new AppError(400, "bad_request", "invalid suggestion outcome");
+  log.info("suggest_toggle", { event: p.data.outcome, kind: p.data.kind, conversationId: p.data.conversationId, userId: req.user?.id });
+  res.status(204).end();
 });

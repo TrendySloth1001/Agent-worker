@@ -302,3 +302,6 @@ export function buildContextMessage(kb: ContextItem[], web: ContextItem[], docs:
     "If the sources do not cover something, answer from your own knowledge without a tag.";
   return [...parts, rule].join("\n");
 }
+
+// The per-turn "which tools were active" note lives with the smart-toggle logic.
+export { toolsNote } from "../toggles/suggest.js";
