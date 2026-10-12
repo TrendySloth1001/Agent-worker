@@ -14,6 +14,7 @@ class SettingsController extends ChangeNotifier {
     defaultKnowledge = _prefs?.getBool(AppPrefs.defaultKnowledge) ?? false;
     defaultRoundTable = _prefs?.getBool(AppPrefs.defaultRoundTable) ?? false;
     notifyRoundTable = _prefs?.getBool(AppPrefs.notifyRoundTable) ?? true;
+    autocompleteOn = _prefs?.getBool(AppPrefs.autocomplete) ?? true;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
     role = _prefs?.getString(AppPrefs.profileRole) ?? '';
@@ -56,6 +57,7 @@ class SettingsController extends ChangeNotifier {
 
   late ThemeMode themeMode;
   late bool hapticsOn;
+  late bool autocompleteOn;
   late bool defaultWebSearch;
   late bool defaultKnowledge;
   late bool defaultRoundTable;
@@ -93,6 +95,12 @@ class SettingsController extends ChangeNotifier {
     hapticsOn = value;
     Haptics.enabled = value;
     _prefs?.setBool(AppPrefs.haptics, value);
+    notifyListeners();
+  }
+
+  void setAutocomplete(bool value) {
+    autocompleteOn = value;
+    _prefs?.setBool(AppPrefs.autocomplete, value);
     notifyListeners();
   }
 

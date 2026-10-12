@@ -168,6 +168,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final scope = AppScope.of(context);
 
     return AnnotatedRegion(
       value: systemOverlayFor(context),
@@ -228,6 +229,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           roundTable: _controller.roundTable,
                           onToggleRoundTable: _controller.toggleRoundTable,
                           draft: _controller.draft,
+                          autocomplete: scope.settings.autocompleteOn,
+                          conversationId: _controller.conversationId,
                           doc: _controller.doc,
                           onToggleDoc: _controller.toggleDoc,
                           docLength: _controller.docLength,
@@ -256,6 +259,7 @@ class _ChatScreenState extends State<ChatScreen> {
       send: _controller.send,
       latest: messages.isEmpty ? null : messages.last,
       sending: _controller.isSending,
+      edit: (text) => _controller.draft.value = text,
       answerFor: (reply) {
         final i = messages.indexOf(reply);
         if (i < 0 || i + 1 >= count) return null;

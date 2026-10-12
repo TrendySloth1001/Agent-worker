@@ -6,6 +6,7 @@ abstract final class AppPrefs {
   static const defaultKnowledge = 'default_knowledge';
   static const defaultRoundTable = 'default_round_table';
   static const notifyRoundTable = 'notify_round_table';
+  static const autocomplete = 'autocomplete_on';
   static const mode = 'chat_mode';
   static const profileName = 'profile_name';
   static const profileRole = 'profile_role';

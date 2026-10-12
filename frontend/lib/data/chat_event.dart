@@ -138,6 +138,11 @@ sealed class ChatEvent {
           for (final e in json['items'] as List? ?? const [])
             if (e is Map<String, dynamic>) Evidence.fromJson(e),
         ]);
+      case 'suggestions':
+        return SuggestionsEvent([
+          for (final s in json['items'] as List? ?? const [])
+            if (s is String && s.trim().isNotEmpty) s.trim(),
+        ]);
       case 'model':
         return ModelEvent(json['model'] as String? ?? '');
       case 'delta':
@@ -195,6 +200,11 @@ class ImagesEvent extends ChatEvent {
 class EvidenceEvent extends ChatEvent {
   const EvidenceEvent(this.items);
   final List<Evidence> items;
+}
+
+class SuggestionsEvent extends ChatEvent {
+  const SuggestionsEvent(this.items);
+  final List<String> items;
 }
 
 class ModelEvent extends ChatEvent {
