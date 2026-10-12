@@ -2,13 +2,13 @@
 // user's document reads as not found.
 import { randomUUID } from "node:crypto";
 import { db, Prisma } from "../db/prisma.js";
-import type { DocSection, DocState, DocStatus, DocSummary, Highlight, Revision, RevisionReason } from "./types.js";
+import type { DocSection, DocState, DocStatus, DocSummary, Highlight, QaEntry, Revision, RevisionReason } from "./types.js";
 
 export const MAX_REVISIONS = 10;
 
 export type DocPatch = Partial<Pick<DocState, "title" | "status" | "outline" | "glossary" | "sources" | "summary" | "words" | "version" | "options">>;
 export type NewDoc = Pick<DocState, "userId" | "conversationId" | "prompt" | "options"> & { title?: string };
-export type NewHighlight = Omit<Highlight, "id" | "docId" | "createdAt">;
+export type NewHighlight = Omit<Highlight, "id" | "docId" | "createdAt" | "thread"> & { thread?: QaEntry[] };
 
 export interface DocStore {
   create(input: NewDoc): Promise<DocState>;
@@ -25,6 +25,10 @@ export interface DocStore {
   highlights(userId: string, id: string): Promise<Highlight[]>;
   addHighlight(userId: string, id: string, h: NewHighlight): Promise<Highlight | null>;
   removeHighlight(userId: string, id: string, highlightId: string): Promise<boolean>;
+  /** One highlight of the doc, or null. */
+  highlight(userId: string, id: string, highlightId: string): Promise<Highlight | null>;
+  /** Adds a Q&A entry to a highlight's thread (newest last); null when it does not exist. */
+  appendThread(userId: string, id: string, highlightId: string, entry: QaEntry): Promise<Highlight | null>;
   /** Marks docs left mid-run by a restart as interrupted (except `live` ones). */
   sweepInterrupted(live: Set<string>): Promise<number>;
 }
@@ -97,8 +101,15 @@ function sectionData(s: DocSection) {
   };
 }
 
-function toHighlight(r: { id: string; docId: string; sectionId: string; quote: string; prefix: string; suffix: string; color: string; note: string | null; createdAt: Date }): Highlight {
-  return { id: r.id, docId: r.docId, sectionId: r.sectionId, quote: r.quote, prefix: r.prefix, suffix: r.suffix, color: r.color, note: r.note, createdAt: iso(r.createdAt) };
+export const MAX_THREAD = 30;
+
+function toThread(v: unknown): QaEntry[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((e): e is QaEntry => !!e && typeof e.id === "string" && typeof e.q === "string" && typeof e.a === "string").map((e) => ({ id: e.id, q: e.q, a: e.a, at: String(e.at ?? "") }));
+}
+
+function toHighlight(r: { id: string; docId: string; sectionId: string; quote: string; prefix: string; suffix: string; color: string; note: string | null; thread?: unknown; createdAt: Date }): Highlight {
+  return { id: r.id, docId: r.docId, sectionId: r.sectionId, quote: r.quote, prefix: r.prefix, suffix: r.suffix, color: r.color, note: r.note, thread: toThread(r.thread), createdAt: iso(r.createdAt) };
 }
 
 export const prismaStore: DocStore = {
@@ -213,8 +224,23 @@ export const prismaStore: DocStore = {
   async addHighlight(userId, id, h) {
     const owned = await db().doc.count({ where: { id, userId } });
     if (!owned) return null;
-    const row = await db().docHighlight.create({ data: { docId: id, userId, sectionId: h.sectionId, quote: h.quote, prefix: h.prefix, suffix: h.suffix, color: h.color, note: h.note } });
+    const row = await db().docHighlight.create({ data: { docId: id, userId, sectionId: h.sectionId, quote: h.quote, prefix: h.prefix, suffix: h.suffix, color: h.color, note: h.note, thread: json(h.thread ?? []) } });
     return toHighlight(row);
+  },
+
+  async highlight(userId, id, highlightId) {
+    if (!isUuid(highlightId) || !isUuid(id)) return null;
+    const row = await db().docHighlight.findFirst({ where: { id: highlightId, docId: id, userId } });
+    return row ? toHighlight(row) : null;
+  },
+
+  async appendThread(userId, id, highlightId, entry) {
+    if (!isUuid(highlightId) || !isUuid(id)) return null;
+    const row = await db().docHighlight.findFirst({ where: { id: highlightId, docId: id, userId } });
+    if (!row) return null;
+    const thread = [...toThread(row.thread), entry].slice(-MAX_THREAD);
+    const saved = await db().docHighlight.update({ where: { id: highlightId }, data: { thread: json(thread) } });
+    return toHighlight(saved);
   },
 
   async removeHighlight(userId, id, highlightId) {
@@ -316,8 +342,20 @@ export function memoryStore(): DocStore & { docs: Map<string, DocState>; revs: M
     },
     async addHighlight(userId, id, h) {
       if (!own(userId, id)) return null;
-      const m: Highlight = { id: randomUUID(), docId: id, createdAt: new Date().toISOString(), sectionId: h.sectionId, quote: h.quote, prefix: h.prefix, suffix: h.suffix, color: h.color, note: h.note };
+      const m: Highlight = { id: randomUUID(), docId: id, createdAt: new Date().toISOString(), sectionId: h.sectionId, quote: h.quote, prefix: h.prefix, suffix: h.suffix, color: h.color, note: h.note, thread: clone(h.thread ?? []) };
       marks.push(m);
+      return clone(m);
+    },
+    async highlight(userId, id, highlightId) {
+      if (!own(userId, id)) return null;
+      const m = marks.find((x) => x.id === highlightId && x.docId === id);
+      return m ? clone(m) : null;
+    },
+    async appendThread(userId, id, highlightId, entry) {
+      if (!own(userId, id)) return null;
+      const m = marks.find((x) => x.id === highlightId && x.docId === id);
+      if (!m) return null;
+      m.thread = [...m.thread, entry].slice(-MAX_THREAD);
       return clone(m);
     },
     async removeHighlight(userId, id, highlightId) {

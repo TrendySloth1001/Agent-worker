@@ -39,6 +39,9 @@ Budget: ≤13 LLM calls, ≤16 web searches, 8 min wall clock (→ `partial`), 1
 - `POST /docs/:id/start | resume | cancel`.
 - `POST /docs/:id/sections/:sid/rewrite {op: regenerate|expand|shorten|simplify|custom, instruction?, selection?}` → streams the same section events, saves a revision, bumps version.
 - `PUT /docs/:id/sections/:sid {markdown}` (manual edit, saves revision); `POST /docs/:id/sections {after, heading, goal}` (add section).
+- `POST /docs/:id/ask {sectionId, quote, question, highlightId?}` → `{highlight, entry}`: ASK AI about a passage. Answered separately (never rewrites the section) and appended to the highlight's `thread` (`[{id,q,a,at}]`, created with color `ask` on first use); persists with `GET /highlights`.
+- `POST /docs/:id/sections/:sid/selection {op: explain|simplify|expand|cite|rewrite, quote, instruction?}` → `{op, original, replacement, markdown}`: preview of a passage edit, nothing saved; accept = `PUT /sections/:sid {markdown}` (revision `edit`), undo = PUT the old text.
+- `POST /docs/:id/continue {hint?}`: plans one more section, adds it before Takeaways/References and writes it; streams like a rewrite (snapshot first).
 - `GET /docs/:id/versions/:sid`.
 - `GET/POST/DELETE /docs/:id/highlights`.
 - `GET /docs/:id/export?format=md|docx`.

@@ -5,7 +5,8 @@ import express from "express";
 import type { AddressInfo } from "node:net";
 import { makeOutline, normalizeOutline, OutlineError } from "../src/docs/outline.js";
 import { SectionFilter, writeSection, keepValidTags, type RunChatFn } from "../src/docs/section.js";
-import { runPipeline, runRewrite, DEFAULT_LIMITS, type DocDeps } from "../src/docs/pipeline.js";
+import { runPipeline, runRewrite, addSection, DEFAULT_LIMITS, type DocDeps } from "../src/docs/pipeline.js";
+import { answerQuestion, editSelection, locateSpan, planNextSection } from "../src/docs/followup.js";
 import { finishJob, registerJob, Semaphore } from "../src/docs/registry.js";
 import { anchorQuote, memoryStore, MAX_REVISIONS, prismaStore, type DocStore } from "../src/docs/store.js";
 import { toDocx, toMarkdown } from "../src/docs/export.js";
@@ -310,6 +311,68 @@ test("rewrite: saves a revision, bumps the version, keeps the last 10", async ()
   assert.equal(revs.length, MAX_REVISIONS);
   assert.equal(revs[0].markdown, "Short 11 [W1].");
   assert.equal(revs[0].reason, "shorten");
+});
+
+// ---- follow-ups: ask, selection edits, continue ---------------------------------------
+
+test("followup: locateSpan finds a plain quote across marks and tags", () => {
+  const md = "TLS 1.3 **removed RSA key** exchange [W1] and kept `ECDHE`.";
+  const span = locateSpan(md, "removed RSA key exchange and kept ECDHE")!;
+  assert.equal(md.slice(span.start, span.end), "**removed RSA key** exchange [W1] and kept `ECDHE`");
+  assert.equal(locateSpan(md, "nothing like it"), null);
+});
+
+test("followup: ASK AI answers on the highlight's thread and never touches the section", async () => {
+  const store = memoryStore();
+  const doc = await newDoc(store);
+  await run(doc, "full", fakeDeps(store));
+  const st = (await store.get(doc.userId, doc.id))!;
+  const sec = st.sections.find((s) => s.sectionId === "s1")!;
+  const before = sec.markdown;
+  const seen: Message[][] = [];
+  const deps = fakeDeps(store, { ask: async (_m, msgs) => (seen.push(msgs), "It means the key is never reused [W1] [W99].") });
+  const entry = await answerQuestion(deps, st, sec, { quote: "RSA key exchange", question: "What does this mean?", thread: [] });
+  assert.equal(entry.a, "It means the key is never reused [W1] .");
+  assert.match(seen[0][seen[0].length - 1].content, /Question: What does this mean\?/);
+  const h = (await store.addHighlight(st.userId, st.id, { sectionId: "s1", quote: "RSA key exchange", prefix: "", suffix: "", color: "ask", note: null }))!;
+  const saved = (await store.appendThread(st.userId, st.id, h.id, entry))!;
+  assert.equal(saved.thread.length, 1);
+  assert.equal((await store.highlights(st.userId, st.id))[0].thread[0].q, "What does this mean?");
+  assert.equal(await store.appendThread(randomUUID(), st.id, h.id, entry), null);
+  assert.equal(sec.markdown, before);
+});
+
+test("followup: selection edit previews a replacement; explain inserts a note; failures are retryable", async () => {
+  const store = memoryStore();
+  const doc = await newDoc(store);
+  await run(doc, "full", fakeDeps(store));
+  const st = (await store.get(doc.userId, doc.id))!;
+  const sec = st.sections.find((s) => s.sectionId === "s1")!;
+  const simple = await editSelection(fakeDeps(store, { ask: async () => "TLS 1.3 dropped RSA key swaps" }), st, sec, "simplify", "TLS 1.3 removed RSA key exchange", undefined);
+  assert.equal(simple.original, "TLS 1.3 removed RSA key exchange");
+  assert.ok(simple.markdown.includes("TLS 1.3 dropped RSA key swaps [W1]. Invented"));
+  const note = await editSelection(fakeDeps(store, { ask: async () => "Forward secrecy means old traffic stays safe." }), st, sec, "explain", "RSA key exchange", undefined);
+  assert.equal(note.original, "");
+  assert.match(note.markdown, /\n\n> \[!NOTE\]\n> Forward secrecy/);
+  await assert.rejects(editSelection(fakeDeps(store, { ask: async () => "x" }), st, sec, "simplify", "text that is not there", undefined), (e: any) => e.status === 422);
+  await assert.rejects(
+    editSelection(fakeDeps(store, { ask: async () => { throw new UpstreamError(429, "quota"); } }), st, sec, "simplify", "RSA key exchange", undefined),
+    (e: any) => e.status === 502 && e.retryable === true,
+  );
+});
+
+test("followup: continue plans a new section that can be added before takeaways", async () => {
+  const store = memoryStore();
+  const doc = await newDoc(store);
+  await run(doc, "full", fakeDeps(store));
+  const st = (await store.get(doc.userId, doc.id))!;
+  const plan = await planNextSection(fakeDeps(store, { ask: async () => '{"heading":"3. Session resumption","goal":"How 0-RTT works.","keyPoints":["PSK","0-RTT"]}' }), st, "resumption");
+  assert.equal(plan.heading, "Session resumption");
+  const last = st.outline!.sections.filter((s) => !s.kind).at(-1)!.id;
+  const added = await addSection(store, st, last, plan.heading, plan.goal, plan.keyPoints);
+  const ids = st.outline!.sections.map((s) => s.kind ?? s.id);
+  assert.equal(ids.indexOf(added.sectionId), ids.indexOf("takeaways") - 1);
+  assert.deepEqual(st.outline!.sections.find((s) => s.id === added.sectionId)!.keyPoints, ["PSK", "0-RTT"]);
 });
 
 // ---- highlights / export ------------------------------------------------------------

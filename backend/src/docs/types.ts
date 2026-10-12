@@ -112,6 +112,12 @@ export type DocState = {
   sections: DocSection[];
 };
 
+/** One question asked about a highlighted passage, with the model's answer. */
+export type QaEntry = { id: string; q: string; a: string; at: string };
+
+export const SELECTION_OPS = ["explain", "simplify", "expand", "cite", "rewrite"] as const;
+export type SelectionOp = (typeof SELECTION_OPS)[number];
+
 export type Highlight = {
   id: string;
   docId: string;
@@ -121,6 +127,7 @@ export type Highlight = {
   suffix: string;
   color: string;
   note: string | null;
+  thread: QaEntry[];
   createdAt: string;
 };
 

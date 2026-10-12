@@ -12,9 +12,10 @@ import { db } from "../db/prisma.js";
 import { cancelJob, liveJob, registerJob, runningPipelineFor, type LiveJob } from "../docs/registry.js";
 import { addSection, editSection, runRewrite, sectionsFor, startDoc, defaultDeps } from "../docs/pipeline.js";
 import { normalizeOutline } from "../docs/outline.js";
+import { answerQuestion, editSelection, planNextSection } from "../docs/followup.js";
 import { anchorQuote, isUuid, prismaStore as store } from "../docs/store.js";
 import { toDocx, toMarkdown, fileName } from "../docs/export.js";
-import { DOC_LENGTHS, publicDoc, REFERENCES_ID, REWRITE_OPS, TAKEAWAYS_ID, type DocState } from "../docs/types.js";
+import { DOC_LENGTHS, publicDoc, REFERENCES_ID, REWRITE_OPS, SELECTION_OPS, TAKEAWAYS_ID, type DocState } from "../docs/types.js";
 import { finishJob, emit } from "../docs/registry.js";
 import { runAs } from "../auth/context.js";
 import { log } from "../util/logger.js";
@@ -256,19 +257,91 @@ docsRouter.post("/:id/sections/:sid/rewrite", async (req, res) => {
   const sid = String(req.params.sid);
   sectionOf(doc, sid);
   const body = parse(rewriteSchema, req.body);
+  streamRewrite(res, user, doc, sid, body.op, { instruction: body.instruction, selection: body.selection });
+});
+
+/** Registers a rewrite job for `sid` and streams its events on `res` (snapshot first). */
+function streamRewrite(res: import("express").Response, user: AuthUser, doc: DocState, sid: string, op: (typeof REWRITE_OPS)[number], opts: { instruction?: string; selection?: string }) {
   const deps = defaultDeps();
   const live = registerJob(doc, "rewrite");
   const sse = openSse(res);
   sse.send("doc_snapshot", { doc: publicDoc(doc, true) });
   attach(live, sse, res);
   runAs(user, (() => {
-    void runRewrite(live, sid, body.op, { instruction: body.instruction, selection: body.selection }, deps)
+    void runRewrite(live, sid, op, opts, deps)
       .catch((e) => {
         log.error("doc rewrite crashed", { doc: doc.id, message: (e as Error).message?.slice(0, 200) });
         emit(live, "doc_error", { message: "Something went wrong while rewriting the section.", retryable: true });
       })
       .finally(() => finishJob(live));
   }) as import("express").NextFunction);
+}
+
+// CONTINUE WRITING: the model plans one more section (optionally steered by a
+// hint), it is added before References/Takeaways and written; streams like a rewrite.
+docsRouter.post("/:id/continue", async (req, res) => {
+  const { user, doc, job } = await load(req);
+  if (job) throw busy();
+  if (!doc.outline) throw new AppError(409, "bad_state", "The document has no outline yet.");
+  if (doc.outline.sections.filter((s) => !s.kind).length >= 14) throw new AppError(400, "bad_request", "A document has at most 14 sections.");
+  const body = parse(z.object({ hint: z.string().trim().max(500).optional() }), req.body);
+  const plan = await planNextSection(defaultDeps(), doc, body.hint);
+  const body_ = doc.outline.sections.filter((s) => !s.kind);
+  const section = await addSection(store, doc, body_[body_.length - 1]?.id ?? null, plan.heading, plan.goal, plan.keyPoints);
+  streamRewrite(res, user, doc, section.sectionId, "regenerate", {});
+});
+
+// ASK AI: a question about a selected passage. Answered separately from the
+// section text and kept on the highlight's Q&A thread (created on first use).
+const askSchema = z.object({
+  sectionId: z.string().max(40),
+  quote: z.string().trim().min(1).max(2000),
+  question: z.string().trim().min(2).max(1000),
+  highlightId: z.string().max(64).optional(),
+  prefix: z.string().max(64).default(""),
+  suffix: z.string().max(64).default(""),
+});
+
+docsRouter.post("/:id/ask", async (req, res) => {
+  const { user, doc } = await load(req);
+  const body = parse(askSchema, req.body);
+  const sec = sectionOf(doc, body.sectionId, false);
+  if (!sec.markdown.trim()) throw new AppError(409, "bad_state", "This section has no text yet.");
+  let existing = body.highlightId ? await store.highlight(user.id, doc.id, body.highlightId) : null;
+  if (body.highlightId && !existing) throw new AppError(404, "not_found", "Highlight not found");
+  const ac = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) ac.abort();
+  });
+  const entry = await answerQuestion(defaultDeps(), doc, sec, { quote: existing?.quote ?? body.quote, question: body.question, thread: existing?.thread ?? [] }, ac.signal);
+  existing ??= await store.addHighlight(user.id, doc.id, { sectionId: body.sectionId, quote: body.quote, prefix: body.prefix, suffix: body.suffix, color: "ask", note: null });
+  const saved = existing ? await store.appendThread(user.id, doc.id, existing.id, entry) : null;
+  if (!saved) throw notFound();
+  res.status(201).json({ highlight: anchored(doc, saved), entry });
+});
+
+// Selection edits: explain / simplify / expand / cite / rewrite one passage.
+// Returns a preview (original, replacement, the whole new section); nothing is
+// saved until the client PUTs the section.
+const selectionSchema = z
+  .object({
+    op: z.enum(SELECTION_OPS),
+    quote: z.string().trim().min(1).max(4000),
+    instruction: z.string().trim().max(1000).optional(),
+  })
+  .refine((b) => b.op !== "rewrite" || !!b.instruction, { message: "instruction is required for op rewrite", path: ["instruction"] });
+
+docsRouter.post("/:id/sections/:sid/selection", async (req, res) => {
+  const { user, doc, job } = await load(req);
+  if (job) throw busy();
+  const sec = sectionOf(doc, String(req.params.sid));
+  const body = parse(selectionSchema, req.body);
+  const ac = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) ac.abort();
+  });
+  const edit = await editSelection(defaultDeps(), doc, sec, body.op, body.quote, body.instruction, ac.signal);
+  res.json(edit);
 });
 
 docsRouter.put("/:id/sections/:sid", async (req, res) => {
