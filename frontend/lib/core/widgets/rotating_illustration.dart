@@ -20,7 +20,13 @@ class RotatingIllustration extends StatefulWidget {
     this.paper,
     this.interval = IllustrationDurations.rotateEvery,
     this.initialIndex,
+    this.cycle = true,
   });
+
+  /// When false the slot keeps one scene for its whole life; a new slot
+  /// (new chat, app restart) picks a fresh random one, never the scene
+  /// shown last.
+  final bool cycle;
 
   /// Scenes in order; must not be empty.
   final List<IllustrationKind> kinds;
@@ -72,11 +78,22 @@ class _RotatingIllustrationState extends State<RotatingIllustration>
 
   int get _setKey => Object.hashAll(widget.kinds);
 
+  /// Last scene shown per set, so a fresh pick never repeats it.
+  static final _last = <int, int>{};
+
+  int _pick(int n) {
+    final last = _last[_setKey];
+    if (n < 2 || last == null) return _random.nextInt(n);
+    final i = _random.nextInt(n - 1);
+    return i >= last ? i + 1 : i;
+  }
+
   @override
   void initState() {
     super.initState();
     final n = widget.kinds.length;
-    _index = (widget.initialIndex ?? _next[_setKey] ?? _random.nextInt(n)) % n;
+    _index = (widget.initialIndex ?? _next[_setKey] ?? _pick(n)) % n;
+    if (!widget.cycle) _next.remove(_setKey);
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
@@ -112,7 +129,7 @@ class _RotatingIllustrationState extends State<RotatingIllustration>
   /// Runs the timer and the float only while they can be seen.
   void _sync() {
     final run = !_still && _visible && _foreground;
-    if (run && widget.kinds.length > 1) {
+    if (run && widget.cycle && widget.kinds.length > 1) {
       _timer ??= Timer.periodic(widget.interval, (_) => _advance());
     } else {
       _timer?.cancel();
@@ -135,7 +152,8 @@ class _RotatingIllustrationState extends State<RotatingIllustration>
 
   @override
   void dispose() {
-    _next[_setKey] = (_index + 1) % widget.kinds.length;
+    _last[_setKey] = _index;
+    if (widget.cycle) _next[_setKey] = (_index + 1) % widget.kinds.length;
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _float.dispose();

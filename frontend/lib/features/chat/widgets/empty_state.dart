@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/greetings.dart';
+import '../../auth/auth_controller.dart';
 import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/constants/suggest.dart';
@@ -11,8 +13,8 @@ import '../../../core/widgets/rotating_illustration.dart';
 import '../../../data/suggest_api.dart';
 import 'suggestion_chips.dart';
 
-/// HELLO on a new chat, with a few line-art scenes taking turns above it
-/// and a few one-tap starter prompts.
+/// A greeting on a new chat under one line-art scene, both picked at random
+/// each time an empty chat opens, plus a few one-tap starter prompts.
 /// The art and then the prompts drop out when space runs short (keyboard).
 class EmptyState extends StatefulWidget {
   const EmptyState({super.key, this.onSuggestion});
@@ -31,6 +33,11 @@ class _EmptyStateState extends State<EmptyState> {
   static DateTime? _cachedAt;
 
   List<String> _prompts = _cached;
+
+  /// Picked once per empty chat, so it never changes while you look at it.
+  final Greeting _greeting = Greetings.pick(
+    name: AuthController.instance.user?.name,
+  );
 
   @override
   void initState() {
@@ -77,12 +84,24 @@ class _EmptyStateState extends State<EmptyState> {
                     const RotatingIllustration(
                       kinds: IllustrationKind.home,
                       height: IllustrationSizes.hello,
+                      cycle: false,
                     ),
                     const SizedBox(height: AppSpacing.lg),
                   ],
-                  Text(AppStrings.emptyTitle, style: context.text.display),
+                  Text(
+                    _greeting.title,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: context.text.headline.copyWith(
+                      fontSize: AppFontSize.display,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text(AppStrings.emptySubtitle, style: context.text.bodySmall),
+                  Text(
+                    _greeting.subtitle,
+                    textAlign: TextAlign.center,
+                    style: context.text.bodySmall,
+                  ),
                   if (showPrompts) ...[
                     const SizedBox(height: AppSpacing.xl),
                     Wrap(

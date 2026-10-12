@@ -1,4 +1,5 @@
 import 'package:app/core/constants/app_sizes.dart';
+import 'package:app/core/constants/greetings.dart';
 import 'package:app/core/theme/app_palette.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/core/widgets/illustration.dart';
@@ -43,7 +44,13 @@ void _phone(WidgetTester tester) {
 const _themes = [('light', false), ('dark', true)];
 
 void main() {
-  setUpAll(_fonts);
+  setUpAll(() async {
+    await _fonts();
+    Greetings.debugFixed = (
+      title: 'Good evening, Nikhil',
+      subtitle: 'What are we working on?',
+    );
+  });
 
   for (final (name, dark) in _themes) {
     for (final kind in [
