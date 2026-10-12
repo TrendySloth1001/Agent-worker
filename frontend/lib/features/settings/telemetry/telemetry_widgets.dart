@@ -27,11 +27,17 @@ class LiveDot extends StatefulWidget {
 }
 
 class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: TelemetryDurations.pulse,
-    lowerBound: TelemetrySizes.liveDotMinOpacity,
-  )..repeat(reverse: true);
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: TelemetryDurations.pulse,
+      lowerBound: TelemetrySizes.liveDotMinOpacity,
+    )..repeat(reverse: true);
+  }
 
   @override
   void dispose() {

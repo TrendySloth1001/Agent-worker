@@ -36,11 +36,6 @@ abstract final class TelemetryBuckets {
 abstract final class TelemetryStrings {
   // Settings entry.
   static const section = 'TELEMETRY';
-  static const entryTitle = 'Model telemetry';
-  static const entryBody =
-      'Every model call, minute by minute: failures, tokens, latency, '
-      'cooldowns and a live event log. Only you can see this.';
-  static const ownerOnly = 'OWNER ONLY';
 
   // Screen.
   static const title = 'Telemetry';
