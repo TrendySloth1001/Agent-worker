@@ -103,6 +103,9 @@ abstract final class AppSizes {
   static const drawerWidthFactor = 0.85;
   static const drawerMaxWidth = 340.0;
   static const drawerButtonHeight = 40.0;
+
+  /// Below this screen height (landscape) the drawer footer drops labels.
+  static const drawerCompactHeight = 500.0;
   static const toggleWidth = 40.0;
   static const toggleHeight = 22.0;
   static const toggleKnob = 14.0;

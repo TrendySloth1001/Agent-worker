@@ -56,13 +56,21 @@ class ConversationsApi {
   Map<String, dynamic> _json(http.Response r) =>
       jsonDecode(r.body) as Map<String, dynamic>;
 
-  /// Pinned first. [archived] lists only archived chats instead.
+  /// Pinned first. [archived] lists only archived chats instead. [before]
+  /// continues after a page: chats last touched earlier than it.
   Future<List<ConversationSummary>> list({
     String query = '',
     bool archived = false,
+    int? limit,
+    DateTime? before,
   }) async {
     final q = query.trim();
-    final params = {if (q.isNotEmpty) 'q': q, if (archived) 'archived': '1'};
+    final params = {
+      if (q.isNotEmpty) 'q': q,
+      if (archived) 'archived': '1',
+      if (limit != null) 'limit': '$limit',
+      if (before != null) 'before': before.toUtc().toIso8601String(),
+    };
     final path = Uri(
       path: '/conversations',
       queryParameters: params.isEmpty ? null : params,

@@ -129,6 +129,9 @@ class ChatController extends ChangeNotifier {
   /// The reply of the round table running in the background, if any.
   ChatMessage? get backgroundTable => _background?.reply;
 
+  /// Saved id of the chat the background table writes into.
+  String? get backgroundChatId => _background?.id;
+
   /// Its chat's title, when the server named it.
   String? get backgroundTitle => _background?.title;
 
