@@ -13,6 +13,11 @@ class ChatLaunch {
   /// read live by the server on every turn of that chat.
   List<Map<String, String>> apps = const [];
 
+  /// Bumped to ask the chat screen for a fresh, empty chat (end of the tour).
+  final fresh = ValueNotifier<int>(0);
+
+  void newChat() => fresh.value++;
+
   void ask(String text, {List<Map<String, String>> apps = const []}) {
     this.apps = apps;
     prompt.value = text;

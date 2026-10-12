@@ -82,6 +82,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.docStarted.addListener(_onDocStarted);
     NotificationCenter.instance.target.addListener(_onNotificationOpened);
     ChatLaunch.instance.prompt.addListener(_onLaunch);
+    ChatLaunch.instance.fresh.addListener(_onFresh);
     NotificationCenter.instance.currentChat = () => _controller.conversationId;
     // A cold start from a notification has its target waiting already.
     WidgetsBinding.instance.addPostFrameCallback(
@@ -98,6 +99,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.appRefs = ChatLaunch.instance.apps;
     ChatLaunch.instance.apps = const [];
     _controller.send(text);
+  }
+
+  /// A screen asked for an empty new chat (the tour from Settings).
+  void _onFresh() {
+    if (mounted) _controller.newChat();
   }
 
   /// A tapped notification (or in-app link) opens what it points at.
@@ -126,6 +132,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     NotificationCenter.instance.target.removeListener(_onNotificationOpened);
     ChatLaunch.instance.prompt.removeListener(_onLaunch);
+    ChatLaunch.instance.fresh.removeListener(_onFresh);
     NotificationCenter.instance.currentChat = () => null;
     _controller.dispose();
     _voice.dispose();

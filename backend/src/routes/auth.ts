@@ -24,6 +24,7 @@ import {
   hashPassword,
   listSessions,
   login,
+  onboardedPatch,
   publicUser,
   refresh,
   register,
@@ -243,15 +244,21 @@ const patchBody = z
       .refine((s) => /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(s) || /^https:\/\/\S+$/.test(s), "Avatar must be an image")
       .nullable()
       .optional(),
+    /** The first-run tour was finished or skipped (true), or should show again (false). */
+    onboarded: z.boolean().optional(),
   })
-  .refine((b) => b.name !== undefined || b.avatar !== undefined, "Nothing to change");
+  .refine((b) => b.name !== undefined || b.avatar !== undefined || b.onboarded !== undefined, "Nothing to change");
 
 authRouter.patch("/me", async (req, res) => {
   const user = await me(req);
   const b = patchBody.parse(req.body ?? {});
   const updated = await db().user.update({
     where: { id: user.id },
-    data: { ...(b.name != null ? { name: b.name } : {}), ...(b.avatar !== undefined ? { avatarUrl: b.avatar } : {}) },
+    data: {
+      ...(b.name != null ? { name: b.name } : {}),
+      ...(b.avatar !== undefined ? { avatarUrl: b.avatar } : {}),
+      ...onboardedPatch(user.onboardedAt, b.onboarded),
+    },
   });
   res.json({ user: publicUser(updated) });
 });

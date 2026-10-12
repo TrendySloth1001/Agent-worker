@@ -7,6 +7,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/dot_grid_background.dart';
 import '../chat/chat_screen.dart';
+import '../onboarding/onboarding_gate.dart';
 import 'auth_controller.dart';
 import 'login_screen.dart';
 import 'widgets/auth_widgets.dart';
@@ -26,8 +27,10 @@ class AuthGate extends StatelessWidget {
         child: switch (auth.status) {
           AuthStatus.restoring => const _Splash(),
           AuthStatus.signedOut => const LoginScreen(key: ValueKey('login')),
-          AuthStatus.signedIn => ChatScreen(
+          AuthStatus.signedIn => OnboardingGate(
             key: ValueKey('chat:${auth.user?.id}'),
+            user: auth.user,
+            child: const ChatScreen(),
           ),
         },
       ),

@@ -45,6 +45,8 @@ model User {
   memoryEnabled Boolean  @default(true) @map("memory_enabled")
   /// Cross-chat recall on/off (src/recall). Off: past chats are not indexed or searched, and the index is dropped.
   chatRecallEnabled Boolean @default(true) @map("chat_recall_enabled")
+  /// When the user finished or skipped the app's first-run tour. NULL: show it on next sign-in.
+  onboardedAt  DateTime? @map("onboarded_at") @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
 
