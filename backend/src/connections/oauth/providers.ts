@@ -1,3 +1,4 @@
+import { Client, isHTTPResponseError } from "@notionhq/client";
 import { config } from "../../config.js";
 
 /**
@@ -33,7 +34,11 @@ export type AccountProfile = {
   meta: Record<string, unknown>;
 };
 
-export type ProviderDeps = { fetch: typeof fetch };
+/** [clientId]/[clientSecret]: the provider's own credentials, filled in by the caller. */
+export type ProviderDeps = { fetch: typeof fetch; clientId?: string; clientSecret?: string };
+
+/** A token endpoint answer: HTTP status and the JSON body (never logged). */
+export type TokenAnswer = { status: number; json: Record<string, unknown> };
 
 export type OAuthProvider = {
   id: ProviderId;
@@ -44,8 +49,10 @@ export type OAuthProvider = {
   scopes: string[];
   /** RFC 7636 S256 supported. */
   pkce: boolean;
-  /** How the client authenticates at the token endpoint. */
+  /** How the client authenticates at the token endpoint (when [token] is not given). */
   tokenAuth: "body" | "basic-json";
+  /** Custom token call (code exchange / refresh), e.g. through a vendor SDK. */
+  token?: (params: Record<string, string>, deps: ProviderDeps) => Promise<TokenAnswer>;
   /** Refresh tokens are honoured (and may rotate). */
   refresh: boolean;
   clientId: () => string | undefined;
@@ -67,8 +74,31 @@ export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 export const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 export const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 export const NOTION_API = "https://api.notion.com/v1";
-/** Stable Notion API version used for every call (search, blocks, pages). */
-export const NOTION_VERSION = "2022-06-28";
+/**
+ * Notion API version of every call: the official SDK's default
+ * (@notionhq/client 5.x sends 2025-09-03, where databases expose data sources).
+ */
+export const NOTION_VERSION: string = Client.defaultNotionVersion;
+const NOTION_TIMEOUT_MS = 15_000;
+
+/**
+ * A Notion SDK client for one call. Content calls pass the user's own OAuth
+ * access token ([auth]); OAuth calls pass none (the SDK sends the public
+ * integration's client id/secret as Basic auth). There is no shared server token.
+ */
+export function notionClient(deps: ProviderDeps, auth?: string): Client {
+  return new Client({
+    ...(auth ? { auth } : {}),
+    fetch: deps.fetch as never,
+    timeoutMs: NOTION_TIMEOUT_MS,
+    retry: { maxRetries: 2 },
+  });
+}
+
+/** HTTP status of a Notion SDK error (0 when the request never got an answer). */
+export function notionStatus(e: unknown): number {
+  return isHTTPResponseError(e) ? e.status : 0;
+}
 
 export const googleDrive: OAuthProvider = {
   id: "google_drive",
@@ -130,6 +160,23 @@ export const notion: OAuthProvider = {
   scopes: [],
   pkce: false,
   tokenAuth: "basic-json",
+  // Code exchange and refresh go through the official SDK (client.oauth.token).
+  async token(params, deps) {
+    const client_id = deps.clientId ?? "";
+    const client_secret = deps.clientSecret ?? "";
+    const body =
+      params.grant_type === "refresh_token"
+        ? { grant_type: "refresh_token" as const, refresh_token: params.refresh_token }
+        : { grant_type: "authorization_code" as const, code: params.code, redirect_uri: params.redirect_uri };
+    try {
+      const r = await notionClient(deps).oauth.token({ ...body, client_id, client_secret });
+      return { status: 200, json: r as unknown as Record<string, unknown> };
+    } catch (e) {
+      const status = notionStatus(e);
+      if (!status) throw e;
+      return { status, json: { error: isHTTPResponseError(e) ? e.code : "error" } };
+    }
+  },
   refresh: true,
   clientId: () => config.notion.clientId,
   clientSecret: () => config.notion.clientSecret,
@@ -159,16 +206,18 @@ export const notion: OAuthProvider = {
     };
   },
   async revoke(token, deps) {
-    const id = config.notion.clientId;
-    const secret = config.notion.clientSecret;
-    if (!id || !secret) return false;
-    const res = await deps.fetch(`${NOTION_API}/oauth/revoke`, {
-      method: "POST",
-      headers: { Authorization: basic(id, secret), "Content-Type": "application/json", "Notion-Version": NOTION_VERSION },
-      body: JSON.stringify({ token }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    return res.ok || res.status === 400 || res.status === 401;
+    const client_id = deps.clientId;
+    const client_secret = deps.clientSecret;
+    if (!client_id || !client_secret) return false;
+    try {
+      await notionClient(deps).oauth.revoke({ token, client_id, client_secret });
+      return true;
+    } catch (e) {
+      // Already invalid: nothing left to take back.
+      const status = notionStatus(e);
+      if (status === 400 || status === 401) return true;
+      throw e;
+    }
   },
   homeUrl: "https://www.notion.so",
 };
@@ -176,6 +225,14 @@ export const notion: OAuthProvider = {
 export const PROVIDERS: Record<ProviderId, OAuthProvider> = { google_drive: googleDrive, notion };
 
 export const providerConfigured = (p: OAuthProvider) => !!p.clientId() && !!p.clientSecret();
+
+/** Calls [p]'s token endpoint (code exchange or refresh). */
+export async function callToken(p: OAuthProvider, params: Record<string, string>, deps: ProviderDeps, timeoutMs = TIMEOUT_MS): Promise<TokenAnswer> {
+  if (p.token) return p.token(params, { ...deps, clientId: p.clientId(), clientSecret: p.clientSecret() });
+  const res = await deps.fetch(p.tokenUrl, { ...tokenRequest(p, params), signal: AbortSignal.timeout(timeoutMs) });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  return { status: res.status, json };
+}
 
 /** The token endpoint request for [p] (code exchange or refresh). */
 export function tokenRequest(p: OAuthProvider, params: Record<string, string>): RequestInit {

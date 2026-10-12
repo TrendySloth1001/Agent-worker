@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { sha256, pkceChallenge } from "../src/auth/githubWeb.js";
 import { callbackPage } from "../src/auth/githubWebPage.js";
 import { createOAuthFlow, CONNECT_DEEP_LINK, type FlowRow, type FlowStore } from "../src/connections/oauth/flow.js";
-import { googleDrive, notion, GOOGLE_DRIVE_SCOPE, GOOGLE_REVOKE_URL, GOOGLE_USERINFO_URL, type OAuthProvider, type ProviderId } from "../src/connections/oauth/providers.js";
+import { googleDrive, notion, NOTION_VERSION, GOOGLE_DRIVE_SCOPE, GOOGLE_REVOKE_URL, GOOGLE_USERINFO_URL, type OAuthProvider, type ProviderId } from "../src/connections/oauth/providers.js";
 import { createTokenManager, providerFetch, REFRESH_EARLY_MS, type ConnectionRepo, type StoredConnection } from "../src/connections/oauth/tokens.js";
 import { blocksToMarkdown, markdownToBlocks, RICH_MAX, type NotionBlock } from "../src/connections/oauth/notionMarkdown.js";
 import { createDrive, exportMime, readKind, GDOC, GSHEET } from "../src/connections/oauth/drive.js";
@@ -461,7 +461,9 @@ test("notion read: page metadata + paginated children as markdown", async () => 
   assert.equal(page.title, "Roadmap");
   assert.equal(page.icon, "📘");
   assert.equal(page.markdown, "Hello\n\n## Q4");
-  assert.ok(calls.every((c) => new Headers(c.init.headers).get("Notion-Version") === "2022-06-28"));
+  // Every call carries the SDK's API version and the user's own token.
+  assert.ok(calls.every((c) => new Headers(c.init.headers).get("Notion-Version") === NOTION_VERSION));
+  assert.ok(calls.every((c) => new Headers(c.init.headers).get("Authorization") === "Bearer old-at"));
 });
 
 test("notion createPage sends 100 blocks then appends the rest", async () => {
@@ -641,4 +643,29 @@ test("picker: start, page without API key, done verifies picked files once", asy
   await assert.rejects(p.done(ticket, []), isApp(400, "invalid_ticket"));
   assert.equal((await p.view(ticket)).ok, false);
   assert.equal((await p.view("")).ok, false);
+});
+
+test("notion via the SDK: user's token, data_source filter, 401 flags Reconnect, revoke on disconnect", async () => {
+  const repo = memoryRepo({});
+  const searchCalls = mockFetch(() =>
+    json({ object: "list", results: [{ object: "data_source", id: "ds-1", title: [rt("Tasks")], url: "https://notion.so/ds" }], has_more: false, next_cursor: null }),
+  );
+  const t = createTokenManager({ repo, fetch: searchCalls.f, now: Date.now, encrypt: enc, decrypt: dec, providers });
+  const n = createNotion(t, searchCalls.f);
+  const r = await n.search("u1", { q: "tasks", kind: "database" });
+  assert.deepEqual(r.items.map((i) => [i.object, i.title]), [["database", "Tasks"]]);
+  const sent = JSON.parse(String(searchCalls.calls[0].init.body));
+  assert.deepEqual(sent.filter, { property: "object", value: "data_source" });
+  assert.equal(new Headers(searchCalls.calls[0].init.headers).get("Authorization"), "Bearer old-at");
+
+  const denied = mockFetch(() => json({ object: "error", status: 401, code: "unauthorized", message: "API token is invalid." }, 401));
+  await assert.rejects(createNotion(t, denied.f).search("u1"), isApp(401, "connector_reauth"));
+  assert.equal(repo.rows.get("u1:notion")!.needsReauth, true);
+
+  const revoke = mockFetch(() => json({}));
+  const t2 = createTokenManager({ repo, fetch: revoke.f, now: Date.now, encrypt: enc, decrypt: dec, providers });
+  assert.deepEqual(await t2.disconnect("u1", "notion"), { deleted: true, revoked: true });
+  assert.equal(revoke.calls[0].url, "https://api.notion.com/v1/oauth/revoke");
+  assert.equal(new Headers(revoke.calls[0].init.headers).get("Authorization"), `Basic ${Buffer.from("notion-id:notion-secret").toString("base64")}`);
+  assert.deepEqual(JSON.parse(String(revoke.calls[0].init.body)), { token: "old-rt" });
 });

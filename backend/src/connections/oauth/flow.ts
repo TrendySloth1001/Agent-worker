@@ -4,7 +4,7 @@ import { db } from "../../db/prisma.js";
 import { AppError } from "../../util/errors.js";
 import { log } from "../../util/logger.js";
 import { pkceChallenge, sha256 } from "../../auth/githubWeb.js";
-import { PROVIDERS, parseGrant, providerConfigured, tokenRequest, type AccountProfile, type OAuthProvider, type ProviderId, type TokenGrant } from "./providers.js";
+import { PROVIDERS, callToken, parseGrant, providerConfigured, type AccountProfile, type OAuthProvider, type ProviderId, type TokenGrant } from "./providers.js";
 import { connectorTokens, providerNotConfigured } from "./tokens.js";
 
 /**
@@ -116,11 +116,10 @@ export function createOAuthFlow(deps: FlowDeps) {
   async function exchange(p: OAuthProvider, code: string, verifier: string): Promise<TokenGrant> {
     const params: Record<string, string> = { grant_type: "authorization_code", code, redirect_uri: deps.redirectUri(p.id) };
     if (p.pkce && verifier) params.code_verifier = verifier;
-    const res = await deps.fetch(p.tokenUrl, { ...tokenRequest(p, params), signal: AbortSignal.timeout(TIMEOUT_MS) });
-    const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const grant = res.ok ? parseGrant(j) : null;
+    const res = await callToken(p, params, { fetch: deps.fetch }, TIMEOUT_MS);
+    const grant = res.status < 300 ? parseGrant(res.json) : null;
     if (!grant) {
-      log.warn("connector code exchange failed", { provider: p.id, error: String(j.error ?? res.status).slice(0, 60) });
+      log.warn("connector code exchange failed", { provider: p.id, error: String(res.json.error ?? res.status).slice(0, 60) });
       throw new AppError(502, "exchange_failed", messages(p.name).exchange_failed);
     }
     return grant;

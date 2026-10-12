@@ -2,7 +2,7 @@ import { db } from "../../db/prisma.js";
 import { AppError } from "../../util/errors.js";
 import { log } from "../../util/logger.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
-import { PROVIDERS, parseGrant, tokenRequest, type AccountProfile, type OAuthProvider, type ProviderId, type TokenGrant } from "./providers.js";
+import { PROVIDERS, callToken, parseGrant, type AccountProfile, type OAuthProvider, type ProviderId, type TokenGrant } from "./providers.js";
 
 /**
  * Tokens of the OAuth connectors, encrypted at rest in `connections`:
@@ -80,20 +80,16 @@ export function createTokenManager(deps: TokenDeps) {
 
   async function refresh(userId: string, p: OAuthProvider, row: StoredConnection): Promise<string> {
     const oldRefreshEnc = row.refreshTokenEnc!;
-    let res: Response;
+    let res: { status: number; json: Record<string, unknown> };
     try {
-      res = await deps.fetch(p.tokenUrl, {
-        ...tokenRequest(p, { grant_type: "refresh_token", refresh_token: deps.decrypt(oldRefreshEnc) }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
+      res = await callToken(p, { grant_type: "refresh_token", refresh_token: deps.decrypt(oldRefreshEnc) }, { fetch: deps.fetch }, TIMEOUT_MS);
     } catch (e) {
       log.warn("connector refresh failed", { provider: p.id, message: (e as Error).message.slice(0, 80) });
       return stillValid(p, row);
     }
-    const j = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const grant = res.ok ? parseGrant(j) : null;
+    const grant = res.status < 300 ? parseGrant(res.json) : null;
     if (!grant) {
-      const code = String(j.error ?? res.status).slice(0, 40);
+      const code = String(res.json.error ?? res.status).slice(0, 40);
       log.warn("connector refresh rejected", { provider: p.id, error: code });
       // The grant is gone (revoked, expired refresh token): ask for Reconnect.
       if (res.status === 400 || res.status === 401) {
@@ -157,7 +153,7 @@ export function createTokenManager(deps: TokenDeps) {
       try {
         // Google: revoking the refresh token ends the whole grant.
         const token = deps.decrypt(row.refreshTokenEnc ?? row.accessTokenEnc);
-        revoked = await p.revoke(token, { fetch: deps.fetch });
+        revoked = await p.revoke(token, { fetch: deps.fetch, clientId: p.clientId(), clientSecret: p.clientSecret() });
       } catch (e) {
         log.warn("connector revoke failed", { provider, message: (e as Error).message.slice(0, 80) });
       }
