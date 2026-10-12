@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/history.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
@@ -13,9 +14,9 @@ import '../../../data/conversation.dart';
 import '../history_controller.dart';
 import 'merge_picker.dart';
 
-/// Long-press menu for a conversation: pin, archive, fork, merge, rename or
-/// delete. Calls [onRenamed] / [onDeleted] after the server accepted the
-/// change. [onFork] duplicates the chat and opens the copy. [onMerge] merges
+/// Long-press menu for a conversation: rename (inline in the list), pin,
+/// archive, fork, merge, export or delete. Calls [onDeleted] after the server
+/// accepted the delete. [onFork] duplicates the chat and opens the copy. [onMerge] merges
 /// it with another and opens the result; [onMerged] gets its outcome once the
 /// progress dialog has closed. [onExport] (when set) offers EXPORT as
 /// Markdown or PDF.
@@ -23,7 +24,6 @@ Future<void> showChatActions(
   BuildContext context, {
   required ConversationSummary chat,
   required HistoryController controller,
-  required void Function(String id, String title) onRenamed,
   required ValueChanged<String> onDeleted,
   required Future<bool> Function(ConversationSummary chat) onFork,
   required Future<bool> Function(String id, String otherId) onMerge,
@@ -41,51 +41,70 @@ Future<void> showChatActions(
       ),
       side: BorderSide(color: p.border),
     ),
+    isScrollControlled: true,
+    useSafeArea: true,
     builder: (sheet) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _SheetRow(
-            label: chat.pinned ? AppStrings.unpinChat : AppStrings.pinChat,
-            icon: chat.pinned ? AppIcons.unpin : AppIcons.pin,
-            onTap: () => Navigator.pop(sheet, AppStrings.pinChat),
-          ),
-          _SheetRow(
-            label: chat.archived
-                ? AppStrings.unarchiveChat
-                : AppStrings.archiveChat,
-            icon: chat.archived ? AppIcons.unarchive : AppIcons.archive,
-            onTap: () => Navigator.pop(sheet, AppStrings.archiveChat),
-          ),
-          _SheetRow(
-            label: LineageStrings.fork,
-            icon: AppIcons.fork,
-            onTap: () => Navigator.pop(sheet, LineageStrings.fork),
-          ),
-          _SheetRow(
-            label: LineageStrings.mergeWith,
-            icon: AppIcons.merge,
-            onTap: () => Navigator.pop(sheet, LineageStrings.mergeWith),
-          ),
-          if (onExport != null)
-            _SheetRow(
-              label: ShareStrings.export,
-              icon: ShareIcons.export,
-              onTap: () => Navigator.pop(sheet, ShareStrings.export),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenPadding,
+                AppSpacing.lg,
+                AppSpacing.screenPadding,
+                AppSpacing.xs,
+              ),
+              child: Text(
+                chat.title ?? HistoryStrings.untitled,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: sheet.text.bodySmall,
+              ),
             ),
-          _SheetRow(
-            label: AppStrings.rename,
-            icon: AppIcons.edit,
-            onTap: () => Navigator.pop(sheet, AppStrings.rename),
-          ),
-          Divider(color: p.border),
-          _SheetRow(
-            label: AppStrings.deleteChat,
-            icon: AppIcons.delete,
-            color: p.accent,
-            onTap: () => Navigator.pop(sheet, AppStrings.deleteChat),
-          ),
-        ],
+            _SheetRow(
+              label: AppStrings.rename,
+              icon: AppIcons.edit,
+              onTap: () => Navigator.pop(sheet, AppStrings.rename),
+            ),
+            _SheetRow(
+              label: chat.pinned ? AppStrings.unpinChat : AppStrings.pinChat,
+              icon: chat.pinned ? AppIcons.unpin : AppIcons.pin,
+              onTap: () => Navigator.pop(sheet, AppStrings.pinChat),
+            ),
+            _SheetRow(
+              label: chat.archived
+                  ? AppStrings.unarchiveChat
+                  : AppStrings.archiveChat,
+              icon: chat.archived ? AppIcons.unarchive : AppIcons.archive,
+              onTap: () => Navigator.pop(sheet, AppStrings.archiveChat),
+            ),
+            _SheetRow(
+              label: LineageStrings.fork,
+              icon: AppIcons.fork,
+              onTap: () => Navigator.pop(sheet, LineageStrings.fork),
+            ),
+            _SheetRow(
+              label: LineageStrings.mergeWith,
+              icon: AppIcons.merge,
+              onTap: () => Navigator.pop(sheet, LineageStrings.mergeWith),
+            ),
+            if (onExport != null)
+              _SheetRow(
+                label: ShareStrings.export,
+                icon: ShareIcons.export,
+                onTap: () => Navigator.pop(sheet, ShareStrings.export),
+              ),
+            Divider(color: p.border),
+            _SheetRow(
+              label: AppStrings.deleteChat,
+              icon: AppIcons.delete,
+              color: p.accent,
+              onTap: () => Navigator.pop(sheet, AppStrings.deleteChat),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -96,7 +115,7 @@ Future<void> showChatActions(
     return;
   }
   if (action == AppStrings.archiveChat) {
-    await _archive(context, chat, controller);
+    await archiveChat(context, chat, controller);
     return;
   }
   if (action == LineageStrings.fork) {
@@ -112,16 +131,16 @@ Future<void> showChatActions(
     return;
   }
   if (action == AppStrings.rename) {
-    await _rename(context, chat, controller, onRenamed);
+    controller.beginRename(chat.id);
+    return;
   }
-  if (!context.mounted) return;
   if (action == AppStrings.deleteChat) {
     await _delete(context, chat, controller, onDeleted);
   }
 }
 
 /// Archives or restores, with an UNDO on the notice.
-Future<void> _archive(
+Future<void> archiveChat(
   BuildContext context,
   ConversationSummary chat,
   HistoryController controller,
@@ -189,44 +208,6 @@ Future<void> _merge(
   onMerged(merged);
 }
 
-Future<void> _rename(
-  BuildContext context,
-  ConversationSummary chat,
-  HistoryController controller,
-  void Function(String id, String title) onRenamed,
-) async {
-  final field = TextEditingController(text: chat.title ?? '');
-  final title = await showDialog<String>(
-    context: context,
-    builder: (dialog) => _Dialog(
-      title: AppStrings.rename,
-      confirm: AppStrings.save,
-      onConfirm: () => Navigator.pop(dialog, field.text.trim()),
-      child: TextField(
-        controller: field,
-        autofocus: true,
-        maxLength: 120,
-        style: dialog.text.body,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          hintText: AppStrings.renameHint,
-          counterText: '',
-        ),
-        onSubmitted: (v) => Navigator.pop(dialog, v.trim()),
-      ),
-    ),
-  );
-  field.dispose();
-  if (title == null || title.isEmpty || title == chat.title) return;
-  final updated = await controller.rename(chat.id, title);
-  if (updated != null) {
-    Haptics.received();
-    onRenamed(chat.id, updated.title ?? title);
-  } else {
-    Haptics.error();
-  }
-}
-
 Future<void> _delete(
   BuildContext context,
   ConversationSummary chat,
@@ -277,13 +258,18 @@ class _SheetRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.screenPadding,
         ),
-        child: SizedBox(
-          height: AppSizes.rowHeight,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: AppSizes.rowHeight),
           child: Row(
             children: [
               AppIcon(icon, size: AppIconSize.md, color: c),
               const SizedBox(width: AppSpacing.md),
-              Text(label, style: context.text.label.copyWith(color: color)),
+              Expanded(
+                child: Text(
+                  label,
+                  style: context.text.label.copyWith(color: color),
+                ),
+              ),
             ],
           ),
         ),

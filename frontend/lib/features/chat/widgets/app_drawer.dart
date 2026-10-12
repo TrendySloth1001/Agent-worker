@@ -1,29 +1,41 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/app_scope.dart';
-import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../data/conversation.dart';
 import '../../../data/conversations_api.dart';
+import '../../../data/docs_api.dart';
+import '../../docs/doc_registry.dart';
+import '../../docs/doc_screen.dart';
 import '../../history/history_controller.dart';
 import '../../history/widgets/chat_actions.dart';
 import '../../history/widgets/conversation_list.dart';
+import '../../history/widgets/docs_sheet.dart';
+import '../../history/widgets/history_footer.dart';
+import '../../history/widgets/history_header.dart';
 import '../../knowledge/knowledge_screen.dart';
 import '../../profile/profile_screen.dart';
-import '../../profile/widgets/account_row.dart';
 import '../../settings/settings_screen.dart';
+import '../../storage/storage_screen.dart';
 import '../chat_controller.dart';
 import '../share/chat_export.dart';
 
-/// Left sidebar: new chat, search, conversations, knowledge and settings.
+/// Left sidebar: wordmark with search and new chat, the conversation list
+/// (grouped by date, swipe to pin or archive), and a footer with quick
+/// entries and the account.
 class AppDrawer extends StatefulWidget {
-  const AppDrawer({super.key, required this.chat});
+  const AppDrawer({super.key, required this.chat, this.history, this.docsApi});
 
   final ChatController chat;
+
+  /// Defaults to a controller over the app's server; tests pass their own.
+  final HistoryController? history;
+
+  /// Defaults to the real docs API.
+  final DocsApi? docsApi;
 
   @override
   State<AppDrawer> createState() => AppDrawerState();
@@ -31,20 +43,32 @@ class AppDrawer extends StatefulWidget {
 
 class AppDrawerState extends State<AppDrawer> {
   HistoryController? _history;
+  bool _ownsHistory = false;
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
+  bool _searchOpen = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_history != null) return;
-    _history = HistoryController(ConversationsApi(AppScope.of(context).baseUrl))
-      ..load();
+    final given = widget.history;
+    if (given != null) {
+      _history = given;
+    } else {
+      _ownsHistory = true;
+      _history = HistoryController(
+        ConversationsApi(AppScope.of(context).baseUrl),
+      );
+    }
+    _history!.load();
   }
 
   @override
   void dispose() {
-    _history?.dispose();
+    if (_ownsHistory) _history?.dispose();
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -52,7 +76,6 @@ class AppDrawerState extends State<AppDrawer> {
   void refresh() => _history?.load();
 
   void _newChat() {
-    Haptics.tap();
     Navigator.of(context).pop();
     widget.chat.newChat();
   }
@@ -106,14 +129,71 @@ class AppDrawerState extends State<AppDrawer> {
     navigator.push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
+  Future<void> _pin(ConversationSummary chat) async {
+    final ok = await _history!.setPinned(chat.id, !chat.pinned);
+    ok ? Haptics.received() : Haptics.error();
+  }
+
+  Future<void> _archive(ConversationSummary chat) =>
+      archiveChat(context, chat, _history!);
+
+  Future<void> _rename(ConversationSummary chat, String title) async {
+    final history = _history!;
+    if (title.isEmpty || title == chat.title) {
+      history.cancelRename();
+      return;
+    }
+    final updated = await history.rename(chat.id, title);
+    if (updated == null) {
+      Haptics.error();
+      history.cancelRename();
+      return;
+    }
+    Haptics.received();
+    widget.chat.onConversationChanged(chat.id, title: updated.title ?? title);
+  }
+
+  Future<void> _openDocs() async {
+    final navigator = Navigator.of(context);
+    final doc = await showDocsSheet(context, api: widget.docsApi);
+    if (doc == null || !mounted) return;
+    navigator.pop();
+    if (!navigator.mounted) return;
+    openDoc(navigator.context, doc.id, seed: doc);
+  }
+
+  void _closeSearch() {
+    _search.clear();
+    _history!.clearSearch();
+    setState(() => _searchOpen = false);
+  }
+
+  void _toggleArchived(bool value) {
+    _search.clear();
+    _searchOpen = false;
+    _history!.showArchived(value);
+    setState(() {});
+  }
+
+  /// Chats with a reply, round table or document being written right now.
+  Set<String> _runningIds() {
+    final chat = widget.chat;
+    return {
+      if (chat.isSending && chat.conversationId != null) chat.conversationId!,
+      ?chat.backgroundChatId,
+      for (final d in DocRegistry.instance.running) ?d.doc.conversationId,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final history = _history!;
-    final width = MediaQuery.sizeOf(context).width;
+    final size = MediaQuery.sizeOf(context);
     final padding = MediaQuery.paddingOf(context);
+    final compact = size.height < AppSizes.drawerCompactHeight;
     return Drawer(
-      width: (width * AppSizes.drawerWidthFactor).clamp(
+      width: (size.width * AppSizes.drawerWidthFactor).clamp(
         0.0,
         AppSizes.drawerMaxWidth,
       ),
@@ -126,42 +206,41 @@ class AppDrawerState extends State<AppDrawer> {
           border: Border(right: BorderSide(color: p.border)),
         ),
         child: Padding(
-          padding: EdgeInsets.only(top: padding.top),
+          padding: EdgeInsets.only(top: padding.top, left: padding.left),
           child: Column(
             children: [
-              _header(context),
-              _searchField(context, history),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screenPadding,
-                  AppSpacing.md,
-                  AppSpacing.screenPadding,
-                  0,
-                ),
-                child: ListenableBuilder(
-                  listenable: history,
-                  builder: (context, _) => _ListHeader(
-                    archived: history.archived,
-                    onToggle: () {
-                      Haptics.tap();
-                      history.showArchived(!history.archived);
-                    },
-                  ),
+              ListenableBuilder(
+                listenable: history,
+                builder: (context, _) => HistoryHeader(
+                  searchOpen: _searchOpen,
+                  archived: history.archived,
+                  search: _search,
+                  searchFocus: _searchFocus,
+                  onQuery: history.search,
+                  onOpenSearch: () => setState(() => _searchOpen = true),
+                  onCloseSearch: _closeSearch,
+                  onNewChat: _newChat,
+                  onBack: () => _toggleArchived(false),
                 ),
               ),
               Expanded(
                 child: ListenableBuilder(
-                  listenable: widget.chat,
+                  listenable: Listenable.merge([
+                    widget.chat,
+                    DocRegistry.instance,
+                  ]),
                   builder: (context, _) => ConversationList(
                     controller: history,
                     currentId: widget.chat.conversationId,
+                    runningIds: _runningIds(),
                     onOpen: _openChat,
+                    onPin: _pin,
+                    onArchive: _archive,
+                    onRename: _rename,
                     onActions: (chat) => showChatActions(
                       context,
                       chat: chat,
                       controller: history,
-                      onRenamed: (id, title) =>
-                          widget.chat.onConversationChanged(id, title: title),
                       onDeleted: (id) =>
                           widget.chat.onConversationChanged(id, deleted: true),
                       onFork: _forkChat,
@@ -187,178 +266,20 @@ class AppDrawerState extends State<AppDrawer> {
                   ),
                 ),
               ),
-              Divider(height: AppBorder.thin, color: p.border),
-              _NavRow(
-                icon: AppIcons.knowledge,
-                label: AppStrings.knowledgeBase,
-                onTap: () => _push(const KnowledgeScreen()),
-              ),
-              _NavRow(
-                icon: AppIcons.settings,
-                label: AppStrings.settings,
-                onTap: () => _push(const SettingsScreen()),
-              ),
-              SizedBox(height: padding.bottom + AppSpacing.sm),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _header(BuildContext context) {
-    final p = context.palette;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.screenPadding,
-        AppSpacing.lg,
-        AppSpacing.screenPadding,
-        AppSpacing.md,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AccountRow(onTap: () => _push(const ProfileScreen())),
-          const SizedBox(height: AppSpacing.md),
-          Semantics(
-            button: true,
-            label: AppStrings.newChat,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _newChat,
-              child: Container(
-                height: AppSizes.drawerButtonHeight,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(
-                    color: p.borderStrong,
-                    width: AppBorder.thin,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(
-                      AppIcons.newChat,
-                      size: AppIconSize.sm,
-                      color: p.textPrimary,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      AppStrings.newChat,
-                      style: context.text.caption.copyWith(
-                        color: p.textPrimary,
-                      ),
-                    ),
-                  ],
+              ListenableBuilder(
+                listenable: history,
+                builder: (context, _) => HistoryFooter(
+                  archivedActive: history.archived,
+                  compact: compact,
+                  onKnowledge: () => _push(const KnowledgeScreen()),
+                  onDocs: _openDocs,
+                  onStorage: () => _push(const StorageScreen()),
+                  onArchived: () => _toggleArchived(!history.archived),
+                  onProfile: () => _push(const ProfileScreen()),
+                  onSettings: () => _push(const SettingsScreen()),
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _searchField(BuildContext context, HistoryController history) {
-    final p = context.palette;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenPadding),
-      child: TextField(
-        controller: _search,
-        onChanged: history.search,
-        style: context.text.body,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: AppStrings.searchChats,
-          prefixIcon: AppIcon(
-            AppIcons.search,
-            size: AppIconSize.md,
-            color: p.textTertiary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// CONVERSATIONS / ARCHIVED caption with a switch to the other list.
-class _ListHeader extends StatelessWidget {
-  const _ListHeader({required this.archived, required this.onToggle});
-
-  final bool archived;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            archived ? AppStrings.archived : AppStrings.conversations,
-            style: t.caption,
-          ),
-        ),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onToggle,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  archived ? AppIcons.back : AppIcons.archive,
-                  size: AppIconSize.xs,
-                  color: p.textSecondary,
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Text(
-                  archived ? AppStrings.conversations : AppStrings.archived,
-                  style: t.caption.copyWith(color: p.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _NavRow extends StatelessWidget {
-  const _NavRow({required this.icon, required this.label, required this.onTap});
-
-  final AppIconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return InkWell(
-      onTap: onTap,
-      child: SizedBox(
-        height: AppSizes.rowHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.screenPadding,
-          ),
-          child: Row(
-            children: [
-              AppIcon(icon, size: AppIconSize.md, color: p.textPrimary),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(child: Text(label, style: context.text.label)),
-              AppIcon(
-                AppIcons.chevronRight,
-                size: AppIconSize.sm,
-                color: p.textTertiary,
-              ),
+              SizedBox(height: padding.bottom),
             ],
           ),
         ),
