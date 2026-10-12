@@ -135,6 +135,12 @@ abstract final class AboutStrings {
       url: 'https://www.openpeeps.com/',
     ),
     (
+      icon: AboutIcons.illustrations,
+      label: 'MASCOT',
+      value: 'Sparky, drawn in code for this app (no third-party art)',
+      url: null,
+    ),
+    (
       icon: AboutIcons.icons,
       label: 'ICONS',
       value: 'Hugeicons',

@@ -1,15 +1,13 @@
+import '../../../core/constants/mascot.dart';
+import '../../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
-import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/history.dart';
-import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
-import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/illustration.dart';
 import '../../../data/conversation.dart';
 import '../history_controller.dart';
 import '../history_grouping.dart';
@@ -201,22 +199,16 @@ class ConversationList extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const SizedBox(height: AppSpacing.xl),
-          if (!failed && !searching && !controller.archived)
-            Illustration(
-              kind: IllustrationKind.emptyHistory,
-              height: IllustrationSizes.emptyHistory,
-              paper: p.surface,
-            )
-          else
-            AppIcon(
-              failed
-                  ? AppIcons.alert
-                  : searching
-                  ? AppIcons.search
-                  : AppIcons.archive,
-              size: AppIconSize.empty,
-              color: failed ? p.accent : p.textTertiary,
-            ),
+          Mascot(
+            state: failed
+                ? MascotState.error
+                : searching
+                ? MascotState.searching
+                : controller.archived
+                ? MascotState.sleeping
+                : MascotState.idle,
+            size: MascotSizes.large,
+          ),
           const SizedBox(height: AppSpacing.md),
           Text(
             text,

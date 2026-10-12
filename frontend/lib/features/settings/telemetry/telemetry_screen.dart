@@ -1,3 +1,5 @@
+import '../../../core/constants/mascot.dart';
+import '../../../core/widgets/mascot.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -184,10 +186,19 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         if (a.requests == 0)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.xl),
-            child: Text(
-              TelemetryCopy.empty,
-              textAlign: TextAlign.center,
-              style: TType.secondary(context),
+            child: Column(
+              children: [
+                const Mascot(
+                  state: MascotState.sleeping,
+                  size: MascotSizes.large,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  TelemetryCopy.empty,
+                  textAlign: TextAlign.center,
+                  style: TType.secondary(context),
+                ),
+              ],
             ),
           ),
         _activity(context),

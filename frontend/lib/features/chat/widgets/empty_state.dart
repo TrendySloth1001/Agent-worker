@@ -1,3 +1,5 @@
+import '../../../core/constants/mascot.dart';
+import '../../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
@@ -6,7 +8,6 @@ import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/constants/suggest.dart';
 import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/illustration.dart';
 import '../../../data/suggest_api.dart';
 import 'suggestion_chips.dart';
 
@@ -72,9 +73,9 @@ class _EmptyStateState extends State<EmptyState> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (showArt) ...[
-                    const Illustration(
-                      kind: IllustrationKind.hello,
-                      height: IllustrationSizes.hello,
+                    const Mascot(
+                      state: MascotState.idle,
+                      size: MascotSizes.hero,
                     ),
                     const SizedBox(height: AppSpacing.lg),
                   ],

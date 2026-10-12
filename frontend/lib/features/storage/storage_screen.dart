@@ -1,3 +1,5 @@
+import '../../core/constants/mascot.dart';
+import '../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_icons.dart';
@@ -299,6 +301,8 @@ class _StorageScreenState extends State<StorageScreen> {
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           children: [
+            const Mascot(state: MascotState.error, size: MascotSizes.large),
+            const SizedBox(height: AppSpacing.md),
             Text(
               _c.error!,
               textAlign: TextAlign.center,
@@ -322,6 +326,7 @@ class _StorageScreenState extends State<StorageScreen> {
       final filtered = _c.kind != null || _c.query.trim().isNotEmpty;
       return M3Empty(
         icon: StorageIcons.empty,
+        mascot: filtered ? MascotState.searching : MascotState.sleeping,
         title: filtered ? StorageStrings.noMatch : StorageStrings.empty,
         hint: filtered ? null : StorageStrings.emptyHint,
       );
