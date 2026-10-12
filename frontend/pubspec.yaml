@@ -74,6 +74,8 @@ flutter:
     # sign-in when the backend icon proxy is not reachable yet).
     - assets/brand/sso/github_mark.svg
     - assets/brand/sso/google_g.svg
+    # Official brand and file-type logos (sources: assets/brand/CREDITS.md).
+    - assets/brand/logos/
 
   fonts:
     - family: Doto

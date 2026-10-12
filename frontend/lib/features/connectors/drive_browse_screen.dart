@@ -23,13 +23,22 @@ const _gdoc = 'application/vnd.google-apps.document';
 const _gsheet = 'application/vnd.google-apps.spreadsheet';
 const _gslides = 'application/vnd.google-apps.presentation';
 const _pdf = 'application/pdf';
+const _docx =
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const _xlsx = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const _pptx =
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
-/// Icon of a Drive file by its type.
+/// Bundled logo of a Drive file's type (shown until, or instead of, the
+/// icon Google serves for it).
 AppIconData driveIcon(DriveFile f) => switch (f.mimeType) {
   _gdoc => DriveIcons.doc,
   _gsheet => DriveIcons.sheet,
   _gslides => DriveIcons.slides,
   _pdf => DriveIcons.pdf,
+  _docx || 'application/msword' => DriveIcons.word,
+  _xlsx || 'application/vnd.ms-excel' => DriveIcons.excel,
+  _pptx || 'application/vnd.ms-powerpoint' => DriveIcons.powerpoint,
   final m when m.startsWith('image/') => DriveIcons.image,
   final m when m.startsWith('text/') => DriveIcons.text,
   _ => DriveIcons.other,
@@ -73,7 +82,10 @@ class DriveFileTile extends StatelessWidget {
     final m = file.modified;
     return SettingsTile(
       icon: driveIcon(file),
-      leading: ConnectorRowIcon(icon: driveIcon(file)),
+      leading: ConnectorRowIcon(
+        icon: driveIcon(file),
+        imageUrl: file.iconLink,
+      ),
       title: file.name,
       summary: m == null
           ? kind

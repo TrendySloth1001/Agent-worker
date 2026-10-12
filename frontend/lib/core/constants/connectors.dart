@@ -1,6 +1,7 @@
 import 'package:hugeicons/hugeicons.dart';
 
 import 'app_icons.dart';
+import 'brand_logos.dart';
 
 /// Google Drive and Notion: the connector screens, the connect flow over
 /// `sparky://auth/connect`, and the Save to Drive / Notion actions.
@@ -227,14 +228,17 @@ abstract final class DriveIcons {
   static const ask = HugeIcons.strokeRoundedBubbleChat;
   static const save = HugeIcons.strokeRoundedCloudUpload;
   static const kb = AppIcons.knowledge;
-  static const doc = HugeIcons.strokeRoundedDoc01;
-  static const sheet = HugeIcons.strokeRoundedXls01;
-  static const slides = HugeIcons.strokeRoundedPpt01;
-  static const pdf = HugeIcons.strokeRoundedPdf01;
-  static const text = HugeIcons.strokeRoundedTxt01;
+  static const doc = BrandLogos.googleDocs;
+  static const sheet = BrandLogos.googleSheets;
+  static const slides = BrandLogos.googleSlides;
+  static const pdf = BrandLogos.pdf;
+  static const word = BrandLogos.word;
+  static const excel = BrandLogos.excel;
+  static const powerpoint = BrandLogos.powerpoint;
+  static const text = BrandLogos.text;
   static const image = HugeIcons.strokeRoundedImage01;
   static const other = HugeIcons.strokeRoundedFile01;
-  static const fallback = HugeIcons.strokeRoundedGoogleDrive;
+  static const fallback = BrandLogos.googleDrive;
 }
 
 abstract final class NotionIcons {
@@ -243,7 +247,7 @@ abstract final class NotionIcons {
   static const ask = HugeIcons.strokeRoundedBubbleChat;
   static const save = HugeIcons.strokeRoundedFileUpload;
   static const kb = AppIcons.knowledge;
-  static const fallback = HugeIcons.strokeRoundedNotebook;
+  static const fallback = BrandLogos.notion;
 }
 
 abstract final class ConnectorUrls {
@@ -264,6 +268,9 @@ abstract final class ConnectorSizes {
   static const avatar = 64.0;
   static const rowIcon = 40.0;
   static const rowGlyph = 20.0;
+
+  /// Size Drive is asked to serve its file-type icons at.
+  static const driveIconPx = 64;
 
   /// The brand mark inside an empty avatar, as a share of its diameter.
   static const avatarGlyphRatio = 0.42;

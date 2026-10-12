@@ -180,7 +180,7 @@ List<(T, AppIconData, String)> connectorSaveOptions<T>({
   bool includeNotion = true,
 }) => [
   if (driveConnected())
-    (drive, ConnectorBrand.drive.fallback, DriveStrings.saveToDrive),
+    (drive, ConnectorBrand.drive.logo, DriveStrings.saveToDrive),
   if (includeNotion && notionConnected())
-    (notion, ConnectorBrand.notion.fallback, NotionStrings.saveToNotion),
+    (notion, ConnectorBrand.notion.logo, NotionStrings.saveToNotion),
 ];
