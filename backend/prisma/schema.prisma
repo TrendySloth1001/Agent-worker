@@ -41,6 +41,8 @@ model User {
   /// Per-user overrides of the configured daily limits, e.g. {"chat": 5}.
   limits       Json      @default("{}")
   disabled     Boolean   @default(false)
+  /// Long-term memory on/off (src/memory). Off: nothing is saved, recalled or injected.
+  memoryEnabled Boolean  @default(true) @map("memory_enabled")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
 
@@ -53,6 +55,7 @@ model User {
   identities       AuthIdentity[]
   githubOAuthFlows GithubOAuthFlow[]
   docs             Doc[]
+  memories         Memory[]
 
   @@map("users")
 }
@@ -112,6 +115,11 @@ model Conversation {
   mergedFrom   String[]  @default([]) @map("merged_from") @db.Uuid
   /// NULL only for data from before accounts existed (claimed by the owner on registration).
   userId       String?   @map("user_id") @db.Uuid
+  /// Rolling summary of the first `summaryUpto` messages (src/memory/compact.ts).
+  summary      String?
+  summaryUpto  Int       @default(0) @map("summary_upto")
+  /// Fingerprint of those messages; a mismatch (edited history) invalidates the summary.
+  summaryHash  String?   @map("summary_hash")
 
   messages ConversationMessage[]
   parent   Conversation?         @relation("ConversationForks", fields: [forkedFrom], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -484,4 +492,29 @@ model DocHighlight {
 
   @@index([docId])
   @@map("doc_highlights")
+}
+
+// ---- long-term memory (src/memory) --------------------------------------------------
+
+/// CHECK kind IN ('fact','preference','project','instruction').
+/// `embedding` is nullable (embeddings may be down when a memory is written);
+/// the HNSW index memories_embedding_hnsw exists in SQL only. Read and write it
+/// with $queryRaw / $executeRaw (src/memory/store.ts).
+model Memory {
+  id             String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String                       @map("user_id") @db.Uuid
+  text           String
+  kind           String                       @default("fact")
+  embedding      Unsupported("vector(1024)")?
+  /// Conversation the memory was learned in (no FK: the chat may be deleted).
+  sourceConversationId String?                @map("source_conversation_id") @db.Uuid
+  pinned         Boolean                      @default(false)
+  createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastUsedAt     DateTime?                    @map("last_used_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("memories")
 }

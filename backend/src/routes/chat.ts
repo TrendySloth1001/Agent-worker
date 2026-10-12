@@ -22,6 +22,8 @@ import { ATTACH_PLACEHOLDER, loadRows, prepareMessages, waitForFiles } from "../
 import { initialEtaMs, isTrivialTurn, runRoundTable, UnresolvedFilter, type SeatResearchInput, type TableRun } from "../table/roundTable.js";
 import { planQueries, runSeatResearch, type SeatResearch } from "../table/research.js";
 import { recordLatency } from "../table/latency.js";
+import { compactHistory, summaryMessage } from "../memory/compact.js";
+import { startMemoryTurn } from "../memory/turn.js";
 
 // Vision-capable models, best first. Auto uses only these when a request has images or video frames.
 const VISION_MODELS = [
@@ -118,6 +120,9 @@ chatRouter.post("/", async (req, res) => {
     throw new AppError(400, "bad_request", parsed.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; "));
   }
   const body = parsed.data;
+  // Long chats: older turns become a rolling summary, only recent turns are sent as messages.
+  const compacted = await compactHistory(body.messages, body.conversationId);
+  if (compacted) body.messages = compacted.recent;
   if (body.messages.reduce((n, m) => n + m.content.length, 0) + (body.context?.length ?? 0) > 60_000) {
     throw new AppError(413, "payload_too_large", "Conversation is too long (limit 60k characters).");
   }
@@ -143,6 +148,12 @@ chatRouter.post("/", async (req, res) => {
   const started = Date.now();
   const lastUser = [...body.messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const lastUserText = lastUser.trim() === ATTACH_PLACEHOLDER ? "" : lastUser;
+  // Long-term memory: extraction runs in the background alongside generation; recall happens below.
+  const memTurn = startMemoryTurn({
+    userText: lastUserText,
+    prevAssistant: [...body.messages].reverse().find((m) => m.role === "assistant")?.content,
+    conversationId: body.conversationId,
+  });
 
   const citations: Citation[] = [];
   const ctl = new AbortController();
@@ -314,6 +325,9 @@ chatRouter.post("/", async (req, res) => {
 
     // ---- generation -------------------------------------------------------
     const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile) }];
+    const memoryBlock = await memTurn?.recall();
+    if (memoryBlock) prompt.push({ role: "system", content: memoryBlock });
+    if (compacted) prompt.push({ role: "system", content: summaryMessage(compacted.summary) });
     if (body.context?.trim()) {
       prompt.push({
         role: "system",
@@ -431,6 +445,9 @@ chatRouter.post("/", async (req, res) => {
       recordLatency("chair", result.model, Date.now() - chairAt);
       table.finish(result.model, chairCalls, unresolved.items(), text);
     }
+    // Extraction started with the turn, so it is normally finished; never wait long for it.
+    const memChanges = memTurn ? await Promise.race([memTurn.extraction, new Promise<[]>((r) => setTimeout(() => r([]), 400))]) : [];
+    if (memChanges.length > 0) sse.send("memory", { changes: memChanges });
     sse.send("done", { model: result.model, used, finishReason: result.finishReason, latencyMs, ...(table ? { table: true } : {}) });
     log.info("chat", { requestId, model: result.model, latencyMs, status: 200 });
   } catch (e) {
