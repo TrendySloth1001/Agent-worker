@@ -21,9 +21,21 @@ export const publicUser = (u: UserRow) => ({
   lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
   /** False for accounts made with GitHub/Google until they set a password. */
   hasPassword: u.passwordHash !== null,
+  /** True once the app's first-run tour was finished or skipped (any device). */
+  onboarded: u.onboardedAt !== null,
 });
 
-export const normalizeEmail = (e: string) => e.trim().toLowerCase();
+/**
+ * The `onboardedAt` change for PATCH /auth/me `onboarded`: true keeps the
+ * first time the tour was done, false clears it so the tour shows again.
+ */
+export function onboardedPatch(current: Date | null, flag: boolean | undefined, now = new Date()): { onboardedAt?: Date | null } {
+  if (flag === true) return current === null ? { onboardedAt: now } : {};
+  if (flag === false) return current === null ? {} : { onboardedAt: null };
+  return {};
+}
+
+export const normalizeEmail =(e: string) => e.trim().toLowerCase();
 
 /** One message for every failed sign-in, so it never reveals whether an email exists. */
 export const BAD_LOGIN = "Wrong email or password";
