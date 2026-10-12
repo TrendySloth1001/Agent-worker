@@ -149,16 +149,9 @@ class _EvidenceSheet extends StatelessWidget {
 
   Future<void> _toast(BuildContext context, String value, String note) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
-    final p = context.palette;
-    final style = context.text.label;
     Navigator.pop(context);
     await Clipboard.setData(ClipboardData(text: value));
-    messenger?.showSnackBar(
-      SnackBar(
-        backgroundColor: p.surfaceHigh,
-        content: Text(note, style: style),
-      ),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(note)));
   }
 }
 

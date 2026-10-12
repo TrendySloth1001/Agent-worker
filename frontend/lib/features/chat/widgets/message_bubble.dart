@@ -374,12 +374,9 @@ class _SaveActionState extends State<_SaveAction> {
     Haptics.error();
     if (!mounted) return;
     setState(() => _state = _SaveState.idle);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: context.palette.surfaceHigh,
-        content: Text(message, style: context.text.label),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

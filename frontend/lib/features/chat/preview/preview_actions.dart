@@ -7,7 +7,6 @@ import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
-import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/files_api.dart';
 
@@ -27,7 +26,7 @@ Future<String?> resolveFileUrl(FileInfo f, {bool force = false}) async {
 void _notice(BuildContext context, String text) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(text, style: context.text.label)));
+    ..showSnackBar(SnackBar(content: Text(text)));
 }
 
 /// OPEN EXTERNALLY and COPY LINK, shared by every preview app bar.

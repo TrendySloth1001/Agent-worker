@@ -38,16 +38,9 @@ Future<void> showReplyShare(
   );
   if (choice == null || !context.mounted) return;
   final messenger = ScaffoldMessenger.of(context);
-  final palette = context.palette;
-  final text = context.text;
   void toast(String s) => messenger
     ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        backgroundColor: palette.surfaceHigh,
-        content: Text(s, style: text.label),
-      ),
-    );
+    ..showSnackBar(SnackBar(content: Text(s)));
   switch (choice) {
     case _ReplyShare.markdown:
       await Clipboard.setData(ClipboardData(text: replyMarkdown(message)));

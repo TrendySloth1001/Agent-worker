@@ -214,12 +214,7 @@ class _CalcCardState extends State<CalcCard> {
     final res = await showDialog<double>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: p.surfaceHigh,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          side: BorderSide(color: p.border),
-        ),
-        title: Text(i.label.toUpperCase(), style: t.label),
+        title: Text(i.label),
         content: TextField(
           controller: ctl,
           autofocus: true,
@@ -238,26 +233,17 @@ class _CalcCardState extends State<CalcCard> {
             helperText: '${_fmtInput(i, i.min)} .. ${_fmtInput(i, i.max)}',
             helperStyle: t.caption,
             suffixText: i.suffix,
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: p.accent),
-            ),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              PlayfulStrings.cancel,
-              style: t.caption.copyWith(color: p.textTertiary),
-            ),
+            child: const Text(PlayfulStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, double.tryParse(ctl.text)),
-            child: Text(
-              PlayfulStrings.ok,
-              style: t.caption.copyWith(color: p.accent),
-            ),
+            child: const Text(PlayfulStrings.ok),
           ),
         ],
       ),

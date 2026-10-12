@@ -279,12 +279,10 @@ Future<void> ghVisit(BuildContext context, String url) =>
 Future<void> ghCopy(BuildContext context, String text) async {
   await Clipboard.setData(ClipboardData(text: text));
   if (!context.mounted) return;
-  final p = context.palette;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      backgroundColor: p.surfaceHigh,
       duration: AppDurations.copiedFeedback,
-      content: Text(AppStrings.copied, style: context.text.label),
+      content: Text(AppStrings.copied),
     ),
   );
 }

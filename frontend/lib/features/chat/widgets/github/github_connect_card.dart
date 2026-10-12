@@ -99,14 +99,8 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
   void _toast(String text) {
     final m = ScaffoldMessenger.maybeOf(context);
     if (m == null) return;
-    final p = context.palette;
     m.hideCurrentSnackBar();
-    m.showSnackBar(
-      SnackBar(
-        backgroundColor: p.surfaceHigh,
-        content: Text(text, style: context.text.label),
-      ),
-    );
+    m.showSnackBar(SnackBar(content: Text(text)));
   }
 
   Future<void> _connect() async {
@@ -123,30 +117,19 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
   }
 
   Future<void> _disconnect() async {
-    final p = context.palette;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: p.surface,
-        title: Text(ConnectStrings.disconnectTitle, style: context.text.title),
-        content: Text(
-          ConnectStrings.disconnectBody,
-          style: context.text.bodySmall,
-        ),
+        title: const Text(ConnectStrings.disconnectTitle),
+        content: const Text(ConnectStrings.disconnectBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              ConnectStrings.disconnectKeep,
-              style: context.text.button.copyWith(color: p.textSecondary),
-            ),
+            child: const Text(ConnectStrings.disconnectKeep),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              ConnectStrings.disconnect,
-              style: context.text.button.copyWith(color: p.accent),
-            ),
+            child: const Text(ConnectStrings.disconnect),
           ),
         ],
       ),

@@ -164,13 +164,9 @@ class _RichActionState extends State<RichAction> {
     if (!mounted) return;
     if (!ok) {
       Haptics.error();
-      final p = context.palette;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: p.surfaceHigh,
-          content: Text(RichStrings.cantOpen, style: context.text.label),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(RichStrings.cantOpen)));
       return;
     }
     if (widget.doneLabel == null) return;

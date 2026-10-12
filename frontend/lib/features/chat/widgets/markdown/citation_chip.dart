@@ -157,15 +157,8 @@ class CitationChip extends StatelessWidget {
   Future<void> _copy(BuildContext context) async {
     Haptics.tap();
     final messenger = ScaffoldMessenger.maybeOf(context);
-    final p = context.palette;
-    final style = context.text.label;
     await Clipboard.setData(ClipboardData(text: citation.url));
-    messenger?.showSnackBar(
-      SnackBar(
-        backgroundColor: p.surfaceHigh,
-        content: Text(AppStrings.copyLink, style: style),
-      ),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(AppStrings.copyLink)));
   }
 
   @override

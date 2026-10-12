@@ -132,8 +132,6 @@ class _EmailCardState extends State<EmailCard> {
   Future<void> _rewrite(String action, {String? instruction}) async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
-    final p = context.palette;
-    final label = context.text.label;
     final profile = AppScope.of(context).settings.profileJson();
     setState(() => _busy = true);
     try {
@@ -155,10 +153,8 @@ class _EmailCardState extends State<EmailCard> {
       Haptics.error();
       messenger.showSnackBar(
         SnackBar(
-          backgroundColor: p.surfaceHigh,
           content: Text(
             e is ApiException ? e.message : RichStrings.rewriteFailed,
-            style: label,
           ),
         ),
       );

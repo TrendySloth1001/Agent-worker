@@ -97,12 +97,7 @@ class _GithubDeviceSheetState extends State<_GithubDeviceSheet> {
     if (!mounted) return;
     final m = ScaffoldMessenger.maybeOf(context);
     m?.hideCurrentSnackBar();
-    m?.showSnackBar(
-      SnackBar(
-        backgroundColor: context.palette.surfaceHigh,
-        content: Text(ConnectStrings.codeCopied, style: context.text.label),
-      ),
-    );
+    m?.showSnackBar(SnackBar(content: Text(ConnectStrings.codeCopied)));
     await visitUrl(context, f.openUrl);
   }
 

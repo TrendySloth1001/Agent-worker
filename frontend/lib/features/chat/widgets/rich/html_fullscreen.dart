@@ -51,10 +51,8 @@ class _HtmlFullscreenState extends State<HtmlFullscreen> {
         HtmlSizes.maxBrowserChars;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: context.palette.surfaceHigh,
         content: Text(
           tooBig ? HtmlStrings.browserTooLarge : HtmlStrings.browserFailed,
-          style: context.text.label,
         ),
       ),
     );

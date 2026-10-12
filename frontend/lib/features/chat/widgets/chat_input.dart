@@ -325,9 +325,8 @@ class _ChatInputState extends State<ChatInput> {
     out ? _cancelVoice() : voice.stop();
   }
 
-  void _toast(String text) => ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(text, style: context.text.label)));
+  void _toast(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
   void _report(String? problem) {
     if (problem == null) return;
