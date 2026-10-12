@@ -92,10 +92,13 @@ abstract final class AppsSizes {
 abstract final class GithubHubStrings {
   // Shown when the connection was approved with fewer permissions than
   // sparky now asks for: one reconnect grants them all.
-  static const fullAccess = 'Give full access';
-  static const fullAccessHint =
-      'Approve once on GitHub so sparky can comment, review, merge and '
-      'manage issues here.';
+  static const permTitle = 'Let sparky act on GitHub?';
+  static const permBody =
+      'To comment, review, merge and close issues from here, GitHub needs '
+      'your OK. You will see exactly what is asked on GitHub before you '
+      'agree, and you can take it back any time in your GitHub settings.';
+  static const permAllow = 'Continue to GitHub';
+  static const reconnectHint = 'Sign in to GitHub again';
   static const title = 'GitHub';
   static const connectedStatus = 'CONNECTED';
   static const openOnGithub = 'Open on GitHub';
@@ -190,6 +193,7 @@ abstract final class GithubRepoStrings {
 
 abstract final class GithubHubIcons {
   static const fullAccess = HugeIcons.strokeRoundedShieldKey;
+  static const disconnect = HugeIcons.strokeRoundedUnlink01;
   static const repo = HugeIcons.strokeRoundedFolder01;
   static const pulls = HugeIcons.strokeRoundedGitPullRequest;
   static const issues = HugeIcons.strokeRoundedAlertCircle;

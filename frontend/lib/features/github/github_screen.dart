@@ -500,116 +500,148 @@ class _Header extends StatelessWidget {
     final counts = me == null
         ? null
         : GithubHubStrings.publicPrivate(me!.publicRepos, me!.privateRepos);
-    return M3Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              GhAvatar(avatar, size: GithubHubSizes.avatar),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tt.titleLarge,
-                    ),
-                    Text(
-                      ConnectStrings.account(login),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.label.copyWith(
-                        color: scheme.onSurfaceVariant,
+    final p = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        M3Card(
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                GhAvatar(avatar, size: GithubHubSizes.avatar),
+                const SizedBox(width: AppSpacing.lg),
+                VerticalDivider(
+                  width: AppBorder.thin,
+                  thickness: AppBorder.thin,
+                  color: scheme.outlineVariant,
+                ),
+                const SizedBox(width: AppSpacing.lg),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tt.titleLarge,
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(
-                      children: [
-                        const M3Tag(
-                          GithubHubStrings.connectedStatus,
-                          accent: true,
+                      Text(
+                        ConnectStrings.account(login),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.label.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
-                        if (counts != null) ...[
-                          const SizedBox(width: AppSpacing.sm),
-                          Flexible(
-                            child: Text(
-                              counts,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.caption.copyWith(
-                                color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          const M3Tag(
+                            GithubHubStrings.connectedStatus,
+                            accent: true,
+                          ),
+                          if (counts != null) ...[
+                            const SizedBox(width: AppSpacing.sm),
+                            Flexible(
+                              child: Text(
+                                counts,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.caption.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (connection.missingScopes.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          M3Card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppIcon(
+                      GithubHubIcons.fullAccess,
+                      size: AppIconSize.md,
+                      color: scheme.onSurface,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        GithubHubStrings.permTitle,
+                        style: tt.titleMedium,
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          if (connection.missingScopes.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.lg),
-            Text(
-              GithubHubStrings.fullAccessHint,
-              style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            FilledButton.icon(
-              onPressed: onReconnect,
-              icon: const AppIcon(
-                GithubHubIcons.fullAccess,
-                size: AppIconSize.sm,
-              ),
-              label: const Text(GithubHubStrings.fullAccess),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.lg),
-          // The full-access prompt takes the filled slot when it shows.
-          if (connection.missingScopes.isEmpty)
-            FilledButton.icon(
-              onPressed: onOpen,
-              icon: const AppIcon(AppIcons.openExternal, size: AppIconSize.sm),
-              label: const Text(GithubHubStrings.openOnGithub),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: onOpen,
-              icon: const AppIcon(AppIcons.openExternal, size: AppIconSize.sm),
-              label: const Text(GithubHubStrings.openOnGithub),
-            ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onReconnect,
-                  icon: const AppIcon(
-                    GithubHubIcons.reconnect,
-                    size: AppIconSize.sm,
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  GithubHubStrings.permBody,
+                  style: tt.bodyMedium!.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
-                  label: const Text(GithubHubStrings.reconnect),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: context.palette.accent,
-                  ),
-                  onPressed: onDisconnect,
-                  child: const Text(GithubHubStrings.disconnect),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: onReconnect,
+                        icon: const AppIcon(
+                          AppIcons.github,
+                          size: AppIconSize.sm,
+                        ),
+                        label: const Text(GithubHubStrings.permAllow),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
-      ),
+        const SizedBox(height: AppSpacing.lg),
+        M3Group(
+          children: [
+            SettingsTile(
+              icon: AppIcons.github,
+              title: GithubHubStrings.openOnGithub,
+              trailing: AppIcon(
+                AppIcons.openExternal,
+                size: AppIconSize.sm,
+                color: scheme.onSurfaceVariant,
+              ),
+              onTap: onOpen,
+            ),
+            SettingsTile(
+              icon: GithubHubIcons.reconnect,
+              title: GithubHubStrings.reconnect,
+              summary: GithubHubStrings.reconnectHint,
+              onTap: onReconnect,
+            ),
+            SettingsTile(
+              icon: GithubHubIcons.disconnect,
+              title: GithubHubStrings.disconnect,
+              iconColor: p.accent,
+              titleColor: p.accent,
+              onTap: onDisconnect,
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

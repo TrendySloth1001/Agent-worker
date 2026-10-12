@@ -168,8 +168,8 @@ void main() {
       await _pump(tester, const GithubScreen(), dark: dark);
       await _settle(tester);
       await shot(tester, 'github_full_access_$name');
-      expect(find.text(GithubHubStrings.fullAccess), findsOneWidget);
-      expect(find.text(GithubHubStrings.fullAccessHint), findsOneWidget);
+      expect(find.text(GithubHubStrings.permTitle), findsOneWidget);
+      expect(find.text(GithubHubStrings.permAllow), findsOneWidget);
     });
 
     testWidgets('github screen renders not connected ($name)', (tester) async {

@@ -197,14 +197,13 @@ class SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
     return ListTile(
       leading: leading ?? SettingsIconCircle(icon, color: iconColor),
       title: Text(
         title,
-        style: titleColor == null
-            ? null
-            : tt.titleMedium!.copyWith(color: titleColor),
+        // Only the color: size and weight stay the row's own, so a red
+        // "Disconnect" matches its neighbours.
+        style: titleColor == null ? null : TextStyle(color: titleColor),
       ),
       subtitle: summary == null || summary!.isEmpty ? null : Text(summary!),
       trailing: trailing,
