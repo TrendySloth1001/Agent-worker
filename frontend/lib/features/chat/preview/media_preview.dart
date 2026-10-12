@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
@@ -27,6 +28,7 @@ class MediaPreviewScreen extends StatefulWidget {
 class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
   VideoPlayerController? _video;
   bool _failed = false;
+  bool _processing = false;
   bool _dragging = false;
   double _dragMs = 0;
   String? _transcript;
@@ -48,7 +50,8 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     if (local != null && File(local).existsSync()) {
       c = VideoPlayerController.file(File(local));
     } else {
-      final url = await resolveFileUrl(f, force: force);
+      final url = await _readyUrl(f, force: force);
+      if (!mounted) return;
       if (url == null) {
         if (mounted) setState(() => _failed = true);
         return;
@@ -80,6 +83,29 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
       }
       if (mounted) setState(() => _failed = true);
     }
+  }
+
+  /// The file's link, waiting while the server still re-encodes it (a big
+  /// video has no stored object, so no link, until then).
+  Future<String?> _readyUrl(FileInfo f, {required bool force}) async {
+    if (f.id.isEmpty || f.deleted) return resolveFileUrl(f, force: force);
+    for (var i = 0; i < AppFiles.processingPolls; i++) {
+      final FileInfo fresh;
+      try {
+        fresh = await FilesApi.instance.get(f.id, force: force || i > 0);
+      } catch (_) {
+        return resolveFileUrl(f, force: force);
+      }
+      if (fresh.url != null || fresh.status != FileStatus.processing) {
+        if (_processing && mounted) setState(() => _processing = false);
+        return fresh.url;
+      }
+      if (!mounted) return null;
+      if (!_processing) setState(() => _processing = true);
+      await Future<void>.delayed(AppFiles.processingPoll);
+      if (!mounted) return null;
+    }
+    return null;
   }
 
   Future<void> _loadTranscript() async {
@@ -167,13 +193,27 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                 else ...[
                   _poster(),
                   Center(
-                    child: SizedBox(
-                      width: AppIconSize.md,
-                      height: AppIconSize.md,
-                      child: CircularProgressIndicator(
-                        strokeWidth: AppSizes.attachProgress,
-                        color: p.accent,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: AppIconSize.md,
+                          height: AppIconSize.md,
+                          child: CircularProgressIndicator(
+                            strokeWidth: AppSizes.attachProgress,
+                            color: p.accent,
+                          ),
+                        ),
+                        if (_processing) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            AppStrings.previewProcessing,
+                            style: context.text.label.copyWith(
+                              color: p.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],

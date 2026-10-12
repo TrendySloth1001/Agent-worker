@@ -1,6 +1,10 @@
 /// Limits and type tables for attachments (see docs/ATTACHMENTS.md).
 abstract final class AppFiles {
   static const maxPerMessage = 10;
+
+  /// A video re-encoded to fit storage has no link yet: the player polls.
+  static const processingPoll = Duration(seconds: 3);
+  static const processingPolls = 100;
   static const kb = 1024;
   static const mb = 1024 * 1024;
   static const gb = 1024 * 1024 * 1024;

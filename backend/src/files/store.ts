@@ -3,6 +3,7 @@ import { db, type Prisma } from "../db/prisma.js";
 import { ownerFilter } from "../auth/context.js";
 import { deleteObject, listKeys, presign } from "../storage/s3.js";
 import { log } from "../util/logger.js";
+import { config } from "../config.js";
 import type { FileKind } from "./kinds.js";
 
 export type FileRow = {
@@ -85,7 +86,13 @@ export function plainInfo(r: FileRow): FileInfo {
 }
 
 export async function signedInfo(r: FileRow): Promise<FileInfo> {
-  const [url, thumbUrl] = await Promise.all([presign(r.s3Key), r.thumbKey ? presign(r.thumbKey) : Promise.resolve(null)]);
+  // A video too big for storage is only stored once it is re-encoded; until
+  // then its key names nothing, so no link is handed out (players would 404).
+  const pending = r.status === "processing" && r.size > config.s3.maxObjectBytes;
+  const [url, thumbUrl] = await Promise.all([
+    pending ? Promise.resolve(undefined) : presign(r.s3Key),
+    r.thumbKey ? presign(r.thumbKey) : Promise.resolve(null),
+  ]);
   return { ...plainInfo(r), url, thumbUrl };
 }
 
