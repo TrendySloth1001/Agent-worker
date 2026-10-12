@@ -50,3 +50,4 @@ env.json
 # Release signing (never commit): upload keystore + its passwords.
 /android/key.properties
 /android/app/upload-keystore.jks
+test/failures/
