@@ -6,10 +6,8 @@ import '../../core/constants/settings_copy.dart';
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/docs.dart';
-import '../../core/constants/mascot.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/dot_meter.dart';
-import '../../core/widgets/mascot.dart';
 import '../../data/doc_models.dart';
 import 'doc_controller.dart';
 import 'doc_section_menu.dart';
@@ -93,19 +91,6 @@ class _DocProgressBarState extends State<DocProgressBar> {
       if (running && eta != null) DocStrings.eta(eta),
     ].join(DocStrings.sep);
 
-    final MascotState mascot;
-    if (running) {
-      mascot = MascotState.forDocPhase(
-        doc.phase.isEmpty ? doc.status : doc.phase,
-      );
-    } else if (doc.status == DocStatus.outlineReady) {
-      mascot = MascotState.idle;
-    } else if (doc.status == DocStatus.failed) {
-      mascot = MascotState.error;
-    } else {
-      mascot = MascotState.sleeping;
-    }
-
     final Widget action;
     if (running) {
       action = DocTextButton(
@@ -141,8 +126,6 @@ class _DocProgressBarState extends State<DocProgressBar> {
       ),
       child: Row(
         children: [
-          Mascot(state: mascot, size: MascotSizes.small),
-          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,

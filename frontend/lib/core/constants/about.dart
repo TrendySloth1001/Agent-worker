@@ -135,12 +135,6 @@ abstract final class AboutStrings {
       url: 'https://www.openpeeps.com/',
     ),
     (
-      icon: AboutIcons.illustrations,
-      label: 'ANIMATED EMOJI',
-      value: 'Noto Emoji by Google, CC BY 4.0',
-      url: 'https://googlefonts.github.io/noto-emoji-animation/',
-    ),
-    (
       icon: AboutIcons.icons,
       label: 'ICONS',
       value: 'Hugeicons',

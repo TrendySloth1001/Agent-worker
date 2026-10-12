@@ -6,11 +6,9 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
-import '../../../core/constants/mascot.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/mascot.dart';
 import '../../../data/chat_event.dart';
 import '../../../data/chat_message.dart';
 
@@ -146,21 +144,9 @@ class _RoundTablePanelState extends State<RoundTablePanel> {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Mascot(
-                state: MascotState.forTablePhase(m.tablePhase),
-                size: MascotSizes.medium,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  TableWaitStrings.intro,
-                  style: t.bodySmall.copyWith(color: p.textSecondary),
-                ),
-              ),
-            ],
+          Text(
+            TableWaitStrings.intro,
+            style: t.bodySmall.copyWith(color: p.textSecondary),
           ),
           for (final entry in research.entries) ...[
             const SizedBox(height: AppSpacing.sm),

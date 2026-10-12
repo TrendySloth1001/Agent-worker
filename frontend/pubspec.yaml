@@ -35,7 +35,6 @@ dependencies:
   url_launcher: ^6.3.2
   video_player: ^2.11.1
   webview_flutter: ^4.14.1
-  lottie: ^3.3.3
 
 dev_dependencies:
   flutter_launcher_icons: ^0.14.4
@@ -49,16 +48,6 @@ flutter:
 
   assets:
     - assets/html/kit.css
-    # Animated emoji (CC BY 4.0), see assets/mascots/LICENSE.md.
-    - assets/mascots/idle.json
-    - assets/mascots/thinking.json
-    - assets/mascots/writing.json
-    - assets/mascots/searching.json
-    - assets/mascots/celebrating.json
-    - assets/mascots/sleeping.json
-    - assets/mascots/error.json
-    - assets/mascots/offline.json
-    - assets/mascots/code.json
     - assets/mermaid/diagram.html
     - assets/mermaid/mermaid.min.js
     - assets/mermaid/VERSION
