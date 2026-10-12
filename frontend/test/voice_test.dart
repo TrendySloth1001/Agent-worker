@@ -226,7 +226,6 @@ void main() {
                 onSend: (text, _) => onSend?.call(text),
                 onStop: () {},
                 isStreaming: false,
-                webSearch: false,
                 knowledge: false,
                 onToggleWebSearch: () {},
                 onToggleKnowledge: () {},

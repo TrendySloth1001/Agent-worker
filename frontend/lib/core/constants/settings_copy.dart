@@ -133,7 +133,9 @@ abstract final class SettingsStrings {
 
   // Search & knowledge
   static const webLabel = 'Look things up online';
-  static const webHelp = 'Search the web for fresh answers in every new chat.';
+  static const webHelp =
+      'Search the web on its own when a question needs fresh answers. '
+      'Tap WEB in a chat to always or never search.';
   static const kbLabel = 'Use my saved knowledge';
   static const kbHelp = 'Check the notes and files you added first.';
   static const tableLabel = 'Ask several AIs at once';

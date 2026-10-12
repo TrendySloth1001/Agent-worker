@@ -7,6 +7,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
 import '../../../core/constants/share_export.dart';
+import '../../../core/constants/smart_toggles.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/appear.dart';
@@ -21,6 +22,7 @@ import 'message_sheet.dart';
 import 'attachment_views.dart';
 import 'image_strip.dart';
 import 'memory_chip.dart';
+import 'suggest_prompt.dart';
 import 'source_chips.dart';
 import 'suggestion_chips.dart';
 import 'thinking_indicator.dart';
@@ -206,6 +208,10 @@ class MessageBubble extends StatelessWidget {
         if (message.images.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
           ImageStrip(images: message.images),
+        ],
+        if (message.meta[SmartConfig.searchedKey] == true) ...[
+          const SizedBox(height: AppSpacing.sm),
+          const SearchedWebNote(),
         ],
         if (message.citations.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),

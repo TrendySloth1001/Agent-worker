@@ -12,6 +12,7 @@ import '../../core/constants/memory.dart';
 import '../../core/constants/notify_copy.dart';
 import '../../core/notify/notify_kind.dart';
 import '../../core/constants/settings_copy.dart';
+import '../../core/constants/smart_toggles.dart';
 import '../../core/constants/storage.dart';
 import '../../core/constants/telemetry.dart';
 import '../../core/constants/voice.dart';
@@ -503,6 +504,18 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 summary: SettingsStrings.kbHelp,
                 value: s.defaultKnowledge,
                 onChanged: s.setDefaultKnowledge,
+              ),
+            ),
+            SettingItem(
+              id: 'smart',
+              title: SmartStrings.settingLabel,
+              keywords: SmartStrings.settingKeywords,
+              build: (_) => SettingsSwitchTile(
+                icon: AppIcons.aiFormat,
+                title: SmartStrings.settingLabel,
+                summary: SmartStrings.settingHelp,
+                value: s.smartSuggestions,
+                onChanged: s.setSmartSuggestions,
               ),
             ),
             SettingItem(

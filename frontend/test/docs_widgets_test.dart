@@ -324,7 +324,6 @@ void main() {
             onSend: (_, _) {},
             onStop: () {},
             isStreaming: false,
-            webSearch: true,
             knowledge: false,
             onToggleWebSearch: () {},
             onToggleKnowledge: () {},
@@ -355,6 +354,7 @@ void main() {
     expect(sentAsDoc, 'Write a short report about salt');
 
     // DOC on: no hint, the length row shows.
+    await tester.ensureVisible(find.text(DocStrings.chip));
     await tester.tap(find.text(DocStrings.chip));
     await tester.pumpWidget(input());
     await tester.enterText(find.byType(TextField), 'write a guide to salt');

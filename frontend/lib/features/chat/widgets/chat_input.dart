@@ -7,6 +7,7 @@ import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
+import '../../../core/constants/smart_toggles.dart';
 import '../../../core/constants/suggest.dart';
 import '../../../core/constants/voice.dart';
 import '../../../core/haptics.dart';
@@ -17,6 +18,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/m3_kit_extras.dart';
 import '../../settings/widgets/settings_kit.dart';
 import '../../../core/widgets/icon_label.dart';
+import '../../../data/chat_event.dart';
 import '../../../data/files_api.dart';
 import '../../../data/suggest_api.dart';
 import '../attachments_controller.dart';
@@ -27,6 +29,7 @@ import '../voice/voice_controller.dart';
 import '../voice/voice_permission.dart';
 import '../voice/voice_strip.dart';
 import 'attachment_bar.dart';
+import 'suggest_prompt.dart';
 
 /// Floating capsule with the text field and send button.
 class ChatInput extends StatefulWidget {
@@ -35,7 +38,7 @@ class ChatInput extends StatefulWidget {
     required this.onSend,
     required this.onStop,
     required this.isStreaming,
-    required this.webSearch,
+    this.webMode = WebMode.auto,
     required this.knowledge,
     required this.onToggleWebSearch,
     required this.onToggleKnowledge,
@@ -51,6 +54,9 @@ class ChatInput extends StatefulWidget {
     this.conversationId,
     this.voice,
     this.sendVoiceAutomatically = false,
+    this.suggestion,
+    this.onAcceptSuggestion,
+    this.onDismissSuggestion,
   });
 
   final void Function(String text, List<FileInfo> attachments) onSend;
@@ -58,7 +64,9 @@ class ChatInput extends StatefulWidget {
 
   /// While true the send button becomes a stop button.
   final bool isStreaming;
-  final bool webSearch;
+
+  /// WEB chip state; tapping [onToggleWebSearch] steps to the next one.
+  final WebMode webMode;
   final bool knowledge;
   final VoidCallback onToggleWebSearch;
   final VoidCallback onToggleKnowledge;
@@ -92,6 +100,12 @@ class ChatInput extends StatefulWidget {
 
   /// Send as soon as dictation finishes (the settings toggle).
   final bool sendVoiceAutomatically;
+
+  /// A knowledge-base or Doc suggestion from the server, shown above the
+  /// composer with its two actions.
+  final SuggestToggleEvent? suggestion;
+  final VoidCallback? onAcceptSuggestion;
+  final VoidCallback? onDismissSuggestion;
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -420,6 +434,20 @@ class _ChatInputState extends State<ChatInput> {
                 : const SizedBox(width: double.infinity),
           ),
         ),
+        AnimatedSize(
+          duration: AppDurations.fast,
+          alignment: Alignment.bottomCenter,
+          child: widget.suggestion != null && widget.onAcceptSuggestion != null
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: SuggestPrompt(
+                    suggestion: widget.suggestion!,
+                    onAccept: widget.onAcceptSuggestion!,
+                    onDismiss: widget.onDismissSuggestion ?? () {},
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
         _autocompleteBar(),
         _capsule(context),
       ],
@@ -572,7 +600,13 @@ class _ChatInputState extends State<ChatInput> {
                   _Chip(
                     label: AppStrings.web,
                     icon: AppIcons.web,
-                    active: widget.webSearch,
+                    active: widget.webMode == WebMode.on,
+                    hint: switch (widget.webMode) {
+                      WebMode.auto => SmartStrings.webAuto,
+                      WebMode.off => SmartStrings.webOff,
+                      WebMode.on => null,
+                    },
+                    dim: widget.webMode == WebMode.off,
                     onTap: widget.onToggleWebSearch,
                   ),
                   const SizedBox(width: AppSpacing.sm),
@@ -738,12 +772,20 @@ class _Chip extends StatelessWidget {
     required this.icon,
     required this.active,
     required this.onTap,
+    this.hint,
+    this.dim = false,
   });
 
   final String label;
   final AppIconData icon;
   final bool active;
   final VoidCallback onTap;
+
+  /// Small state word after the label (WEB: AUTO / OFF).
+  final String? hint;
+
+  /// Shown muted: the tool is off.
+  final bool dim;
 
   @override
   Widget build(BuildContext context) {
@@ -771,9 +813,13 @@ class _Chip extends StatelessWidget {
         ),
         child: IconLabel(
           icon: icon,
-          text: label,
+          text: hint == null ? label : '$label $hint',
           style: context.text.caption,
-          color: active ? p.textInverse : p.textSecondary,
+          color: active
+              ? p.textInverse
+              : dim
+              ? p.textTertiary
+              : p.textSecondary,
         ),
       ),
     );
