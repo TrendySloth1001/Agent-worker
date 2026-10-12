@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/constants/app_icons.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/widget_github.dart';
@@ -656,9 +657,11 @@ class _GhSearchFieldState extends State<GhSearchField> {
   Widget build(BuildContext context) {
     final p = context.palette;
     final t = context.text;
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      borderSide: BorderSide(color: p.border, width: AppBorder.thin),
+    // A tonal pill like the app's other search bars: no outline at rest, a
+    // thin one while typing.
+    final shape = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      borderSide: BorderSide.none,
     );
     return SizedBox(
       height: GithubPagingSizes.fieldHeight,
@@ -669,22 +672,27 @@ class _GhSearchFieldState extends State<GhSearchField> {
           setState(() {});
           widget.onChanged(v);
         },
+        onTapOutside: (_) => FocusScope.of(context).unfocus(),
         cursorColor: p.accent,
         textInputAction: TextInputAction.search,
+        textAlignVertical: TextAlignVertical.center,
         style: t.bodySmall.copyWith(color: p.textPrimary),
         decoration: InputDecoration(
           isDense: true,
-          filled: false,
+          filled: true,
+          fillColor: p.surfaceHigh,
           hintText: widget.hint,
+          hintMaxLines: 1,
           hintStyle: t.bodySmall.copyWith(color: p.textTertiary),
-          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          contentPadding: EdgeInsets.zero,
           prefixIcon: AppIcon(
-            GithubPagingIcons.filter,
+            AppIcons.search,
             size: AppIconSize.sm,
             color: p.textTertiary,
           ),
           prefixIconConstraints: const BoxConstraints(
             minWidth: GithubPagingSizes.fieldHeight,
+            minHeight: GithubPagingSizes.fieldHeight,
           ),
           suffixIcon: _c.text.isEmpty
               ? null
@@ -703,11 +711,15 @@ class _GhSearchFieldState extends State<GhSearchField> {
                 ),
           suffixIconConstraints: const BoxConstraints(
             minWidth: GithubPagingSizes.fieldHeight,
+            minHeight: GithubPagingSizes.fieldHeight,
           ),
-          border: border,
-          enabledBorder: border,
-          focusedBorder: border.copyWith(
-            borderSide: BorderSide(color: p.textPrimary, width: AppBorder.thin),
+          border: shape,
+          enabledBorder: shape,
+          focusedBorder: shape.copyWith(
+            borderSide: BorderSide(
+              color: p.borderStrong,
+              width: AppBorder.thin,
+            ),
           ),
         ),
       ),
@@ -790,11 +802,15 @@ class GhFilterChip extends StatelessWidget {
     required this.on,
     required this.onTap,
     this.picker = false,
+    this.height = GithubSizes.chipHeight,
   });
 
   final String label;
   final bool on;
   final VoidCallback onTap;
+
+  /// Row height; next to a [GhSearchField] use [GithubPagingSizes.fieldHeight].
+  final double height;
 
   /// Opens a choice (shows a chevron).
   final bool picker;
@@ -805,7 +821,7 @@ class GhFilterChip extends StatelessWidget {
     return GhTap(
       onTap: onTap,
       child: Container(
-        height: GithubSizes.chipHeight,
+        height: height,
         padding: const EdgeInsets.symmetric(horizontal: GithubSizes.chipPadH),
         decoration: BoxDecoration(
           color: on ? p.textPrimary : null,

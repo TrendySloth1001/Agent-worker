@@ -253,6 +253,7 @@ class _GhCommitsPagedState extends State<GhCommitsPaged> {
                 label: _branch ?? GithubBranchStrings.pick,
                 on: _branch != null,
                 picker: true,
+                height: GithubPagingSizes.fieldHeight,
                 onTap: _pickBranch,
               ),
               const SizedBox(width: AppSpacing.sm),
