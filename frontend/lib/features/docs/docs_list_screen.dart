@@ -1,3 +1,4 @@
+import '../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_icons.dart';
@@ -90,6 +91,7 @@ class _DocsListScreenState extends State<DocsListScreen> {
       return [
         M3Empty(
           icon: AppIcons.alert,
+          mascot: MascotState.error,
           title: DocsCopy.loadFailed,
           action: FilledButton.tonal(
             onPressed: () {
@@ -103,7 +105,13 @@ class _DocsListScreenState extends State<DocsListScreen> {
     }
     final docs = snap.data!;
     if (docs.isEmpty) {
-      return [M3Empty(icon: AppIcons.doc, title: DocsCopy.empty)];
+      return [
+        M3Empty(
+          icon: AppIcons.doc,
+          mascot: MascotState.writing,
+          title: DocsCopy.empty,
+        ),
+      ];
     }
     final q = _query.trim().toLowerCase();
     final shown = [
@@ -124,6 +132,7 @@ class _DocsListScreenState extends State<DocsListScreen> {
           padding: EdgeInsets.only(top: AppSpacing.xl),
           child: M3Empty(
             icon: AppIcons.search,
+            mascot: MascotState.searching,
             title: DocsCopy.noMatches,
             hint: DocsCopy.noMatchesHint,
           ),

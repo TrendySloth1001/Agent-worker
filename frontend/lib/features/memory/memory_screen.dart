@@ -1,3 +1,5 @@
+import '../../core/constants/mascot.dart';
+import '../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_icons.dart';
@@ -242,6 +244,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           children: [
+            const Mascot(state: MascotState.error, size: MascotSizes.large),
+            const SizedBox(height: AppSpacing.md),
             Text(
               _c.error!,
               textAlign: TextAlign.center,
@@ -263,6 +267,11 @@ class _MemoryScreenState extends State<MemoryScreen> {
     final searching = _c.query.trim().isNotEmpty;
     return M3Empty(
       icon: MemoryIcons.empty,
+      mascot: searching
+          ? MascotState.searching
+          : _c.enabled
+          ? MascotState.thinking
+          : MascotState.sleeping,
       title: searching
           ? MemoryStrings.noMatch
           : _c.enabled

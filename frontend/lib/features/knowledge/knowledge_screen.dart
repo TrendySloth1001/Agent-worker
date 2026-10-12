@@ -1,16 +1,15 @@
+import '../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/app_scope.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
-import '../../core/constants/illustrations.dart';
 import '../../core/constants/m3_copy.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/illustration.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/kb_source.dart';
 import '../../data/knowledge_api.dart';
@@ -124,13 +123,9 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
             return Column(
               children: [
                 const SizedBox(height: AppSpacing.xl),
-                if (!failed)
-                  const Illustration(
-                    kind: IllustrationKind.emptyKnowledge,
-                    height: IllustrationSizes.emptyKnowledge,
-                  ),
                 M3Empty(
                   icon: failed ? AppIcons.alert : AppIcons.sourceWeb,
+                  mascot: failed ? MascotState.error : MascotState.searching,
                   title: failed
                       ? controller.loadError!
                       : KnowledgeCopy.emptyTitle,

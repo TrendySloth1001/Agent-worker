@@ -1,3 +1,5 @@
+import 'mascot.dart';
+import '../constants/mascot.dart';
 import 'package:flutter/material.dart';
 
 import '../../features/settings/widgets/section_header.dart';
@@ -292,9 +294,13 @@ class M3Empty extends StatelessWidget {
     required this.title,
     this.hint,
     this.action,
+    this.mascot,
   });
 
   final AppIconData icon;
+
+  /// Shows sparky in this state instead of the icon.
+  final MascotState? mascot;
   final String title;
   final String? hint;
   final Widget? action;
@@ -307,21 +313,24 @@ class M3Empty extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.xxl),
       child: Column(
         children: [
-          Container(
-            width: M3Sizes.emptyIcon,
-            height: M3Sizes.emptyIcon,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.surfaceContainerHighest,
-            ),
-            child: Center(
-              child: AppIcon(
-                icon,
-                size: AppIconSize.lg,
-                color: scheme.onSurfaceVariant,
+          if (mascot != null)
+            Mascot(state: mascot!, size: MascotSizes.large)
+          else
+            Container(
+              width: M3Sizes.emptyIcon,
+              height: M3Sizes.emptyIcon,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: scheme.surfaceContainerHighest,
+              ),
+              child: Center(
+                child: AppIcon(
+                  icon,
+                  size: AppIconSize.lg,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ),
-          ),
           const SizedBox(height: AppSpacing.lg),
           Text(title, textAlign: TextAlign.center, style: tt.titleMedium),
           if (hint != null) ...[

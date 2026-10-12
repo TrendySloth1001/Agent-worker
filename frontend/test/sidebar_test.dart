@@ -109,7 +109,11 @@ Future<(_FakeConversations, HistoryController)> _pump(
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
           context,
-        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        ).copyWith(
+          textScaler: TextScaler.linear(textScale),
+          // The empty state's mascot loops forever; keep it still.
+          disableAnimations: chats != null && chats.isEmpty,
+        ),
         child: child!,
       ),
       home: Scaffold(

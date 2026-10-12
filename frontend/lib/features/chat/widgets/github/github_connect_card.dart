@@ -1,14 +1,14 @@
+import '../../../../core/constants/mascot.dart';
+import '../../../../core/widgets/mascot.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/connections.dart';
-import '../../../../core/constants/illustrations.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/haptics.dart';
 import '../../../../core/theme/app_palette.dart';
 import '../../../../core/widgets/app_icon.dart';
-import '../../../../core/widgets/illustration.dart';
 import '../../../connections/connections_controller.dart';
 import '../../../connections/widgets/device_code_panel.dart';
 import '../../../connections/widgets/github_web_panel.dart';
@@ -214,11 +214,7 @@ class _Intro extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Center(
-          child: Illustration(
-            kind: IllustrationKind.github,
-            height: IllustrationSizes.github,
-            paper: paper,
-          ),
+          child: Mascot(state: MascotState.github, size: MascotSizes.large),
         ),
         const SizedBox(height: AppSpacing.md),
         const GithubHeading(ConnectStrings.title),
@@ -305,8 +301,9 @@ class _Connected extends StatelessWidget {
                       const SizedBox(width: AppSpacing.sm),
                       Text(
                         ConnectStrings.disconnect,
-                        style: Theme.of(context).textTheme.bodyLarge!
-                            .copyWith(color: p.error),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyLarge!.copyWith(color: p.error),
                       ),
                     ],
                   ),
