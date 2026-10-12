@@ -213,6 +213,7 @@ abstract final class GithubLimits {
   static const pageCommits = 15;
   static const pageCommitsInfinite = GithubPagingLimits.pageCommits;
   static const pageItems = 15;
+  static const pageActivity = 30;
   static const initialVisible = 6;
   static const topics = 8;
   static const languages = 6;

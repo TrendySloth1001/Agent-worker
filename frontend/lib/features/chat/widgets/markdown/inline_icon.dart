@@ -210,6 +210,11 @@ abstract final class IconCache {
 
   static ResolvedIcon? peek(String set, String name) => _icons['$set:$name'];
 
+  /// Preloads an icon so tests and goldens draw it without the network.
+  @visibleForTesting
+  static void seed(String set, String name, String svg) =>
+      _remember('$set:$name', ResolvedIcon(set, _unsized(svg)));
+
   static Future<ResolvedIcon?> load(String set, String name) {
     final key = '$set:$name';
     final hit = _icons[key];

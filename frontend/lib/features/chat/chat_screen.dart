@@ -20,6 +20,7 @@ import '../docs/doc_screen.dart';
 import 'notify_router.dart';
 import 'chat_actions.dart';
 import 'chat_controller.dart';
+import 'chat_launch.dart';
 import 'share/chat_export.dart';
 import 'voice/voice_controller.dart';
 import 'voice/voice_setup.dart';
@@ -80,11 +81,21 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _controller.docStarted.addListener(_onDocStarted);
     NotificationCenter.instance.target.addListener(_onNotificationOpened);
+    ChatLaunch.instance.prompt.addListener(_onLaunch);
     NotificationCenter.instance.currentChat = () => _controller.conversationId;
     // A cold start from a notification has its target waiting already.
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _onNotificationOpened(),
     );
+  }
+
+  /// A screen asked for a new chat with a first message.
+  void _onLaunch() {
+    final text = ChatLaunch.instance.prompt.value;
+    if (text == null || !mounted) return;
+    ChatLaunch.instance.prompt.value = null;
+    _controller.newChat();
+    _controller.send(text);
   }
 
   /// A tapped notification (or in-app link) opens what it points at.
@@ -112,6 +123,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     NotificationCenter.instance.target.removeListener(_onNotificationOpened);
+    ChatLaunch.instance.prompt.removeListener(_onLaunch);
     NotificationCenter.instance.currentChat = () => null;
     _controller.dispose();
     _voice.dispose();
