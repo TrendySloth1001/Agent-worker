@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
@@ -7,9 +6,8 @@ import '../../core/constants/app_strings.dart';
 import '../../core/constants/storage.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/icon_label.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/files_api.dart';
 import 'storage_actions.dart';
 import 'storage_controller.dart';
@@ -80,143 +78,107 @@ class _StorageScreenState extends State<StorageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayFor(context),
-      child: ListenableBuilder(
-        listenable: _c,
-        builder: (context, _) => PopScope(
-          canPop: !_c.selecting,
+    return ListenableBuilder(
+      listenable: _c,
+      builder: (context, _) {
+        final selecting = _c.selecting;
+        final n = _c.selected.length;
+        return PopScope(
+          canPop: !selecting,
           onPopInvokedWithResult: (didPop, _) {
             if (!didPop) _c.clearSelection();
           },
-          child: Scaffold(
-            appBar: _appBar(context, p),
-            body: RefreshIndicator(
-              color: p.accent,
-              backgroundColor: p.surface,
-              onRefresh: _c.reload,
-              child: CustomScrollView(
-                controller: _scroll,
-                physics: const AlwaysScrollableScrollPhysics(),
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.screenPadding,
-                      AppSpacing.lg,
-                      AppSpacing.screenPadding,
-                      0,
-                    ),
-                    sliver: SliverList.list(
-                      children: [
-                        StorageUsageCard(usage: _c.usage, loading: _c.loading),
-                        const SizedBox(height: AppSpacing.lg),
-                        _searchField(context, p),
-                        const SizedBox(height: AppSpacing.md),
-                        _filters(context, p),
-                        const SizedBox(height: AppSpacing.md),
-                      ],
-                    ),
+          child: M3Page(
+            title: StorageStrings.title,
+            controller: _scroll,
+            onRefresh: _c.reload,
+            contextual: selecting,
+            leading: selecting
+                ? IconButton(
+                    icon: const AppIcon(AppIcons.close, size: AppIconSize.lg),
+                    tooltip: StorageStrings.clearSelection,
+                    onPressed: () {
+                      Haptics.tap();
+                      _c.clearSelection();
+                    },
+                  )
+                : null,
+            titleWidget: selecting ? Text(StorageStrings.selected(n)) : null,
+            actions: selecting ? _selectionActions(n) : _actions(),
+            slivers: [
+              M3Body(
+                children: [
+                  Builder(
+                    builder: (context) =>
+                        StorageHero(usage: _c.usage, loading: _c.loading),
                   ),
-                  ..._content(context, p),
-                  SliverPadding(
-                    padding: EdgeInsets.only(
-                      bottom:
-                          MediaQuery.paddingOf(context).bottom + AppSpacing.xl,
-                    ),
-                    sliver: SliverToBoxAdapter(child: _footer(context, p)),
-                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Builder(builder: _searchField),
+                  const SizedBox(height: AppSpacing.md),
+                  Builder(builder: _filters),
                 ],
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  PreferredSizeWidget _appBar(BuildContext context, AppPalette p) {
-    final selecting = _c.selecting;
-    final n = _c.selected.length;
-    return AppBar(
-      leading: IconButton(
-        icon: AppIcon(
-          selecting ? AppIcons.close : AppIcons.back,
-          size: AppIconSize.md,
-        ),
-        tooltip: selecting ? StorageStrings.clearSelection : AppStrings.back,
-        onPressed: () {
-          Haptics.tap();
-          selecting ? _c.clearSelection() : Navigator.pop(context);
-        },
-      ),
-      title: Text(
-        selecting ? StorageStrings.selected(n) : StorageStrings.title,
-      ),
-      actions: selecting
-          ? [
-              IconButton(
-                icon: const AppIcon(StorageIcons.select, size: AppIconSize.md),
-                tooltip: StorageStrings.selectAll,
-                onPressed: () {
-                  Haptics.tap();
-                  _c.selectAll();
-                },
-              ),
-              IconButton(
-                icon: AppIcon(
-                  StorageIcons.delete,
-                  size: AppIconSize.md,
-                  color: n == 0 ? p.disabled : p.accent,
-                ),
-                tooltip: StorageStrings.delete,
-                onPressed: n == 0
-                    ? null
-                    : () => confirmStorageDelete(
-                        context,
-                        _c,
-                        _c.selected.toList(),
-                      ),
-              ),
-            ]
-          : [
-              IconButton(
-                icon: const AppIcon(StorageIcons.select, size: AppIconSize.md),
-                tooltip: StorageStrings.select,
-                onPressed: _c.files.isEmpty
-                    ? null
-                    : () {
-                        Haptics.tap();
-                        _c.startSelecting();
-                      },
-              ),
+              ..._content(),
+              SliverToBoxAdapter(child: Builder(builder: _footer)),
             ],
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(AppBorder.thin),
-        child: Divider(color: p.border),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _searchField(BuildContext context, AppPalette p) => TextField(
+  List<Widget> _actions() => [
+    Builder(
+      builder: (context) => IconButton(
+        icon: const AppIcon(StorageIcons.select, size: AppIconSize.md),
+        tooltip: StorageStrings.select,
+        onPressed: _c.files.isEmpty
+            ? null
+            : () {
+                Haptics.tap();
+                _c.startSelecting();
+              },
+      ),
+    ),
+  ];
+
+  List<Widget> _selectionActions(int n) => [
+    IconButton(
+      icon: const AppIcon(StorageIcons.select, size: AppIconSize.md),
+      tooltip: StorageStrings.selectAll,
+      onPressed: () {
+        Haptics.tap();
+        _c.selectAll();
+      },
+    ),
+    Builder(
+      builder: (context) => IconButton(
+        icon: AppIcon(
+          StorageIcons.delete,
+          size: AppIconSize.md,
+          color: n == 0 ? context.palette.disabled : context.palette.accent,
+        ),
+        tooltip: StorageStrings.delete,
+        onPressed: n == 0
+            ? null
+            : () => confirmStorageDelete(context, _c, _c.selected.toList()),
+      ),
+    ),
+  ];
+
+  Widget _searchField(BuildContext context) => SearchBar(
     controller: _search,
     onChanged: _c.setQuery,
-    style: context.text.body,
+    hintText: StorageStrings.searchHint,
     textInputAction: TextInputAction.search,
-    decoration: InputDecoration(
-      isDense: true,
-      hintText: StorageStrings.searchHint,
-      prefixIcon: AppIcon(
-        AppIcons.search,
-        size: AppIconSize.md,
-        color: p.textTertiary,
-      ),
+    leading: AppIcon(
+      AppIcons.search,
+      size: AppIconSize.md,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
     ),
   );
 
-  Widget _filters(BuildContext context, AppPalette p) {
+  Widget _filters(BuildContext context) {
     final sortLabel = switch (_c.sort) {
       StorageSort.newest => StorageStrings.newest,
       StorageSort.largest => StorageStrings.largest,
@@ -244,35 +206,24 @@ class _StorageScreenState extends State<StorageScreen> {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.xs),
         Align(
           alignment: Alignment.centerRight,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            onTap: () {
+          child: TextButton.icon(
+            onPressed: () {
               Haptics.tap();
               final all = StorageSort.values;
               _c.setSort(all[(all.indexOf(_c.sort) + 1) % all.length]);
             },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.xs,
-              ),
-              child: IconLabel(
-                icon: StorageIcons.sort,
-                text: '${StorageStrings.sort}: $sortLabel',
-                style: context.text.caption,
-                color: p.textSecondary,
-              ),
-            ),
+            icon: const AppIcon(StorageIcons.sort, size: AppIconSize.sm),
+            label: Text('${StorageStrings.sort}: $sortLabel'),
           ),
         ),
       ],
     );
   }
 
-  List<Widget> _content(BuildContext context, AppPalette p) {
+  List<Widget> _content() {
     if (_c.files.isEmpty) return const [];
     final visual = _c.files
         .where((f) => f.kind == FileKind.image || f.kind == FileKind.video)
@@ -314,14 +265,20 @@ class _StorageScreenState extends State<StorageScreen> {
             itemCount: rows.length,
             itemBuilder: (context, i) {
               final f = rows[i];
-              return StorageListRow(
+              final selected = _c.selected.contains(f.id);
+              return M3Cell(
                 key: ValueKey(f.id),
-                file: f,
-                selecting: _c.selecting,
-                selected: _c.selected.contains(f.id),
-                onTap: () => _onTap(f),
-                onLongPress: () => _onLongPress(f),
-                onMore: () => showStorageActions(context, _c, f),
+                index: i,
+                count: rows.length,
+                selected: selected,
+                child: StorageListRow(
+                  file: f,
+                  selecting: _c.selecting,
+                  selected: selected,
+                  onTap: () => _onTap(f),
+                  onLongPress: () => _onLongPress(f),
+                  onMore: () => showStorageActions(context, _c, f),
+                ),
               );
             },
           ),
@@ -329,8 +286,8 @@ class _StorageScreenState extends State<StorageScreen> {
     ];
   }
 
-  Widget _footer(BuildContext context, AppPalette p) {
-    final t = context.text;
+  Widget _footer(BuildContext context) {
+    final p = context.palette;
     if (_c.loading && _c.files.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(AppSpacing.xxl),
@@ -345,7 +302,9 @@ class _StorageScreenState extends State<StorageScreen> {
             Text(
               _c.error!,
               textAlign: TextAlign.center,
-              style: t.label.copyWith(color: p.error),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium!.copyWith(color: p.error),
             ),
             const SizedBox(height: AppSpacing.sm),
             TextButton(
@@ -353,10 +312,7 @@ class _StorageScreenState extends State<StorageScreen> {
                 Haptics.tap();
                 _c.reload();
               },
-              child: Text(
-                AppStrings.retry,
-                style: t.label.copyWith(color: p.accent),
-              ),
+              child: const Text(AppStrings.retry),
             ),
           ],
         ),
@@ -364,30 +320,10 @@ class _StorageScreenState extends State<StorageScreen> {
     }
     if (_c.files.isEmpty) {
       final filtered = _c.kind != null || _c.query.trim().isNotEmpty;
-      return Padding(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
-        child: Column(
-          children: [
-            AppIcon(
-              StorageIcons.empty,
-              size: AppIconSize.empty,
-              color: p.textTertiary,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              filtered ? StorageStrings.noMatch : StorageStrings.empty,
-              style: t.label,
-            ),
-            if (!filtered) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                StorageStrings.emptyHint,
-                textAlign: TextAlign.center,
-                style: t.caption,
-              ),
-            ],
-          ],
-        ),
+      return M3Empty(
+        icon: StorageIcons.empty,
+        title: filtered ? StorageStrings.noMatch : StorageStrings.empty,
+        hint: filtered ? null : StorageStrings.emptyHint,
       );
     }
     if (_c.loadingMore) {
@@ -403,7 +339,7 @@ class _StorageScreenState extends State<StorageScreen> {
             Haptics.tap();
             _c.loadMore();
           },
-          child: Text(StorageStrings.loadMore, style: t.label),
+          child: const Text(StorageStrings.loadMore),
         ),
       );
     }

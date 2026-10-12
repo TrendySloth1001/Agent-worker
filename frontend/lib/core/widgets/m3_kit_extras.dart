@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/settings/widgets/section_header.dart';
 import '../../features/settings/widgets/settings_kit.dart';
 import '../constants/app_icons.dart';
 import '../constants/app_sizes.dart';
@@ -379,6 +380,47 @@ class M3SheetTitle extends StatelessWidget {
               style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// One lazily built cell of a grouped list: big radius at the group's ends,
+/// small between, as [SettingsGroup] draws it. Use inside slivers that build
+/// rows on demand.
+class M3Cell extends StatelessWidget {
+  const M3Cell({
+    super.key,
+    required this.index,
+    required this.count,
+    required this.child,
+    this.selected = false,
+  });
+
+  final int index, count;
+  final Widget child;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Radius r(bool outer) => Radius.circular(
+      outer ? SettingsSizes.groupOuterRadius : SettingsSizes.groupInnerRadius,
+    );
+    return Padding(
+      padding: EdgeInsets.only(top: index == 0 ? 0 : SettingsSizes.groupGap),
+      child: Material(
+        color: selected
+            ? scheme.surfaceContainerHighest
+            : scheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: r(index == 0),
+            bottom: r(index == count - 1),
+          ),
+        ),
+        child: CardChrome(child: child),
       ),
     );
   }

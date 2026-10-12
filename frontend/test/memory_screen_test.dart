@@ -2,7 +2,6 @@ import 'package:app/core/constants/memory.dart';
 import 'package:app/data/memory_api.dart';
 import 'package:app/features/memory/memory_controller.dart';
 import 'package:app/features/memory/memory_screen.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/render.dart';

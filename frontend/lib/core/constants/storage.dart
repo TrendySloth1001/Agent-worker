@@ -7,63 +7,63 @@ import 'app_icons.dart';
 
 abstract final class StorageStrings {
   static const section = 'STORAGE';
-  static const title = 'STORAGE';
+  static const title = 'Storage';
   static const manage = 'MANAGE STORAGE';
   static const open = 'OPEN';
   static const used = 'USED';
   static const of = 'OF';
   static const unlimited = 'UNLIMITED';
-  static const full = 'STORAGE FULL';
+  static const full = 'Storage full';
   static const files = 'FILES';
   static const file = 'FILE';
   static const today = 'TODAY';
-  static const uploadsToday = 'UPLOADS TODAY';
+  static const uploadsToday = 'Uploads today';
 
   // Filters and sort.
-  static const all = 'ALL';
-  static const images = 'IMAGES';
-  static const videos = 'VIDEOS';
-  static const audio = 'AUDIO';
-  static const documents = 'DOCUMENTS';
-  static const sort = 'SORT';
-  static const newest = 'NEWEST';
-  static const largest = 'LARGEST';
-  static const name = 'NAME';
+  static const all = 'All';
+  static const images = 'Images';
+  static const videos = 'Videos';
+  static const audio = 'Audio';
+  static const documents = 'Documents';
+  static const sort = 'Sort';
+  static const newest = 'Newest';
+  static const largest = 'Largest';
+  static const name = 'Name';
   static const searchHint = 'Search files';
 
   // States.
-  static const empty = 'NO FILES YET';
+  static const empty = 'No files yet';
   static const emptyHint = 'Files you attach in chats show up here.';
-  static const noMatch = 'NO MATCHING FILES';
+  static const noMatch = 'No matching files';
   static const loadFailed = 'Could not load your files.';
-  static const loadMore = 'LOAD MORE';
+  static const loadMore = 'Load more';
   static const processing = 'PROCESSING';
   static const failed = 'FAILED';
-  static const notInChat = 'NOT IN A CHAT';
+  static const notInChat = 'Not in a chat';
   static const untitledChat = 'Untitled chat';
 
   // Selection.
-  static const select = 'SELECT';
-  static const selectAll = 'SELECT ALL';
-  static const clearSelection = 'CLEAR';
-  static String selected(int n) => '$n SELECTED';
+  static const select = 'Select';
+  static const selectAll = 'Select all';
+  static const clearSelection = 'Clear selection';
+  static String selected(int n) => '$n selected';
 
   // Item actions.
-  static const actionOpen = 'OPEN';
-  static const share = 'SHARE';
-  static const download = 'DOWNLOAD';
-  static const openChat = 'OPEN CHAT';
-  static const rename = 'RENAME';
-  static const delete = 'DELETE';
+  static const actionOpen = 'Open';
+  static const share = 'Share';
+  static const download = 'Download';
+  static const openChat = 'Open chat';
+  static const rename = 'Rename';
+  static const delete = 'Delete';
   static const renameHint = 'File name';
   static const renamed = 'Renamed.';
   static const renameFailed = 'Could not rename the file.';
-  static const saved = 'SAVED TO DOWNLOADS';
+  static const saved = 'Saved to downloads';
   static const shareFailed = 'Could not get the file.';
 
   // Delete.
   static String deleteTitle(int n) =>
-      n == 1 ? 'DELETE THIS FILE?' : 'DELETE $n FILES?';
+      n == 1 ? 'Delete this file?' : 'Delete $n files?';
   static const deleteBody =
       'The files are removed from storage for good. Chats keep a '
       '"FILE DELETED" placeholder where they were attached.';
