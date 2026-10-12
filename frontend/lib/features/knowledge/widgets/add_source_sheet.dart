@@ -7,27 +7,17 @@ import '../../../core/theme/app_palette.dart';
 import '../knowledge_controller.dart';
 import 'source_tile.dart';
 import '../../../core/constants/app_icons.dart';
+import '../../../core/constants/m3_copy.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/icon_label.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 
 Future<void> showAddSourceSheet(
   BuildContext context,
   KnowledgeController controller,
-) {
-  final p = context.palette;
-  return showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: p.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppRadius.lg),
-      ),
-      side: BorderSide(color: p.border),
-    ),
-    builder: (_) => _AddSourceSheet(controller: controller),
-  );
-}
+) => showM3Sheet<void>(
+  context,
+  builder: (_) => _AddSourceSheet(controller: controller),
+);
 
 /// Best guess of the source type from what was pasted; null if unclear.
 String? detectSourceType(String raw) {
@@ -59,11 +49,11 @@ class _AddSourceSheet extends StatefulWidget {
 
 class _AddSourceSheetState extends State<_AddSourceSheet> {
   static const _types = [
-    ('web', AppStrings.kindWeb),
-    ('github', AppStrings.kindGithub),
-    ('stackoverflow', AppStrings.kindStack),
-    ('reddit', AppStrings.kindReddit),
-    ('hackernews', AppStrings.kindHn),
+    ('web', KnowledgeCopy.kindWeb),
+    ('github', KnowledgeCopy.kindGithub),
+    ('stackoverflow', KnowledgeCopy.kindStack),
+    ('reddit', KnowledgeCopy.kindReddit),
+    ('hackernews', KnowledgeCopy.kindHn),
   ];
 
   final _input = TextEditingController();
@@ -118,23 +108,30 @@ class _AddSourceSheetState extends State<_AddSourceSheet> {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    final t = context.text;
+    final tt = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final muted = tt.labelLarge!.copyWith(color: scheme.onSurfaceVariant);
     final media = MediaQuery.of(context);
     return Padding(
       padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
       child: SafeArea(
+        top: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.screenPadding),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            0,
+            AppSpacing.xl,
+            AppSpacing.lg,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(AppStrings.addSource, style: t.label),
+              Text(KnowledgeCopy.addSource, style: tt.titleLarge),
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: _input,
                 autofocus: true,
-                style: t.body,
                 keyboardType: TextInputType.url,
                 textInputAction: TextInputAction.done,
                 onChanged: (_) => setState(() => _error = null),
@@ -143,18 +140,20 @@ class _AddSourceSheetState extends State<_AddSourceSheet> {
                   hintText: AppStrings.addSourceHint,
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.lg),
               Row(
                 children: [
-                  Text(AppStrings.addSourceKind, style: t.caption),
+                  Text(KnowledgeCopy.kind, style: muted),
                   const SizedBox(width: AppSpacing.md),
                   if (_override == null)
-                    Text(
-                      detectSourceType(_input.text) == null
-                          ? AppStrings.kindAuto
-                          : '${AppStrings.kindAuto} · '
-                                '${kindLabel(detectSourceType(_input.text)!)}',
-                      style: t.caption.copyWith(color: p.accent),
+                    Flexible(
+                      child: Text(
+                        detectSourceType(_input.text) == null
+                            ? KnowledgeCopy.auto
+                            : '${KnowledgeCopy.auto} · '
+                                  '${kindLabel(detectSourceType(_input.text)!)}',
+                        style: tt.labelLarge!.copyWith(color: p.accent),
+                      ),
                     ),
                 ],
               ),
@@ -164,7 +163,7 @@ class _AddSourceSheetState extends State<_AddSourceSheet> {
                 runSpacing: AppSpacing.sm,
                 children: [
                   _Pill(
-                    label: AppStrings.kindAuto,
+                    label: KnowledgeCopy.auto,
                     icon: AppIcons.sourceAuto,
                     selected: _override == null,
                     onTap: () => setState(() => _override = null),
@@ -181,38 +180,44 @@ class _AddSourceSheetState extends State<_AddSourceSheet> {
               const SizedBox(height: AppSpacing.lg),
               Row(
                 children: [
-                  Text(AppStrings.addSourceLimit, style: t.caption),
+                  Text(KnowledgeCopy.limit, style: muted),
                   const Spacer(),
-                  _StepButton(
-                    icon: AppIcons.remove,
-                    onTap: () => _step(-AppSizes.kbLimitStep),
+                  IconButton.filledTonal(
+                    tooltip: '-${AppSizes.kbLimitStep}',
+                    icon: const AppIcon(AppIcons.remove, size: AppIconSize.sm),
+                    onPressed: () => _step(-AppSizes.kbLimitStep),
                   ),
                   SizedBox(
                     width: AppSizes.rowHeight,
                     child: Text(
                       '$_limit',
                       textAlign: TextAlign.center,
-                      style: t.label,
+                      style: tt.titleMedium,
                     ),
                   ),
-                  _StepButton(
-                    icon: AppIcons.add,
-                    onTap: () => _step(AppSizes.kbLimitStep),
+                  IconButton.filledTonal(
+                    tooltip: '+${AppSizes.kbLimitStep}',
+                    icon: const AppIcon(AppIcons.add, size: AppIconSize.sm),
+                    onPressed: () => _step(AppSizes.kbLimitStep),
                   ),
                 ],
               ),
               if (_error != null) ...[
                 const SizedBox(height: AppSpacing.md),
-                Text(_error!, style: t.caption.copyWith(color: p.accent)),
+                Text(_error!, style: tt.bodySmall!.copyWith(color: p.accent)),
               ],
               const SizedBox(height: AppSpacing.lg),
               ListenableBuilder(
                 listenable: _input,
                 builder: (context, _) => FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: p.accent,
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: _input.text.trim().isEmpty || _busy
                       ? null
                       : _submit,
-                  child: Text(_busy ? AppStrings.adding : AppStrings.add),
+                  child: Text(_busy ? KnowledgeCopy.adding : KnowledgeCopy.add),
                 ),
               ),
             ],
@@ -239,60 +244,24 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
+    final fg = selected
+        ? p.textInverse
+        : Theme.of(context).colorScheme.onSurface;
+    return FilterChip(
+      label: Text(label),
+      avatar: AppIcon(icon, size: AppIconSize.sm, color: fg),
+      selected: selected,
+      showCheckmark: false,
+      shape: const StadiumBorder(),
+      side: BorderSide(color: selected ? Colors.transparent : p.borderStrong),
+      backgroundColor: Colors.transparent,
+      selectedColor: p.textPrimary,
+      labelStyle: Theme.of(context).textTheme.labelLarge!.copyWith(color: fg),
+      onSelected: (_) {
         if (selected) return;
         Haptics.tap();
         onTap();
       },
-      child: AnimatedContainer(
-        duration: AppDurations.fast,
-        height: AppSizes.chipHeight + AppSpacing.xs,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.chipHorizontalPadding,
-        ),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          color: selected ? p.textPrimary : Colors.transparent,
-          border: Border.all(
-            color: selected ? p.textPrimary : p.borderStrong,
-            width: AppBorder.thin,
-          ),
-        ),
-        child: IconLabel(
-          icon: icon,
-          text: label,
-          style: context.text.caption,
-          color: selected ? p.textInverse : p.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-class _StepButton extends StatelessWidget {
-  const _StepButton({required this.icon, required this.onTap});
-
-  final AppIconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: AppSizes.stepperButton,
-        height: AppSizes.stepperButton,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: p.borderStrong, width: AppBorder.thin),
-        ),
-        child: AppIcon(icon, size: AppIconSize.sm, color: p.textPrimary),
-      ),
     );
   }
 }

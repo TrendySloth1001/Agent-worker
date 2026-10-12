@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/app_scope.dart';
+import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/illustrations.dart';
+import '../../core/constants/m3_copy.dart';
+import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/system_chrome.dart';
+import '../../core/widgets/app_icon.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/knowledge_api.dart';
+import '../settings/widgets/settings_kit.dart';
 import 'knowledge_controller.dart';
 import 'widgets/add_source_sheet.dart';
 import 'widgets/source_tile.dart';
-import '../../core/constants/app_icons.dart';
-import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/illustration.dart';
 
 class KnowledgeScreen extends StatefulWidget {
-  const KnowledgeScreen({super.key});
+  const KnowledgeScreen({super.key, this.controller});
+
+  /// Test seam; defaults to a controller on the app's API.
+  final KnowledgeController? controller;
 
   @override
   State<KnowledgeScreen> createState() => _KnowledgeScreenState();
@@ -30,9 +35,10 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_controller != null) return;
-    _controller = KnowledgeController(
-      KnowledgeApi(AppScope.of(context).baseUrl),
-    )..load();
+    _controller =
+        widget.controller ??
+        KnowledgeController(KnowledgeApi(AppScope.of(context).baseUrl));
+    _controller!.load();
   }
 
   @override
@@ -42,41 +48,36 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
   }
 
   Future<bool> _confirmDelete() async {
-    final p = context.palette;
     Haptics.tap();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: p.surface,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          side: BorderSide(color: p.border),
-        ),
-        title: Text(AppStrings.deleteSourceTitle, style: context.text.label),
-        content: Text(
-          AppStrings.deleteSourceBody,
-          style: context.text.bodySmall,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Haptics.tap();
-              Navigator.pop(context, false);
-            },
-            child: Text(AppStrings.cancel, style: context.text.caption),
+      builder: (context) => M3Themed(
+        child: Builder(
+          builder: (context) => AlertDialog(
+            title: const Text(KnowledgeCopy.deleteTitle),
+            content: const Text(AppStrings.deleteSourceBody),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Haptics.tap();
+                  Navigator.pop(context, false);
+                },
+                child: const Text(AppStrings.cancel),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: context.palette.accent,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  Haptics.tap();
+                  Navigator.pop(context, true);
+                },
+                child: const Text(KnowledgeCopy.deleteSource),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Haptics.tap();
-              Navigator.pop(context, true);
-            },
-            child: Text(
-              AppStrings.deleteSource,
-              style: context.text.caption.copyWith(color: p.accent),
-            ),
-          ),
-        ],
+        ),
       ),
     );
     return ok ?? false;
@@ -85,157 +86,126 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller!;
-    final p = context.palette;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayFor(context),
-      child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const AppIcon(AppIcons.back, size: AppIconSize.md),
-            tooltip: AppStrings.back,
-            onPressed: () {
-              Haptics.tap();
-              Navigator.pop(context);
-            },
-          ),
-          title: const Text(AppStrings.knowledge),
-          actions: [
-            IconButton(
-              icon: const AppIcon(AppIcons.add, size: AppIconSize.md),
-              tooltip: AppStrings.addSource,
-              onPressed: () {
-                Haptics.tap();
-                showAddSourceSheet(context, controller);
-              },
-            ),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(AppBorder.thin),
-            child: Divider(color: p.border),
-          ),
-        ),
-        body: ListenableBuilder(
-          listenable: controller,
-          builder: (context, _) => RefreshIndicator(
-            color: p.accent,
-            backgroundColor: p.surface,
-            onRefresh: controller.load,
-            child: _body(context, controller),
-          ),
-        ),
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => M3Page(
+        title: KnowledgeCopy.title,
+        onRefresh: controller.load,
+        floatingActionButton: controller.sources.isEmpty
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: () {
+                  Haptics.tap();
+                  showAddSourceSheet(context, controller);
+                },
+                icon: const AppIcon(AppIcons.add, size: AppIconSize.md),
+                label: const Text(KnowledgeCopy.addSource),
+              ),
+        slivers: [M3Body(children: _body(controller))],
       ),
     );
   }
 
-  Widget _body(BuildContext context, KnowledgeController controller) {
-    final padding = EdgeInsets.fromLTRB(
-      AppSpacing.screenPadding,
-      AppSpacing.sm,
-      AppSpacing.screenPadding,
-      MediaQuery.paddingOf(context).bottom + AppSpacing.xl,
-    );
-    if (controller.loading) {
-      return ListView(padding: padding);
-    }
+  List<Widget> _body(KnowledgeController controller) {
+    if (controller.loading) return const [];
     if (controller.sources.isEmpty) {
       final failed = controller.loadError != null;
-      return ListView(
-        padding: padding,
-        children: [
-          const SizedBox(height: AppSpacing.xxl),
-          if (failed)
-            AppIcon(
-              AppIcons.alert,
-              size: AppIconSize.empty,
-              color: context.palette.accent,
-            )
-          else
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Illustration(
-                kind: IllustrationKind.emptyKnowledge,
-                height: IllustrationSizes.emptyKnowledge,
-              ),
-            ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            failed ? controller.loadError! : AppStrings.knowledgeEmpty,
-            style: context.text.bodySmall.copyWith(
-              color: failed ? context.palette.accent : null,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: failed
-                ? _textButton(context, AppStrings.retry, controller.load)
-                : _textButton(
-                    context,
-                    AppStrings.addSource,
-                    () => showAddSourceSheet(context, controller),
+      return [
+        Builder(
+          builder: (context) {
+            final p = context.palette;
+            return Column(
+              children: [
+                const SizedBox(height: AppSpacing.xl),
+                if (!failed)
+                  const Illustration(
+                    kind: IllustrationKind.emptyKnowledge,
+                    height: IllustrationSizes.emptyKnowledge,
                   ),
-          ),
-        ],
-      );
+                M3Empty(
+                  icon: failed ? AppIcons.alert : AppIcons.sourceWeb,
+                  title: failed
+                      ? controller.loadError!
+                      : KnowledgeCopy.emptyTitle,
+                  hint: failed ? null : KnowledgeCopy.emptyHint,
+                  action: failed
+                      ? FilledButton.tonal(
+                          onPressed: () {
+                            Haptics.tap();
+                            controller.load();
+                          },
+                          child: const Text(KnowledgeCopy.retry),
+                        )
+                      : FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: p.accent,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () {
+                            Haptics.tap();
+                            showAddSourceSheet(context, controller);
+                          },
+                          icon: const AppIcon(
+                            AppIcons.add,
+                            size: AppIconSize.md,
+                          ),
+                          label: const Text(KnowledgeCopy.addSource),
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
+      ];
     }
-    return ListView.builder(
-      padding: padding,
-      itemCount: controller.sources.length,
-      itemBuilder: (context, index) {
-        final source = controller.sources[index];
-        return Dismissible(
-          key: ValueKey(source.id),
-          direction: DismissDirection.endToStart,
-          confirmDismiss: (_) => _confirmDelete(),
-          onDismissed: (_) => controller.delete(source.id),
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: AppSpacing.lg),
-            color: context.palette.surfaceHigh,
-            child: Text(
-              AppStrings.deleteSource,
-              style: context.text.caption.copyWith(
-                color: context.palette.accent,
+    return [
+      const SettingsGroupHeader(KnowledgeCopy.sources),
+      SettingsGroup(
+        entries: [
+          for (final source in controller.sources)
+            GroupEntry(
+              Dismissible(
+                key: ValueKey(source.id),
+                direction: DismissDirection.endToStart,
+                confirmDismiss: (_) => _confirmDelete(),
+                onDismissed: (_) => controller.delete(source.id),
+                background: Builder(
+                  builder: (context) => Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: AppSpacing.xl),
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    child: AppIcon(
+                      AppIcons.delete,
+                      size: AppIconSize.md,
+                      color: context.palette.error,
+                    ),
+                  ),
+                ),
+                child: SourceTile(
+                  source: source,
+                  onRefresh: () {
+                    Haptics.tap();
+                    controller.refresh(source.id);
+                  },
+                  onLongPress: () async {
+                    if (await _confirmDelete()) controller.delete(source.id);
+                  },
+                ),
               ),
             ),
+        ],
+      ),
+      Builder(
+        builder: (context) => Padding(
+          padding: const EdgeInsets.all(SettingsSizes.headerInset),
+          child: Text(
+            KnowledgeCopy.swipeHint,
+            style: Theme.of(context).textTheme.bodySmall!.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
-          child: SourceTile(
-            source: source,
-            onRefresh: () {
-              Haptics.tap();
-              controller.refresh(source.id);
-            },
-            onLongPress: () async {
-              if (await _confirmDelete()) controller.delete(source.id);
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _textButton(BuildContext context, String label, VoidCallback onTap) {
-    final p = context.palette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Haptics.tap();
-        onTap();
-      },
-      child: Container(
-        height: AppSizes.chipHeight + AppSpacing.sm,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(color: p.borderStrong, width: AppBorder.thin),
-        ),
-        child: Text(
-          label,
-          style: context.text.caption.copyWith(color: p.textPrimary),
         ),
       ),
-    );
+    ];
   }
 }
