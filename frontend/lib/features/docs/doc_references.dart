@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/docs.dart';
+import '../../core/constants/settings_copy.dart';
 import '../../core/theme/app_palette.dart';
 import '../../data/chat_event.dart';
 import '../chat/widgets/markdown/citation_chip.dart';
 import '../chat/widgets/markdown/evidence_sheet.dart';
 import '../chat/widgets/source_chips.dart';
+import 'doc_text.dart';
 
 /// Which group of the bibliography a source belongs to.
 enum RefGroup {
@@ -64,8 +66,6 @@ class DocReferences extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(DocStrings.referencesLabel, style: t.caption),
-        const SizedBox(height: AppSpacing.xs),
         Text(
           DocStrings.references,
           style: t.title.copyWith(
@@ -81,7 +81,7 @@ class DocReferences extends StatelessWidget {
               top: AppSpacing.md,
               bottom: AppSpacing.sm,
             ),
-            child: Text('${group.label}  ${items.length}', style: t.caption),
+            child: Text('${group.label}  ${items.length}', style: t.meta),
           ),
           _GroupCard(
             children: [
@@ -110,11 +110,10 @@ class _GroupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.palette;
     return Material(
-      color: p.surface,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        side: BorderSide(color: p.border, width: AppBorder.thin),
+        borderRadius: BorderRadius.circular(SettingsSizes.groupOuterRadius),
       ),
       child: Column(
         children: [
@@ -173,7 +172,7 @@ class DocReferenceRow extends StatelessWidget {
                     citeShortName(c),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: t.label,
+                    style: t.meta,
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
@@ -188,7 +187,7 @@ class DocReferenceRow extends StatelessWidget {
                       domain,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: t.caption,
+                      style: t.meta,
                     ),
                   ],
                 ],
@@ -207,7 +206,7 @@ class DocReferenceRow extends StatelessWidget {
                 ),
                 child: Text(
                   DocStrings.citedTimes(count),
-                  style: t.caption.copyWith(color: p.textSecondary),
+                  style: t.meta.copyWith(color: p.textSecondary),
                 ),
               ),
             ],

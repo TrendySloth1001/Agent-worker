@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/docs.dart';
+import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
@@ -11,6 +12,7 @@ import '../../data/doc_models.dart';
 import '../chat/widgets/markdown/app_markdown.dart';
 import 'doc_controller.dart';
 import 'doc_section_menu.dart';
+import 'doc_text.dart';
 
 // ASK AI on a selection: an answer card under the section, a persistent
 // thread sheet per passage, and the notes panel listing every highlight,
@@ -178,10 +180,10 @@ class _AskSheetState extends State<_AskSheet> {
                     Expanded(
                       child: Text(
                         '${DocStrings.qaThread} · '
-                        '${widget.section.heading.toUpperCase()}',
+                        '${widget.section.heading}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: t.caption,
+                        style: t.meta,
                       ),
                     ),
                     DocTextButton(
@@ -221,7 +223,7 @@ class _AskSheetState extends State<_AskSheet> {
                             Expanded(
                               child: Text(
                                 _error!,
-                                style: t.caption.copyWith(color: p.accent),
+                                style: t.meta.copyWith(color: p.accent),
                               ),
                             ),
                             if (_failed != null)
@@ -327,7 +329,7 @@ class _Exchange extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(DocStrings.youAsked, style: t.caption),
+          Text(DocStrings.youAsked, style: t.meta),
           const SizedBox(height: AppSpacing.xxs),
           Text(question, style: t.body.copyWith(color: p.textPrimary)),
           const SizedBox(height: AppSpacing.sm),
@@ -335,7 +337,7 @@ class _Exchange extends StatelessWidget {
             children: [
               Text(
                 answer == null ? DocStrings.thinking : DocStrings.answerLabel,
-                style: t.caption.copyWith(color: p.accent),
+                style: t.meta.copyWith(color: p.accent),
               ),
               const Spacer(),
               if (answer != null)
@@ -350,7 +352,7 @@ class _Exchange extends StatelessWidget {
                   },
                   child: Padding(
                     padding: const EdgeInsets.all(AppSpacing.xs),
-                    child: Text(DocStrings.copyAnswer, style: t.caption),
+                    child: Text(DocStrings.copyAnswer, style: t.meta),
                   ),
                 ),
             ],
@@ -486,68 +488,70 @@ class _QaCard extends StatelessWidget {
             highlight: h,
           );
         },
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: p.surface,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border(
-              left: BorderSide(color: p.accent, width: DocSizes.qaBar),
-              top: BorderSide(color: p.border, width: AppBorder.thin),
-              right: BorderSide(color: p.border, width: AppBorder.thin),
-              bottom: BorderSide(color: p.border, width: AppBorder.thin),
+        // A rounded tonal card with an accent bar on the left. The bar is a
+        // one-sided border, so the radius comes from the clip (Flutter only
+        // allows a borderRadius on uniform borders).
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(SettingsSizes.groupOuterRadius),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainer,
+              border: Border(
+                left: BorderSide(color: p.accent, width: DocSizes.qaBar),
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  AppIcon(
-                    DocIcons.qa,
-                    size: AppIconSize.sm,
-                    color: p.textTertiary,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      h.thread.length > 1
-                          ? '${DocStrings.qaThread} · '
-                                '${DocStrings.qaCount(h.thread.length)}'
-                          : DocStrings.qaThread,
-                      style: t.caption,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    AppIcon(
+                      DocIcons.qa,
+                      size: AppIconSize.sm,
+                      color: p.textTertiary,
                     ),
-                  ),
-                  AppIcon(
-                    DocIcons.open,
-                    size: AppIconSize.sm,
-                    color: p.textTertiary,
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                '“${h.quote}”',
-                maxLines: DocSizes.qaQuoteLines,
-                overflow: TextOverflow.ellipsis,
-                style: t.bodySmall.copyWith(fontStyle: FontStyle.italic),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(question, style: t.label.copyWith(color: p.textPrimary)),
-              const SizedBox(height: AppSpacing.xs),
-              if (pending != null)
-                Text(
-                  DocStrings.thinking,
-                  style: t.caption.copyWith(color: p.accent),
-                )
-              else if (last != null)
-                AppMarkdown(
-                  data: last.answer,
-                  citations: controller.doc.sources,
-                  evidence: section.evidence,
-                  streaming: false,
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        h.thread.length > 1
+                            ? '${DocStrings.qaThread} · '
+                                  '${DocStrings.qaCount(h.thread.length)}'
+                            : DocStrings.qaThread,
+                        style: t.meta,
+                      ),
+                    ),
+                    AppIcon(
+                      DocIcons.open,
+                      size: AppIconSize.sm,
+                      color: p.textTertiary,
+                    ),
+                  ],
                 ),
-            ],
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  '“${h.quote}”',
+                  maxLines: DocSizes.qaQuoteLines,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.bodySmall.copyWith(fontStyle: FontStyle.italic),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(question, style: t.meta.copyWith(color: p.textPrimary)),
+                const SizedBox(height: AppSpacing.xs),
+                if (pending != null)
+                  Text(
+                    DocStrings.thinking,
+                    style: t.meta.copyWith(color: p.accent),
+                  )
+                else if (last != null)
+                  AppMarkdown(
+                    data: last.answer,
+                    citations: controller.doc.sources,
+                    evidence: section.evidence,
+                    streaming: false,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -602,7 +606,7 @@ class _Notes extends StatelessWidget {
                     AppSpacing.screenPadding,
                     AppSpacing.sm,
                   ),
-                  child: Text(DocStrings.notesTitle, style: t.caption),
+                  child: Text(DocStrings.notesTitle, style: t.meta),
                 ),
                 if (all.isEmpty)
                   Padding(
@@ -699,11 +703,10 @@ class _NoteRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$kind · ${DocStrings.sectionNo(number)} '
-                    '${heading.toUpperCase()}',
+                    '$kind · ${DocStrings.sectionNo(number)} $heading',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: t.caption.copyWith(
+                    style: t.meta.copyWith(
                       color: h.hasThread ? p.accent : p.textTertiary,
                     ),
                   ),
@@ -729,7 +732,7 @@ class _NoteRow extends StatelessWidget {
                       last.question,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: t.label.copyWith(color: p.textPrimary),
+                      style: t.meta.copyWith(color: p.textPrimary),
                     ),
                     Text(
                       last.answer,

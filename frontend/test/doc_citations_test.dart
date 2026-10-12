@@ -201,8 +201,8 @@ void main() {
       expect(find.text('Sodium'), findsOneWidget);
       expect(find.text('en.wikipedia.org'), findsOneWidget);
       expect(find.text('×2'), findsOneWidget);
-      expect(find.text('WEB  2'), findsOneWidget);
-      expect(find.text('KNOWLEDGE BASE  1'), findsOneWidget);
+      expect(find.text('Web  2'), findsOneWidget);
+      expect(find.text('Knowledge base  1'), findsOneWidget);
       await tester.tap(find.text('Sodium'));
       await tester.pumpAndSettle();
       expect(find.text('VISIT'), findsOneWidget);

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/m3_copy.dart';
+import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
-import '../../../core/widgets/m3_kit_extras.dart';
+import '../../../core/time_ago.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../data/kb_source.dart';
 import '../../settings/widgets/settings_kit.dart';
 
@@ -15,45 +17,91 @@ String kindLabel(String type) => switch (type) {
   'hackernews' => KnowledgeCopy.kindHn,
   'note' => KnowledgeCopy.kindNote,
   'file' => KnowledgeCopy.kindFile,
-  'doc' => KnowledgeCopy.kindDoc,
+  'doc' => KnowledgeCopy.kindDocument,
   _ => KnowledgeCopy.kindWeb,
 };
 
-/// One grouped row: kind icon, title, address, counts and a status chip.
+/// Which group of the list a source type belongs to.
+enum SourceGroup {
+  documents(KnowledgeCopy.groupDocuments),
+  web(KnowledgeCopy.groupWeb),
+  github(KnowledgeCopy.groupGithub),
+  notes(KnowledgeCopy.groupNotes);
+
+  const SourceGroup(this.title);
+
+  final String title;
+
+  static SourceGroup of(String type) => switch (type) {
+    'doc' || 'file' => documents,
+    'github' => github,
+    'note' => notes,
+    _ => web,
+  };
+}
+
+enum SourceAction { refresh, delete }
+
+/// One grouped row: kind icon, title, human counts and a small status line
+/// (dot + word, a thin progress line while indexing). Refresh and delete live
+/// in the overflow menu.
 class SourceTile extends StatelessWidget {
   const SourceTile({
     super.key,
     required this.source,
     required this.onRefresh,
-    required this.onLongPress,
+    required this.onDelete,
+    this.now,
   });
 
   final KbSource source;
   final VoidCallback onRefresh;
-  final VoidCallback onLongPress;
+  final VoidCallback onDelete;
+
+  /// Test seam for the relative time.
+  final DateTime? now;
 
   /// Notes, files and docs have an internal id as address, not worth showing.
   bool get _hasInternalUri =>
       const {'note', 'file', 'doc'}.contains(source.type);
 
+  double? get _fraction =>
+      source.progressTotal != null &&
+          source.progressTotal! > 0 &&
+          source.progressDone != null
+      ? (source.progressDone! / source.progressTotal!).clamp(0.0, 1.0)
+      : null;
+
   String _status() {
     switch (source.status) {
       case 'running':
-        final done = source.progressDone;
-        final total = source.progressTotal;
-        if (done == null) return KnowledgeCopy.running;
-        return total == null
-            ? '${KnowledgeCopy.running} $done'
-            : '${KnowledgeCopy.running} $done/$total';
+        final f = _fraction;
+        return f == null
+            ? KnowledgeCopy.indexing
+            : '${KnowledgeCopy.indexing} ${(f * 100).round()}%';
       case 'ready':
         return source.chunkCount == 0
-            ? KnowledgeCopy.empty
+            ? KnowledgeCopy.nothingIndexed
             : KnowledgeCopy.ready;
       case 'failed':
         return KnowledgeCopy.failed;
       default:
         return KnowledgeCopy.queued;
     }
+  }
+
+  String _summary() {
+    final parts = <String>[
+      kindLabel(source.type),
+      if (source.chunkCount > 0) KnowledgeCopy.passages(source.chunkCount),
+    ];
+    final at = source.lastIngestedAt;
+    if (at != null && source.status == 'ready') {
+      parts.add(
+        KnowledgeCopy.updated(timeAgo(at.toLocal(), now ?? DateTime.now())),
+      );
+    }
+    return parts.join(' · ');
   }
 
   @override
@@ -66,12 +114,17 @@ class SourceTile extends StatelessWidget {
     final canRefresh =
         source.type != 'note' && (source.status == 'ready' || failed);
     final hasTitle = source.title?.isNotEmpty == true;
+    final statusColor = failed
+        ? p.error
+        : source.isActive
+        ? p.accent
+        : scheme.onSurfaceVariant;
     return ListTile(
-      onLongPress: onLongPress,
+      onLongPress: onDelete,
       leading: SettingsIconCircle(AppIcons.sourceKind(source.type)),
       title: Text(
         hasTitle ? source.title! : source.uri,
-        maxLines: 1,
+        maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Column(
@@ -84,27 +137,37 @@ class SourceTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: muted,
             ),
-          Text(
-            '${kindLabel(source.type)} · ${source.docCount} '
-            '${KnowledgeCopy.docs} · ${source.chunkCount} '
-            '${KnowledgeCopy.chunks}',
-            style: muted,
+          Text(_summary(), style: muted, maxLines: 1),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              Container(
+                width: KnowledgeSizes.statusDot,
+                height: KnowledgeSizes.statusDot,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(
+                  _status(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: muted.copyWith(color: statusColor),
+                ),
+              ),
+            ],
           ),
           if (source.status == 'running') ...[
             const SizedBox(height: AppSpacing.sm),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              child: LinearProgressIndicator(
-                minHeight: KnowledgeSizes.progressHeight,
-                value:
-                    source.progressTotal != null &&
-                        source.progressTotal! > 0 &&
-                        source.progressDone != null
-                    ? source.progressDone! / source.progressTotal!
-                    : null,
-                color: p.accent,
-                backgroundColor: scheme.surfaceContainerHighest,
-              ),
+            LinearProgressIndicator(
+              minHeight: KnowledgeSizes.progressHeight,
+              value: _fraction,
+              stopIndicatorColor: Colors.transparent,
+              color: p.accent,
+              backgroundColor: scheme.surfaceContainerHighest,
             ),
           ],
           if (failed && source.error != null)
@@ -114,30 +177,38 @@ class SourceTile extends StatelessWidget {
                 source.error!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: muted.copyWith(color: p.accent),
-              ),
-            ),
-          if (canRefresh)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: onRefresh,
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(
-                    0,
-                    AppSizes.rowHeight - AppSpacing.xl,
-                  ),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Text(
-                  failed ? KnowledgeCopy.retry : KnowledgeCopy.refresh,
-                ),
+                style: muted.copyWith(color: p.error),
               ),
             ),
         ],
       ),
-      trailing: M3Tag(_status(), accent: failed || source.isActive),
+      trailing: PopupMenuButton<SourceAction>(
+        tooltip: KnowledgeCopy.moreActions,
+        icon: AppIcon(
+          AppIcons.more,
+          size: AppIconSize.md,
+          color: scheme.onSurfaceVariant,
+        ),
+        onOpened: Haptics.tap,
+        onSelected: (a) => switch (a) {
+          SourceAction.refresh => onRefresh(),
+          SourceAction.delete => onDelete(),
+        },
+        itemBuilder: (context) => [
+          if (canRefresh)
+            PopupMenuItem(
+              value: SourceAction.refresh,
+              child: Text(failed ? KnowledgeCopy.retry : KnowledgeCopy.refresh),
+            ),
+          PopupMenuItem(
+            value: SourceAction.delete,
+            child: Text(
+              KnowledgeCopy.deleteSource,
+              style: TextStyle(color: p.error),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -154,7 +154,7 @@ void main() {
       expect(find.text(DocStrings.pending), findsNothing);
       expect(find.text(DocStrings.stop), findsNothing);
       expect(rich('Adults should eat under 2 g a day'), findsWidgets);
-      expect(find.textContaining('· DONE'), findsOneWidget);
+      expect(find.textContaining('· Done'), findsOneWidget);
       // Bibliography: cited sources in first-use order.
       expect(
         find.text(DocStrings.references, skipOffstage: false),
@@ -236,10 +236,10 @@ void main() {
       final server = FakeDocsServer();
       final r = DocRegistry(api: server.api());
       for (final (status, label) in [
-        ('done', 'DONE'),
-        ('failed', 'FAILED'),
-        ('interrupted', 'INTERRUPTED'),
-        ('partial', 'PARTIAL'),
+        ('done', 'Done'),
+        ('failed', 'Failed'),
+        ('interrupted', 'Interrupted'),
+        ('partial', 'Partial'),
       ]) {
         await card(
           tester,
@@ -257,7 +257,7 @@ void main() {
         expect(find.text(label), findsOneWidget);
         expect(find.text('Salt guide'), findsOneWidget);
         expect(find.text(DocStrings.open), findsOneWidget);
-        expect(find.textContaining('3,420 WORDS'), findsOneWidget);
+        expect(find.textContaining('3,420 words'), findsOneWidget);
       }
       // Saved as finished: no stream was opened.
       expect(server.requests, isEmpty);
@@ -293,15 +293,15 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Live title'), findsOneWidget);
-      expect(find.text('WRITING'), findsOneWidget);
-      expect(find.textContaining('1/2 SECTIONS'), findsOneWidget);
+      expect(find.text('Writing'), findsOneWidget);
+      expect(find.textContaining('1/2 sections'), findsOneWidget);
       server.emit('doc_section_done', {'sectionId': 's2', 'markdown': 'z z'});
       server.emit('doc_done', {'status': 'done', 'words': 40});
       await tester.pump();
       await tester.pump();
-      expect(find.text('DONE'), findsOneWidget);
-      expect(find.textContaining('40 WORDS'), findsOneWidget);
-      expect(find.textContaining('2/2 SECTIONS'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.textContaining('40 words'), findsOneWidget);
+      expect(find.textContaining('2/2 sections'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       r.clear();
       await server.closeEvents();

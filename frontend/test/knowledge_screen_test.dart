@@ -6,6 +6,7 @@ import 'package:app/features/knowledge/knowledge_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/render.dart';
+import 'support/shot.dart';
 
 class _FakeKb implements KnowledgeApi {
   _FakeKb(this.items);
@@ -42,11 +43,20 @@ KbSource _source(
 );
 
 void main() {
+  setUpAll(loadAppFonts);
+
   for (final (name, theme, scale) in renderCases) {
     testWidgets('knowledge renders sources at 360dp ($name)', (tester) async {
       final c = KnowledgeController(
         _FakeKb([
           _source('a', 'ready', title: 'Flutter documentation'),
+          _source(
+            'd',
+            'ready',
+            type: 'doc',
+            title: 'Understanding HTTPS and TLS 1.3',
+          ),
+          _source('n', 'ready', type: 'note', title: 'Meeting notes'),
           _source('b', 'running', type: 'github', done: 3, total: 40),
           _source('c', 'failed', type: 'reddit', error: 'Rate limited'),
         ]),
@@ -58,8 +68,9 @@ void main() {
         textScale: scale,
         height: 1400,
       );
+      await shot(tester, 'kb_${name.replaceAll(' ', '_')}');
       expect(find.text('Flutter documentation'), findsOneWidget);
-      expect(find.text('Running 3/40'), findsOneWidget);
+      expect(find.text('Indexing 8%'), findsOneWidget);
       expect(find.text(KnowledgeCopy.failed), findsOneWidget);
       expect(find.text(KnowledgeCopy.addSource), findsOneWidget);
       expect(tester.takeException(), isNull);

@@ -4,27 +4,27 @@ import 'package:hugeicons/hugeicons.dart';
 abstract final class AuthStrings {
   static const brand = 'sparky';
   static const tagline = 'Your engineering sidekick.';
-  static const loginTitle = 'SIGN IN';
+  static const loginTitle = 'Sign in';
   static const loginSubtitle = 'Welcome back to sparky.';
-  static const registerTitle = 'CREATE ACCOUNT';
+  static const registerTitle = 'Create account';
   static const registerSubtitle = 'Make a sparky account. It takes a minute.';
-  static const name = 'NAME';
+  static const name = 'Name';
   static const nameHint = 'Your name';
-  static const email = 'EMAIL';
+  static const email = 'Email';
   static const emailHint = 'you@example.com';
-  static const password = 'PASSWORD';
+  static const password = 'Password';
   static const passwordHint = 'At least 8 characters';
-  static const confirm = 'CONFIRM PASSWORD';
+  static const confirm = 'Confirm password';
   static const confirmHint = 'Type it again';
   static const show = 'Show password';
   static const hide = 'Hide password';
-  static const signIn = 'SIGN IN';
-  static const createAccount = 'CREATE ACCOUNT';
+  static const signIn = 'Sign in';
+  static const createAccount = 'Create account';
   static const noAccount = 'New to sparky?';
-  static const toRegister = 'CREATE ACCOUNT';
+  static const toRegister = 'Create account';
   static const haveAccount = 'Already have an account?';
-  static const toLogin = 'SIGN IN';
-  static const restoring = 'SIGNING IN';
+  static const toLogin = 'Sign in';
+  static const restoring = 'Signing in';
 
   static const errEmail = 'Enter a valid email.';
   static const errPassword = 'Enter your password.';
@@ -34,45 +34,45 @@ abstract final class AuthStrings {
   static const errNetwork = 'Cannot reach the server. Check your connection.';
   static const sessionExpired = 'Your session expired. Sign in again.';
 
-  static const strengthWeak = 'WEAK';
+  static const strengthWeak = 'Weak';
   static const strengthOk = 'OK';
-  static const strengthStrong = 'STRONG';
+  static const strengthStrong = 'Strong';
   static const strengthHint =
       'Longer is stronger: mix words, numbers, symbols.';
 }
 
 abstract final class ProfileStrings {
-  static const title = 'PROFILE';
+  static const title = 'Profile';
   static const openProfile = 'Open profile';
-  static const owner = 'OWNER';
-  static const account = 'ACCOUNT';
-  static const name = 'NAME';
-  static const save = 'SAVE';
+  static const owner = 'Owner';
+  static const account = 'Account';
+  static const name = 'Name';
+  static const save = 'Save';
   static const saved = 'Saved';
-  static const changePhoto = 'CHANGE PHOTO';
-  static const removePhoto = 'REMOVE PHOTO';
+  static const changePhoto = 'Change photo';
+  static const removePhoto = 'Remove photo';
   static const photoFailed = 'Could not update the photo.';
-  static const usage = 'TODAY';
-  static const unlimited = 'UNLIMITED';
+  static const usage = 'Today';
+  static const unlimited = 'Unlimited';
   static const chats = 'Chat requests';
   static const tables = 'Round Table runs';
   static const uploads = 'Uploads';
   static const storage = 'Storage';
   static const resets = 'Resets at';
-  static const security = 'SECURITY';
-  static const changePassword = 'CHANGE PASSWORD';
-  static const currentPassword = 'CURRENT PASSWORD';
-  static const newPassword = 'NEW PASSWORD';
+  static const security = 'Security';
+  static const changePassword = 'Change password';
+  static const currentPassword = 'Current password';
+  static const newPassword = 'New password';
   static const passwordChanged =
       'Password changed. Other devices were signed out.';
-  static const sessions = 'DEVICES';
-  static const thisDevice = 'THIS DEVICE';
-  static const signOutDevice = 'SIGN OUT';
+  static const sessions = 'Devices';
+  static const thisDevice = 'This device';
+  static const signOutDevice = 'Sign out';
   static const unknownDevice = 'Unknown device';
   static const lastActive = 'Active';
-  static const logOut = 'LOG OUT';
+  static const logOut = 'Log out';
   static const logOutConfirm = 'Log out of sparky on this device?';
-  static const deleteAccount = 'DELETE ACCOUNT';
+  static const deleteAccount = 'Delete account';
   static const deleteWarning =
       'This permanently deletes your account, chats, knowledge base and files. '
       'It cannot be undone.';
@@ -80,10 +80,10 @@ abstract final class ProfileStrings {
   static const deleteWord = 'DELETE';
   static const deletePassword = 'Your password';
   static const ownerCannotDelete = 'The owner account cannot be deleted.';
-  static const cancel = 'CANCEL';
-  static const confirm = 'CONFIRM';
+  static const cancel = 'Cancel';
+  static const confirm = 'Confirm';
   static const loadFailed = 'Could not load your profile.';
-  static const retry = 'RETRY';
+  static const retry = 'Retry';
 }
 
 abstract final class AuthSizes {

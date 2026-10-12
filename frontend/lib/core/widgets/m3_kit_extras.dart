@@ -231,10 +231,13 @@ class M3Card extends StatelessWidget {
 
 /// Tiny Space Mono tonal chip, e.g. a memory kind.
 class M3Tag extends StatelessWidget {
-  const M3Tag(this.label, {super.key, this.accent = false});
+  const M3Tag(this.label, {super.key, this.accent = false, this.mono = true});
 
   final String label;
   final bool accent;
+
+  /// Space Mono for tiny metadata (ids, kinds). Off for readable words.
+  final bool mono;
 
   @override
   Widget build(BuildContext context) {
@@ -250,12 +253,17 @@ class M3Tag extends StatelessWidget {
             : scheme.surfaceContainerHighest,
       ),
       child: Center(
+        // Shrink-wrap both axes: a trailing slot hands us the row's full
+        // height, which would otherwise stretch the pill into a tall capsule.
         widthFactor: 1,
+        heightFactor: 1,
         child: Text(
           label,
-          style: AppTextStyles.caption.copyWith(
-            color: accent ? p.accent : scheme.onSurfaceVariant,
-          ),
+          style:
+              (mono
+                      ? AppTextStyles.caption
+                      : Theme.of(context).textTheme.labelMedium!)
+                  .copyWith(color: accent ? p.accent : scheme.onSurfaceVariant),
         ),
       ),
     );

@@ -12,6 +12,8 @@ import 'package:app/features/storage/widgets/storage_usage_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/shot.dart';
+
 const _id = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
 void main() {
@@ -128,6 +130,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await autoShot(tester);
       expect(find.byType(StorageGridTile), findsNWidgets(4));
       expect(find.byType(StorageListRow), findsNWidgets(2));
       expect(find.textContaining('Planning'), findsOneWidget);

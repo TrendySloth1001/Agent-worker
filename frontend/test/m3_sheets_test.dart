@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/render.dart';
+import 'support/shot.dart';
 
 class _FakeDocs implements DocsApi {
   @override
@@ -54,6 +55,7 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump(const Duration(milliseconds: 600));
+      await autoShot(tester);
       expect(_handle(tester), isTrue);
       expect(find.text(DocsCopy.title), findsOneWidget);
       expect(find.text('Sodium and health'), findsOneWidget);
@@ -73,6 +75,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(milliseconds: 600));
+    await autoShot(tester);
     expect(_handle(tester), isTrue);
     expect(find.text(sentenceCase(AppStrings.attachDocument)), findsOneWidget);
     expect(find.text(sentenceCase(AppStrings.attachMedia)), findsOneWidget);
@@ -87,6 +90,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(milliseconds: 600));
+    await autoShot(tester);
     expect(_handle(tester), isTrue);
     await tester.tap(find.text(sentenceCase(AppStrings.copy)));
     await tester.pump(const Duration(milliseconds: 600));

@@ -11,11 +11,11 @@ abstract final class MemoryStrings {
   static const toggle = 'Remember things about me';
   static const toggleHint =
       'Sparky saves lasting facts and preferences from your chats and uses '
-      'them in new ones. You can also say "remember ..." or "forget ...".';
+      'them in new ones. You can also say “remember …” or “forget …”.';
   static const recallToggle = 'Recall past chats';
   static const recallHint =
-      'Lets Sparky look through your other chats when you ask "did we talk '
-      'about this before?" or when one is clearly related. Only your own '
+      'Lets Sparky look through your other chats when you ask “did we talk '
+      'about this before?” or when one is clearly related. Only your own '
       'chats are searched. Turning it off removes the search index.';
   static const entry = 'WHAT SPARKY REMEMBERS';
   static const searchHint = 'Search memories';
@@ -36,7 +36,7 @@ abstract final class MemoryStrings {
   static const empty = 'Nothing remembered yet';
   static const emptyHint =
       'Facts and preferences from your chats show up here. '
-      'Try: "Remember that I use Neovim".';
+      'Try: “Remember that I use Neovim”.';
   static const emptyOff = 'Memory is off';
   static const emptyOffHint = 'Turn it on above to let Sparky remember.';
   static const noMatch = 'No matching memories';
@@ -48,7 +48,7 @@ abstract final class MemoryStrings {
   static const updatedChip = 'MEMORY UPDATED';
   static const forgotChip = 'MEMORY FORGOTTEN';
   static const separator = ' · ';
-  static String count(int n) => n == 1 ? '1 MEMORY' : '$n MEMORIES';
+  static String count(int n) => n == 1 ? '1 memory' : '$n memories';
 
   /// Label per kind id the backend uses.
   static String kind(String id) => switch (id) {

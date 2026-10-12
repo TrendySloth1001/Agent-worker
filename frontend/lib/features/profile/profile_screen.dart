@@ -169,14 +169,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               SsoStrings.keep,
-              style: context.text.button.copyWith(color: p.textSecondary),
+              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.textSecondary),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               SsoStrings.unlink,
-              style: context.text.button.copyWith(color: p.error),
+              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.error),
             ),
           ),
         ],
@@ -328,14 +328,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               ProfileStrings.cancel,
-              style: context.text.button.copyWith(color: p.textSecondary),
+              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.textSecondary),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               ProfileStrings.logOut,
-              style: context.text.button.copyWith(color: p.textPrimary),
+              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.textPrimary),
             ),
           ),
         ],
@@ -844,6 +844,7 @@ class _LoadError extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        const SizedBox(height: AppSpacing.lg),
         FormError('${ProfileStrings.loadFailed} $message'),
         TextButton(onPressed: onRetry, child: const Text(ProfileStrings.retry)),
       ],

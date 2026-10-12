@@ -11,6 +11,7 @@ import 'doc_progress.dart';
 import 'doc_registry.dart';
 import 'doc_screen.dart';
 import 'doc_section_menu.dart';
+import 'doc_text.dart';
 
 /// The chat card for a reply that is a document (`meta.doc`): title,
 /// status, one dot per section, word count and OPEN. Stays live through
@@ -120,11 +121,11 @@ class _DocCardState extends State<DocCard> {
                     color: p.textSecondary,
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(DocStrings.card, style: t.caption),
+                  Text(DocStrings.card, style: t.meta),
                   const Spacer(),
                   Text(
                     DocStrings.status(d.status),
-                    style: t.caption.copyWith(
+                    style: t.meta.copyWith(
                       color: running || bad ? p.accent : p.textSecondary,
                     ),
                   ),
@@ -156,7 +157,7 @@ class _DocCardState extends State<DocCard> {
                       meta,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: t.caption,
+                      style: t.meta,
                     ),
                   ),
                   DocTextButton(

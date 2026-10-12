@@ -8,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'support/render.dart';
 
+import 'support/shot.dart';
+
 void main() {
   for (final (name, theme) in [
     ('light', AppTheme.light),
@@ -30,11 +32,12 @@ void main() {
         MaterialApp(theme: theme, home: const AboutScreen()),
       );
       await tester.pumpAndSettle();
+      await autoShot(tester);
 
       expect(tester.takeException(), isNull);
       expect(find.text(AboutStrings.tagline), findsOneWidget);
       expect(
-        find.text(AboutStrings.versionLine('1.0.0', '1', 'ANDROID')),
+        find.text(AboutStrings.versionLine('1.0.0', '1', 'Android')),
         findsOneWidget,
       );
 

@@ -43,8 +43,8 @@ abstract final class DocStrings {
       title.trim().isEmpty ? 'Document' : 'Document: ${title.trim()}';
 
   // Card
-  static const card = 'DOCUMENT';
-  static const open = 'OPEN';
+  static const card = 'Document';
+  static const open = 'Open';
   static const untitled = 'Untitled document';
   static const startFailed = 'Could not start the document.';
   static const docRunning =
@@ -52,48 +52,48 @@ abstract final class DocStrings {
 
   // Status labels
   static String status(String s) => switch (s) {
-    'planning' => 'PLANNING',
-    'outline_ready' => 'OUTLINE READY',
-    'researching' => 'RESEARCHING',
-    'writing' => 'WRITING',
-    'done' => 'DONE',
-    'partial' => 'PARTIAL',
-    'failed' => 'FAILED',
-    'interrupted' => 'INTERRUPTED',
-    _ => s.toUpperCase(),
+    'planning' => 'Planning',
+    'outline_ready' => 'Outline ready',
+    'researching' => 'Researching',
+    'writing' => 'Writing',
+    'done' => 'Done',
+    'partial' => 'Partial',
+    'failed' => 'Failed',
+    'interrupted' => 'Interrupted',
+    _ => s,
   };
 
   /// Progress phase (doc_status `phase`).
   static String phase(String p) => switch (p) {
-    'context' => 'GATHERING CONTEXT',
-    'outline' || 'planning' => 'PLANNING OUTLINE',
-    'research' || 'researching' => 'RESEARCHING',
-    'sections' || 'writing' => 'WRITING',
-    'finish' || 'finishing' => 'FINISHING',
-    '' => 'STARTING',
-    _ => p.toUpperCase().replaceAll('_', ' '),
+    'context' => 'Gathering context',
+    'outline' || 'planning' => 'Planning outline',
+    'research' || 'researching' => 'Researching',
+    'sections' || 'writing' => 'Writing',
+    'finish' || 'finishing' => 'Finishing',
+    '' => 'Starting',
+    _ => p.replaceAll('_', ' '),
   };
 
   // Reader header
-  static const minRead = 'MIN READ';
-  static const wordsUnit = 'WORDS';
-  static const sourcesUnit = 'SOURCES';
+  static const minRead = 'min read';
+  static const wordsUnit = 'words';
+  static const sourcesUnit = 'sources';
   static const sep = ' · ';
-  static const abstractLabel = 'ABSTRACT';
+  static const abstractLabel = 'Abstract';
   static const references = 'References';
-  static const referencesLabel = 'REFERENCES';
-  static const refWeb = 'WEB';
-  static const refKnowledge = 'KNOWLEDGE BASE';
-  static const refFiles = 'DOCUMENTS';
-  static const refChats = 'YOUR CHATS';
+  static const referencesLabel = 'References';
+  static const refWeb = 'Web';
+  static const refKnowledge = 'Knowledge base';
+  static const refFiles = 'Documents';
+  static const refChats = 'Your chats';
 
   /// "×3": how often a source is cited.
   static String citedTimes(int n) => '×$n';
-  static const glossary = 'GLOSSARY';
+  static const glossary = 'Glossary';
   static const knowledgeBase = 'Knowledge base';
   static const accessed = 'Retrieved';
 
-  /// "14 MIN READ · 3,420 WORDS · 18 SOURCES · DONE".
+  /// "14 min read · 3,420 words · 18 sources · Done".
   static String meta({
     required int words,
     required int sources,
@@ -103,7 +103,7 @@ abstract final class DocStrings {
     return [
       '$minutes $minRead',
       '${thousands(words)} $wordsUnit',
-      '$sources $sourcesUnit',
+      '$sources ${sources == 1 ? 'source' : sourcesUnit}',
       DocStrings.status(status),
     ].join(sep);
   }
@@ -124,58 +124,61 @@ abstract final class DocStrings {
   /// "§3".
   static String sectionNo(int n) => '§$n';
 
+  /// "Section 3".
+  static String sectionLabel(int n) => 'Section $n';
+
   /// "§3/8".
   static String sectionOf(int n, int total) => '§$n/$total';
 
   // Sections
-  static const pending = 'QUEUED';
-  static const writingNow = 'WRITING';
-  static const sectionFailed = 'THIS SECTION COULD NOT BE WRITTEN';
-  static const retrySection = 'RETRY';
-  static const goal = 'GOAL';
+  static const pending = 'Queued';
+  static const writingNow = 'Writing';
+  static const sectionFailed = 'This section could not be written';
+  static const retrySection = 'Retry';
+  static const goal = 'Goal';
 
   /// "~450 WORDS".
   static String target(int words) => '~${thousands(words)} $wordsUnit';
 
   // Progress bar
-  static const stop = 'STOP';
-  static const resume = 'RESUME';
-  static const start = 'START WRITING';
-  static const outlineReadyHint = 'REVIEW THE OUTLINE, THEN START';
-  static const reconnecting = 'RECONNECTING';
-  static const stopped = 'STOPPED';
+  static const stop = 'Stop';
+  static const resume = 'Resume';
+  static const start = 'Start writing';
+  static const outlineReadyHint = 'Review the outline, then start';
+  static const reconnecting = 'Reconnecting';
+  static const stopped = 'Stopped';
 
   /// "3/8 SECTIONS".
-  static String doneOf(int done, int total) => '$done/$total SECTIONS';
+  static String doneOf(int done, int total) => '$done/$total sections';
 
   /// "~2 MIN LEFT" / "~40 S LEFT".
   static String eta(int ms) {
     final s = (ms / 1000).ceil();
-    if (s >= 90) return '~${(s / 60).round()} MIN LEFT';
-    return '~$s S LEFT';
+    if (s >= 90) return '~${(s / 60).round()} min left';
+    return '~$s s left';
   }
 
   // TOC
-  static const contents = 'CONTENTS';
+  static const contents = 'Contents';
   static const tocOpen = 'Contents';
 
   // Section menu
-  static const menuTitle = 'SECTION';
-  static const regenerate = 'REGENERATE';
-  static const expand = 'EXPAND';
-  static const shorten = 'SHORTEN';
-  static const simplify = 'SIMPLIFY';
-  static const instruct = 'INSTRUCT…';
-  static const edit = 'EDIT';
-  static const versions = 'VERSIONS';
-  static const instructTitle = 'INSTRUCT';
+  static const menuTitle = 'Section';
+  static const regenerate = 'Regenerate';
+  static const expand = 'Expand';
+  static const shorten = 'Shorten';
+  static const simplify = 'Simplify';
+  static const instruct = 'Instruct…';
+  static const edit = 'Edit';
+  static const versions = 'Versions';
+  static const instructTitle = 'Instruct';
   static const instructHint = 'e.g. Add a worked example';
-  static const apply = 'APPLY';
-  static const cancel = 'CANCEL';
-  static const save = 'SAVE';
-  static const editTitle = 'EDIT SECTION';
+  static const apply = 'Apply';
+  static const cancel = 'Cancel';
+  static const save = 'Save';
+  static const editTitle = 'Edit section';
   static const editHint = 'Markdown';
-  static const restore = 'RESTORE';
+  static const restore = 'Restore';
   static const noVersions = 'No earlier versions yet.';
   static const busy = 'Wait for this section to finish.';
   static const actionFailed = 'Could not update the section.';
@@ -183,11 +186,8 @@ abstract final class DocStrings {
   static const restored = 'Version restored.';
 
   /// "V3 · EXPAND · 2026-10-11 14:03".
-  static String version(int v, String reason, DateTime? at) => [
-    'V$v',
-    reason.toUpperCase(),
-    if (at != null) _stamp(at.toLocal()),
-  ].join(sep);
+  static String version(int v, String reason, DateTime? at) =>
+      ['V$v', reason, if (at != null) _stamp(at.toLocal())].join(sep);
 
   static String _stamp(DateTime d) {
     String two(int n) => n.toString().padLeft(2, '0');
@@ -196,23 +196,23 @@ abstract final class DocStrings {
   }
 
   // Highlights
-  static const highlight = 'HIGHLIGHT';
-  static const note = 'NOTE';
-  static const askAi = 'ASK AI';
-  static const copyCite = 'COPY WITH CITATION';
-  static const noteTitle = 'NOTE';
+  static const highlight = 'Highlight';
+  static const note = 'Note';
+  static const askAi = 'Ask AI';
+  static const copyCite = 'Copy with citation';
+  static const noteTitle = 'Note';
   static const noteHint = 'Your note';
-  static const askTitle = 'ASK AI ABOUT THIS';
+  static const askTitle = 'Ask AI about this';
   static const askHint = 'e.g. Explain this more simply';
-  static const highlights = 'HIGHLIGHTS';
-  static const removeHighlight = 'REMOVE';
+  static const highlights = 'Highlights';
+  static const removeHighlight = 'Remove';
   static const copiedCite = 'Copied with citation.';
   static const highlightFailed = 'Could not save the highlight.';
-  static const highlightsRemove = 'HIGHLIGHTS · TAP ONE TO REMOVE';
+  static const highlightsRemove = 'Highlights · tap one to remove';
 
   /// "2 HIGHLIGHTS".
   static String highlightCount(int n) =>
-      '$n ${n == 1 ? 'HIGHLIGHT' : highlights}';
+      '$n ${n == 1 ? 'highlight' : highlights}';
 
   /// `“quote” — Title, §3 Heading (sparky)`.
   static String citeQuote({
@@ -225,48 +225,48 @@ abstract final class DocStrings {
 
   // Ask AI (Q&A on a passage)
   static const askFailed = 'Could not get an answer. Try again.';
-  static const thinking = 'THINKING';
-  static const youAsked = 'YOU';
-  static const answerLabel = 'ANSWER';
+  static const thinking = 'Thinking';
+  static const youAsked = 'You';
+  static const answerLabel = 'Answer';
   static const followUpHint = 'Ask a follow-up';
-  static const askSend = 'ASK';
+  static const askSend = 'Ask';
   static const qaThread = 'Q&A';
-  static const retry = 'RETRY';
-  static const copyAnswer = 'COPY';
+  static const retry = 'Retry';
+  static const copyAnswer = 'Copy';
   static const copiedAnswer = 'Answer copied.';
   static const openThread = 'Open this Q&A';
 
   /// "2 QUESTIONS".
-  static String qaCount(int n) => '$n ${n == 1 ? 'QUESTION' : 'QUESTIONS'}';
+  static String qaCount(int n) => '$n ${n == 1 ? 'question' : 'questions'}';
 
   // Notes panel: every highlight, note and Q&A in the document
-  static const notesTitle = 'NOTES & Q&A';
+  static const notesTitle = 'Notes & Q&A';
   static const notesOpen = 'Notes and questions';
   static const notesEmpty =
       'Nothing yet. Select text to highlight it, add a note or ask AI.';
-  static const notesQuestions = 'QUESTIONS';
-  static const notesNotes = 'NOTES';
-  static const notesHighlights = 'HIGHLIGHTS';
-  static const delete = 'DELETE';
+  static const notesQuestions = 'Questions';
+  static const notesNotes = 'Notes';
+  static const notesHighlights = 'Highlights';
+  static const delete = 'Delete';
 
   // Selection edits
-  static const editPassage = 'EDIT…';
-  static const editPassageTitle = 'EDIT THIS PASSAGE';
-  static const opExplain = 'EXPLAIN';
-  static const opSimplify = 'SIMPLIFY';
-  static const opExpand = 'EXPAND';
-  static const opCite = 'ADD CITATIONS';
-  static const opRewrite = 'REWRITE…';
-  static const rewriteTitle = 'REWRITE THIS PASSAGE';
+  static const editPassage = 'Edit…';
+  static const editPassageTitle = 'Edit this passage';
+  static const opExplain = 'Explain';
+  static const opSimplify = 'Simplify';
+  static const opExpand = 'Expand';
+  static const opCite = 'Add citations';
+  static const opRewrite = 'Rewrite…';
+  static const rewriteTitle = 'Rewrite this passage';
   static const rewriteHint = 'e.g. Make it more formal';
-  static const previewTitle = 'PREVIEW';
-  static const previewBefore = 'BEFORE';
-  static const previewAfter = 'AFTER';
-  static const previewAdded = 'ADDED';
-  static const accept = 'ACCEPT';
-  static const discard = 'DISCARD';
-  static const working = 'WORKING';
-  static const undo = 'UNDO';
+  static const previewTitle = 'Preview';
+  static const previewBefore = 'Before';
+  static const previewAfter = 'After';
+  static const previewAdded = 'Added';
+  static const accept = 'Accept';
+  static const discard = 'Discard';
+  static const working = 'Working';
+  static const undo = 'Undo';
   static const applied = 'Section updated.';
   static const undone = 'Change undone.';
   static const previewFailed = 'Could not prepare that change. Try again.';
@@ -280,18 +280,18 @@ abstract final class DocStrings {
   };
 
   // Regenerate / add / continue
-  static const regenerateWith = 'REGENERATE WITH A NOTE…';
-  static const regenerateTitle = 'REGENERATE THIS SECTION';
+  static const regenerateWith = 'Regenerate with a note…';
+  static const regenerateTitle = 'Regenerate this section';
   static const regenerateHint = 'e.g. Focus more on security';
-  static const addBelow = 'ADD SECTION BELOW';
-  static const addSectionTitle = 'ADD A SECTION';
+  static const addBelow = 'Add section below';
+  static const addSectionTitle = 'Add a section';
   static const addHeadingHint = 'Heading';
   static const addGoalHint = 'What should it cover? (optional)';
-  static const addAction = 'ADD & WRITE';
-  static const continueWriting = 'CONTINUE WRITING';
-  static const continueTitle = 'CONTINUE WRITING';
+  static const addAction = 'Add & write';
+  static const continueWriting = 'Continue writing';
+  static const continueTitle = 'Continue writing';
   static const continueHint = 'Topic for the next section (optional)';
-  static const continueAction = 'WRITE';
+  static const continueAction = 'Write';
   static const addFailed = 'Could not add the section.';
 
   // System notifications
@@ -404,7 +404,10 @@ abstract final class DocConfig {
 
 /// Reader layout and typography.
 abstract final class DocSizes {
-  static const maxWidth = 720.0;
+  static const maxWidth = 680.0;
+  static const metaSize = 13.0;
+  static const subHeading = 20.0;
+  static const menuTarget = 40.0;
 
   /// From this width the TOC is a sticky rail beside the text.
   static const wideBreakpoint = 900.0;
@@ -439,7 +442,7 @@ abstract final class DocSizes {
   static const topBar = 48.0;
 
   // Progress bar and TOC pill
-  static const progressHeight = 64.0;
+  static const progressHeight = 72.0;
 
   /// Pinned progress bar slot (bar plus its padding).
   static const progressExtent = progressHeight + AppSpacing.lg;

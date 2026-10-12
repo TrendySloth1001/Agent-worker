@@ -15,6 +15,7 @@ import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/doc_models.dart';
 import '../chat/share/share_sheet.dart';
 import '../chat/widgets/markdown/app_markdown.dart';
+import '../../core/constants/settings_copy.dart';
 import 'doc_controller.dart';
 import 'doc_export.dart';
 import 'doc_highlights.dart';
@@ -320,6 +321,9 @@ class _DocScreenState extends State<DocScreen> {
           SliverPersistentHeader(
             pinned: true,
             delegate: _PinnedProgress(
+              extent: MediaQuery.textScalerOf(
+                context,
+              ).scale(DocSizes.progressExtent),
               child: _column(DocProgressBar(controller: _c)),
             ),
           ),
@@ -378,21 +382,25 @@ class _DocScreenState extends State<DocScreen> {
             child: _column(
               Padding(
                 padding: const EdgeInsets.only(top: DocSizes.sectionGap),
-                child: Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    DocTextButton(
-                      label: DocStrings.continueWriting,
-                      icon: DocIcons.continueWriting,
-                      onTap: _c.isBusy ? null : _continue,
-                    ),
-                    DocTextButton(
-                      label: DocStrings.addSectionTitle,
-                      icon: DocIcons.add,
-                      onTap: _c.isBusy ? null : _addSection,
-                    ),
-                  ],
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    alignment: WrapAlignment.start,
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      DocTextButton(
+                        label: DocStrings.continueWriting,
+                        icon: DocIcons.continueWriting,
+                        onTap: _c.isBusy ? null : _continue,
+                      ),
+                      DocTextButton(
+                        label: DocStrings.addSectionTitle,
+                        icon: DocIcons.add,
+                        onTap: _c.isBusy ? null : _addSection,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -412,15 +420,18 @@ bool _canGrow(Doc doc) =>
     doc.status == DocStatus.done || doc.status == DocStatus.partial;
 
 class _PinnedProgress extends SliverPersistentHeaderDelegate {
-  _PinnedProgress({required this.child});
+  _PinnedProgress({required this.child, required this.extent});
+
+  /// Slot height; grows with the user's text scale.
+  final double extent;
 
   final Widget child;
 
   @override
-  double get minExtent => DocSizes.progressExtent;
+  double get minExtent => extent;
 
   @override
-  double get maxExtent => DocSizes.progressExtent;
+  double get maxExtent => extent;
 
   @override
   Widget build(BuildContext context, double shrink, bool overlaps) =>
@@ -433,7 +444,8 @@ class _PinnedProgress extends SliverPersistentHeaderDelegate {
       );
 
   @override
-  bool shouldRebuild(_PinnedProgress old) => old.child != child;
+  bool shouldRebuild(_PinnedProgress old) =>
+      old.child != child || old.extent != extent;
 }
 
 class _TopBar extends StatelessWidget {
@@ -514,23 +526,28 @@ class _Header extends StatelessWidget {
     final t = context.text;
     final doc = controller.doc;
     final hasTitle = doc.title.trim().isNotEmpty;
+    final meta = t.bodySmall.copyWith(
+      fontSize: DocSizes.metaSize,
+      color: p.textSecondary,
+    );
     return Padding(
       padding: const EdgeInsets.only(top: DocSizes.headerTop),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              DocStatusDot(
-                status: doc.isRunning
-                    ? DocSectionStatus.writing
-                    : DocSectionStatus.done,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(DocStrings.card, style: t.caption),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
+          if (doc.isRunning) ...[
+            Row(
+              children: [
+                const DocStatusDot(status: DocSectionStatus.writing),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  DocStrings.status(doc.status),
+                  style: meta.copyWith(color: p.accent),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           if (hasTitle)
             Text(
               doc.title,
@@ -552,7 +569,7 @@ class _Header extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.md),
           Text(
             DocStrings.meta(
               words: doc.wordCount,
@@ -561,29 +578,47 @@ class _Header extends StatelessWidget {
                   : doc.sources.length,
               status: doc.status,
             ),
-            style: t.caption,
+            style: meta,
           ),
           if (doc.notice != null || doc.error != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Text(
               doc.error ?? doc.notice!,
-              style: t.caption.copyWith(
+              style: meta.copyWith(
                 color: doc.error != null ? p.accent : p.textTertiary,
               ),
             ),
           ],
-          const SizedBox(height: AppSpacing.lg),
-          Divider(height: AppBorder.thin, color: p.border),
           if (doc.summary.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
-            Text(DocStrings.abstractLabel, style: t.caption),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              withoutCitations(doc.summary.trim()),
-              style: t.body.copyWith(
-                fontSize: DocSizes.abstractSize,
-                height: DocSizes.bodyHeight,
-                color: p.textSecondary,
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(
+                  SettingsSizes.groupOuterRadius,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    DocStrings.abstractLabel,
+                    style: meta.copyWith(
+                      color: p.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    withoutCitations(doc.summary.trim()),
+                    style: t.body.copyWith(
+                      fontSize: DocSizes.abstractSize,
+                      height: DocSizes.bodyHeight,
+                      color: p.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -763,8 +798,9 @@ class _DocSectionViewState extends State<DocSectionView> {
                   Row(
                     children: [
                       Text(
-                        DocStrings.sectionNo(widget.number),
-                        style: t.caption.copyWith(
+                        DocStrings.sectionLabel(widget.number),
+                        style: t.bodySmall.copyWith(
+                          fontSize: DocSizes.metaSize,
                           color: s.isWriting ? p.accent : p.textTertiary,
                         ),
                       ),
@@ -774,7 +810,10 @@ class _DocSectionViewState extends State<DocSectionView> {
                         const SizedBox(width: AppSpacing.sm),
                         Text(
                           DocStrings.writingNow,
-                          style: t.caption.copyWith(color: p.accent),
+                          style: t.bodySmall.copyWith(
+                            fontSize: DocSizes.metaSize,
+                            color: p.accent,
+                          ),
                         ),
                       ],
                     ],
@@ -799,12 +838,14 @@ class _DocSectionViewState extends State<DocSectionView> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => showDocSectionMenu(context, _c, s),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    child: AppIcon(
-                      DocIcons.more,
-                      size: AppIconSize.md,
-                      color: p.textSecondary,
+                  child: SizedBox.square(
+                    dimension: DocSizes.menuTarget,
+                    child: Center(
+                      child: AppIcon(
+                        DocIcons.more,
+                        size: AppIconSize.md,
+                        color: p.textSecondary,
+                      ),
                     ),
                   ),
                 ),
@@ -815,7 +856,13 @@ class _DocSectionViewState extends State<DocSectionView> {
         body,
         if (s.isFailed && hasText && s.error != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(s.error!, style: t.caption.copyWith(color: p.accent)),
+          Text(
+            s.error!,
+            style: t.bodySmall.copyWith(
+              fontSize: DocSizes.metaSize,
+              color: p.accent,
+            ),
+          ),
         ],
         DocMarginNotes(highlights: highlights, onRemove: _c.removeHighlight),
         DocQaCards(controller: _c, section: s, highlights: highlights),
@@ -839,7 +886,7 @@ class _DocSectionViewState extends State<DocSectionView> {
                     const SizedBox(width: AppSpacing.xs),
                     Text(
                       DocStrings.highlightCount(plain.length),
-                      style: t.caption,
+                      style: t.bodySmall.copyWith(fontSize: DocSizes.metaSize),
                     ),
                   ],
                 ),
@@ -898,11 +945,12 @@ class _SectionSkeletonState extends State<_SectionSkeleton>
   Widget build(BuildContext context) {
     final p = context.palette;
     final t = context.text;
+    final meta = t.bodySmall.copyWith(fontSize: DocSizes.metaSize);
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: p.border, width: AppBorder.thin),
+        borderRadius: BorderRadius.circular(SettingsSizes.groupOuterRadius),
+        color: Theme.of(context).colorScheme.surfaceContainer,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -911,13 +959,13 @@ class _SectionSkeletonState extends State<_SectionSkeleton>
             children: [
               Text(
                 widget.writing ? DocStrings.writingNow : DocStrings.pending,
-                style: t.caption.copyWith(
+                style: meta.copyWith(
                   color: widget.writing ? p.accent : p.textTertiary,
                 ),
               ),
               const Spacer(),
               if (widget.targetWords > 0)
-                Text(DocStrings.target(widget.targetWords), style: t.caption),
+                Text(DocStrings.target(widget.targetWords), style: meta),
             ],
           ),
           if (widget.goal.trim().isNotEmpty) ...[
@@ -987,8 +1035,8 @@ class _FailedCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: p.accent, width: AppBorder.thin),
+        borderRadius: BorderRadius.circular(SettingsSizes.groupOuterRadius),
+        color: p.accent.withValues(alpha: M3Sizes.tagAlpha),
       ),
       child: Row(
         children: [
@@ -998,7 +1046,10 @@ class _FailedCard extends StatelessWidget {
               children: [
                 Text(
                   DocStrings.sectionFailed,
-                  style: t.caption.copyWith(color: p.accent),
+                  style: t.bodySmall.copyWith(
+                    color: p.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (message != null && message!.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xs),
@@ -1057,7 +1108,13 @@ class _Glossary extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(DocStrings.glossary, style: t.caption),
+        Text(
+          DocStrings.glossary,
+          style: t.title.copyWith(
+            fontSize: DocSizes.subHeading,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: AppSpacing.md),
         for (final g in terms)
           Padding(

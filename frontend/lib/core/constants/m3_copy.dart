@@ -34,13 +34,36 @@ abstract final class KnowledgeCopy {
   static const kindNote = 'Note';
   static const kindFile = 'File';
   static const kindDoc = 'Doc';
+  static const kindDocument = 'Document';
 
   static const docs = 'docs';
   static const chunks = 'chunks';
+
+  // Group headers.
+  static const groupDocuments = 'Your documents';
+  static const groupWeb = 'Web pages';
+  static const groupGithub = 'GitHub';
+  static const groupNotes = 'Notes';
+
+  static const searchHint = 'Search sources';
+  static const noMatches = 'No sources match';
+  static const noMatchesHint = 'Try another word or clear the search.';
+  static const clearSearch = 'Clear search';
+  static const moreActions = 'More actions';
+  static const indexing = 'Indexing';
+  static const nothingIndexed = 'Nothing indexed';
+  static const justUpdated = 'updated just now';
+
+  /// "35 passages", "1 passage".
+  static String passages(int n) => n == 1 ? '1 passage' : '$n passages';
+
+  static String updated(String ago) => 'updated $ago';
 }
 
 abstract final class KnowledgeSizes {
-  static const progressHeight = 4.0;
+  static const progressHeight = 2.0;
+  static const statusDot = 6.0;
+  static const searchHeight = 48.0;
 }
 
 abstract final class TelemetryCopy {
@@ -145,4 +168,23 @@ abstract final class ConnectCopy {
 
 abstract final class DocsCopy {
   static const title = 'Documents';
+  static const searchHint = 'Search documents';
+  static const noMatches = 'No documents match';
+  static const noMatchesHint = 'Try another word or clear the search.';
+  static const writing = 'Writing';
+  static const planning = 'Planning';
+  static const failed = 'Failed';
+  static const stopped = 'Stopped';
+  static const outline = 'Outline ready';
+  static const untitled = 'Untitled document';
+  static const empty = 'No documents yet. Ask for one in a chat.';
+  static const loadFailed = 'Could not load your documents.';
+  static const retry = 'Retry';
+
+  static String sections(int n) => n == 1 ? '1 section' : '$n sections';
+}
+
+abstract final class DocsListSizes {
+  static const progressHeight = 2.0;
+  static const searchHeight = 48.0;
 }
