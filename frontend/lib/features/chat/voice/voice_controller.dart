@@ -62,6 +62,9 @@ class VoiceController extends ChangeNotifier {
   Duration get elapsed => _elapsed;
   List<double> get levels => List.unmodifiable(_levels);
 
+  /// The latest microphone level (0..1), without copying the history.
+  double get level => _levels.isEmpty ? 0 : _levels.last;
+
   /// Which engine is running: 'device' or 'server'.
   String? get engineId => _engine?.id;
   bool get listening => _phase == VoicePhase.listening;
