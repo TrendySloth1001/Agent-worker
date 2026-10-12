@@ -62,6 +62,12 @@ class AccountApi {
     return AuthUser.fromJson(_json(r)['user'] as Map<String, dynamic>);
   }
 
+  /// Records that the first-run tour was finished or skipped.
+  Future<AuthUser> setOnboarded(bool done) async {
+    final r = await _send('PATCH', '/me', body: {'onboarded': done});
+    return AuthUser.fromJson(_json(r)['user'] as Map<String, dynamic>);
+  }
+
   /// [current] is null when the account has no password yet (GitHub/Google).
   Future<void> changePassword(String? current, String next) =>
       _send('POST', '/password', body: {'current': ?current, 'next': next});

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_scope.dart';
 import '../../core/constants/about.dart';
 import '../../core/constants/m3_copy.dart';
+import '../../core/constants/onboarding.dart';
 import '../../core/constants/app_config.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
@@ -21,6 +22,7 @@ import '../../core/widgets/illustration.dart';
 import '../../data/usage.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../chat/widgets/open_url.dart';
+import '../onboarding/onboarding_screen.dart';
 import '../settings/widgets/section_header.dart';
 import '../settings/widgets/settings_kit.dart';
 
@@ -193,6 +195,12 @@ class _AboutScreenState extends State<AboutScreen> {
             const SettingsGroupHeader(AboutCopy.credits),
             const _Credits(),
             const SizedBox(height: AppSpacing.xl),
+            _ActionButton(
+              label: OnboardingStrings.takeTour,
+              icon: OnboardingIcons.tour,
+              onTap: () => OnboardingScreen.open(context),
+            ),
+            const SizedBox(height: AppSpacing.md),
             _ActionButton(
               label: AboutCopy.licenses,
               icon: AboutIcons.licenses,

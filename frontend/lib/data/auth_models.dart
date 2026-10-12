@@ -10,12 +10,17 @@ class AuthUser {
     required this.role,
     this.avatarUrl,
     this.hasPassword = true,
+    this.onboarded,
   });
 
   final String id, email, name, role;
 
   /// False for accounts made with GitHub/Google until a password is set.
   final bool hasPassword;
+
+  /// The first-run tour was finished or skipped (on any device); null when
+  /// the server does not say (older server).
+  final bool? onboarded;
 
   /// A data: URL (uploaded photo) or an https URL; null shows initials.
   final String? avatarUrl;
@@ -56,6 +61,17 @@ class AuthUser {
     role: j['role'] as String? ?? 'user',
     avatarUrl: j['avatarUrl'] as String?,
     hasPassword: j['hasPassword'] != false,
+    onboarded: j['onboarded'] as bool?,
+  );
+
+  AuthUser copyWith({bool? onboarded}) => AuthUser(
+    id: id,
+    email: email,
+    name: name,
+    role: role,
+    avatarUrl: avatarUrl,
+    hasPassword: hasPassword,
+    onboarded: onboarded ?? this.onboarded,
   );
 
   Map<String, dynamic> toJson() => {
@@ -65,6 +81,7 @@ class AuthUser {
     'role': role,
     'avatarUrl': avatarUrl,
     'hasPassword': hasPassword,
+    'onboarded': ?onboarded,
   };
 }
 
