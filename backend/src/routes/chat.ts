@@ -6,7 +6,7 @@ import { AppError, errorBody } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
 import { pickCandidates, preferForPrompt, runChat, ChatFailure } from "../llm/router.js";
-import { webSearch, webFetch } from "../web/search.js";
+import { researchWeb, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
 import { githubGround } from "../github/grounding.js";
@@ -102,6 +102,12 @@ function retrievalQuery(messages: Message[]): string {
   if (lastUser.length >= 40) return lastUser.slice(0, 500);
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")?.content.slice(0, 300) ?? "";
   return `${lastAssistant}\n${lastUser}`.trim();
+}
+
+/** The user message before the latest one, for resolving follow-up questions into standalone search queries. */
+function previousUser(messages: Message[]): string {
+  const users = messages.filter((m) => m.role === "user");
+  return users.length > 1 ? users[users.length - 2].content.slice(0, 400) : "";
 }
 
 function searchQuery(text: string): string {
@@ -244,7 +250,14 @@ chatRouter.post("/", async (req, res) => {
       if (!searching && !urlMatch) return;
       if (searching) sse.send("status", { phase: "searching" });
       const [search, fetched, research] = await Promise.allSettled([
-        searching ? webSearch(searchQuery(decision.query || lastUser), ctl.signal) : Promise.resolve([]),
+        searching
+          ? researchWeb({
+              question: searchQuery(lastUser),
+              focused: decision.reason === "model" ? searchQuery(decision.query) : undefined,
+              context: { previousUser: previousUser(body.messages), previousAssistant: lastAssistant },
+              signal: ctl.signal,
+            })
+          : Promise.resolve([]),
         urlMatch ? webFetch(urlMatch[0].replace(/[.,;:]+$/, ""), ctl.signal) : Promise.resolve(null),
         researchTask(),
       ]);
