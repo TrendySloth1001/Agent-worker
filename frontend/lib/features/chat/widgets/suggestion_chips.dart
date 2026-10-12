@@ -33,7 +33,9 @@ class SuggestionChips extends StatefulWidget {
 class _SuggestionChipsState extends State<SuggestionChips> {
   /// Follow-ups that were already on the reply when it first showed came
   /// from history: they start folded.
-  late bool _hadItemsAtStart = SuggestionChips.itemsOf(widget.message).isNotEmpty;
+  late bool _hadItemsAtStart = SuggestionChips.itemsOf(
+    widget.message,
+  ).isNotEmpty;
   bool _open = false;
   bool _touching = false;
   Timer? _timer;
@@ -211,9 +213,7 @@ class _FoldedPill extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Text(
                   SuggestStrings.collapsed(count),
-                  style: context.text.caption.copyWith(
-                    color: p.textSecondary,
-                  ),
+                  style: context.text.caption.copyWith(color: p.textSecondary),
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 AppIcon(

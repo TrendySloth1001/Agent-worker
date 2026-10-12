@@ -1,5 +1,21 @@
+// Design note: Android M3 structure plus Nothing visual language.
+//
+// Structure comes from Android 16 Material 3: a large collapsing title, rounded
+// grouped containers (big radius at a group's ends, small between cells), tonal
+// icon circles, M3 switches, radios, segmented buttons and the Expressive
+// slider (tall track, gap around a vertical bar handle, stop indicators).
+//
+// The look comes from Nothing: monochrome surfaces, the red accent reserved for
+// the active or primary state (selected card, lit switch, slider, check),
+// dot-matrix touches (the dot cluster in the title bar, the dot grid and dot
+// monogram on Profile, empty states), Space Grotesk for all text, and Space
+// Mono only for tiny metadata labels such as "OWNER" or an id.
+//
+// Other screens import this kit; keep its public API stable and only add to it.
+
 import 'package:flutter/material.dart';
 
+import '../../../core/constants/app_fonts.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
@@ -9,7 +25,10 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/system_chrome.dart';
 import '../../../core/widgets/app_icon.dart';
+import 'dot_matrix.dart';
 import 'section_header.dart';
+
+export 'dot_matrix.dart';
 
 /// One searchable, deep-linkable row of a settings page.
 class SettingItem {
@@ -163,12 +182,16 @@ class SettingsTile extends StatelessWidget {
     this.onTap,
     this.iconColor,
     this.titleColor,
+    this.leading,
   });
 
   final AppIconData icon;
   final String title;
   final String? summary;
   final Widget? trailing;
+
+  /// Replaces the icon circle (e.g. a brand mark or avatar).
+  final Widget? leading;
   final VoidCallback? onTap;
   final Color? iconColor, titleColor;
 
@@ -176,7 +199,7 @@ class SettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     return ListTile(
-      leading: SettingsIconCircle(icon, color: iconColor),
+      leading: leading ?? SettingsIconCircle(icon, color: iconColor),
       title: Text(
         title,
         style: titleColor == null
@@ -364,6 +387,7 @@ class SettingsScaffold extends StatelessWidget {
                 )
               : null,
           title: Text(title),
+          actions: const [DotAccent()],
         ),
         SliverSafeArea(
           top: false,
@@ -391,6 +415,57 @@ class SettingsScaffold extends StatelessWidget {
     return AnnotatedRegion(
       value: systemOverlayFor(context),
       child: Scaffold(backgroundColor: p.background, body: scroll),
+    );
+  }
+}
+
+/// Tiny Space Mono metadata text (the only place settings use mono).
+class SettingsMetaLabel extends StatelessWidget {
+  const SettingsMetaLabel(this.text, {super.key, this.accent = false});
+
+  final String text;
+
+  /// The red accent, for an active state only.
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Text(
+      text,
+      style: TextStyle(
+        fontFamily: AppFonts.mono,
+        fontSize: SettingsSizes.metaFont,
+        letterSpacing: 0.8,
+        color: accent ? p.accent : p.textTertiary,
+      ),
+    );
+  }
+}
+
+/// A dot grid with a message, for empty states and no search results.
+class SettingsEmptyState extends StatelessWidget {
+  const SettingsEmptyState(this.message, {super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+      child: Column(
+        children: [
+          const DotGrid(size: SettingsSizes.emptyDots),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

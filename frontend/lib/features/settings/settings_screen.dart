@@ -118,18 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _query.toLowerCase(),
     );
     if (hits.isEmpty && !resetHit) {
-      return [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-          child: Text(
-            SettingsStrings.noResults,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ];
+      return [const SettingsEmptyState(SettingsStrings.noResults)];
     }
     return [
       const SettingsGroupHeader(SettingsStrings.searchResults),

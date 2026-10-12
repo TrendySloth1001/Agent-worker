@@ -1,18 +1,17 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
-import '../../core/constants/app_strings.dart';
 import '../../core/constants/auth_constants.dart';
+import '../../core/constants/profile_copy.dart';
+import '../../core/constants/settings_copy.dart';
 import '../../core/constants/sso_constants.dart';
 import '../../core/haptics.dart';
 import '../../core/platform/google_auth.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/dot_meter.dart';
 import '../../core/widgets/user_avatar.dart';
@@ -28,6 +27,7 @@ import '../auth/widgets/github_web_sheet.dart';
 import '../connections/connections_controller.dart';
 import '../settings/format.dart';
 import '../settings/widgets/section_header.dart';
+import '../settings/widgets/settings_kit.dart';
 import '../storage/storage_screen.dart';
 import '../../core/constants/storage.dart';
 import 'widgets/sign_in_methods.dart';
@@ -44,7 +44,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _api = const AccountApi();
   final _auth = AuthController.instance;
-  late final _name = TextEditingController(text: _auth.user?.name ?? '');
   AccountInfo? _info;
   List<DeviceSession>? _sessions;
   SignInMethods? _methods;
@@ -53,7 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// Provider or identity id with a link/unlink running.
   String? _methodBusy;
-  bool _savingName = false, _savingPhoto = false;
+  bool _savingPhoto = false;
 
   bool get _hasPassword =>
       _methods?.hasPassword ?? _auth.user?.hasPassword ?? true;
@@ -62,12 +61,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -222,12 +215,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
-  Future<void> _saveName() async {
-    final name = _name.text.trim();
+  Future<void> _saveName(String value) async {
+    final name = value.trim();
     if (name.isEmpty || name == _auth.user?.name) return;
-    FocusScope.of(context).unfocus();
-    Haptics.tap();
-    setState(() => _savingName = true);
     try {
       await _auth.updateUser(await _api.update(name: name));
       Haptics.received();
@@ -235,8 +225,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } on ApiException catch (e) {
       Haptics.error();
       if (mounted) _snack(e.message);
-    } finally {
-      if (mounted) setState(() => _savingName = false);
     }
   }
 
@@ -375,260 +363,368 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemOverlayFor(context),
-      child: Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const AppIcon(AppIcons.back, size: AppIconSize.md),
-            tooltip: AppStrings.back,
-            onPressed: () {
-              Haptics.tap();
-              Navigator.pop(context);
-            },
-          ),
-          title: const Text(ProfileStrings.title),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(AppBorder.thin),
-            child: Divider(color: p.border),
-          ),
-        ),
-        body: ListenableBuilder(
-          listenable: _auth,
-          builder: (context, _) => RefreshIndicator(
-            color: p.accent,
-            backgroundColor: p.surface,
-            onRefresh: _load,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                AppSpacing.xl,
-                AppSpacing.screenPadding,
-                MediaQuery.paddingOf(context).bottom + AppSpacing.xxl,
-              ),
-              children: [
-                _header(context),
-                if (_loadError != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  _LoadError(message: _loadError!, onRetry: _load),
-                ],
-                const SectionHeader(
-                  ProfileStrings.account,
-                  icon: AuthIcons.account,
+    return ListenableBuilder(
+      listenable: _auth,
+      builder: (context, _) => SettingsScaffold(
+        title: ProfileCopy.title,
+        onRefresh: _load,
+        children: [
+          _hero(context),
+          if (_loadError != null)
+            _LoadError(message: _loadError!, onRetry: _load),
+          const SettingsGroupHeader(ProfileCopy.accountGroup),
+          SettingsGroup(
+            entries: [
+              GroupEntry(
+                SettingsTile(
+                  icon: AuthIcons.name,
+                  title: ProfileCopy.nameTitle,
+                  summary: _auth.user?.displayName ?? '',
+                  trailing: const AppIcon(AppIcons.edit, size: AppIconSize.md),
+                  onTap: _editName,
                 ),
-                _nameEditor(context),
-                SectionHeader(ProfileStrings.usage, icon: AuthIcons.usage),
-                _UsageCard(info: _info),
-                const SizedBox(height: AppSpacing.md),
-                _OutlinePill(
-                  label: StorageStrings.manage,
+              ),
+              GroupEntry(
+                SettingsTile(
+                  icon: AuthIcons.photo,
+                  title: ProfileCopy.changePhoto,
+                  onTap: _savingPhoto ? null : _pickPhoto,
+                ),
+              ),
+              GroupEntry(
+                SettingsTile(
+                  icon: AuthIcons.email,
+                  title: ProfileCopy.emailTitle,
+                  summary: _auth.user?.email ?? '',
+                ),
+              ),
+            ],
+          ),
+          const SettingsGroupHeader(ProfileCopy.todayGroup),
+          SettingsGroup(
+            entries: [
+              GroupEntry(_UsageCard(info: _info)),
+              GroupEntry(
+                SettingsTile(
                   icon: StorageIcons.section,
+                  title: ProfileCopy.manageStorage,
                   onTap: () => StorageScreen.open(context),
                 ),
-                const SectionHeader(SsoStrings.methods, icon: SsoIcons.methods),
-                ..._methodRows(),
-                const SectionHeader(
-                  ProfileStrings.security,
-                  icon: AuthIcons.security,
-                ),
-                _OutlinePill(
-                  label: _hasPassword
-                      ? ProfileStrings.changePassword
-                      : SsoStrings.setPassword,
+              ),
+            ],
+          ),
+          const SettingsGroupHeader(ProfileCopy.methodsGroup),
+          _methodGroup(),
+          const SettingsGroupHeader(ProfileCopy.securityGroup),
+          SettingsGroup(
+            entries: [
+              GroupEntry(
+                SettingsTile(
                   icon: AuthIcons.password,
+                  title: _hasPassword
+                      ? ProfileCopy.changePassword
+                      : ProfileCopy.setPassword,
                   onTap: _openPasswordSheet,
                 ),
-                const SectionHeader(
-                  ProfileStrings.sessions,
-                  icon: AuthIcons.device,
-                ),
-                ..._sessionRows(context),
-                const SizedBox(height: AppSpacing.xxl),
-                _OutlinePill(
-                  label: ProfileStrings.logOut,
+              ),
+            ],
+          ),
+          const SettingsGroupHeader(ProfileCopy.devicesGroup),
+          _deviceGroup(),
+          const SizedBox(height: SettingsSizes.groupSpacing),
+          SettingsGroup(
+            entries: [
+              GroupEntry(
+                SettingsTile(
                   icon: AuthIcons.logOut,
+                  title: ProfileCopy.logOut,
+                  summary: ProfileCopy.logOutHelp,
                   onTap: _logOut,
                 ),
-                if (_auth.user?.isOwner == false) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  _OutlinePill(
-                    label: ProfileStrings.deleteAccount,
+              ),
+              if (_auth.user?.isOwner == false)
+                GroupEntry(
+                  SettingsTile(
                     icon: AuthIcons.delete,
-                    destructive: true,
+                    title: ProfileCopy.deleteAccount,
+                    summary: ProfileCopy.deleteHelp,
+                    iconColor: Theme.of(context).colorScheme.error,
+                    titleColor: Theme.of(context).colorScheme.error,
                     onTap: () => _openSheet(
                       _DeleteSheet(api: _api, hasPassword: _hasPassword),
                     ),
                   ),
-                ],
-                const SizedBox(height: AppSpacing.xl),
-                const AboutFooterLink(),
-              ],
-            ),
+                ),
+            ],
           ),
-        ),
+          const SizedBox(height: AppSpacing.xl),
+          const AboutFooterLink(),
+        ],
       ),
     );
   }
 
-  Widget _header(BuildContext context) {
+  /// Large avatar over a dot grid, name, email, and tiny mono metadata.
+  Widget _hero(BuildContext context) {
     final user = _auth.user;
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: _savingPhoto ? null : _pickPhoto,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              UserAvatar(user: user, size: AuthSizes.avatarProfile),
-              if (_savingPhoto)
-                const SizedBox(
-                  width: AuthSizes.avatarProfile,
-                  height: AuthSizes.avatarProfile,
-                  child: CircularProgressIndicator(
-                    strokeWidth: AppBorder.thick,
+    final tt = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final id = user?.id ?? '';
+    final shortId = id.length > ProfileCopy.idChars
+        ? id.substring(0, ProfileCopy.idChars)
+        : id;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Column(
+        children: [
+          SizedBox(
+            width: SettingsSizes.heroDotField,
+            height: SettingsSizes.heroDotField,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const DotGrid(size: SettingsSizes.heroDotField),
+                Semantics(
+                  button: true,
+                  label: ProfileCopy.changePhoto,
+                  child: GestureDetector(
+                    onTap: _savingPhoto ? null : _pickPhoto,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        _HeroAvatar(user: user),
+                        if (_savingPhoto)
+                          const SizedBox(
+                            width: SettingsSizes.heroAvatar,
+                            height: SettingsSizes.heroAvatar,
+                            child: CircularProgressIndicator(
+                              strokeWidth: AppBorder.thick,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
+                ),
+                Positioned(
+                  right:
+                      (SettingsSizes.heroDotField - SettingsSizes.heroAvatar) /
+                          2 -
+                      AppSpacing.xs,
+                  bottom:
+                      (SettingsSizes.heroDotField - SettingsSizes.heroAvatar) /
+                          2 -
+                      AppSpacing.xs,
+                  child: IconButton.filledTonal(
+                    tooltip: ProfileCopy.changePhoto,
+                    constraints: const BoxConstraints.tightFor(
+                      width: SettingsSizes.badge,
+                      height: SettingsSizes.badge,
+                    ),
+                    padding: EdgeInsets.zero,
+                    icon: const AppIcon(AppIcons.edit, size: AppIconSize.sm),
+                    onPressed: _savingPhoto ? null : _pickPhoto,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            user?.displayName ?? '',
+            textAlign: TextAlign.center,
+            style: tt.headlineSmall,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            user?.email ?? '',
+            textAlign: TextAlign.center,
+            style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: AppSpacing.md,
+            children: [
+              SettingsMetaLabel(
+                user?.isOwner == true
+                    ? ProfileCopy.roleOwner
+                    : ProfileCopy.roleMember,
+                accent: user?.isOwner == true,
+              ),
+              if (shortId.isNotEmpty)
+                SettingsMetaLabel(
+                  '${ProfileCopy.idLabel} ${shortId.toUpperCase()}',
                 ),
             ],
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Text(
-          user?.displayName ?? '',
-          textAlign: TextAlign.center,
-          style: context.text.headline,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(user?.email ?? '', style: context.text.caption),
-        if (user?.isOwner == true) ...[
-          const SizedBox(height: AppSpacing.sm),
-          const MetaChip(ProfileStrings.owner, emphasis: true),
+          const SizedBox(height: AppSpacing.md),
+          FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, SettingsSizes.touchTarget - 8),
+            ),
+            onPressed: _editName,
+            icon: const AppIcon(AppIcons.edit, size: AppIconSize.md),
+            label: const Text(ProfileCopy.editName),
+          ),
         ],
-        TextButton(
-          onPressed: _savingPhoto ? null : _pickPhoto,
-          child: Text(
-            ProfileStrings.changePhoto,
-            style: context.text.caption.copyWith(
-              color: context.palette.textPrimary,
+      ),
+    );
+  }
+
+  Future<void> _editName() async {
+    Haptics.tap();
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _NameSheet(initial: _auth.user?.name ?? ''),
+    );
+    if (value != null) await _saveName(value);
+  }
+
+  Widget _methodGroup() {
+    final m = _methods;
+    if (m == null) {
+      return SettingsGroup(
+        entries: [
+          GroupEntry(
+            _methodsError != null
+                ? _LoadError(message: _methodsError!, onRetry: _loadMethods)
+                : const _Skeleton(),
+          ),
+        ],
+      );
+    }
+    return SignInMethodsList(
+      email: _auth.user?.email ?? '',
+      methods: m,
+      providers: _providers,
+      busy: _methodBusy,
+      onSetPassword: _openPasswordSheet,
+      onLinkGithub: _linkGithub,
+      onLinkGoogle: _linkGoogle,
+      onUnlink: _unlink,
+    );
+  }
+
+  Widget _deviceGroup() {
+    final sessions = _sessions;
+    if (sessions == null) {
+      return const SettingsGroup(entries: [GroupEntry(_Skeleton())]);
+    }
+    final others = sessions.where((s) => !s.current).length;
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsGroup(
+      entries: [
+        for (final s in sessions)
+          GroupEntry(
+            SettingsTile(
+              icon: AuthIcons.device,
+              title: s.device ?? ProfileStrings.unknownDevice,
+              summary: s.lastUsedAt == null
+                  ? null
+                  : '${ProfileStrings.lastActive} ${agoLabel(s.lastUsedAt!)}',
+              trailing: s.current
+                  ? const SettingsMetaLabel(
+                      ProfileStrings.thisDevice,
+                      accent: true,
+                    )
+                  : TextButton(
+                      onPressed: () => _revoke(s),
+                      style: TextButton.styleFrom(
+                        foregroundColor: scheme.error,
+                      ),
+                      child: Text(ProfileCopy.signOutDevice),
+                    ),
             ),
           ),
-        ),
+        if (others > 0)
+          GroupEntry(
+            SettingsTile(
+              icon: AuthIcons.logOut,
+              title: ProfileCopy.signOutOthers,
+              summary: ProfileCopy.signOutOthersHelp,
+              onTap: _signOutOthers,
+            ),
+          ),
       ],
     );
   }
 
-  Widget _nameEditor(BuildContext context) {
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: _name,
-      builder: (context, value, _) {
-        final changed =
-            value.text.trim().isNotEmpty &&
-            value.text.trim() != (_auth.user?.name ?? '');
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AuthField(
-              label: ProfileStrings.name,
-              controller: _name,
-              icon: AuthIcons.name,
-              maxLength: AuthSizes.nameMax,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _saveName(),
-            ),
-            if (changed || _savingName)
-              PillButton(
-                label: ProfileStrings.save,
-                loading: _savingName,
-                onPressed: _saveName,
-              ),
-          ],
-        );
-      },
-    );
+  Future<void> _signOutOthers() async {
+    final others = [...?_sessions?.where((s) => !s.current)];
+    try {
+      for (final s in others) {
+        await _api.revokeSession(s.id);
+      }
+      if (!mounted) return;
+      setState(() => _sessions = [...?_sessions?.where((s) => s.current)]);
+      _snack(ProfileCopy.othersSignedOut);
+    } on ApiException catch (e) {
+      Haptics.error();
+      if (mounted) _snack(e.message);
+    }
+  }
+}
+
+/// Photo, or a dot-matrix monogram of the initials when there is none.
+class _HeroAvatar extends StatelessWidget {
+  const _HeroAvatar({required this.user});
+
+  final AuthUser? user;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = user;
+    if (u == null || u.avatarBytes != null || u.avatarUrl != null) {
+      return UserAvatar(user: u, size: SettingsSizes.heroAvatar);
+    }
+    return DotMonogram(text: u.initials, size: SettingsSizes.heroAvatar);
+  }
+}
+
+/// Bottom sheet that edits the display name; pops with the new value.
+class _NameSheet extends StatefulWidget {
+  const _NameSheet({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_NameSheet> createState() => _NameSheetState();
+}
+
+class _NameSheetState extends State<_NameSheet> {
+  late final _name = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
   }
 
-  List<Widget> _methodRows() {
-    final m = _methods;
-    if (m == null) {
-      return [
-        if (_methodsError != null)
-          _LoadError(message: _methodsError!, onRetry: _loadMethods)
-        else
-          const _Skeleton(),
-      ];
-    }
-    return [
-      SignInMethodsList(
-        email: _auth.user?.email ?? '',
-        methods: m,
-        providers: _providers,
-        busy: _methodBusy,
-        onSetPassword: _openPasswordSheet,
-        onLinkGithub: _linkGithub,
-        onLinkGoogle: _linkGoogle,
-        onUnlink: _unlink,
-      ),
-    ];
+  void _submit() {
+    final v = _name.text.trim();
+    if (v.isEmpty) return;
+    Haptics.tap();
+    Navigator.pop(context, v);
   }
 
-  List<Widget> _sessionRows(BuildContext context) {
-    final sessions = _sessions;
-    if (sessions == null) {
-      return [const _Skeleton()];
-    }
-    final p = context.palette;
-    return [
-      for (final s in sessions)
-        Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-          child: FlatCard(
-            child: Row(
-              children: [
-                AppIcon(
-                  AuthIcons.device,
-                  size: AppIconSize.md,
-                  color: p.textSecondary,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        s.device ?? ProfileStrings.unknownDevice,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.bodySmall.copyWith(
-                          color: p.textPrimary,
-                        ),
-                      ),
-                      if (s.lastUsedAt != null)
-                        Text(
-                          '${ProfileStrings.lastActive} '
-                          '${agoLabel(s.lastUsedAt!)}',
-                          style: context.text.caption,
-                        ),
-                    ],
-                  ),
-                ),
-                if (s.current)
-                  const MetaChip(ProfileStrings.thisDevice, emphasis: true)
-                else
-                  TextButton(
-                    onPressed: () => _revoke(s),
-                    child: Text(
-                      ProfileStrings.signOutDevice,
-                      style: context.text.caption.copyWith(color: p.error),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+  @override
+  Widget build(BuildContext context) {
+    return _SheetBody(
+      title: ProfileCopy.editName,
+      children: [
+        AuthField(
+          label: ProfileStrings.name,
+          controller: _name,
+          icon: AuthIcons.name,
+          maxLength: AuthSizes.nameMax,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _submit(),
         ),
-    ];
+        PillButton(label: ProfileStrings.save, onPressed: _submit),
+      ],
+    );
   }
 }
 
@@ -650,7 +746,8 @@ class _UsageCard extends StatelessWidget {
     if (i == null) return const _Skeleton();
     final l = i.limits;
     final u = i.usage;
-    return FlatCard(
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -729,55 +826,12 @@ class _Meter extends StatelessWidget {
   }
 }
 
-// ---- small pieces -------------------------------------------------------
-
-class _OutlinePill extends StatelessWidget {
-  const _OutlinePill({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.destructive = false,
-  });
-
-  final String label;
-  final AppIconData icon;
-  final VoidCallback onTap;
-  final bool destructive;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final color = destructive ? p.error : p.textPrimary;
-    return SizedBox(
-      height: AppSizes.buttonHeight,
-      child: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          shape: const StadiumBorder(),
-          side: BorderSide(
-            color: destructive ? p.error : p.borderStrong,
-            width: AppBorder.thin,
-          ),
-          foregroundColor: color,
-        ),
-        onPressed: onTap,
-        icon: AppIcon(icon, size: AppIconSize.sm, color: color),
-        label: Text(label, style: context.text.button.copyWith(color: color)),
-      ),
-    );
-  }
-}
-
 class _Skeleton extends StatelessWidget {
   const _Skeleton();
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: AppSizes.rowHeight,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      border: Border.all(color: context.palette.border),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      const SizedBox(height: SettingsSizes.touchTarget);
 }
 
 class _LoadError extends StatelessWidget {

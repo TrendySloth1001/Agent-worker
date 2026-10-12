@@ -240,4 +240,9 @@ abstract final class SettingsSizes {
   static const dotRadius = 1.2;
   static const heroAvatar = 96.0;
   static const heroDotField = 168.0;
+  static const accentDot = 6.0;
+  static const accentGap = 2.0;
+  static const badge = 32.0;
+  static const metaFont = 11.0;
+  static const emptyDots = 96.0;
 }
