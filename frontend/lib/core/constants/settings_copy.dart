@@ -231,4 +231,13 @@ abstract final class SettingsSizes {
     'large': 1.15,
     'huge': 1.3,
   };
+
+  /// M3 Expressive slider track height.
+  static const sliderTrack = 16.0;
+
+  /// Dot-matrix accent (hero avatar, empty states).
+  static const dotSpacing = 8.0;
+  static const dotRadius = 1.2;
+  static const heroAvatar = 96.0;
+  static const heroDotField = 168.0;
 }

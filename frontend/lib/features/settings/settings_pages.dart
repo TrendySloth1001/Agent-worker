@@ -949,7 +949,10 @@ class _SettingsCategoryPageState extends State<SettingsCategoryPage> {
     final scope = AppScope.of(context);
     final cat = widget.category;
     if (cat == SettingsCategory.models || cat == SettingsCategory.server) {
-      scope.usage.refresh();
+      // refresh() notifies at once, which is not allowed while building.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => scope.usage.refresh(),
+      );
     }
     if (widget.focusId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {

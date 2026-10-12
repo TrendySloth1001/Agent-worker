@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_fonts.dart';
 import '../constants/app_sizes.dart';
+import '../constants/settings_copy.dart';
 import 'app_palette.dart';
 import 'app_text_styles.dart';
 
@@ -186,7 +187,12 @@ abstract final class AppTheme {
           (s) => s.contains(WidgetState.selected) ? p.accent : p.textSecondary,
         ),
       ),
+      // Material 3 Expressive slider (Android 16): tall rounded track, a gap
+      // around the vertical bar handle and stop indicators.
       sliderTheme: SliderThemeData(
+        // ignore: deprecated_member_use
+        year2023: false,
+        trackHeight: SettingsSizes.sliderTrack,
         activeTrackColor: p.accent,
         inactiveTrackColor: scheme.surfaceContainerHighest,
         thumbColor: p.accent,

@@ -56,8 +56,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    AppScope.of(context).usage.refresh();
-    ConnectionsController.instance.refresh();
+    final usage = AppScope.of(context).usage;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      usage.refresh();
+      ConnectionsController.instance.refresh();
+    });
   }
 
   @override

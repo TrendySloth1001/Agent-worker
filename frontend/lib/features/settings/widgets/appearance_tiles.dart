@@ -5,6 +5,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
+import '../settings_controller.dart';
 import 'settings_kit.dart';
 
 /// Text size ids in slider order.
@@ -30,6 +31,14 @@ class ThemeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).settings;
+    // Const instances are never rebuilt by the page, so listen here.
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) => _body(context, s),
+    );
+  }
+
+  Widget _body(BuildContext context, SettingsController s) {
     final tt = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -80,6 +89,13 @@ class _TextSizeTileState extends State<TextSizeTile> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).settings;
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) => _body(context, s),
+    );
+  }
+
+  Widget _body(BuildContext context, SettingsController s) {
     final tt = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
     final saved = textSizeIds.indexOf(s.textScale);

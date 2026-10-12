@@ -7,6 +7,7 @@ import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../settings_controller.dart';
 
 /// A reply style: shown as a card, stored as tone + length.
 class ReplyPreset {
@@ -85,6 +86,11 @@ class ReplyStyleCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context).settings;
+    // Const instances are never rebuilt by the page, so listen here.
+    return ListenableBuilder(listenable: s, builder: (context, _) => _cards(s));
+  }
+
+  Widget _cards(SettingsController s) {
     final current = presetFor(s.tone, s.length);
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
