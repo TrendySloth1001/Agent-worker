@@ -21,9 +21,9 @@ const opts = { explicit: null, total: 3 };
 test("parseOps maps m-refs to ids, tolerates fences, drops garbage", () => {
   const raw = 'Sure!\n```json\n{"memories":[{"op":"update","id":"m1","text":"User lives in Paris.","kind":"fact"},{"op":"DELETE","id":"m2"},{"op":"ADD","text":"User builds a Flutter app.","kind":"project"},{"op":"DELETE","id":"m99"},{"nope":1},{"op":"ADD","text":"x","kind":"weird"}]}\n```';
   const ops = parseOps(raw, EXISTING);
-  assert.deepEqual(ops[0], { op: "UPDATE", id: "id-1", text: "User lives in Paris.", kind: "fact" });
+  assert.deepEqual(ops[0], { op: "UPDATE", id: "id-1", text: "Lives in Paris.", kind: "fact" });
   assert.deepEqual(ops[1], { op: "DELETE", id: "id-2" });
-  assert.deepEqual(ops[2], { op: "ADD", text: "User builds a Flutter app.", kind: "project" });
+  assert.deepEqual(ops[2], { op: "ADD", text: "Builds a Flutter app.", kind: "project" });
   assert.equal(ops.length, 4); // unknown DELETE and the object without op are dropped; the weird kind falls back to fact
   assert.equal((ops[3] as { kind: string }).kind, "fact");
 });
@@ -32,7 +32,7 @@ test("parseOps: unparsable or NOOP replies give no ops; an UPDATE with an unknow
   assert.deepEqual(parseOps("I could not decide", EXISTING), []);
   assert.deepEqual(parseOps('{"memories":[]}', EXISTING), []);
   const ops = parseOps('{"memories":[{"op":"UPDATE","id":"m42","text":"User owns a dog.","kind":"fact"}]}', EXISTING);
-  assert.deepEqual(ops, [{ op: "ADD", text: "User owns a dog.", kind: "fact" }]);
+  assert.deepEqual(ops, [{ op: "ADD", text: "Owns a dog.", kind: "fact" }]);
 });
 
 test("planOps: ADD of an existing fact is a NOOP; a longer rewording becomes an UPDATE", () => {
@@ -138,4 +138,24 @@ test("fingerprint changes when history is edited", () => {
   assert.equal(fingerprint(a), fingerprint(turns(4, 10)));
   assert.notEqual(fingerprint(a), fingerprint(b));
   assert.notEqual(fingerprint(a.slice(0, 3)), fingerprint(a));
+});
+
+test("memories read like a contact card and never describe memory itself", async () => {
+  const { naturalize, isMetaMemory, planOps } = await import("../src/memory/logic.js");
+  assert.equal(naturalize("User is named Nick."), "Name is Nick.");
+  assert.equal(naturalize("User's name is Nikhil."), "Name is Nikhil.");
+  assert.equal(naturalize("The user prefers tea."), "Prefers tea.");
+  assert.equal(naturalize("Name is Nikhil; goes by Nick."), "Name is Nikhil; goes by Nick.");
+  assert.ok(isMetaMemory("User wants to be remembered."));
+  assert.ok(isMetaMemory("Asked Sparky to remember things."));
+  assert.ok(!isMetaMemory("Name is Nikhil; goes by Nick."));
+  const plan = planOps(
+    [
+      { op: "ADD", text: "Wants to be remembered.", kind: "fact" },
+      { op: "ADD", text: "Name is Nikhil; goes by Nick.", kind: "identity" },
+    ],
+    [],
+    { explicit: { type: "remember", subject: "me" }, total: 0 },
+  );
+  assert.deepEqual(plan, [{ op: "ADD", text: "Name is Nikhil; goes by Nick.", kind: "identity" }]);
 });

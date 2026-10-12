@@ -52,6 +52,7 @@ abstract final class MemoryStrings {
 
   /// Label per kind id the backend uses.
   static String kind(String id) => switch (id) {
+    'identity' => 'ABOUT YOU',
     'preference' => 'PREFERENCE',
     'project' => 'PROJECT',
     'instruction' => 'INSTRUCTION',
