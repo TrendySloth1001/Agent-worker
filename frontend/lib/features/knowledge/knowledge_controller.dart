@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/notify/job_watch.dart';
 import '../../data/chat_api.dart';
 import '../../data/kb_source.dart';
 import '../../data/knowledge_api.dart';
@@ -26,6 +27,9 @@ class KnowledgeController extends ChangeNotifier {
     try {
       sources = await _api.list();
       loadError = null;
+      for (final s in sources) {
+        JobWatch.instance.watchSource(s);
+      }
     } catch (error) {
       if (sources.isEmpty) loadError = _message(error);
     }
@@ -39,6 +43,7 @@ class KnowledgeController extends ChangeNotifier {
     try {
       final source = await _api.add(input, type: type, limit: limit);
       sources = [source, ...sources.where((s) => s.id != source.id)];
+      JobWatch.instance.watchSource(source);
       loadError = null;
       _syncPolling();
       _notify();
@@ -52,6 +57,7 @@ class KnowledgeController extends ChangeNotifier {
     try {
       final updated = await _api.refresh(id);
       sources = [for (final s in sources) s.id == id ? updated : s];
+      JobWatch.instance.watchSource(updated);
       _syncPolling();
       _notify();
     } catch (_) {

@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 
 import '../core/constants/app_config.dart';
+import '../core/constants/notify_copy.dart';
 import '../core/constants/widget_github.dart';
+import '../core/notify/notification_center.dart';
+import '../core/notify/notify_kind.dart';
+import '../core/notify/notify_target.dart';
 import 'chat_api.dart';
 import 'api_client.dart';
 
@@ -466,6 +471,7 @@ class GithubApi {
         .get(uri, headers: apiHeaders())
         .timeout(GithubDurations.timeout);
     if (res.statusCode >= 400) {
+      _checkRevoked(res.statusCode, res.body);
       throw ApiException(
         errorMessage(res.body, res.statusCode),
         status: res.statusCode,
@@ -478,6 +484,7 @@ class GithubApi {
     final uri = Uri.parse('${AppConfig.apiBaseUrl}/github$path');
     final res = await _client.post(uri, headers: apiHeaders()).timeout(timeout);
     if (res.statusCode >= 400) {
+      _checkRevoked(res.statusCode, res.body);
       throw ApiException(
         errorMessage(res.body, res.statusCode),
         status: res.statusCode,
@@ -486,19 +493,72 @@ class GithubApi {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  /// GitHub access was revoked: one notification (the center backs off) that
+  /// leads to Settings > Apps.
+  void _checkRevoked(int status, String body) {
+    if (status != 409 || !body.contains('github_not_connected')) return;
+    if (!body.contains('revoked')) return;
+    NotificationCenter.instance.post(
+      NotifyKind.github,
+      key: 'reconnect',
+      title: NotifyCopy.githubTitle,
+      body: NotifyCopy.githubBody,
+      target: const SettingsTarget('apps'),
+    );
+  }
+
   /// Reviews pull request [number] with a strong model (slow, cached per
-  /// head commit on the server).
+  /// head commit on the server). The review can run for minutes: a service
+  /// keeps it alive if the user leaves, and a notification tells the result.
   Future<GhReview> review(
     String owner,
     String repo,
     int number, {
     bool fresh = false,
-  }) async => GhReview(
-    await _post(
-      '${_repo(owner, repo)}/pulls/$number/review${fresh ? '?fresh=1' : ''}',
-      GithubReviewDurations.reviewTimeout,
-    ),
-  );
+  }) async {
+    final center = NotificationCenter.instance;
+    final spec = '$owner/$repo#$number';
+    final chat = center.currentChat();
+    final target = chat == null ? null : ChatTarget(chat);
+    unawaited(
+      center.keepAlive(
+        NotifyKind.prReview,
+        title: NotifyCopy.reviewProgressTitle,
+        body: spec,
+        target: target,
+      ),
+    );
+    try {
+      final r = GhReview(
+        await _post(
+          '${_repo(owner, repo)}/pulls/$number/review'
+          '${fresh ? '?fresh=1' : ''}',
+          GithubReviewDurations.reviewTimeout,
+        ),
+      );
+      unawaited(
+        center.post(
+          NotifyKind.prReview,
+          key: spec,
+          title: NotifyCopy.reviewReadyTitle,
+          body: NotifyCopy.reviewBody(spec, r.verdict),
+          target: target,
+        ),
+      );
+      return r;
+    } catch (_) {
+      unawaited(
+        center.post(
+          NotifyKind.prReview,
+          key: spec,
+          title: NotifyCopy.reviewFailedTitle,
+          body: spec,
+          target: target,
+        ),
+      );
+      rethrow;
+    }
+  }
 
   Future<GhMe> me() async => GhMe(await _get('/me'));
 

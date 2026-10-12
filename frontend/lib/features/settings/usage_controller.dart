@@ -1,5 +1,9 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/notify_copy.dart';
+import '../../core/notify/notification_center.dart';
+import '../../core/notify/notify_kind.dart';
+import '../../core/notify/notify_target.dart';
 import '../../data/usage.dart';
 import '../../data/usage_api.dart';
 
@@ -31,9 +35,34 @@ class UsageController extends ChangeNotifier {
     final u = results[0] as UsageSnapshot?;
     offline = u == null;
     usage = u ?? usage;
+    if (u != null) notifyLimits(u);
     health = (results[1] as HealthStatus?) ?? const HealthStatus(null);
     loading = false;
     notifyListeners();
+  }
+
+  /// A provider close to its daily limit: one heads-up (the center backs off
+  /// for a while) that leads to the models page.
+  void notifyLimits(UsageSnapshot u, {NotificationCenter? center}) {
+    for (final p in u.providers) {
+      final q = p.quota;
+      final f = q?.fraction;
+      if (!p.configured ||
+          q == null ||
+          q.period != QuotaPeriod.day ||
+          f == null ||
+          f < NotifyConfig.usageThreshold) {
+        continue;
+      }
+      (center ?? NotificationCenter.instance).post(
+        NotifyKind.usage,
+        key: p.id,
+        title: NotifyCopy.usageTitle,
+        body: NotifyCopy.usageBody(p.name, (f * 100).floor()),
+        target: const SettingsTarget('models'),
+      );
+      return;
+    }
   }
 
   @override
