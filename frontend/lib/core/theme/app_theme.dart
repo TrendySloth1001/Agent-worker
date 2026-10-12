@@ -147,7 +147,8 @@ abstract final class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: textTheme.titleLarge,
+        // No titleTextStyle: large app bars then use the M3 defaults
+        // (headlineMedium expanded, titleLarge collapsed).
       ),
       listTileTheme: ListTileThemeData(
         iconColor: scheme.onSurfaceVariant,
