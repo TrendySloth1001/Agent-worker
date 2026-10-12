@@ -14,6 +14,9 @@ ET.register_namespace('', NS)
 INK, PAPER, RED = '#000000', '#FFFFFF', '#D71921'
 
 DL, OUT = sys.argv[1], sys.argv[2]
+# Optional: Open Doodles SVGs (opendoodles.com, CC0) for the newer scenes.
+DOODLES = sys.argv[3] if len(sys.argv) > 3 else None
+DOODLE_PINK = ('#FF5678', '#CF536D')
 
 
 def load(name):
@@ -55,6 +58,23 @@ def bust(body, head, face, extra=()):
 
 def whole(peep):
     root = load(peep)
+    return ''.join(to_str(c) for c in list(root)
+                   if c.tag.split('}')[-1] not in ('title', 'desc'))
+
+
+def doodle(name):
+    """An Open Doodles scene, ink only: the pink fills are dropped (the page
+    shows through), so the drawing is plain line art; red comes from props."""
+    root = ET.parse(os.path.join(DOODLES, name + '.svg')).getroot()
+
+    def drop_pink(el):
+        for child in list(el):
+            if (child.get('fill') or '').upper() in DOODLE_PINK:
+                el.remove(child)
+            else:
+                drop_pink(child)
+
+    drop_pink(root)
     return ''.join(to_str(c) for c in list(root)
                    if c.tag.split('}')[-1] not in ('title', 'desc'))
 
@@ -210,14 +230,130 @@ def empty_history():
     return svg('0 0 446 504', person + clock)
 
 
+# --- home rotation (Open Doodles + Open Peeps) ----------------------------------
+def heart(cx, cy, r, color=RED):
+    """Small filled heart."""
+    d = ('M{x},{b} C{l2},{m} {l1},{t} {x},{n} C{r1},{t} {r2},{m} {x},{b}Z'
+         .format(x=cx, b=cy + r * 0.9, m=cy - r * 0.1, t=cy - r * 1.1,
+                 n=cy - r * 0.35, l1=cx - r * 0.7, l2=cx - r * 1.4,
+                 r1=cx + r * 0.7, r2=cx + r * 1.4))
+    return '<path d="%s" fill="%s"/>' % (d, color)
+
+
+def bubble(tx, ty, s, dots=True):
+    """The hello.svg speech bubble (tail bottom-left at local 216,116),
+    scaled by [s] and moved by (tx, ty); optional typing dots."""
+    body = stroke(
+        'M216,30 C250,22 304,24 318,44 C330,62 322,92 296,98 '
+        'C276,103 252,101 236,99 L216,116 L220,96 '
+        'C200,92 192,74 194,58 C196,42 204,34 216,30Z',
+        5, INK, PAPER)
+    if dots:
+        body += ('<circle cx="232" cy="64" r="6.5" fill="%s"/>'
+                 '<circle cx="258" cy="64" r="6.5" fill="%s"/>'
+                 '<circle cx="284" cy="64" r="6.5" fill="%s"/>'
+                 % (INK, INK, RED))
+    return '<g transform="translate(%s,%s) scale(%s)">%s</g>' % (tx, ty, s, body)
+
+
+def lid_cover():
+    """Paper over the laptop logo of the Open Peeps "Macbook" body."""
+    return '<ellipse cx="206" cy="214" rx="14" ry="13" fill="%s"/>' % PAPER
+
+
+def home_read():
+    """Reading on the floor; a red spark over the book."""
+    props = spark(566, 186, 26) + ticks(566, 186, 38, 56, (30, 90, 150), 9)
+    return svg('20 75 985 620', doodle('reading-side') + props)
+
+
+def home_chat():
+    """Lying on the floor texting; a speech bubble with typing dots."""
+    return svg('25 120 1000 555', doodle('laying') + bubble(134, 114, 1.6))
+
+
+def home_think():
+    """Meditating; a red idea spark beside the head."""
+    props = spark(200, 150, 30) + ticks(200, 150, 44, 64, (20, 90, 160), 9)
+    return svg('60 40 910 700', doodle('meditating') + props)
+
+
+def home_dream():
+    """Floating, eyes closed; a red spark above."""
+    props = spark(470, 74, 26) + ticks(470, 74, 38, 56, (30, 90, 150), 9)
+    return svg('10 6 1005 664', doodle('levitate') + props)
+
+
+def home_code():
+    """At the laptop; a code bubble with a red slash."""
+    code = (stroke('M214,70 L205,79.5 L214,89', 4)
+            + stroke('M249,70 L258,79.5 L249,89', 4)
+            + stroke('M236,68 L227,91', 4.5, RED))
+    person = bust('peep-46', 'peep-48', 'peep-13')
+    return svg('22 14 282 290',
+               person + lid_cover() + bubble(38, 33, 0.75, dots=False) + code)
+
+
+def home_coffee():
+    """Coffee in hand; a small red heart."""
+    props = heart(212, 104, 11) + ticks(212, 102, 18, 25, (30, 90, 150), 3.5)
+    return svg('24 30 220 266', whole('peep-34') + props)
+
+
+# --- GitHub rotation -------------------------------------------------------------
+def commit(cx, cy, r, w, color=PAPER):
+    return ('<circle cx="%s" cy="%s" r="%s" fill="%s" stroke="%s" '
+            'stroke-width="%s"/>' % (cx, cy, r, color, INK, w))
+
+
+def github_branches():
+    """Presenting a branch graph: a feature branch merging back (red)."""
+    graph = (
+        stroke('M420,90 L420,600', 7)
+        + stroke('M420,230 C470,236 520,262 520,320 L520,400 '
+                 'C520,458 470,512 420,520', 7)
+        + commit(420, 130, 17, 7) + commit(420, 230, 17, 7)
+        + commit(420, 400, 17, 7) + commit(520, 320, 17, 7)
+        + commit(520, 400, 17, 7) + commit(420, 520, 21, 7, RED)
+    )
+    return svg('-10 -10 565 711', whole('peep-standing-22') + graph)
+
+
+def github_code():
+    """At the laptop with a small git graph floating beside the head."""
+    graph = (
+        stroke('M235,40 L235,150', 4)
+        + stroke('M235,64 C262,70 268,84 268,100 C268,116 258,126 235,132', 4)
+        + commit(235, 52, 6, 3.5) + commit(268, 100, 6, 3.5)
+        + commit(235, 138, 7.5, 3.5, RED)
+    )
+    code = (stroke('M199,208 L193,214 L199,220', 3)
+            + stroke('M213,208 L219,214 L213,220', 3))
+    person = bust('peep-46', 'peep-32', 'peep-32')
+    return svg('20 4 275 306', person + lid_cover() + code + graph)
+
+
 SCENES = {
     'login': login,
     'hello': hello,
     'github': github,
     'empty_knowledge': empty_knowledge,
     'empty_history': empty_history,
+    'home_code': home_code,
+    'home_coffee': home_coffee,
+    'github_branches': github_branches,
+    'github_code': github_code,
+}
+DOODLE_SCENES = {
+    'home_read': home_read,
+    'home_chat': home_chat,
+    'home_think': home_think,
+    'home_dream': home_dream,
 }
 
 if __name__ == '__main__':
     for name, fn in SCENES.items():
         write(name, fn())
+    if DOODLES:
+        for name, fn in DOODLE_SCENES.items():
+            write(name, fn())

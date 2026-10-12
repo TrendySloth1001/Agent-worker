@@ -135,6 +135,12 @@ abstract final class AboutStrings {
       url: 'https://www.openpeeps.com/',
     ),
     (
+      icon: AboutIcons.illustrations,
+      label: 'ILLUSTRATIONS',
+      value: 'Open Doodles by Pablo Stanley (CC0)',
+      url: 'https://www.opendoodles.com/',
+    ),
+    (
       icon: AboutIcons.icons,
       label: 'ICONS',
       value: 'Hugeicons',
@@ -178,6 +184,10 @@ abstract final class AboutStrings {
   static const licensePeeps = 'Open Peeps (illustrations)';
   static const licensePeepsText =
       'Open Peeps by Pablo Stanley, https://www.openpeeps.com/. '
+      'Released under CC0 1.0 Universal (public domain dedication).';
+  static const licenseDoodles = 'Open Doodles (illustrations)';
+  static const licenseDoodlesText =
+      'Open Doodles by Pablo Stanley, https://www.opendoodles.com/. '
       'Released under CC0 1.0 Universal (public domain dedication).';
   static const licenseFonts = 'Space Grotesk, Space Mono (fonts)';
   static const licenseFontsText =

@@ -5,8 +5,14 @@ The people in these illustrations come from **Open Peeps** by **Pablo Stanley**
 domain dedication, https://creativecommons.org/publicdomain/zero/1.0/).
 Attribution is not required under CC0; we give it anyway with thanks.
 
-The props (spark, speech bubble, puzzle pieces, box, clock) were hand-drawn
-for sparky and are dedicated to the public domain under the same CC0 terms.
+The newer home scenes also use **Open Doodles** by **Pablo Stanley**
+(https://www.opendoodles.com/), likewise released under **CC0 1.0 Universal**.
+Their pink fills are dropped so they read as plain line art; the red comes from
+the added props.
+
+The props (spark, speech bubble, heart, code bubble, puzzle pieces, box, clock,
+branch graphs) were hand-drawn for sparky and are dedicated to the public
+domain under the same CC0 terms.
 
 | File                  | Open Peeps source parts                                   | Added props                    |
 |-----------------------|-----------------------------------------------------------|--------------------------------|
@@ -15,6 +21,17 @@ for sparky and are dedicated to the public domain under the same CC0 terms.
 | `github.svg`          | bust: body "Whatever" (peep-44), head "Twists-2" (peep-91), face "Smiling" | two puzzle pieces, red spark |
 | `empty_knowledge.svg` | peep-sitting-9                                            | empty open box, red spark      |
 | `empty_history.svg`   | peep-sitting-12                                           | clock with red hand            |
+| `home_code.svg`       | bust: body "Macbook" (peep-46), head "Bun-2" (peep-48), face "Smiling" (peep-13) | code bubble with red slash |
+| `home_coffee.svg`     | peep-34 (body "Coffee")                                   | red heart                      |
+| `github_branches.svg` | peep-standing-22                                          | branch graph, red merge commit |
+| `github_code.svg`     | bust: body "Macbook" (peep-46), head "Long-Afro", face "Cute" (peep-32) | lid `< >`, git graph with red merge |
+
+| File                  | Open Doodles source  | Added props                    |
+|-----------------------|----------------------|--------------------------------|
+| `home_chat.svg`       | laying               | speech bubble, red typing dot  |
+| `home_read.svg`       | reading-side         | red spark                      |
+| `home_think.svg`      | meditating           | red spark                      |
+| `home_dream.svg`      | levitate             | red spark                      |
 
 ## Color contract
 
@@ -28,11 +45,12 @@ Each SVG uses exactly three colors, swapped at runtime by
 ## Regenerating
 
 `tools/compose.py` rebuilds the SVGs from the official Open Peeps SVGs
-(downloaded from openpeeps.com); `tools/preview.sh` renders the light/dark PNGs
+(downloaded from openpeeps.com) and, given a third directory, the Open
+Doodles SVGs (downloaded from opendoodles.com); `tools/preview.sh` renders the light/dark PNGs
 in `previews/` with headless Chrome. Neither the tools nor the previews are
 bundled into the app.
 
 ```sh
-python3 -I tools/compose.py <open-peeps-svg-dir> .
+python3 -I tools/compose.py <open-peeps-svg-dir> . <open-doodles-svg-dir>
 tools/preview.sh . previews
 ```

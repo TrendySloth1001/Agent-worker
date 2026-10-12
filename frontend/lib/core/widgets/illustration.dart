@@ -10,14 +10,35 @@ enum IllustrationKind {
   hello(IllustrationAssets.hello),
   github(IllustrationAssets.github),
   emptyKnowledge(IllustrationAssets.emptyKnowledge),
-  emptyHistory(IllustrationAssets.emptyHistory);
+  emptyHistory(IllustrationAssets.emptyHistory),
+  homeChat(IllustrationAssets.homeChat),
+  homeCode(IllustrationAssets.homeCode),
+  homeRead(IllustrationAssets.homeRead),
+  homeThink(IllustrationAssets.homeThink),
+  homeCoffee(IllustrationAssets.homeCoffee),
+  homeDream(IllustrationAssets.homeDream),
+  githubBranches(IllustrationAssets.githubBranches),
+  githubCode(IllustrationAssets.githubCode);
 
   const IllustrationKind(this.asset);
 
   final String asset;
+
+  /// The scenes the empty chat cycles through.
+  static const home = [
+    homeChat,
+    homeCode,
+    homeRead,
+    homeThink,
+    homeCoffee,
+    homeDream,
+  ];
+
+  /// The scenes the GitHub connect panel cycles through.
+  static const githubSet = [githubBranches, githubCode, github];
 }
 
-/// A theme-tinted line-art illustration (Open Peeps, CC0).
+/// A theme-tinted line-art illustration (Open Peeps / Open Doodles, CC0).
 ///
 /// The SVGs are drawn with black ink, white paper and one red accent. Ink
 /// becomes [AppPalette.textPrimary] and paper becomes [paper] (the page
@@ -28,12 +49,20 @@ class Illustration extends StatelessWidget {
     super.key,
     required this.kind,
     this.height,
+    this.width,
     this.paper,
     this.semanticLabel,
+    this.entrance = true,
   });
 
   final IllustrationKind kind;
   final double? height;
+
+  /// Optional box width; the art is contained within [width] x [height].
+  final double? width;
+
+  /// Fade in with a small rise on first build.
+  final bool entrance;
 
   /// Color of the fills behind the lines; set it to the surface the art sits
   /// on when that is not the page background (cards, drawers).
@@ -51,14 +80,15 @@ class Illustration extends StatelessWidget {
     final art = SvgPicture.asset(
       kind.asset,
       height: h,
+      width: width,
       fit: BoxFit.contain,
       // Equal mappers share one parsed picture in flutter_svg's cache.
       colorMapper: _InkMapper(p.textPrimary, paper ?? p.background),
       excludeFromSemantics: semanticLabel == null,
       semanticsLabel: semanticLabel,
-      placeholderBuilder: (_) => SizedBox(height: h),
+      placeholderBuilder: (_) => SizedBox(height: h, width: width),
     );
-    if (MediaQuery.disableAnimationsOf(context)) return art;
+    if (!entrance || MediaQuery.disableAnimationsOf(context)) return art;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: IllustrationDurations.entrance,
