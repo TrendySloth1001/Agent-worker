@@ -91,3 +91,7 @@ abstract final class ConnectCopy {
   static const openAgain = 'Open again';
   static const useCode = 'Use a code instead';
 }
+
+abstract final class DocsCopy {
+  static const title = 'Documents';
+}

@@ -119,7 +119,8 @@ void main() {
       }
       await tester.pump();
       await tester.pump();
-      expect(find.text('Sodium and health'), findsOneWidget);
+      // Once in the top bar and once as the document heading.
+      expect(find.text('Sodium and health'), findsNWidgets(2));
       expect(find.text('Why sodium matters'), findsWidgets);
       expect(find.text('Explain the role of sodium.'), findsOneWidget);
       expect(
