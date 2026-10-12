@@ -32,6 +32,7 @@ import { memoryRouter } from "./routes/memory.js";
 import { prismaStore as docStore } from "./docs/store.js";
 import { liveIds as liveDocIds } from "./docs/registry.js";
 import { githubGate } from "./auth/githubGate.js";
+import { siteRouter } from "./routes/site.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -46,6 +47,8 @@ app.use(cors());
 // Public: health and the sign-in endpoints. Everything after requireUser
 // needs an access token (Bearer JWT). The static API_TOKEN is still accepted
 // as an admin/dev bypass that acts as the owner account (curl tests).
+// Public pages: home, privacy policy, terms of service.
+app.use(siteRouter);
 app.use("/health", healthRouter);
 app.use("/auth", authPublicRouter);
 // Connected apps: the OAuth callback and the Drive picker page (state/ticket authenticated).
