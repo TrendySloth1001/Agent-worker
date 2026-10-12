@@ -29,14 +29,10 @@ class SectionHeader extends StatelessWidget {
             const SizedBox(width: AppSpacing.sm),
           ],
           // Group headers stay in mono caps, even where rows use body text.
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.caption.copyWith(
-                color: context.palette.textTertiary,
-              ),
+          Text(
+            title,
+            style: AppTextStyles.caption.copyWith(
+              color: context.palette.textTertiary,
             ),
           ),
           const SizedBox(width: AppSpacing.md),

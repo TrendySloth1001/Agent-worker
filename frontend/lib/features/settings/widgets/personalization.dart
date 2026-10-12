@@ -218,30 +218,36 @@ class _FieldRow extends StatelessWidget {
       },
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: AppSizes.minTap),
-        child: Row(
-          children: [
-            AppIcon(icon, size: AppIconSize.xs, color: p.textSecondary),
-            const SizedBox(width: AppSpacing.sm),
-            Flexible(child: Text(label, style: t.label)),
-            const SizedBox(width: AppSpacing.lg),
-            Expanded(
-              child: Text(
-                empty ? AppStrings.notSet : oneLine,
-                textAlign: TextAlign.end,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: t.caption.copyWith(
-                  color: empty ? p.textTertiary : p.textPrimary,
+        child: LayoutBuilder(
+          builder: (context, box) => Row(
+            children: [
+              AppIcon(icon, size: AppIconSize.xs, color: p.textSecondary),
+              const SizedBox(width: AppSpacing.sm),
+              // The label takes what it needs (at most half); the value the rest.
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: box.maxWidth / 2),
+                child: Text(label, style: t.label),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Text(
+                  empty ? AppStrings.notSet : oneLine,
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.caption.copyWith(
+                    color: empty ? p.textTertiary : p.textPrimary,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            AppIcon(
-              AppIcons.chevronRight,
-              size: AppIconSize.xs,
-              color: p.textTertiary,
-            ),
-          ],
+              const SizedBox(width: AppSpacing.sm),
+              AppIcon(
+                AppIcons.chevronRight,
+                size: AppIconSize.xs,
+                color: p.textTertiary,
+              ),
+            ],
+          ),
         ),
       ),
     );
