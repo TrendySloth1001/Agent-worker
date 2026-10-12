@@ -28,6 +28,8 @@ test("cleanCompletion removes repeated input and keeps spacing", () => {
   assert.equal(cleanCompletion("Hi.", "How are you?"), " How are you?");
   assert.equal(cleanCompletion("Hi", "\n"), "");
   assert.equal(cleanCompletion("Hi", 5), "");
+  assert.equal(cleanCompletion("how does retrieval", "work?", false), " work?");
+  assert.equal(cleanCompletion("how does retriev", " al work?", true), "al work?");
   assert.equal(cleanCompletion("abc", "line one\nline two"), "line one");
 });
 
