@@ -1,11 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
+import '../../../core/constants/suggest.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/glass.dart';
@@ -13,7 +15,11 @@ import '../../../core/constants/app_icons.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/icon_label.dart';
 import '../../../data/files_api.dart';
+import '../../../data/suggest_api.dart';
 import '../attachments_controller.dart';
+import '../autocomplete/autocomplete_bar.dart';
+import '../autocomplete/autocomplete_controller.dart';
+import '../autocomplete/local_words.dart';
 import 'attachment_bar.dart';
 
 /// Floating capsule with the text field and send button.
@@ -35,6 +41,8 @@ class ChatInput extends StatefulWidget {
     this.docLength = DocConfig.defaultLength,
     this.onDocLength,
     this.onSendAsDoc,
+    this.autocomplete = false,
+    this.conversationId,
   });
 
   final void Function(String text, List<FileInfo> attachments) onSend;
@@ -65,6 +73,12 @@ class ChatInput extends StatefulWidget {
   /// Sends the text as a document once (the WRITE AS DOCUMENT? hint).
   final void Function(String text, List<FileInfo> attachments)? onSendAsDoc;
 
+  /// Ghost-text completion and next-word chips (the settings toggle).
+  final bool autocomplete;
+
+  /// The open chat, as context for completions.
+  final String? conversationId;
+
   @override
   State<ChatInput> createState() => _ChatInputState();
 }
@@ -78,15 +92,67 @@ class _ChatInputState extends State<ChatInput> {
   /// Text the user dismissed the document hint for.
   String? _hintDismissed;
 
+  AutocompleteController? _auto;
+  SharedPreferences? _prefs;
+
   @override
   void initState() {
     super.initState();
     widget.draft?.addListener(_applyDraft);
+    _controller.addListener(_onText);
+    _auto = _makeAuto(LocalWords());
+    SharedPreferences.getInstance().then(_prefsReady).catchError((_) {});
+  }
+
+  AutocompleteController _makeAuto(LocalWords words) {
+    final api = SuggestApi();
+    return AutocompleteController(
+      fetch: (text, id) => api.complete(text, conversationId: id),
+      local: words,
+      conversationId: widget.conversationId,
+      enabled: widget.autocomplete,
+    );
+  }
+
+  void _prefsReady(SharedPreferences prefs) {
+    if (!mounted) return;
+    _prefs = prefs;
+    final old = _auto;
+    final fresh = _makeAuto(
+      LocalWords(prefs.getString(SuggestConfig.memoryKey)),
+    );
+    _auto = fresh;
+    old?.dispose();
+    fresh.update(_atEnd ? _controller.text : '');
+    setState(() {});
+  }
+
+  bool get _atEnd {
+    final s = _controller.selection;
+    return !s.isValid ||
+        (s.isCollapsed && s.baseOffset == _controller.text.length);
+  }
+
+  void _onText() => _auto?.update(_atEnd ? _controller.text : '');
+
+  void _acceptGhost() {
+    if (_auto?.accept(_controller) ?? false) Haptics.tap();
+  }
+
+  void _learn(String text) {
+    final auto = _auto;
+    if (auto == null) return;
+    auto.local.learn(text);
+    _prefs?.setString(SuggestConfig.memoryKey, auto.local.toStorage());
   }
 
   @override
   void didUpdateWidget(ChatInput old) {
     super.didUpdateWidget(old);
+    _auto
+      ?..enabled = widget.autocomplete
+      ..conversationId = widget.conversationId;
+    if (!widget.autocomplete) _auto?.reset();
     if (old.draft == widget.draft) return;
     old.draft?.removeListener(_applyDraft);
     widget.draft?.addListener(_applyDraft);
@@ -106,6 +172,8 @@ class _ChatInputState extends State<ChatInput> {
   @override
   void dispose() {
     widget.draft?.removeListener(_applyDraft);
+    _controller.removeListener(_onText);
+    _auto?.dispose();
     _controller.dispose();
     _files.dispose();
     super.dispose();
@@ -129,6 +197,7 @@ class _ChatInputState extends State<ChatInput> {
     }
     if (text.trim().isEmpty && ready.isEmpty) return;
     Haptics.send();
+    _learn(text);
     final send = asDoc ? widget.onSendAsDoc ?? widget.onSend : widget.onSend;
     send(text, ready);
     _controller.clear();
@@ -231,10 +300,99 @@ class _ChatInputState extends State<ChatInput> {
                 : const SizedBox(width: double.infinity),
           ),
         ),
+        _autocompleteBar(),
         _capsule(context),
       ],
     );
   }
+
+  Widget _autocompleteBar() {
+    final auto = _auto;
+    if (auto == null || !widget.autocomplete) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: Listenable.merge([auto, _controller]),
+      builder: (context, _) => AutocompleteBar(
+        ghost: auto.ghostFor(_controller.text),
+        words: _controller.text == auto.text ? auto.words : const [],
+        onAccept: _acceptGhost,
+        onWord: (w) => auto.insertWord(_controller, w),
+      ),
+    );
+  }
+
+  /// The text field, with the completion shown dimmed after the cursor;
+  /// swiping right on it accepts the completion.
+  Widget _field(BuildContext context) {
+    final field = TextField(
+      controller: _controller,
+      minLines: 1,
+      maxLines: 5,
+      style: context.text.body,
+      textCapitalization: TextCapitalization.sentences,
+      decoration: const InputDecoration(
+        hintText: AppStrings.inputHint,
+        isDense: true,
+        contentPadding: _fieldPadding,
+        filled: false,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+      ),
+    );
+    final auto = _auto;
+    if (auto == null || !widget.autocomplete) return field;
+    return ListenableBuilder(
+      listenable: Listenable.merge([auto, _controller]),
+      builder: (context, _) {
+        final ghost = _atEnd ? auto.ghostFor(_controller.text) : '';
+        final style = context.text.body;
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: ghost.isEmpty
+              ? null
+              : (d) {
+                  if ((d.primaryVelocity ?? 0) > SuggestSizes.swipeVelocity) {
+                    _acceptGhost();
+                  }
+                },
+          child: Stack(
+            children: [
+              if (ghost.isNotEmpty)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Padding(
+                      padding: _fieldPadding,
+                      child: Text.rich(
+                        TextSpan(
+                          style: style.copyWith(color: Colors.transparent),
+                          text: _controller.text,
+                          children: [
+                            TextSpan(
+                              text: ghost,
+                              style: style.copyWith(
+                                color: context.palette.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        maxLines: 5,
+                        overflow: TextOverflow.clip,
+                      ),
+                    ),
+                  ),
+                ),
+              field,
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static const _fieldPadding = EdgeInsets.symmetric(
+    horizontal: AppSpacing.md,
+    vertical: AppSpacing.sm,
+  );
 
   Widget _capsule(BuildContext context) {
     return Glass(
@@ -250,27 +408,7 @@ class _ChatInputState extends State<ChatInput> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _attachButton(context),
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  minLines: 1,
-                  maxLines: 5,
-                  style: context.text.body,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    hintText: AppStrings.inputHint,
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                      vertical: AppSpacing.sm,
-                    ),
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                  ),
-                ),
-              ),
+              Expanded(child: _field(context)),
               _actionButton(context),
             ],
           ),

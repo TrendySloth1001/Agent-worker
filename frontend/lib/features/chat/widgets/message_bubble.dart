@@ -22,6 +22,7 @@ import 'attachment_views.dart';
 import 'image_strip.dart';
 import 'memory_chip.dart';
 import 'source_chips.dart';
+import 'suggestion_chips.dart';
 import 'thinking_indicator.dart';
 import 'round_table_header.dart';
 import 'round_table_panel.dart';
@@ -210,6 +211,8 @@ class MessageBubble extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           SourceChips(citations: message.citations, used: message.usedIds),
         ],
+        if (!message.isStreaming && !message.isError)
+          SuggestionChips(message: message),
         if (!message.isStreaming) ...[
           const SizedBox(height: AppSpacing.sm),
           // Wraps on narrow screens rather than overflowing.

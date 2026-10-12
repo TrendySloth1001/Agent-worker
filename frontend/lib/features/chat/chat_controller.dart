@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/docs.dart';
+import '../../core/constants/suggest.dart';
 import '../../core/haptics.dart';
 import '../../core/notifications.dart';
 import '../../data/ai_model.dart';
@@ -625,6 +626,8 @@ class ChatController extends ChangeNotifier {
         case EvidenceEvent(:final items):
           message.evidence = items;
           notifyListeners();
+        case SuggestionsEvent(:final items):
+          message.meta = {...message.meta, SuggestConfig.followUpKey: items};
         case ModelEvent(:final model):
           message.modelId = model;
           notifyListeners();

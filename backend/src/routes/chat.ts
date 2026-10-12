@@ -24,6 +24,7 @@ import { planQueries, runSeatResearch, type SeatResearch } from "../table/resear
 import { recordLatency } from "../table/latency.js";
 import { compactHistory, summaryMessage } from "../memory/compact.js";
 import { startMemoryTurn } from "../memory/turn.js";
+import { generateFollowups } from "../assist/suggest.js";
 
 // Vision-capable models, best first. Auto uses only these when a request has images or video frames.
 const VISION_MODELS = [
@@ -438,9 +439,15 @@ chatRouter.post("/", async (req, res) => {
       sse.send("delta", { text: tail });
     }
 
+    // Follow-up prompt chips: a fast model, bounded so it never holds `done` for long.
+    const followupsTask = text.trim().length >= 40 && lastUserText
+      ? generateFollowups(lastUserText, text, 3_000, ctl.signal).catch(() => [] as string[])
+      : Promise.resolve([] as string[]);
     // Give late images a moment so they arrive before `done`.
     const strip = await Promise.race([imagesTask, new Promise<ImageResult[]>((r) => setTimeout(() => r([]), 1_500))]);
     if (strip.length > 0 && !/\{\{image:/.test(text)) sse.send("images", { images: strip });
+    const followups = await followupsTask;
+    if (followups.length > 0) sse.send("suggestions", { items: followups });
     const sent = new Set(citations.map((c) => c.id));
     const used = [...new Set([...text.matchAll(/\[([KWDG]\d+)\]/g)].map((m) => m[1]))].filter((id) => sent.has(id));
     try {

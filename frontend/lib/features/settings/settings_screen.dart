@@ -5,6 +5,7 @@ import '../../core/app_scope.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/connections.dart';
+import '../../core/constants/suggest.dart';
 import '../../core/haptics.dart';
 import '../../core/platform/browsers.dart';
 import '../../core/widgets/browser_picker.dart';
@@ -163,6 +164,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: AppIcons.haptics,
                   value: scope.settings.hapticsOn,
                   onChanged: scope.settings.setHaptics,
+                ),
+                ToggleRow(
+                  label: SuggestStrings.autocompleteSetting,
+                  icon: AppIcons.aiFormat,
+                  value: scope.settings.autocompleteOn,
+                  onChanged: scope.settings.setAutocomplete,
                 ),
                 ToggleRow(
                   label: AppStrings.webSearchDefault,

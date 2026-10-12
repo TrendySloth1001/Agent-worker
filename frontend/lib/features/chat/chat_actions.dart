@@ -11,6 +11,7 @@ class ChatActions extends InheritedWidget {
     required this.latest,
     required this.sending,
     required this.answerFor,
+    this.edit,
     required super.child,
   });
 
@@ -22,6 +23,9 @@ class ChatActions extends InheritedWidget {
 
   /// The user message that follows [reply], if any.
   final String? Function(ChatMessage reply) answerFor;
+
+  /// Puts text in the composer to edit before sending.
+  final void Function(String text)? edit;
 
   static ChatActions? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ChatActions>();

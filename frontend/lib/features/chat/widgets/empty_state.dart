@@ -4,16 +4,49 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
+import '../../../core/constants/suggest.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/illustration.dart';
+import '../../../data/suggest_api.dart';
+import 'suggestion_chips.dart';
 
 /// HELLO on a new chat, with a peep and a few one-tap starter prompts.
 /// The art and then the prompts drop out when space runs short (keyboard).
-class EmptyState extends StatelessWidget {
+class EmptyState extends StatefulWidget {
   const EmptyState({super.key, this.onSuggestion});
 
   /// Sends a starter prompt; prompts are hidden when null.
   final ValueChanged<String>? onSuggestion;
+
+  @override
+  State<EmptyState> createState() => _EmptyStateState();
+}
+
+class _EmptyStateState extends State<EmptyState> {
+  /// Starters from recent chats, kept for the session so new chats show
+  /// them at once; the built-in prompts fill in until they arrive.
+  static List<String> _cached = const [];
+  static DateTime? _cachedAt;
+
+  List<String> _prompts = _cached;
+
+  @override
+  void initState() {
+    super.initState();
+    final at = _cachedAt;
+    if (at != null &&
+        DateTime.now().difference(at) < SuggestConfig.startersTtl) {
+      return;
+    }
+    SuggestApi().starters().then((list) {
+      if (list.isEmpty) return;
+      _cached = list;
+      _cachedAt = DateTime.now();
+      if (mounted) setState(() => _prompts = list);
+    });
+  }
+
+  ValueChanged<String>? get onSuggestion => widget.onSuggestion;
 
   @override
   Widget build(BuildContext context) {
@@ -55,8 +88,11 @@ class EmptyState extends StatelessWidget {
                       spacing: AppSpacing.sm,
                       runSpacing: AppSpacing.sm,
                       children: [
-                        for (final prompt in AppStrings.emptyPrompts)
-                          _PromptChip(
+                        for (final prompt
+                            in _prompts.isEmpty
+                                ? AppStrings.emptyPrompts
+                                : _prompts)
+                          PromptChip(
                             label: prompt,
                             onTap: () {
                               Haptics.tap();
@@ -72,43 +108,6 @@ class EmptyState extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _PromptChip extends StatelessWidget {
-  const _PromptChip({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final shape = BorderRadius.circular(AppRadius.pill);
-    return Semantics(
-      button: true,
-      child: Material(
-        color: p.surface,
-        borderRadius: shape,
-        child: InkWell(
-          borderRadius: shape,
-          onTap: onTap,
-          child: Container(
-            height: EmptyChatSuggestions.chipHeight,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: shape,
-              border: Border.all(color: p.borderStrong, width: AppBorder.thin),
-            ),
-            child: Text(
-              label,
-              style: context.text.bodySmall.copyWith(color: p.textPrimary),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

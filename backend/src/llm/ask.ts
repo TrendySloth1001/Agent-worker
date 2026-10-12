@@ -8,6 +8,7 @@ export type AskOptions = {
   /** Whole-call budget, including the wait for a provider slot. */
   timeoutMs: number;
   maxTokens?: number;
+  reasoningEffort?: "low";
   /** Stop collecting (and cancel the stream) once this many characters arrived. */
   maxChars?: number;
   signal?: AbortSignal;
@@ -41,7 +42,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
       let ttft: number | null = null;
       try {
         const left = Math.max(1_000, opts.timeoutMs);
-        const handle = await streamModel(modelId, messages, { signal: ctl.signal, firstByteMs: left, idleMs: left, maxTokens: opts.maxTokens });
+        const handle = await streamModel(modelId, messages, { signal: ctl.signal, firstByteMs: left, idleMs: left, maxTokens: opts.maxTokens, reasoningEffort: opts.reasoningEffort });
         let text = "";
         for await (const token of handle.tokens) {
           ttft ??= Date.now() - started;
