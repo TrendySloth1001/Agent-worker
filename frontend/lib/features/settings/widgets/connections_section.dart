@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/connections.dart';
 import '../../../core/constants/settings_copy.dart';
-import '../../chat/widgets/github/github_connect_card.dart';
+import '../../github/github_screen.dart';
 import '../../connections/connections_controller.dart';
 import 'settings_kit.dart';
 
@@ -44,7 +44,10 @@ class _GithubConnectionTileState extends State<GithubConnectionTile> {
       icon: ConnectIcons.github,
       title: ConnectStrings.github,
       summary: githubSummary(_c),
-      onTap: () => showGithubConnectSheet(context),
+      onTap: () => Navigator.push(
+        context,
+        settingsRoute(const GithubScreen()),
+      ),
     ),
   );
 }

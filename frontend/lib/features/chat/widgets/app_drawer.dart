@@ -16,7 +16,7 @@ import '../../history/widgets/conversation_list.dart';
 import '../../docs/docs_list_screen.dart';
 import '../../history/widgets/history_footer.dart';
 import '../../history/widgets/history_header.dart';
-import '../../knowledge/knowledge_screen.dart';
+import '../../apps/apps_screen.dart';
 import '../../profile/profile_screen.dart';
 import '../../settings/settings_screen.dart';
 import '../../storage/storage_screen.dart';
@@ -267,7 +267,7 @@ class AppDrawerState extends State<AppDrawer> {
                 builder: (context, _) => HistoryFooter(
                   archivedActive: history.archived,
                   compact: compact,
-                  onKnowledge: () => _push(const KnowledgeScreen()),
+                  onApps: () => _push(const AppsScreen()),
                   onDocs: _openDocs,
                   onStorage: () => _push(const StorageScreen()),
                   onArchived: () => _toggleArchived(!history.archived),
