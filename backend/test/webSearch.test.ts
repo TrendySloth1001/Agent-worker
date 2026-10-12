@@ -136,7 +136,9 @@ test("TtlLru expires entries and evicts the least recently used", () => {
 test("query planning heuristics", () => {
   assert.deepEqual(heuristicQueries("Hey, can you tell me what is RRF in search?").slice(0, 1), ["what is RRF in search"]);
   const fresh = heuristicQueries("latest flutter release", {}, new Date("2026-10-01"));
-  assert.deepEqual(fresh, ["latest flutter release", "latest flutter release 2026"]);
+  // One query by default: every extra query multiplies the provider calls.
+  assert.deepEqual(fresh, ["latest flutter release"]);
+  assert.deepEqual(heuristicQueries("react vs vue", {}, new Date("2026-10-01")), ["react vs vue", "react vs vue comparison"]);
   const follow = heuristicQueries("and what about its price?", { previousUser: "Tell me about the Pixel 10 phone" });
   assert.match(follow[0], /Pixel 10 phone.*price/);
   assert.deepEqual(dedupeQueries(["A  b", "a b", "c"]), ["A b", "c"]);

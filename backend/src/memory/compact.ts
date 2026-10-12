@@ -18,6 +18,8 @@ export const KEEP_MAX = 10;
 const SUMMARY_MODELS = ["groq:openai/gpt-oss-20b", "groq:openai/gpt-oss-120b", "ollama:gpt-oss:20b"];
 const TIMEOUT_MS = 20_000;
 const PER_MESSAGE_CHARS = 1500;
+/** A cached summary this many messages (or fewer) behind the cut is still used as is. */
+export const REUSE_GAP = 6;
 const INPUT_CHARS = 24_000;
 
 type Turn = { role: "user" | "assistant"; content: string };
@@ -95,7 +97,7 @@ export type Compacted<T extends Turn> = { summary: string; recent: T[] };
  * Summary + recent turns for a history over budget, or null (send everything).
  * Never throws; on any failure the full history is sent as before.
  */
-export async function compactHistory<T extends Turn>(messages: T[], conversationId?: string, budget = BUDGET_TOKENS): Promise<Compacted<T> | null> {
+export async function compactHistory<T extends Turn>(messages: T[], conversationId?: string, budget = BUDGET_TOKENS, deps: { summarize?: typeof summarize } = {}): Promise<Compacted<T> | null> {
   try {
     const cut = splitPoint(messages, budget);
     if (cut === null) return null;
@@ -116,8 +118,11 @@ export async function compactHistory<T extends Turn>(messages: T[], conversation
       }
     }
     if (base && base.upto === older.length) return { summary: base.summary, recent };
+    // The cut moves forward by a message or two every turn: a summary that is only a few messages behind is reused and the
+    // uncovered messages travel verbatim, so the summary model runs about every third turn instead of every turn.
+    if (base && older.length - base.upto <= REUSE_GAP && base.upto >= 1) return { summary: base.summary, recent: messages.slice(base.upto) };
 
-    const summary = await summarize(base?.summary ?? null, older.slice(base?.upto ?? 0));
+    const summary = await (deps.summarize ?? summarize)(base?.summary ?? null, older.slice(base?.upto ?? 0));
     if (!summary) return null;
 
     const hash = fingerprint(older);

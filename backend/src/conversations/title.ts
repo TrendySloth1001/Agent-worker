@@ -18,6 +18,13 @@ export function fallbackTitle(firstUser: string): string {
   return clean(text) || "New chat";
 }
 
+/** 3 to 5 words, no greeting or pronoun-only opener: the message itself reads as a title. */
+export function isTitleReady(firstUser: string): boolean {
+  const words = firstUser.replace(/https?:\/\/\S+/g, "").replace(/[?!.,]+$/g, "").trim().split(/\s+/).filter(Boolean);
+  if (words.length < 3 || words.length > 5) return false;
+  return !/^(hi|hello|hey|yo|ok|okay|so|and|but|can|could|please|help|what about|how about)\b/i.test(words.join(" ")) && !/\b(it|this|that|them|these|those)\b/i.test(words.join(" "));
+}
+
 function clean(raw: string): string {
   const line = raw.trim().split("\n").find((l) => l.trim()) ?? "";
   const text = line
@@ -31,6 +38,8 @@ function clean(raw: string): string {
 
 /** Names a conversation from its opening exchange. Never throws. */
 export async function generateTitle(firstUser: string, firstAssistant: string): Promise<{ title: string; source: "ai" | "fallback" }> {
+  // A short, specific opening message ("rust async runtimes compared") is already a fine title: no model call.
+  if (isTitleReady(firstUser)) return { title: fallbackTitle(firstUser), source: "fallback" };
   const messages: Message[] = [
     { role: "system", content: PROMPT },
     { role: "user", content: `User: ${firstUser.slice(0, 1500)}\n\nAssistant: ${firstAssistant.slice(0, 1500)}` },

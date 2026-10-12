@@ -8,6 +8,7 @@ import { log } from "../util/logger.js";
 import { redactForExternal } from "../nlp/pii.js";
 import { CircuitBreaker } from "./breaker.js";
 import { TtlLru } from "./lru.js";
+import { readPersisted, searchCacheKey, writePersisted } from "./cacheStore.js";
 import { clip, isRateLimit, ollamaPost, statusOf } from "./ollama.js";
 import { terms } from "./passages.js";
 import type { Candidate, Freshness, Intent, SearchCtx } from "./types.js";
@@ -162,7 +163,7 @@ const wikipedia: Provider = {
 const hackerNews: Provider = {
   name: "hackernews",
   role: "secondary",
-  intents: ["news", "code", "discussion", "repo"],
+  intents: ["news", "discussion", "repo"],
   timeoutMs: 5_000,
   enabled: () => true,
   async search(query, ctx) {
@@ -313,25 +314,43 @@ export const PROVIDERS: Provider[] = [ollama, wikipedia, hackerNews, stackExchan
 export const breaker = new CircuitBreaker({ threshold: 3, cooldownMs: 60_000, maxCooldownMs: 10 * 60_000 });
 
 const cache = new TtlLru<Candidate[]>(300);
-export const CACHE_TTL_MS: Record<Freshness, number> = { breaking: 2 * 60_000, recent: 10 * 60_000, evergreen: 6 * 60 * 60_000 };
+export const CACHE_TTL_MS: Record<Freshness, number> = { breaking: 2 * 60_000, recent: 10 * 60_000, evergreen: 12 * 60 * 60_000 };
 const EMPTY_TTL_MS = 60_000;
 
 export type CallOutcome = { provider: string; candidates: Candidate[]; ms: number; cached?: boolean; skipped?: "circuit"; error?: string };
 
-/** One provider call: cache, circuit breaker, timeout, telemetry. Never throws. */
-export async function callProvider(p: Provider, rawQuery: string, ctx: SearchCtx): Promise<CallOutcome> {
+const inflight = new Map<string, Promise<CallOutcome>>();
+
+/** One provider call: cache (memory, then Postgres), identical in-flight calls shared, circuit breaker, timeout, telemetry. Never throws. */
+export function callProvider(p: Provider, rawQuery: string, ctx: SearchCtx): Promise<CallOutcome> {
   // Third-party search engines never see emails, phone numbers, cards or keys.
   const query = redactForExternal(rawQuery);
-  const key = `${p.name}|${ctx.fresh}|${query.toLowerCase().replace(/\s+/g, " ").trim()}`;
+  const key = searchCacheKey(p.name, ctx.fresh, query);
   const hit = cache.get(key);
-  if (hit) return { provider: p.name, candidates: hit, ms: 0, cached: true };
+  if (hit) return Promise.resolve({ provider: p.name, candidates: hit, ms: 0, cached: true });
+  // Round-table seats and concurrent users asking the same thing share one upstream call.
+  const running = inflight.get(key);
+  if (running) return running.then((o) => ({ ...o, cached: true, ms: 0 }));
+  const run = callUncached(p, query, key, ctx).finally(() => inflight.delete(key));
+  inflight.set(key, run);
+  return run;
+}
+
+async function callUncached(p: Provider, query: string, key: string, ctx: SearchCtx): Promise<CallOutcome> {
+  const shared = await readPersisted(key);
+  if (shared) {
+    cache.set(key, shared, shared.length ? CACHE_TTL_MS[ctx.fresh] : EMPTY_TTL_MS);
+    return { provider: p.name, candidates: shared, ms: 0, cached: true };
+  }
   if (!breaker.allow(p.name)) return { provider: p.name, candidates: [], ms: 0, skipped: "circuit" };
   const started = Date.now();
   try {
     const candidates = (await p.search(query, ctx)).slice(0, ctx.limit);
     const ms = Date.now() - started;
     breaker.success(p.name);
-    cache.set(key, candidates, candidates.length ? CACHE_TTL_MS[ctx.fresh] : EMPTY_TTL_MS);
+    const ttl = candidates.length ? CACHE_TTL_MS[ctx.fresh] : EMPTY_TTL_MS;
+    cache.set(key, candidates, ttl);
+    if (candidates.length) writePersisted(key, candidates, ttl);
     if (!p.selfRecorded) recordUsage({ provider: "web", model: p.name, kind: "search", ok: true, status: 200, latencyMs: ms, count: 1 });
     return { provider: p.name, candidates, ms };
   } catch (e) {

@@ -10,9 +10,10 @@ import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { TtlLru } from "./lru.js";
 import { selectPassages } from "./passages.js";
-import { planSearch, type PlanContext, type SearchPlan } from "./plan.js";
+import { planFromPreflight, planSearch, type PlanContext, type SearchPlan } from "./plan.js";
+import { snippetAnswers } from "./budget.js";
 import { callProvider, PROVIDERS, type CallOutcome } from "./providers.js";
-import type { Candidate, WebResult } from "./types.js";
+import type { Candidate, Freshness, WebResult } from "./types.js";
 import { diversify, mergeCandidates } from "./rank.js";
 import { normalizeUrl } from "./url.js";
 
@@ -27,11 +28,15 @@ export type ResearchOpts = {
   fetchTop?: number;
   /** Cap on planned queries (1 for a single angle). */
   maxQueries?: number;
+  /** Queries and freshness already written by the turn preflight: skips query planning. */
+  preplanned?: { queries: string[]; fresh?: Freshness | null };
 };
 
 const PER_PROVIDER = 6;
 const SECONDARY_GRACE_MS = 2_500;
 const PAGE_TIMEOUT_MS = 6_000;
+/** Total time the first token may wait for page reads. */
+const FETCH_PHASE_MS = 2_500;
 const PAGE_CONCURRENCY = 3;
 const CONTENT_CHARS = 1500;
 const FULL_CHARS = 12_000;
@@ -88,6 +93,21 @@ export async function fetchPage(url: string, signal?: AbortSignal, timeoutMs = P
 
 // ---- orchestration ----------------------------------------------------------------
 
+/** Intents the free no-quota sources (Wikipedia, StackExchange, GitHub, arXiv, HN) answer well on their own. */
+export function freeFirst(plan: SearchPlan): boolean {
+  if (plan.fresh !== "evergreen") return false;
+  if (plan.intents.some((i) => i === "code" || i === "academic" || i === "repo")) return true;
+  // Encyclopedic is also the default intent: only a definitional question qualifies.
+  return plan.intents.includes("encyclopedic") && /^(?:what (?:is|are|was|were)|who (?:is|was)|define|history of)\b/i.test(plan.queries[0] ?? "");
+}
+
+/** Whether free sources alone gave enough to answer: three distinct pages, one with real body text. */
+export function enoughFree(outcomes: CallOutcome[]): boolean {
+  const cands = outcomes.flatMap((o) => o.candidates);
+  const urls = new Set(cands.map((c) => normalizeUrl(c.url) ?? c.url));
+  return urls.size >= 3 && cands.some((c) => (c.text?.length ?? 0) >= 400);
+}
+
 async function collect(plan: SearchPlan, signal: AbortSignal | undefined): Promise<CallOutcome[]> {
   const ctx = { signal, fresh: plan.fresh, limit: PER_PROVIDER };
   const active = PROVIDERS.filter((p) => p.enabled());
@@ -95,6 +115,15 @@ async function collect(plan: SearchPlan, signal: AbortSignal | undefined): Promi
   const secondaries = active.filter((p) => p.role === "secondary" && (p.intents === "any" || p.intents.some((i) => plan.intents.includes(i))));
   const outcomes: CallOutcome[] = [];
   const track = (p: Promise<CallOutcome>) => p.then((o) => void outcomes.push(o));
+
+  // Free, no-quota sources first when the intent fits them; the rate-limited Ollama search only if they came up short.
+  if (freeFirst(plan) && secondaries.length > 0) {
+    await Promise.all(secondaries.map((p) => track(callProvider(p, plan.queries[0], ctx))));
+    if (enoughFree(outcomes) || signal?.aborted) return outcomes;
+    const primaryTasks = primaries.flatMap((p) => plan.queries.map((q, i) => track(sleep(i * STAGGER_MS, signal).then(() => callProvider(p, q, ctx)))));
+    await Promise.all(primaryTasks);
+    return outcomes;
+  }
 
   const primaryTasks = primaries.flatMap((p) =>
     plan.queries.map((q, i) => track(sleep(i * STAGGER_MS, signal).then(() => callProvider(p, q, ctx)))),
@@ -126,8 +155,8 @@ function summarize(outcomes: CallOutcome[]): string {
 export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   const started = Date.now();
   const maxResults = opts.maxResults ?? 5;
-  const fetchTop = opts.fetchTop ?? 4;
-  const plan = await planSearch(opts.question, opts.context ?? {}, opts.signal, opts.focused);
+  const fetchTop = opts.fetchTop ?? 3;
+  const plan = opts.preplanned?.queries.length ? planFromPreflight(opts.question, opts.preplanned.queries, opts.preplanned.fresh) : await planSearch(opts.question, opts.context ?? {}, opts.signal, opts.focused);
   if (opts.maxQueries) plan.queries = plan.queries.slice(0, opts.maxQueries);
   if (!plan.queries.length) return [];
 
@@ -138,17 +167,23 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   if (!served.length && outcomes.length) throw new AppError(502, "upstream_failed", "All web search providers failed", true);
 
   const pool = diversify(merged, maxResults + 2);
-  const need = pool.filter((c) => (c.text?.length ?? 0) < 600).slice(0, fetchTop);
+  const focusText = [...plan.queries, opts.question].join(" ");
+  // Pages are only read when the hit has no body text of its own and its snippet does not already answer.
+  const need = pool.filter((c) => (c.text?.length ?? 0) < 600 && !snippetAnswers(c, focusText)).slice(0, fetchTop);
   const fetched = new Map<Candidate, string>();
-  await Promise.all(
-    need.map((c) =>
-      pageLimit(async () => {
-        if (opts.signal?.aborted) return;
-        const page = await fetchPage(c.url, opts.signal);
-        if (page) fetched.set(c, page.text);
-      }),
+  // The whole page-reading phase is time-boxed: the first token never waits on a slow site (late pages still warm the page cache).
+  await Promise.race([
+    Promise.all(
+      need.map((c) =>
+        pageLimit(async () => {
+          if (opts.signal?.aborted) return;
+          const page = await fetchPage(c.url, opts.signal);
+          if (page) fetched.set(c, page.text);
+        }),
+      ),
     ),
-  );
+    sleep(FETCH_PHASE_MS, opts.signal),
+  ]);
 
   const focus = [...plan.queries, opts.question].join(" ");
   const results: WebResult[] = [];

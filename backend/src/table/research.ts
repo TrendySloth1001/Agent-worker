@@ -25,6 +25,22 @@ const QUERY_MAX = 120;
 
 const norm = (q: string) => q.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
+/** The distinct queries (first spelling kept) and, per seat, the index of the distinct query it shares. */
+export function dedupeSeatQueries(queries: string[]): { unique: string[]; seatToUnique: number[] } {
+  const unique: string[] = [];
+  const byNorm = new Map<string, number>();
+  const seatToUnique = queries.map((q) => {
+    const k = norm(q);
+    let i = byNorm.get(k);
+    if (i === undefined) {
+      i = unique.push(q) - 1;
+      byNorm.set(k, i);
+    }
+    return i;
+  });
+  return { unique, seatToUnique };
+}
+
 /** Fallback angles when the planner is unavailable. */
 function deterministic(base: string): string[] {
   const year = new Date().getFullYear();
@@ -32,8 +48,11 @@ function deterministic(base: string): string[] {
 }
 
 /** Up to three distinct queries, different from `base` (already searched). */
-export async function planQueries(question: string, base: string, signal: AbortSignal): Promise<string[]> {
+export async function planQueries(question: string, base: string, signal: AbortSignal, seed: string[] = []): Promise<string[]> {
   const started = Date.now();
+  // The turn preflight already wrote more than one angle (a comparison): no planning call.
+  const seeded = dedupeSeatQueries([base, ...seed]).unique.slice(1);
+  if (seeded.length >= 2) return dedupeSeatQueries([...seeded, ...deterministic(base)]).unique.slice(0, SEATS.length);
   const avail = new Set(await pickCandidates(undefined));
   const messages: Message[] = [
     { role: "system", content: `${RESEARCH_PLAN_PROMPT}\nToday's date is ${new Date().toISOString().slice(0, 10)}.` },
@@ -65,24 +84,32 @@ export async function planQueries(question: string, base: string, signal: AbortS
   return out;
 }
 
-/** Searches each seat's query (staggered starts); a failed or slow search leaves that seat with none. */
-export async function runSeatResearch(queries: string[], signal: AbortSignal): Promise<SeatResearch[]> {
+/**
+ * Searches each distinct seat query once (staggered starts) and fans the results out to every seat that asked it;
+ * a failed or slow search leaves those seats with none.
+ */
+export async function runSeatResearch(queries: string[], signal: AbortSignal, search: (q: string, signal: AbortSignal) => Promise<WebResult[]> = webSearch): Promise<SeatResearch[]> {
   const started = Date.now();
+  const seatQueries = queries.slice(0, SEATS.length);
+  const { unique, seatToUnique } = dedupeSeatQueries(seatQueries);
   const settled = await Promise.allSettled(
     // Staggered starts: three searches in the same instant trip Ollama's rate limit.
-    queries.slice(0, SEATS.length).map(async (q, i) => {
+    unique.map(async (q, i) => {
       if (i > 0) await new Promise((r) => setTimeout(r, i * STAGGER_MS));
-      return webSearch(q, AbortSignal.any([signal, AbortSignal.timeout(SEARCH_MS)]));
+      return search(q, AbortSignal.any([signal, AbortSignal.timeout(SEARCH_MS)]));
     }),
   );
   recordLatency("research", "search", Date.now() - started);
   settled.forEach((r, i) => {
-    if (r.status === "rejected") log.warn("table seat search failed", { seat: SEATS[i], message: String((r.reason as Error)?.message ?? r.reason).slice(0, 120) });
+    if (r.status === "rejected") log.warn("table seat search failed", { query: unique[i], message: String((r.reason as Error)?.message ?? r.reason).slice(0, 120) });
   });
-  return settled.map((r, i) => ({
-    seat: SEATS[i],
-    // A failed search is not shown as research the seat did.
-    queries: r.status === "fulfilled" ? [queries[i]] : [],
-    results: r.status === "fulfilled" ? r.value.slice(0, PER_SEAT).map((w) => ({ ...w, content: w.content.slice(0, SEAT_SNIPPET) })) : [],
-  }));
+  return seatQueries.map((q, i) => {
+    const r = settled[seatToUnique[i]];
+    return {
+      seat: SEATS[i],
+      // A failed search is not shown as research the seat did.
+      queries: r.status === "fulfilled" ? [q] : [],
+      results: r.status === "fulfilled" ? r.value.slice(0, PER_SEAT).map((w) => ({ ...w, content: w.content.slice(0, SEAT_SNIPPET) })) : [],
+    };
+  });
 }

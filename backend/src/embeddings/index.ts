@@ -114,7 +114,53 @@ const QUERY_CACHE_TTL_MS = 30 * 60_000;
 const queryCache = new Map<string, { v: number[]; at: number }>();
 const cacheKey = (t: string) => `${config.embeddingModel}|${config.embeddingDimensions}|${t}`;
 
-/** Query embeddings with an LRU cache; only the misses hit the network (in one batch). */
+// Every consumer of one chat turn (knowledge base, past-chat recall, memory
+// recall) asks for its query vectors within a few milliseconds of each other.
+// Misses are coalesced into ONE request, and a text already being fetched is
+// shared, so a turn costs one embedding call however many tools embed.
+const COALESCE_MS = 25;
+type Waiter = { resolve: (v: number[]) => void; reject: (e: unknown) => void };
+let pending = new Map<string, Waiter[]>();
+let pendingTimer: NodeJS.Timeout | null = null;
+const inflight = new Map<string, Promise<number[]>>();
+let embedFn: (texts: string[]) => Promise<number[][]> = (texts) => embedTexts(texts, "query");
+
+function flushPending(): void {
+  pendingTimer = null;
+  const batch = pending;
+  pending = new Map();
+  const texts = [...batch.keys()];
+  embedFn(texts).then(
+    (vecs) => {
+      texts.forEach((t, i) => {
+        queryCache.set(cacheKey(t), { v: vecs[i], at: Date.now() });
+        if (queryCache.size > QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value as string);
+        for (const w of batch.get(t)!) w.resolve(vecs[i]);
+      });
+    },
+    (e) => {
+      for (const ws of batch.values()) for (const w of ws) w.reject(e);
+    },
+  );
+}
+
+function fetchQuery(text: string): Promise<number[]> {
+  const key = cacheKey(text);
+  const running = inflight.get(key);
+  if (running) return running;
+  const p = new Promise<number[]>((resolve, reject) => {
+    const ws = pending.get(text) ?? [];
+    ws.push({ resolve, reject });
+    pending.set(text, ws);
+    pendingTimer ??= setTimeout(flushPending, COALESCE_MS);
+  });
+  inflight.set(key, p);
+  const done = () => void inflight.delete(key);
+  p.then(done, done);
+  return p;
+}
+
+/** Query embeddings with an LRU cache; misses within a few ms of each other share one request. */
 export async function embedQueries(texts: string[]): Promise<number[][]> {
   const now = Date.now();
   const out: Array<number[] | undefined> = texts.map((t) => {
@@ -128,13 +174,20 @@ export async function embedQueries(texts: string[]): Promise<number[][]> {
   const missIdx = out.flatMap((v, i) => (v ? [] : [i]));
   if (missIdx.length) {
     const unique = [...new Set(missIdx.map((i) => texts[i]))];
-    const vecs = await embedTexts(unique, "query");
+    const vecs = await Promise.all(unique.map(fetchQuery));
     const byText = new Map(unique.map((t, i) => [t, vecs[i]]));
-    for (const [t, v] of byText) {
-      queryCache.set(cacheKey(t), { v, at: now });
-      if (queryCache.size > QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value as string);
-    }
     for (const i of missIdx) out[i] = byText.get(texts[i]);
   }
   return out as number[][];
+}
+
+/** Test seam: replaces the network call behind [embedQueries] (and clears the query cache). Returns a restore function. */
+export function stubQueryEmbedder(fn: (texts: string[]) => Promise<number[][]>): () => void {
+  const prev = embedFn;
+  embedFn = fn;
+  queryCache.clear();
+  return () => {
+    embedFn = prev;
+    queryCache.clear();
+  };
 }

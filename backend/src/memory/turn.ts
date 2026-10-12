@@ -3,7 +3,8 @@
 // failure is logged and the chat carries on without memory.
 import { currentUser } from "../auth/context.js";
 import { ask } from "../conversations/ask.js";
-import { embedTexts } from "../embeddings/index.js";
+import { embedQueries } from "../embeddings/index.js";
+import { extractionPlan, TurnBatcher } from "./batcher.js";
 import { isDbUp } from "../db/prisma.js";
 import { log } from "../util/logger.js";
 import { classifyIntent } from "../nlp/intent.js";
@@ -41,13 +42,12 @@ const RECALL_K = 6;
 /** Below this cosine similarity a memory is not related enough to inject. */
 const RECALL_MIN_SIM = 0.3;
 const EXTRACT_CANDIDATES = 8;
-const MIN_EXTRACT_CHARS = 12;
 
 export type MemoryChange = { op: "ADD" | "UPDATE" | "DELETE"; id: string; text: string };
 
 export type MemoryTurn = {
-  /** The "What you know about the user" block, or null. Also marks the memories as used. */
-  recall(): Promise<string | null>;
+  /** The "What you know about the user" block, or null. Also marks the memories as used. [query] is the turn's standalone question, so its embedding is shared with the knowledge base and past-chat recall. */
+  recall(query?: string, opts?: { embed?: boolean }): Promise<string | null>;
   /** Resolves with what changed; never rejects. Runs in the background from the start of the turn. */
   extraction: Promise<MemoryChange[]>;
 };
@@ -67,16 +67,16 @@ export function startMemoryTurn(input: TurnInput): MemoryTurn | null {
 
   let enabled: Promise<boolean> | null = null;
   const isEnabled = () => (enabled ??= memoryEnabled(userId).catch(() => false));
-  let vec: Promise<number[] | null> | null = null;
-  const queryVec = () => (vec ??= embedTexts([text.slice(0, 1000)], "query").then((v) => v[0], () => null));
+  const embed = (q: string) => embedQueries([q.slice(0, 1000)]).then((v) => v[0], () => null);
 
-  const recall = async (): Promise<string | null> => {
+  const recall = async (query?: string, opts: { embed?: boolean } = {}): Promise<string | null> => {
     try {
       if (!(await isEnabled())) return null;
-      const v = await queryVec();
+      // Small talk needs no semantic match: pinned and the latest memories are enough (no embedding call).
+      const v = opts.embed === false ? null : await embed(query?.trim() || text);
       const [pinned, related] = await Promise.all([
         pinnedMemories(userId),
-        v ? similarMemories(userId, v, RECALL_K).then((r) => r.filter((m) => m.sim >= RECALL_MIN_SIM)) : recentMemories(userId, RECALL_K),
+        v ? similarMemories(userId, v, RECALL_K).then((r) => r.filter((m) => m.sim >= RECALL_MIN_SIM)) : recentMemories(userId, opts.embed === false ? 3 : RECALL_K),
       ]);
       const seen = new Set<string>();
       const picked: RecalledMemory[] = [];
@@ -99,32 +99,15 @@ export function startMemoryTurn(input: TurnInput): MemoryTurn | null {
     try {
       if (!(await isEnabled())) return [];
       const explicit = detectExplicit(text);
-      if (!explicit && text.length < MIN_EXTRACT_CHARS) return [];
-      // Confident small talk ("thanks!") holds no facts: skip the extraction call.
-      if (!explicit) {
-        const intent = classifyIntent(text);
-        if (intent.top === "chitchat" && !intent.uncertain && intent.confidence >= 0.6) return [];
+      const plan = extractionPlan(text, !!explicit, classifyIntent(text));
+      if (plan === "skip") return [];
+      const item = { text, prevAssistant: input.prevAssistant };
+      if (plan === "batch") {
+        // No model call now: one call per few personal turns of this conversation, or when it goes quiet.
+        batcher.add(`${userId}|${input.conversationId ?? ""}`, { ...item, userId, conversationId: input.conversationId });
+        return [];
       }
-      const v = await queryVec();
-      const existing: ExistingMemory[] = v ? await similarMemories(userId, v, EXTRACT_CANDIDATES) : await recentMemories(userId, EXTRACT_CANDIDATES);
-      const messages: Message[] = [
-        { role: "system", content: EXTRACTOR_SYSTEM },
-        { role: "user", content: buildExtractorUser({ userText: text, assistantText: input.prevAssistant, existing, explicit, hints: memoryHints(extractEntities(text)) }) },
-      ];
-      let proposed: Op[] | null = null;
-      for (const model of MEMORY_MODELS.slice(0, 3)) {
-        try {
-          const raw = await ask(model, messages, TIMEOUT_MS, "memory");
-          if (!/\{/.test(raw)) continue;
-          proposed = parseOps(raw, existing);
-          break;
-        } catch (e) {
-          log.warn("memory extraction failed", { model, message: (e as Error).message?.slice(0, 120) });
-        }
-      }
-      if (!proposed?.length) return [];
-      const plan = planOps(proposed, existing, { explicit, total: await countMemories(userId) });
-      return await apply(userId, plan, input.conversationId);
+      return await extractNow(userId, [item], explicit, input.conversationId);
     } catch (e) {
       log.warn("memory extraction error", { error: (e as Error).message?.slice(0, 120) });
       return [];
@@ -133,6 +116,45 @@ export function startMemoryTurn(input: TurnInput): MemoryTurn | null {
 
   return { recall, extraction };
 }
+
+type Pending = { text: string; prevAssistant?: string; userId: string; conversationId?: string };
+
+/** One extraction call over [items] (one explicit turn, or a few batched ones). Never throws. */
+async function extractNow(userId: string, items: Array<{ text: string; prevAssistant?: string }>, explicit: ReturnType<typeof detectExplicit>, conversationId: string | undefined): Promise<MemoryChange[]> {
+  const last = items[items.length - 1]!;
+  const userText = items.length === 1 ? last.text : items.map((i) => i.text.slice(0, 600)).join("\n---\n");
+  const v = await embedQueries([last.text.slice(0, 1000)]).then((r) => r[0], () => null);
+  const existing: ExistingMemory[] = v ? await similarMemories(userId, v, EXTRACT_CANDIDATES) : await recentMemories(userId, EXTRACT_CANDIDATES);
+  const messages: Message[] = [
+    { role: "system", content: EXTRACTOR_SYSTEM },
+    { role: "user", content: buildExtractorUser({ userText, assistantText: items.length === 1 ? last.prevAssistant : undefined, existing, explicit, hints: memoryHints(extractEntities(userText)) }) },
+  ];
+  let proposed: Op[] | null = null;
+  for (const model of MEMORY_MODELS.slice(0, 3)) {
+    try {
+      const raw = await ask(model, messages, TIMEOUT_MS, "memory");
+      if (!/\{/.test(raw)) continue;
+      proposed = parseOps(raw, existing);
+      break;
+    } catch (e) {
+      log.warn("memory extraction failed", { model, message: (e as Error).message?.slice(0, 120) });
+    }
+  }
+  if (!proposed?.length) return [];
+  const plan = planOps(proposed, existing, { explicit, total: await countMemories(userId) });
+  return apply(userId, plan, conversationId);
+}
+
+const batcher = new TurnBatcher<Pending>(async (_key, items) => {
+  const first = items[0]!;
+  try {
+    if (!(await memoryEnabled(first.userId).catch(() => false))) return;
+    const changes = await extractNow(first.userId, items, null, first.conversationId);
+    log.info("memory batch", { turns: items.length, changes: changes.length });
+  } catch (e) {
+    log.warn("memory batch failed", { error: (e as Error).message?.slice(0, 120) });
+  }
+});
 
 /** Applies a validated plan. ADDs get an embedding-level duplicate check first. */
 async function apply(userId: string, plan: Op[], conversationId: string | undefined): Promise<MemoryChange[]> {
