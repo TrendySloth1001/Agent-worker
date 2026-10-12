@@ -535,3 +535,17 @@ abstract final class GithubSettingsStrings {
   static const noScopes = 'None';
   static const privateRepos = 'PRIVATE REPOS';
 }
+
+/// Markdown table chrome: view toggle, expand, swipe hint, export labels.
+abstract final class MdTableStrings {
+  static const table = 'TABLE';
+  static const cards = 'CARDS';
+  static const expand = 'Expand table';
+  static const swipe = 'SWIPE';
+  static const copyMarkdown = 'COPY MD';
+  static const copyTsv = 'COPY TSV';
+  static const empty = '\u2013';
+  static const sortedAscending = 'sorted ascending';
+  static const sortedDescending = 'sorted descending';
+  static const tabSeparator = '\t';
+}

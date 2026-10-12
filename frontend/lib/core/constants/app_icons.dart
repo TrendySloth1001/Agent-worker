@@ -40,6 +40,8 @@ abstract final class AppIcons {
   static const openExternal = HugeIcons.strokeRoundedLinkSquare02;
   static const browser = HugeIcons.strokeRoundedBrowser;
   static const link = HugeIcons.strokeRoundedLink01;
+  static const sortAscending = HugeIcons.strokeRoundedArrowUp01;
+  static const sortDescending = HugeIcons.strokeRoundedArrowDown01;
   static const fullscreen = HugeIcons.strokeRoundedArrowExpand01;
   static const imageMissing = HugeIcons.strokeRoundedImageNotFound01;
   static const image = HugeIcons.strokeRoundedImage01;
