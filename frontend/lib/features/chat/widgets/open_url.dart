@@ -17,7 +17,7 @@ Future<void> openUrl(
   Haptics.tap();
   final browser = package ?? AppScope.of(context).settings.browserPackage;
   // Saved notes use a note: URI and have nothing to open.
-  if (url.startsWith('note:')) return;
+  if (url.startsWith('note:') || url.startsWith('doc:')) return;
   var target = url;
   // Document citations point at an uploaded file: fetch a fresh signed URL.
   if (url.startsWith('file:')) {

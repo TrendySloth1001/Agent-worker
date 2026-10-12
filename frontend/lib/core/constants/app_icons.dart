@@ -143,6 +143,8 @@ abstract final class AppIcons {
     'reddit' => sourceReddit,
     'hackernews' => sourceNews,
     'note' => sourceNote,
+    'file' => file,
+    'doc' => doc,
     _ => sourceWeb,
   };
 

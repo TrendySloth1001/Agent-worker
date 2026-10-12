@@ -13,6 +13,8 @@ String kindLabel(String type) => switch (type) {
   'reddit' => AppStrings.kindReddit,
   'hackernews' => AppStrings.kindHn,
   'note' => AppStrings.kindNote,
+  'file' => AppStrings.kindFile,
+  'doc' => AppStrings.kindDoc,
   _ => AppStrings.kindWeb,
 };
 
@@ -28,6 +30,9 @@ class SourceTile extends StatelessWidget {
   final KbSource source;
   final VoidCallback onRefresh;
   final VoidCallback onLongPress;
+
+  /// Notes, files and docs have an internal id as address, not worth showing.
+  bool get _hasInternalUri => const {'note', 'file', 'doc'}.contains(source.type);
 
   String _status() {
     switch (source.status) {
@@ -85,7 +90,7 @@ class SourceTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: t.body,
             ),
-            if (source.title?.isNotEmpty == true && source.type != 'note')
+            if (source.title?.isNotEmpty == true && !_hasInternalUri)
               Text(
                 source.uri,
                 maxLines: 1,
