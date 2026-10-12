@@ -6,6 +6,7 @@ import '../../core/app_scope.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/about.dart';
+import '../../core/constants/assist.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/connections.dart';
 import '../../core/constants/memory.dart';
@@ -21,6 +22,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/widgets/browser_picker.dart';
 import '../../data/usage.dart';
 import '../about/about_screen.dart';
+import 'assistant_settings_screen.dart';
 import '../auth/auth_controller.dart';
 import '../connections/connections_controller.dart';
 import '../knowledge/knowledge_screen.dart';
@@ -48,6 +50,7 @@ enum SettingsCategory {
   replies,
   privacy,
   search,
+  assistant,
   apps,
   storage,
   notifications,
@@ -62,6 +65,7 @@ enum SettingsCategory {
     replies => SettingsStrings.catReplies,
     privacy => SettingsStrings.catPrivacy,
     search => SettingsStrings.catSearch,
+    assistant => AssistStrings.catTitle,
     apps => SettingsStrings.catApps,
     storage => SettingsStrings.catStorage,
     notifications => SettingsStrings.catNotifications,
@@ -77,6 +81,7 @@ enum SettingsCategory {
     replies => AppIcons.chat,
     privacy => SettingsIcons.privacy,
     search => AppIcons.web,
+    assistant => AssistIcons.assistant,
     apps => SettingsIcons.apps,
     storage => StorageIcons.section,
     notifications => SettingsIcons.notifications,
@@ -91,7 +96,7 @@ enum SettingsCategory {
   bool get ownerOnly => this == telemetry;
 
   /// Opens an existing screen instead of a settings page.
-  bool get isDirect => this == telemetry || this == about;
+  bool get isDirect => this == telemetry || this == about || this == assistant;
 }
 
 /// Opens [c]: a sub-page (optionally scrolled to [focusId]) or, for Telemetry
@@ -106,6 +111,8 @@ Future<void> openSettingsCategory(
       return Navigator.push(context, settingsRoute(const TelemetryScreen()));
     case SettingsCategory.about:
       return AboutScreen.open(context);
+    case SettingsCategory.assistant:
+      return AssistantSettingsScreen.open(context);
     default:
       return Navigator.push(
         context,
@@ -163,6 +170,8 @@ String categorySummary(SettingsCategory c, AppScope scope) {
         if (s.defaultRoundTable) SettingsStrings.sumRoundTable,
       ];
       return on.isEmpty ? SettingsStrings.sumAllOff : on.join(sep);
+    case SettingsCategory.assistant:
+      return AssistStrings.catSummaryOff;
     case SettingsCategory.apps:
       final g = ConnectionsController.instance.github;
       return g == null
@@ -715,6 +724,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
       return _serverSections(scope);
     case SettingsCategory.telemetry:
     case SettingsCategory.about:
+    case SettingsCategory.assistant:
       return const [];
   }
 }
