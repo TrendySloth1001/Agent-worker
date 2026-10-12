@@ -1,28 +1,50 @@
 import 'dart:convert';
 
+/// Where a cited source comes from: the knowledge base (`K<n>`), the web
+/// (`W<n>`), an attached file (`D<n>`) or a generated document.
+enum CitationKind {
+  web,
+  kb,
+  file,
+  doc;
+
+  /// Stored JSON values are the enum names; anything unknown reads as web.
+  static CitationKind parse(Object? raw) {
+    for (final k in values) {
+      if (k.name == raw) return k;
+    }
+    return web;
+  }
+}
+
 /// A source cited by a reply: `K<n>` from the knowledge base, `W<n>` from web.
 class Citation {
+  /// [kind] wins; the older [isKb] flag stays for callers that only know
+  /// knowledge base vs web.
   const Citation({
     required this.id,
-    required this.isKb,
+    bool isKb = false,
+    CitationKind? kind,
     required this.title,
     required this.url,
     required this.site,
     this.snippet = '',
     this.sourceType,
-  });
+  }) : kind = kind ?? (isKb ? CitationKind.kb : CitationKind.web);
 
   final String id;
-  final bool isKb;
+  final CitationKind kind;
   final String title;
   final String url;
   final String site;
   final String snippet;
   final String? sourceType;
 
+  bool get isKb => kind == CitationKind.kb;
+
   Map<String, dynamic> toJson() => {
     'id': id,
-    'kind': isKb ? 'kb' : 'web',
+    'kind': kind.name,
     'title': title,
     'url': url,
     'site': site,
@@ -32,7 +54,7 @@ class Citation {
 
   factory Citation.fromJson(Map<String, dynamic> j) => Citation(
     id: j['id'] as String? ?? '',
-    isKb: j['kind'] == 'kb',
+    kind: CitationKind.parse(j['kind']),
     title: j['title'] as String? ?? '',
     url: j['url'] as String? ?? '',
     site: j['site'] as String? ?? '',

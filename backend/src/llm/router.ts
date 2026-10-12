@@ -3,6 +3,7 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { config } from "../config.js";
 import { recordUsage } from "../db/usage.js";
 import { getOpenRouterKeyInfo, noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
+import { health } from "./health.js";
 
 const FIRST_BYTE_MS = 20_000;
 const IDLE_MS = 30_000;
@@ -113,14 +114,20 @@ function describe(e: UpstreamError): string {
 export function applyCooldown(id: string, e: UpstreamError) {
   if (e.status === 401 || e.status === 402 || e.status === 404) setCooldown(id, 3_600_000);
   else if (e.status === 429) setCooldown(id, e.retryAfterMs ?? 60_000);
+  // Timeouts, stalls, empty/truncated streams (status 0) and 5xx: circuit breaker with exponential backoff.
+  else if (e.status === 0 || e.status >= 500) setCooldown(id, health.failure(id));
 }
+
+/** Default output cap for chat per mode. Generous: reasoning models spend part of it thinking. */
+const CHAT_MAX_TOKENS: Record<string, number> = { default: 8192, debug: 8192, review: 8192, explain: 8192, design: 12288 };
+export const maxTokensForMode = (mode?: string): number => CHAT_MAX_TOKENS[mode ?? "default"] ?? 8192;
 
 /**
  * Streams the first candidate that works. A failing candidate moves on silently
  * if it produced nothing; if it already produced text, Auto resets and moves
  * on, an explicit model fails.
  */
-export async function runChat(candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean): Promise<RunResult> {
+export async function runChat(candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean, opts: { maxTokens?: number } = {}): Promise<RunResult> {
   const queue = [...candidates];
   const deferred = new Set<string>();
   let attempt = 0;
@@ -134,6 +141,9 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     const id = queue.shift()!;
     const provider = id.slice(0, id.indexOf(":")) as ModelInfo["provider"];
     const sem = semaphores[provider];
+
+    // In Auto, a model whose circuit opened meanwhile (another request) is dead: skip it while others remain.
+    if (auto && queue.length > 0 && cooldownUntil(id) !== null) continue;
 
     // In Auto, prefer a provider that is free right now over waiting in line.
     if (auto && !sem.available && !deferred.has(id) && queue.length > 0) {
@@ -151,7 +161,7 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     let ttft: number | null = null;
     let handle: Awaited<ReturnType<typeof streamModel>> | null = null;
     try {
-      handle = await streamModel(id, messages, { signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS });
+      handle = await streamModel(id, messages, { signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens });
       for await (const token of handle.tokens) {
         if (!produced) {
           produced = true;
@@ -160,7 +170,9 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         }
         hooks.onDelta(token);
       }
-      if (!produced) throw new UpstreamError(0, "empty response");
+      const completed = handle.usage.completed;
+      // Nothing was sent to the client yet, so a stream that never signalled completion can still fall back.
+      if (!produced) throw new UpstreamError(0, completed ? "empty response" : "stream ended without completion");
       recordUsage({
         provider,
         model: id.slice(provider.length + 1),
@@ -174,12 +186,21 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         completionTokens: handle.usage.completionTokens,
       });
       if (id.endsWith(":free")) noteOpenRouterFreeRequest();
-      clearCooldown(id);
+      let finishReason = handle.usage.finishReason ?? "stop";
+      if (completed) {
+        clearCooldown(id);
+        health.success(id);
+      } else {
+        // Text already reached the client: keep it, flag the cut-off, and count it against the model.
+        finishReason = "interrupted";
+        setCooldown(id, health.failure(id));
+        console.warn(`[chat] ${id} stream ended without completion`);
+      }
       return {
         model: id,
         promptTokens: handle.usage.promptTokens,
         completionTokens: handle.usage.completionTokens,
-        finishReason: handle.usage.finishReason ?? "stop",
+        finishReason,
       };
     } catch (e) {
       if (signal.aborted) throw e;

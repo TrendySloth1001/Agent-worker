@@ -4,8 +4,8 @@ import { db } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
 import type { AuthUser } from "./context.js";
 
-export type Limits = { chat: number; table: number; uploads: number; storageBytes: number; docs: number };
-export type Usage = { chats: number; tables: number; uploads: number; bytes: number; storageBytes: number; docs: number };
+export type Limits = { chat: number; table: number; uploads: number; storageBytes: number; docs: number; ai: number };
+export type Usage = { chats: number; tables: number; uploads: number; bytes: number; storageBytes: number; docs: number; ai: number };
 
 /** UTC day the counters belong to, as YYYY-MM-DD. */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -25,7 +25,7 @@ export async function limitsFor(user: AuthUser): Promise<Limits | null> {
   const row = await db().user.findUnique({ where: { id: user.id }, select: { limits: true } });
   const o = (row?.limits ?? {}) as Partial<Limits>;
   const pick = (k: keyof Limits) => (typeof o[k] === "number" && o[k]! >= 0 ? o[k]! : config.limits[k]);
-  return { chat: pick("chat"), table: pick("table"), uploads: pick("uploads"), storageBytes: pick("storageBytes"), docs: pick("docs") };
+  return { chat: pick("chat"), table: pick("table"), uploads: pick("uploads"), storageBytes: pick("storageBytes"), docs: pick("docs"), ai: pick("ai") };
 }
 
 export async function usageFor(userId: string | null): Promise<Usage> {
@@ -40,6 +40,7 @@ export async function usageFor(userId: string | null): Promise<Usage> {
     bytes: Number(day?.bytes ?? 0),
     storageBytes: Number(storage._sum.size ?? 0),
     docs: day?.docs ?? 0,
+    ai: day?.ai ?? 0,
   };
 }
 
@@ -125,4 +126,41 @@ export async function docLimit(req: Request, _res: Response, next: NextFunction)
 export async function refundDoc(userId: string | null): Promise<void> {
   if (!userId) return;
   await db().$executeRaw`UPDATE user_daily_usage SET docs = GREATEST(docs - 1, 0) WHERE user_id = ${userId}::uuid AND day = ${today()}::date`.catch(() => undefined);
+}
+
+/**
+ * Counts [cost] AI calls (LLM or embedding work outside chat and docs) against
+ * today's `ai` limit. True when allowed; the owner is counted but unlimited.
+ */
+export async function takeAi(user: AuthUser | undefined, cost = 1): Promise<boolean> {
+  if (!user?.id) return true;
+  const limits = await limitsFor(user);
+  if (!limits) {
+    await db().userDailyUsage.upsert({
+      where: { userId_day: { userId: user.id, day: todayDate() } },
+      create: { userId: user.id, day: todayDate(), ai: cost },
+      update: { ai: { increment: cost } },
+    });
+    return true;
+  }
+  if (limits.ai < cost) return false;
+  const rows = await db().$queryRaw<Array<{ ai: number }>>`
+    INSERT INTO user_daily_usage (user_id, day, ai) VALUES (${user.id}::uuid, ${today()}::date, ${cost}::int)
+    ON CONFLICT (user_id, day) DO UPDATE SET ai = user_daily_usage.ai + ${cost}::int
+      WHERE user_daily_usage.ai + ${cost}::int <= ${limits.ai}::numeric
+    RETURNING ai`;
+  return rows.length > 0;
+}
+
+/** Middleware form of takeAi: 429 once the daily AI budget is used up. */
+export function aiBudget(cost = 1) {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (await takeAi(req.user, cost)) return next();
+      const limits = await limitsFor(req.user!);
+      next(limitError("AI requests", limits?.ai ?? 0));
+    } catch (e) {
+      next(e);
+    }
+  };
 }

@@ -51,7 +51,14 @@ export type StreamUsage = {
   promptTokens: number | null;
   completionTokens: number | null;
   finishReason: string | null;
+  /** True once the upstream signalled the end (Ollama done, SSE [DONE] or a finish_reason). */
+  completed: boolean;
 };
+
+/** Normalizes an OpenAI-style finish_reason: length and content_filter are surfaced, the rest is a normal stop. */
+export function mapFinish(reason: string): "length" | "content_filter" | "stop" {
+  return reason === "length" ? "length" : reason === "content_filter" ? "content_filter" : "stop";
+}
 
 /** `tokens` yields text deltas; `usage` is filled in as the stream progresses. */
 export type StreamHandle = { tokens: AsyncGenerator<string>; usage: StreamUsage };

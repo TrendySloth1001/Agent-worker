@@ -51,9 +51,26 @@ export async function waitForFiles(ids: string[], signal: AbortSignal, timeoutMs
 }
 
 const b64Cache = new Map<string, string[]>();
+/** The cache is bounded by memory (base64 characters), not just by entry count. */
+const B64_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+const B64_CACHE_MAX_ENTRIES = 24;
+let b64Bytes = 0;
+const sizeOf = (v: string[]) => v.reduce((n, s) => n + s.length, 0);
 function remember(key: string, v: string[]) {
+  const size = sizeOf(v);
+  if (size > B64_CACHE_MAX_BYTES) return; // too big to keep at all
+  const old = b64Cache.get(key);
+  if (old) {
+    b64Bytes -= sizeOf(old);
+    b64Cache.delete(key);
+  }
   b64Cache.set(key, v);
-  if (b64Cache.size > 24) b64Cache.delete(b64Cache.keys().next().value!);
+  b64Bytes += size;
+  while (b64Cache.size > B64_CACHE_MAX_ENTRIES || b64Bytes > B64_CACHE_MAX_BYTES) {
+    const oldest = b64Cache.keys().next().value!;
+    b64Bytes -= sizeOf(b64Cache.get(oldest)!);
+    b64Cache.delete(oldest);
+  }
 }
 
 async function pixels(row: FileRow): Promise<string[]> {

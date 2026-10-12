@@ -51,11 +51,19 @@ function receive(req: Request, res: Response): Promise<void> {
   });
 }
 
-const fmtMb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
+/** Multipart framing (boundaries, headers, small fields) on top of the file bytes. */
+const MULTIPART_SLACK = 64 * 1024;
+const fmtMb =(n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
 filesRouter.post("/", async (req, res) => {
   db();
   if (!req.is("multipart/form-data")) throw new AppError(400, "bad_request", "Expected multipart/form-data with a `file` field");
+  // Refuse early on the declared size, before multer buffers the body in memory.
+  const declared = Number(req.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > 0) {
+    if (declared > MAX_UPLOAD_BYTES + MULTIPART_SLACK) throw new AppError(413, "payload_too_large", "File is too large.");
+    await checkUpload(userOf(req), Math.max(0, declared - MULTIPART_SLACK));
+  }
   await receive(req, res);
   const f = req.file;
   if (!f) throw new AppError(400, "bad_request", "Missing `file` field");

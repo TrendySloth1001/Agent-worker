@@ -1,12 +1,12 @@
 import { postLines } from "./http.js";
 import { recordRateHeaders } from "../usage/rateLimits.js";
-import { UpstreamError, toOpenAiMessages, type Message, type StreamHandle, type StreamOptions, type StreamUsage } from "../providers.js";
+import { UpstreamError, mapFinish, toOpenAiMessages, type Message, type StreamHandle, type StreamOptions, type StreamUsage } from "../providers.js";
 
 export type OpenAiCompatible = { provider: string; url: string; apiKey: string | undefined };
 
 /** Streams from any OpenAI-compatible chat endpoint (Groq, NVIDIA). Reasoning deltas are ignored. */
 export function streamOpenAiCompatible(target: OpenAiCompatible, model: string, messages: Message[], opts: StreamOptions): StreamHandle {
-  const usage: StreamUsage = { promptTokens: null, completionTokens: null, finishReason: null };
+  const usage: StreamUsage = { promptTokens: null, completionTokens: null, finishReason: null, completed: false };
   async function* tokens(): AsyncGenerator<string> {
     if (!target.apiKey) throw new UpstreamError(401, `${target.provider} API key missing`);
     const lines = postLines(
@@ -18,7 +18,10 @@ export function streamOpenAiCompatible(target: OpenAiCompatible, model: string, 
     for await (const line of lines) {
       if (!line.startsWith("data:")) continue;
       const payload = line.slice(5).trim();
-      if (payload === "[DONE]") return;
+      if (payload === "[DONE]") {
+        usage.completed = true;
+        return;
+      }
       let data: any;
       try {
         data = JSON.parse(payload);
@@ -35,7 +38,10 @@ export function streamOpenAiCompatible(target: OpenAiCompatible, model: string, 
         usage.completionTokens = u.completion_tokens ?? null;
       }
       const choice = data.choices?.[0];
-      if (choice?.finish_reason) usage.finishReason = choice.finish_reason === "length" ? "length" : "stop";
+      if (choice?.finish_reason) {
+        usage.finishReason = mapFinish(choice.finish_reason);
+        usage.completed = true;
+      }
       const text = choice?.delta?.content;
       if (typeof text === "string" && text) yield text;
     }

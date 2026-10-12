@@ -5,7 +5,7 @@ import { MODELS } from "../models.js";
 import { AppError, errorBody } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
-import { pickCandidates, preferForPrompt, runChat, ChatFailure } from "../llm/router.js";
+import { pickCandidates, preferForPrompt, runChat, ChatFailure, maxTokensForMode } from "../llm/router.js";
 import { researchWeb, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
@@ -445,6 +445,7 @@ chatRouter.post("/", async (req, res) => {
         onFallback: (from, to) => sse.send("notice", { code: "fallback", message: `${from} failed, trying ${to}.` }),
       },
       auto || !!table,
+      { maxTokens: maxTokensForMode(body.mode) },
     ));
 
     const held = table ? unresolved.flush() : "";

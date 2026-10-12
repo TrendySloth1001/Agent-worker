@@ -4,7 +4,8 @@ import { z } from "zod";
 import { db, Prisma, tx } from "../db/prisma.js";
 import type { Conversation } from "../generated/prisma/client.js";
 import { AppError } from "../util/errors.js";
-import { generateTitle } from "../conversations/title.js";
+import { fallbackTitle, generateTitle } from "../conversations/title.js";
+import { takeAi } from "../auth/limits.js";
 import { mergeBriefing, type MergeChat } from "../conversations/merge.js";
 import { deleteFile, getFileRow } from "../files/store.js";
 import { userOf } from "../auth/context.js";
@@ -330,7 +331,10 @@ conversationsRouter.put("/:id", async (req, res) => {
   // Name it once, after the first complete exchange.
   const firstReply = messages.find((m) => m.role === "assistant" && !m.isError && m.content.trim());
   if (!row.title && firstUser && firstReply) {
-    const { title, source } = await generateTitle(firstUser, firstReply.content);
+    // Over the daily AI budget: name it from the first message instead of asking a model.
+    const { title, source } = (await takeAi(userOf(req)))
+      ? await generateTitle(firstUser, firstReply.content)
+      : { title: fallbackTitle(firstUser), source: "fallback" as const };
     const named = await db().conversation.updateMany({ where: { id, title: null }, data: { title, titleSource: source } });
     if (named.count > 0) {
       const fresh = await db().conversation.findUnique({ where: { id }, include: WITH_PARENT });

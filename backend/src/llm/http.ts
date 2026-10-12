@@ -1,5 +1,8 @@
 import { UpstreamError } from "../providers.js";
 
+/** Longest single response line accepted (one SSE/NDJSON event). */
+const MAX_LINE_CHARS = 1_000_000;
+
 type Opts = { signal: AbortSignal; firstByteMs: number; idleMs: number; onResponse?: (res: Response) => void };
 
 function retryAfter(res: Response): number | undefined {
@@ -73,6 +76,8 @@ export async function* postLines(url: string, headers: Record<string, string>, b
           buffer = buffer.slice(nl + 1);
           yield line;
         }
+        // A stream with no newlines would grow the buffer without bound.
+        if (buffer.length > MAX_LINE_CHARS) throw new UpstreamError(502, "upstream line too long");
       }
     } catch (e) {
       if (timedOut) throw new UpstreamError(0, "stream stalled");

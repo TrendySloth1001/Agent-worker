@@ -34,6 +34,25 @@ function ipv4Private(ip: string): boolean {
   );
 }
 
+/** Expands an IPv6 literal to its eight 16-bit groups (handles "::" and a trailing dotted quad), or null. */
+function expandV6(ip: string): number[] | null {
+  let s = ip.split("%")[0];
+  const dotted = s.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const q = dotted[2].split(".").map(Number);
+    if (q.some((n) => !(n >= 0 && n <= 255))) return null;
+    s = `${dotted[1]}${((q[0] << 8) | q[1]).toString(16)}:${((q[2] << 8) | q[3]).toString(16)}`;
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < 0 || (halves.length === 1 && head.length !== 8)) return null;
+  const groups = [...head, ...Array(fill).fill("0"), ...tail].map((g) => parseInt(g, 16));
+  return groups.length === 8 && groups.every((n) => n >= 0 && n <= 0xffff) ? groups : null;
+}
+
 export function isPrivateIp(ip: string): boolean {
   const v = net.isIP(ip);
   if (v === 4) return ipv4Private(ip);
@@ -46,6 +65,15 @@ export function isPrivateIp(ip: string): boolean {
     if (mappedHex) {
       const n = (parseInt(mappedHex[1], 16) << 16) | parseInt(mappedHex[2], 16);
       return ipv4Private([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join("."));
+    }
+    // Prefixes that embed an IPv4 address: judge the embedded address.
+    const h = expandV6(l);
+    if (h) {
+      const v4 = (x: number, y: number) => [x >>> 8, x & 255, y >>> 8, y & 255].join(".");
+      const zeros = (from: number, to: number) => h.slice(from, to).every((x) => x === 0);
+      if (h[0] === 0x64 && h[1] === 0xff9b && zeros(2, 6)) return ipv4Private(v4(h[6], h[7])); // NAT64 64:ff9b::/96
+      if (h[0] === 0x2002) return ipv4Private(v4(h[1], h[2])); // 6to4 2002::/16
+      if (zeros(0, 6)) return ipv4Private(v4(h[6], h[7])); // IPv4-compatible ::a.b.c.d
     }
     return /^(fc|fd|fe[89ab])/.test(l) || l.startsWith("ff");
   }
@@ -94,10 +122,13 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
 
 const TYPE_OK = /^(text\/|application\/(json|xml|xhtml\+xml|x-yaml|yaml|toml|javascript|x-httpd-php)|application\/[\w.+-]*\+(json|xml))/i;
 
+/** Politeness schedule per host; entries in the past are pruned once the map grows past this size. */
+const HOST_NEXT_MAX = 200;
 const hostNext = new Map<string, number>();
 async function politeWait(host: string, delayMs: number) {
   if (delayMs <= 0) return;
   const now = Date.now();
+  if (hostNext.size > HOST_NEXT_MAX) for (const [h, t] of hostNext) if (t <= now) hostNext.delete(h);
   const at = Math.max(now, hostNext.get(host) ?? 0);
   hostNext.set(host, at + delayMs);
   if (at > now) await new Promise((r) => setTimeout(r, at - now));

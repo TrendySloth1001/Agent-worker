@@ -70,8 +70,10 @@ abstract final class HtmlWeb {
   static const iconifyApi =
       'https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com';
 
+  /// Images and media load only from data/blob URLs (and the icon API): a
+  /// remote URL would let page content leak data through the request.
   static const csp =
-      "default-src 'none'; img-src data: blob: https:; media-src data: blob: https:; "
+      "default-src 'none'; img-src data: blob: $iconifyApi; media-src data: blob:; "
       "style-src 'unsafe-inline' $cdnStyle; "
       "script-src 'unsafe-inline' $cdnScript; "
       "font-src data: $cdnFont; connect-src $iconifyApi; "

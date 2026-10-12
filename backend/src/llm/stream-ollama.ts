@@ -3,7 +3,7 @@ import { postLines } from "./http.js";
 import { UpstreamError, type Message, type StreamHandle, type StreamOptions, type StreamUsage } from "../providers.js";
 
 export function streamOllama(model: string, messages: Message[], opts: StreamOptions): StreamHandle {
-  const usage: StreamUsage = { promptTokens: null, completionTokens: null, finishReason: null };
+  const usage: StreamUsage = { promptTokens: null, completionTokens: null, finishReason: null, completed: false };
   async function* tokens(): AsyncGenerator<string> {
     if (!config.ollamaApiKey) throw new UpstreamError(401, "OLLAMA_API_KEY missing");
     const lines = postLines(
@@ -27,6 +27,7 @@ export function streamOllama(model: string, messages: Message[], opts: StreamOpt
         usage.promptTokens = data.prompt_eval_count ?? null;
         usage.completionTokens = data.eval_count ?? null;
         usage.finishReason = data.done_reason ?? "stop";
+        usage.completed = true;
         return;
       }
     }

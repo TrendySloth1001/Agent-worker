@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { clientIp } from "../util/rateLimit.js";
 import { z } from "zod";
 import { db } from "../db/prisma.js";
 import { userOf } from "../auth/context.js";
@@ -18,7 +19,7 @@ function perUser(max: number, windowMs = 60_000) {
     for (const [k, v] of hits) if (v.resetAt <= now) hits.delete(k);
   }, windowMs).unref();
   return (req: Request, _res: Response, next: NextFunction) => {
-    const key = req.user?.id ?? req.ip ?? "anon";
+    const key = req.user?.id ?? clientIp(req);
     const now = Date.now();
     const e = hits.get(key);
     if (!e || e.resetAt <= now) {
