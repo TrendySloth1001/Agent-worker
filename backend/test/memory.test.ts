@@ -98,7 +98,7 @@ test("mergeWithNearest: embedding-close ADDs merge into the existing memory", ()
 test("detectExplicit finds remember/forget commands at the start of a message", () => {
   assert.deepEqual(detectExplicit("Remember that I use Neovim"), { type: "remember", subject: "I use Neovim" });
   assert.deepEqual(detectExplicit("Please remember: my dog is called Rex"), { type: "remember", subject: "my dog is called Rex" });
-  assert.deepEqual(detectExplicit("Can you forget about my old address?"), { type: "forget", subject: "my old address?" });
+  assert.deepEqual(detectExplicit("Can you forget about my old address?"), { type: "forget", subject: "my old address" });
   assert.equal(detectExplicit("What do you remember about Rome?"), null);
   assert.equal(detectExplicit("How do I forget a git branch?"), null);
 });

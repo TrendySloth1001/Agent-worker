@@ -1,29 +1,22 @@
-// Memory extraction is the one background LLM call that used to run on every
-// turn. Most turns hold no durable fact about the user, so now:
-//   - explicit "remember/forget" asks run at once,
-//   - chit-chat, very short and non-personal messages are skipped (no call),
-//   - turns that look like a statement about the user are batched: one call per
-//     [size] turns of a conversation, or when the conversation goes idle.
-import type { IntentResult } from "../nlp/intent.js";
+// Memory extraction used to be one background LLM call on every turn. Now the
+// rule-based intent classifier (src/nlp/memoryIntent.ts) decides per turn:
+//   - most turns (questions, tasks, chit-chat, recall questions): no call,
+//   - facts the rules can read (name, location, work, tools, likes...): slot
+//     ops with no call at all,
+//   - explicit remember/forget/correct/instruction the rules could not turn
+//     into clean ops: one call at once,
+//   - other first-person statements: batched, one call per [size] turns of a
+//     conversation, or when the conversation goes idle.
+import type { MemoryAnalysis } from "../nlp/memoryIntent.js";
 
-export const MIN_EXTRACT_CHARS = 12;
 export const BATCH_SIZE = 3;
 export const IDLE_MS = 90_000;
 
-/** First-person statements that tend to carry a lasting fact (who they are, what they use, prefer or work on). */
-const PERSONAL =
-  /\b(i am|i['’]m|i['’]ve|i['’]d|i work|i use|i live|i prefer|i like|i love|i hate|i have|i study|i build|i code|i write|i speak|i run|i own|i need to always|my (?:name|job|role|team|company|project|stack|setup|goal|favou?rite|wife|husband|partner|kids?|son|daughter|dog|cat|boss|school|university|college|city|country|timezone|birthday|budget|business|startup|app|site|website|phone|laptop|editor|workflow)|we use|we['’]re|we are|our (?:team|stack|company|product|app|startup|codebase|repo|project)|call me|from now on|always (?:use|answer|reply|respond)|never (?:use|answer|reply|respond))\b/i;
-
 export type ExtractionPlan = "now" | "batch" | "skip";
 
-/** What to do with a turn's message for memory: extract at once, batch it, or skip the call entirely. */
-export function extractionPlan(text: string, explicit: boolean, intent?: IntentResult): ExtractionPlan {
-  if (explicit) return "now";
-  const t = text.trim();
-  if (t.length < MIN_EXTRACT_CHARS) return "skip";
-  // Confident small talk ("thanks!") holds no facts.
-  if (intent && intent.top === "chitchat" && !intent.uncertain && intent.confidence >= 0.6) return "skip";
-  return PERSONAL.test(t) ? "batch" : "skip";
+/** Whether the LLM extractor runs for this turn: at once, batched, or not at all. */
+export function extractionPlan(a: Pick<MemoryAnalysis, "llm">): ExtractionPlan {
+  return a.llm === "none" ? "skip" : a.llm;
 }
 
 /** Collects items per key and runs [run] when [size] have arrived or the key has been quiet for [idleMs]. */

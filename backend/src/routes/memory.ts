@@ -6,6 +6,7 @@ import { userOf } from "../auth/context.js";
 import { AppError } from "../util/errors.js";
 import { chatRecallEnabled, setChatRecallEnabled } from "../recall/index.js";
 import { MAX_MEMORIES, MAX_TEXT, KINDS, cleanText, looksSensitive } from "../memory/logic.js";
+import { slotOf } from "../memory/slots.js";
 import {
   countMemories,
   createMemory,
@@ -81,7 +82,8 @@ memoryRouter.post("/", async (req, res) => {
   const userId = uid(req);
   const body = parse(createSchema, req.body);
   if ((await countMemories(userId)) >= MAX_MEMORIES) throw new AppError(409, "limit_reached", `Memory is full (${MAX_MEMORIES} items). Delete some first.`);
-  const row = await createMemory(userId, body);
+  // Hand-written notes get their slot too ("Lives in Pune." is the location), so chat updates it in place.
+  const row = await createMemory(userId, { ...body, slot: slotOf(body.text, body.kind) });
   res.status(201).json(publicMemory(row));
 });
 
@@ -89,7 +91,7 @@ memoryRouter.post("/", async (req, res) => {
 memoryRouter.patch("/:id", async (req, res) => {
   const userId = uid(req);
   const patch = parse(patchSchema, req.body);
-  const row = await updateMemory(userId, String(req.params.id), patch);
+  const row = await updateMemory(userId, String(req.params.id), patch.text !== undefined ? { ...patch, slot: slotOf(patch.text, patch.kind) } : patch);
   if (!row) throw new AppError(404, "not_found", "Memory not found");
   res.json(publicMemory(row));
 });
