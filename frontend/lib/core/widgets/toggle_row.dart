@@ -14,9 +14,13 @@ class ToggleRow extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.icon,
+    this.subtitle,
   });
 
   final String label;
+
+  /// Optional one-line helper under the label.
+  final String? subtitle;
   final AppIconData? icon;
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -30,15 +34,28 @@ class ToggleRow extends StatelessWidget {
         Haptics.tap();
         onChanged(!value);
       },
-      child: SizedBox(
-        height: AppSizes.rowHeight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: AppSizes.rowHeight),
         child: Row(
           children: [
             if (icon != null) ...[
               AppIcon(icon!, size: AppIconSize.sm, color: p.textSecondary),
               const SizedBox(width: AppSpacing.md),
             ],
-            Expanded(child: Text(label, style: context.text.label)),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: context.text.label),
+                    if (subtitle != null)
+                      Text(subtitle!, style: context.text.caption),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
             AnimatedContainer(
               duration: AppDurations.fast,
               width: AppSizes.toggleWidth,

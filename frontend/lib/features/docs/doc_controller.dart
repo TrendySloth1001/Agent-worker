@@ -487,32 +487,34 @@ class DocController extends ChangeNotifier {
     String? sid;
     var finished = false;
     final done = Completer<bool>();
-    _api.continueWriting(id, hint: hint).listen(
-      (e) {
-        if (e is DocSnapshotEvent && sid == null) {
-          sid = e.doc.body
-              .map((s) => s.id)
-              .firstWhere((x) => !before.contains(x), orElse: () => '');
-          if (sid!.isEmpty) {
-            sid = null;
-          } else {
-            _rewriting.add(sid!);
-            e.doc.section(sid!)?.status = DocSectionStatus.writing;
-          }
-        }
-        if (e is DocSectionEvent && e.sectionId != sid) return;
-        apply(e, fromRewrite: true);
-      },
-      onError: (Object e) {
-        lastError = e is ApiException ? e.message : DocStrings.addFailed;
-        if (!done.isCompleted) done.complete(false);
-      },
-      onDone: () {
-        finished = true;
-        if (!done.isCompleted) done.complete(sid != null);
-      },
-      cancelOnError: true,
-    );
+    _api
+        .continueWriting(id, hint: hint)
+        .listen(
+          (e) {
+            if (e is DocSnapshotEvent && sid == null) {
+              sid = e.doc.body
+                  .map((s) => s.id)
+                  .firstWhere((x) => !before.contains(x), orElse: () => '');
+              if (sid!.isEmpty) {
+                sid = null;
+              } else {
+                _rewriting.add(sid!);
+                e.doc.section(sid!)?.status = DocSectionStatus.writing;
+              }
+            }
+            if (e is DocSectionEvent && e.sectionId != sid) return;
+            apply(e, fromRewrite: true);
+          },
+          onError: (Object e) {
+            lastError = e is ApiException ? e.message : DocStrings.addFailed;
+            if (!done.isCompleted) done.complete(false);
+          },
+          onDone: () {
+            finished = true;
+            if (!done.isCompleted) done.complete(sid != null);
+          },
+          cancelOnError: true,
+        );
     final ok = await done.future;
     if (sid != null) {
       _rewriting.remove(sid);
@@ -665,7 +667,8 @@ class DocController extends ChangeNotifier {
   List<DocHighlight> get allHighlights {
     final order = {for (final (i, s) in doc.body.indexed) s.id: i};
     return [...highlights]..sort(
-      (a, b) => (order[a.sectionId] ?? 999).compareTo(order[b.sectionId] ?? 999),
+      (a, b) =>
+          (order[a.sectionId] ?? 999).compareTo(order[b.sectionId] ?? 999),
     );
   }
 

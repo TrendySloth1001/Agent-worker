@@ -137,6 +137,12 @@ class ChatController extends ChangeNotifier {
     if (_background != null) _reattach();
   }
 
+  /// The model picked in Settings, only if the server still offers it.
+  String? get _requestedModel {
+    final id = _settings.modelId;
+    return id != null && models.any((m) => m.id == id) ? id : null;
+  }
+
   String modelName(String? id) =>
       models.where((m) => m.id == id).firstOrNull?.name ?? AppStrings.assistant;
 
@@ -665,6 +671,7 @@ class ChatController extends ChangeNotifier {
         .streamChat(
           client,
           history,
+          modelId: _requestedModel,
           webSearch: webSearch,
           knowledge: knowledge,
           mode: _settings.mode,

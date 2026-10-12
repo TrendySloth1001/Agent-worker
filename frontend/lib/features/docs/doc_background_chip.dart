@@ -70,7 +70,11 @@ class _Chip extends StatelessWidget {
               children: [
                 const _Pulse(),
                 const SizedBox(width: AppSpacing.sm),
-                AppIcon(DocIcons.doc, size: AppIconSize.sm, color: p.textPrimary),
+                AppIcon(
+                  DocIcons.doc,
+                  size: AppIconSize.sm,
+                  color: p.textPrimary,
+                ),
                 const SizedBox(width: AppSpacing.xs),
                 Flexible(
                   child: Text(
