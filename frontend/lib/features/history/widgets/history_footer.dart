@@ -81,32 +81,15 @@ class HistoryFooter extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (compact)
-            Row(
-              children: [
-                for (var i = 0; i < tiles.length; i++) ...[
-                  if (i > 0) gap,
-                  Expanded(child: tiles[i]),
-                ],
+          // One row of four: icons only on short screens, icon over label otherwise.
+          Row(
+            children: [
+              for (var i = 0; i < tiles.length; i++) ...[
+                if (i > 0) gap,
+                Expanded(child: tiles[i]),
               ],
-            )
-          else ...[
-            Row(
-              children: [
-                Expanded(child: tiles[0]),
-                gap,
-                Expanded(child: tiles[1]),
-              ],
-            ),
-            const SizedBox(height: DrawerMotion.footerGap),
-            Row(
-              children: [
-                Expanded(child: tiles[2]),
-                gap,
-                Expanded(child: tiles[3]),
-              ],
-            ),
-          ],
+            ],
+          ),
           const SizedBox(height: DrawerMotion.footerGap),
           _AccountCard(onProfile: onProfile, onSettings: onSettings),
         ],
@@ -142,7 +125,9 @@ class _Destination extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: selected ? scheme.secondaryContainer : scheme.surfaceContainer,
-        shape: const StadiumBorder(),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DrawerMotion.footerTileRadius),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
@@ -150,22 +135,22 @@ class _Destination extends StatelessWidget {
             onTap();
           },
           child: SizedBox(
-            height: DrawerMotion.footerTileHeight,
-            child: Row(
+            height: compact
+                ? DrawerMotion.footerTileHeight
+                : DrawerMotion.footerTileTallHeight,
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 AppIcon(icon, size: AppIconSize.md, color: color),
                 if (!compact) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelLarge!.copyWith(color: color),
-                    ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelSmall!.copyWith(color: color),
                   ),
                 ],
               ],

@@ -137,6 +137,9 @@ abstract final class DrawerMotion {
   // Rows and footer, Material 3 navigation drawer.
   static const itemInset = 12.0;
   static const footerTileHeight = 48.0;
+  /// Icon over label, one row of four.
+  static const footerTileTallHeight = 60.0;
+  static const footerTileRadius = 20.0;
   static const footerGap = 8.0;
 }
 
