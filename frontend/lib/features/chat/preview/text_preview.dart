@@ -172,51 +172,19 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
         ],
       ),
       body: switch (_state) {
-        _TextState.loading => Center(
-          child: SizedBox(
-            width: AppIconSize.md,
-            height: AppIconSize.md,
-            child: CircularProgressIndicator(
-              strokeWidth: AppSizes.attachProgress,
-              color: p.accent,
-            ),
-          ),
+        _TextState.loading => const Center(child: CircularProgressIndicator()),
+        _TextState.processing => PreviewMessage(
+          title: AppStrings.previewProcessing,
+          hint: AppStrings.previewProcessingHint,
+          onRetry: _load,
         ),
-        _TextState.processing => _message(
-          AppStrings.previewProcessing,
-          AppStrings.previewProcessingHint,
+        _TextState.failed => PreviewMessage(
+          title: AppStrings.previewLoadFailed,
+          error: true,
+          onRetry: _load,
         ),
-        _TextState.failed => _message(AppStrings.previewLoadFailed, null),
         _TextState.ready => _content(p),
       },
-    );
-  }
-
-  Widget _message(String title, String? hint) {
-    final p = context.palette;
-    final t = context.text;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(title, style: t.label),
-          if (hint != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(hint, style: t.caption),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          TextButton(
-            onPressed: () {
-              Haptics.tap();
-              _load();
-            },
-            child: Text(
-              AppStrings.retry,
-              style: t.label.copyWith(color: p.accent),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -226,38 +194,35 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
     return Column(
       children: [
         if (_searching)
-          Container(
-            height: AppSizes.previewSearchHeight,
+          Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.screenPadding,
+              vertical: AppSpacing.xs,
             ),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: p.border)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _search,
-                    autofocus: true,
-                    style: t.label,
-                    decoration: InputDecoration(
-                      hintText: AppStrings.previewSearchHint,
-                      isDense: true,
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                    ),
-                    onChanged: (v) {
-                      _query = v.trim();
-                      _recount();
-                    },
-                  ),
-                ),
-                if (_query.isNotEmpty)
-                  Text(AppStrings.previewMatches(_matches), style: t.caption),
-              ],
+            child: TextField(
+              controller: _search,
+              autofocus: true,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: InputDecoration(
+                hintText: AppStrings.previewSearchHint,
+                isDense: true,
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.lg),
+                        child: Center(
+                          widthFactor: 1,
+                          child: Text(
+                            AppStrings.previewMatches(_matches),
+                            style: t.caption,
+                          ),
+                        ),
+                      ),
+              ),
+              onChanged: (v) {
+                _query = v.trim();
+                _recount();
+              },
             ),
           ),
         Expanded(

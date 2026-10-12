@@ -230,7 +230,7 @@ class _ImageViewerState extends State<ImageViewer> {
                           image.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: t.bodySmall.copyWith(color: p.textPrimary),
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         Text(image.site.toUpperCase(), style: t.caption),
                       ],
@@ -239,10 +239,7 @@ class _ImageViewerState extends State<ImageViewer> {
                   if (image.sourceUrl.isNotEmpty)
                     TextButton(
                       onPressed: () => openUrl(context, image.sourceUrl),
-                      child: Text(
-                        AppStrings.openSource,
-                        style: t.caption.copyWith(color: p.accent),
-                      ),
+                      child: const Text(AppStrings.openSource),
                     ),
                 ],
               ),

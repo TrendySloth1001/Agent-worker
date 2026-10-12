@@ -6,9 +6,11 @@ import '../../../core/platform/browsers.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/files_api.dart';
+import '../../settings/widgets/dot_matrix.dart';
 
 /// Fresh signed URL for a file. Signed URLs expire after an hour, so a
 /// server file always goes through GET /files/:id (cached while valid); the
@@ -92,6 +94,69 @@ class PreviewActions extends StatelessWidget {
           onPressed: () => _copy(context),
         ),
       ],
+    );
+  }
+}
+
+/// Centered state for a preview that is processing or failed to load: dot
+/// grid, a Space Grotesk message, an optional hint and a tonal retry button.
+class PreviewMessage extends StatelessWidget {
+  const PreviewMessage({
+    super.key,
+    required this.title,
+    this.hint,
+    this.error = false,
+    this.onRetry,
+  });
+
+  final String title;
+  final String? hint;
+  final bool error;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const DotGrid(size: SettingsSizes.emptyDots),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: tt.titleMedium!.copyWith(
+                color: error ? scheme.error : scheme.onSurface,
+              ),
+            ),
+            if (hint != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                hint!,
+                textAlign: TextAlign.center,
+                style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+            if (onRetry != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, AppSizes.buttonHeight),
+                ),
+                onPressed: () {
+                  Haptics.tap();
+                  onRetry!();
+                },
+                child: const Text(AppStrings.retry),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -71,9 +71,14 @@ class _HtmlFullscreenState extends State<HtmlFullscreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppIcon(icon, size: AppIconSize.sm, color: p.textTertiary),
+            AppIcon(icon, size: AppIconSize.sm, color: p.textSecondary),
             const SizedBox(width: AppSpacing.xs),
-            Text(label, style: context.text.caption),
+            Text(
+              label,
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
+            ),
           ],
         ),
       ),
@@ -82,7 +87,6 @@ class _HtmlFullscreenState extends State<HtmlFullscreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final showSource = _source || _failed;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: systemOverlayFor(context),
@@ -113,10 +117,6 @@ class _HtmlFullscreenState extends State<HtmlFullscreen> {
               child: Center(child: CopyAction(text: widget.source)),
             ),
           ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(AppBorder.thin),
-            child: Divider(color: p.border),
-          ),
         ),
         body: SafeArea(
           child: showSource
