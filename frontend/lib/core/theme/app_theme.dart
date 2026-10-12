@@ -24,6 +24,12 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: p.background,
       canvasColor: p.background,
       splashFactory: NoSplash.splashFactory,
+      // Android 14+ predictive back: the page peeks as the gesture drags.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+        },
+      ),
       highlightColor: Colors.transparent,
       extensions: [p, text],
       colorScheme: scheme,

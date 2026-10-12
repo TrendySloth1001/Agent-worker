@@ -7,6 +7,7 @@ import '../../../core/constants/history.dart';
 import '../../../core/constants/illustrations.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/illustration.dart';
 import '../../../data/conversation.dart';
@@ -125,7 +126,7 @@ class ConversationList extends StatelessWidget {
       );
     } else {
       final scaler = MediaQuery.textScalerOf(context);
-      final extent = scaler.scale(AppFontSize.caption * 1.3) + AppSpacing.lg;
+      final extent = scaler.scale(AppFontSize.body * 1.3) + AppSpacing.xl;
       final height = extent < HistorySizes.groupHeight
           ? HistorySizes.groupHeight
           : extent;
@@ -136,10 +137,12 @@ class ConversationList extends StatelessWidget {
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _GroupHeader(
-                  label: g.label,
+                  label: sentenceCase(g.label),
                   height: height,
-                  background: p.surface,
-                  style: context.text.caption,
+                  background: p.background,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
                 ),
               ),
               SliverList.builder(
@@ -239,7 +242,7 @@ class ConversationList extends StatelessWidget {
   }
 }
 
-/// Small mono caps label that sticks to the top until its group has passed.
+/// Sentence-case M3 label that sticks to the top until its group has passed.
 class _GroupHeader extends SliverPersistentHeaderDelegate {
   _GroupHeader({
     required this.label,
@@ -267,10 +270,10 @@ class _GroupHeader extends SliverPersistentHeaderDelegate {
         color: background,
         alignment: Alignment.bottomLeft,
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.screenPadding,
+          DrawerMotion.itemInset + AppSpacing.screenPadding,
           0,
           AppSpacing.screenPadding,
-          AppSpacing.xs,
+          AppSpacing.sm,
         ),
         child: Text(label, style: style, maxLines: 1),
       ),

@@ -24,6 +24,8 @@ import 'share/chat_export.dart';
 import 'voice/voice_controller.dart';
 import 'voice/voice_setup.dart';
 import 'widgets/app_drawer.dart';
+import 'widgets/chat_switch_transition.dart';
+import 'widgets/drawer_shell.dart';
 import 'widgets/background_table_chip.dart';
 import 'widgets/chat_input.dart';
 import 'widgets/empty_state.dart';
@@ -45,7 +47,7 @@ class _ChatScreenState extends State<ChatScreen> {
   late final ChatController _controller;
   late final VoiceController _voice;
   final _scroll = ScrollController();
-  final _scaffold = GlobalKey<ScaffoldState>();
+  final _shell = GlobalKey<DrawerShellState>();
   final _drawer = GlobalKey<AppDrawerState>();
   final _showScrollButton = ValueNotifier(false);
 
@@ -182,81 +184,84 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return AnnotatedRegion(
       value: systemOverlayFor(context),
-      child: Scaffold(
-        key: _scaffold,
+      child: DrawerShell(
+        key: _shell,
         drawer: AppDrawer(key: _drawer, chat: _controller),
-        onDrawerChanged: (open) {
-          Haptics.tap();
-          if (open) _drawer.currentState?.refresh();
-        },
-        body: ListenableBuilder(
-          listenable: Listenable.merge([_controller, _inputHeight]),
-          builder: (context, _) {
-            final isEmpty = _controller.messages.isEmpty;
-            final bottomClear =
-                padding.bottom + AppSpacing.md + _inputHeight.value;
-            return Stack(
-              children: [
-                const Positioned.fill(child: DotGridBackground()),
-                Positioned.fill(
-                  child: isEmpty
-                      ? EmptyState(onSuggestion: _controller.send)
-                      : _messageList(padding, bottomClear),
-                ),
-                _Fade(
-                  top: true,
-                  height: padding.top + AppSizes.topInset + AppSpacing.lg,
-                ),
-                _Fade(top: false, height: bottomClear + AppSpacing.md),
-                Positioned(
-                  top: padding.top + AppSpacing.sm,
-                  left: AppSpacing.screenPadding,
-                  right: AppSpacing.screenPadding,
-                  child: _TopBar(
-                    controller: _controller,
-                    onMenu: () => _scaffold.currentState?.openDrawer(),
-                    onExport: _controller.isSending ? null : _export,
+        onOpening: () => _drawer.currentState?.refresh(),
+        child: Scaffold(
+          body: ListenableBuilder(
+            listenable: Listenable.merge([_controller, _inputHeight]),
+            builder: (context, _) {
+              final isEmpty = _controller.messages.isEmpty;
+              final bottomClear =
+                  padding.bottom + AppSpacing.md + _inputHeight.value;
+              return Stack(
+                children: [
+                  const Positioned.fill(child: DotGridBackground()),
+                  Positioned.fill(
+                    child: ChatSwitchTransition(
+                      token: _controller.conversationId,
+                      child: isEmpty
+                          ? EmptyState(onSuggestion: _controller.send)
+                          : _messageList(padding, bottomClear),
+                    ),
                   ),
-                ),
-                Positioned(
-                  left: AppSpacing.screenPadding,
-                  right: AppSpacing.screenPadding,
-                  bottom: padding.bottom + AppSpacing.md,
-                  child: Column(
-                    children: [
-                      if (!isEmpty) _scrollButton(),
-                      SizeReporter(
-                        onSize: (size) => _inputHeight.value = size.height,
-                        child: ChatInput(
-                          onSend: (text, files) =>
-                              _controller.send(text, attachments: files),
-                          onStop: _controller.stop,
-                          isStreaming: _controller.isSending,
-                          webSearch: _controller.webSearch,
-                          knowledge: _controller.knowledge,
-                          onToggleWebSearch: _controller.toggleWebSearch,
-                          onToggleKnowledge: _controller.toggleKnowledge,
-                          roundTable: _controller.roundTable,
-                          onToggleRoundTable: _controller.toggleRoundTable,
-                          draft: _controller.draft,
-                          autocomplete: scope.settings.autocompleteOn,
-                          voice: _voice,
-                          sendVoiceAutomatically: scope.settings.voiceAutoSend,
-                          conversationId: _controller.conversationId,
-                          doc: _controller.doc,
-                          onToggleDoc: _controller.toggleDoc,
-                          docLength: _controller.docLength,
-                          onDocLength: _controller.setDocLength,
-                          onSendAsDoc: (text, files) =>
-                              _controller.sendDoc(text, attachments: files),
+                  _Fade(
+                    top: true,
+                    height: padding.top + AppSizes.topInset + AppSpacing.lg,
+                  ),
+                  _Fade(top: false, height: bottomClear + AppSpacing.md),
+                  Positioned(
+                    top: padding.top + AppSpacing.sm,
+                    left: AppSpacing.screenPadding,
+                    right: AppSpacing.screenPadding,
+                    child: _TopBar(
+                      controller: _controller,
+                      onMenu: () => _shell.currentState?.open(),
+                      onExport: _controller.isSending ? null : _export,
+                    ),
+                  ),
+                  Positioned(
+                    left: AppSpacing.screenPadding,
+                    right: AppSpacing.screenPadding,
+                    bottom: padding.bottom + AppSpacing.md,
+                    child: Column(
+                      children: [
+                        if (!isEmpty) _scrollButton(),
+                        SizeReporter(
+                          onSize: (size) => _inputHeight.value = size.height,
+                          child: ChatInput(
+                            onSend: (text, files) =>
+                                _controller.send(text, attachments: files),
+                            onStop: _controller.stop,
+                            isStreaming: _controller.isSending,
+                            webSearch: _controller.webSearch,
+                            knowledge: _controller.knowledge,
+                            onToggleWebSearch: _controller.toggleWebSearch,
+                            onToggleKnowledge: _controller.toggleKnowledge,
+                            roundTable: _controller.roundTable,
+                            onToggleRoundTable: _controller.toggleRoundTable,
+                            draft: _controller.draft,
+                            autocomplete: scope.settings.autocompleteOn,
+                            voice: _voice,
+                            sendVoiceAutomatically:
+                                scope.settings.voiceAutoSend,
+                            conversationId: _controller.conversationId,
+                            doc: _controller.doc,
+                            onToggleDoc: _controller.toggleDoc,
+                            docLength: _controller.docLength,
+                            onDocLength: _controller.setDocLength,
+                            onSendAsDoc: (text, files) =>
+                                _controller.sendDoc(text, attachments: files),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

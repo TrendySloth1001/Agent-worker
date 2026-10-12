@@ -3,6 +3,7 @@ import 'app_icons.dart';
 /// Sidebar (conversation drawer) copy.
 abstract final class HistoryStrings {
   // Groups
+  static const closeMenu = 'Close menu';
   static const pinned = 'PINNED';
   static const today = 'TODAY';
   static const yesterday = 'YESTERDAY';
@@ -74,12 +75,12 @@ abstract final class HistoryStrings {
 
 abstract final class HistorySizes {
   /// One chat row.
-  static const rowHeight = 46.0;
+  static const rowHeight = 56.0;
   static const headerHeight = 56.0;
-  static const groupHeight = 30.0;
+  static const groupHeight = 40.0;
   static const iconButton = 44.0;
-  static const rowRadius = 10.0;
-  static const rowInset = 8.0;
+  static const rowRadius = 28.0;
+  static const rowInset = 12.0;
   static const runningDot = 7.0;
 
   // Footer
@@ -111,6 +112,32 @@ abstract final class HistoryIcons {
   static const merge = AppIcons.merge;
   static const archive = AppIcons.archive;
   static const docs = AppIcons.doc;
+}
+
+/// Sizes and timings of the sliding sidebar shell and its footer.
+abstract final class DrawerMotion {
+  /// Width of the left edge strip that starts an opening drag.
+  static const edgeWidth = 24.0;
+
+  /// Fling speed (dp/s) that decides the direction regardless of position.
+  static const flingVelocity = 700.0;
+
+  /// The chat shrinks to this scale and gains rounded corners as it is pushed.
+  static const contentScale = 0.92;
+  static const contentRadius = 28.0;
+  static const scrimOpacity = 0.4;
+
+  static const open = Duration(milliseconds: 400);
+  static const close = Duration(milliseconds: 300);
+
+  /// Fade-through of the chat content when another chat is shown.
+  static const chatSwitch = Duration(milliseconds: 300);
+  static const chatSwitchScale = 0.94;
+
+  // Rows and footer, Material 3 navigation drawer.
+  static const itemInset = 12.0;
+  static const footerTileHeight = 48.0;
+  static const footerGap = 8.0;
 }
 
 abstract final class HistoryDurations {

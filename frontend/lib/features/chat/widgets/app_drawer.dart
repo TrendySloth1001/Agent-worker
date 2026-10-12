@@ -21,6 +21,7 @@ import '../../profile/profile_screen.dart';
 import '../../settings/settings_screen.dart';
 import '../../storage/storage_screen.dart';
 import '../chat_controller.dart';
+import 'drawer_shell.dart';
 import '../share/chat_export.dart';
 
 /// Left sidebar: wordmark with search and new chat, the conversation list
@@ -75,15 +76,17 @@ class AppDrawerState extends State<AppDrawer> {
   /// Reloads the list; called each time the drawer opens.
   void refresh() => _history?.load();
 
+  void _closeDrawer() => DrawerShell.maybeOf(context)?.close();
+
   void _newChat() {
-    Navigator.of(context).pop();
+    _closeDrawer();
     widget.chat.newChat();
   }
 
   Future<void> _openChat(ConversationSummary item) async {
     Haptics.tap();
     final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
+    _closeDrawer();
     if (item.id == widget.chat.conversationId) return;
     if (await widget.chat.open(item.id)) {
       Haptics.received();
@@ -101,7 +104,7 @@ class AppDrawerState extends State<AppDrawer> {
     final messenger = ScaffoldMessenger.of(context);
     if (ok) {
       Haptics.received();
-      Navigator.of(context).pop();
+      _closeDrawer();
       if (done.isNotEmpty) {
         messenger.showSnackBar(SnackBar(content: Text(done)));
       }
@@ -125,7 +128,7 @@ class AppDrawerState extends State<AppDrawer> {
   void _push(Widget screen) {
     Haptics.tap();
     final navigator = Navigator.of(context);
-    navigator.pop();
+    _closeDrawer();
     navigator.push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
@@ -157,7 +160,7 @@ class AppDrawerState extends State<AppDrawer> {
     final navigator = Navigator.of(context);
     final doc = await showDocsSheet(context, api: widget.docsApi);
     if (doc == null || !mounted) return;
-    navigator.pop();
+    _closeDrawer();
     if (!navigator.mounted) return;
     openDoc(navigator.context, doc.id, seed: doc);
   }
@@ -192,24 +195,15 @@ class AppDrawerState extends State<AppDrawer> {
     final size = MediaQuery.sizeOf(context);
     final padding = MediaQuery.paddingOf(context);
     final compact = size.height < AppSizes.drawerCompactHeight;
-    return Drawer(
-      width: (size.width * AppSizes.drawerWidthFactor).clamp(
-        0.0,
-        AppSizes.drawerMaxWidth,
-      ),
-      backgroundColor: p.surface,
+    return Material(
+      color: p.background,
       surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      shape: const RoundedRectangleBorder(),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(right: BorderSide(color: p.border)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(top: padding.top, left: padding.left),
-          child: Column(
-            children: [
-              ListenableBuilder(
+      child: Padding(
+        padding: EdgeInsets.only(top: padding.top, left: padding.left),
+        child: Column(
+          children: [
+            DrawerDragRegion(
+              child: ListenableBuilder(
                 listenable: history,
                 builder: (context, _) => HistoryHeader(
                   searchOpen: _searchOpen,
@@ -223,50 +217,52 @@ class AppDrawerState extends State<AppDrawer> {
                   onBack: () => _toggleArchived(false),
                 ),
               ),
-              Expanded(
-                child: ListenableBuilder(
-                  listenable: Listenable.merge([
-                    widget.chat,
-                    DocRegistry.instance,
-                  ]),
-                  builder: (context, _) => ConversationList(
+            ),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  widget.chat,
+                  DocRegistry.instance,
+                ]),
+                builder: (context, _) => ConversationList(
+                  controller: history,
+                  currentId: widget.chat.conversationId,
+                  runningIds: _runningIds(),
+                  onOpen: _openChat,
+                  onPin: _pin,
+                  onArchive: _archive,
+                  onRename: _rename,
+                  onActions: (chat) => showChatActions(
+                    context,
+                    chat: chat,
                     controller: history,
-                    currentId: widget.chat.conversationId,
-                    runningIds: _runningIds(),
-                    onOpen: _openChat,
-                    onPin: _pin,
-                    onArchive: _archive,
-                    onRename: _rename,
-                    onActions: (chat) => showChatActions(
+                    onDeleted: (id) =>
+                        widget.chat.onConversationChanged(id, deleted: true),
+                    onFork: _forkChat,
+                    onExport: (chat) => exportSavedChat(
                       context,
-                      chat: chat,
-                      controller: history,
-                      onDeleted: (id) =>
-                          widget.chat.onConversationChanged(id, deleted: true),
-                      onFork: _forkChat,
-                      onExport: (chat) => exportSavedChat(
-                        context,
-                        id: chat.id,
-                        title: chat.title,
-                        openId: widget.chat.conversationId,
-                        openMessages: widget.chat.messages,
-                        modelName: widget.chat.modelName,
-                      ),
-                      onMerge: (id, otherId) =>
-                          widget.chat.mergeWith(otherId, baseId: id),
-                      onMerged: (ok) {
-                        _lineageDone(
-                          ok,
-                          done: '',
-                          failed: LineageStrings.mergeFailed,
-                        );
-                        if (ok) history.load();
-                      },
+                      id: chat.id,
+                      title: chat.title,
+                      openId: widget.chat.conversationId,
+                      openMessages: widget.chat.messages,
+                      modelName: widget.chat.modelName,
                     ),
+                    onMerge: (id, otherId) =>
+                        widget.chat.mergeWith(otherId, baseId: id),
+                    onMerged: (ok) {
+                      _lineageDone(
+                        ok,
+                        done: '',
+                        failed: LineageStrings.mergeFailed,
+                      );
+                      if (ok) history.load();
+                    },
                   ),
                 ),
               ),
-              ListenableBuilder(
+            ),
+            DrawerDragRegion(
+              child: ListenableBuilder(
                 listenable: history,
                 builder: (context, _) => HistoryFooter(
                   archivedActive: history.archived,
@@ -279,9 +275,9 @@ class AppDrawerState extends State<AppDrawer> {
                   onSettings: () => _push(const SettingsScreen()),
                 ),
               ),
-              SizedBox(height: padding.bottom),
-            ],
-          ),
+            ),
+            SizedBox(height: padding.bottom),
+          ],
         ),
       ),
     );

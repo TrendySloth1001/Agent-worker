@@ -4,16 +4,19 @@ import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/auth_constants.dart';
 import '../../../core/constants/history.dart';
+import '../../../core/constants/settings_copy.dart';
 import '../../../core/constants/storage.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/user_avatar.dart';
 import '../../auth/auth_controller.dart';
+import '../../settings/widgets/settings_kit.dart';
 import 'history_header.dart';
 
-/// Bottom of the sidebar: quick entries (Knowledge, Docs, Storage, Archived)
-/// and the account row, which opens the profile, with a settings button.
+/// Bottom of the sidebar: Material 3 destinations (Knowledge, Docs, Storage,
+/// Archived) as tonal pills, then the account card as Settings draws it, with
+/// a settings button.
 class HistoryFooter extends StatelessWidget {
   const HistoryFooter({
     super.key,
@@ -29,7 +32,7 @@ class HistoryFooter extends StatelessWidget {
 
   final bool archivedActive;
 
-  /// Icons only, for short (landscape) screens.
+  /// Icons only, in one row, for short (landscape) screens.
   final bool compact;
   final VoidCallback onKnowledge;
   final VoidCallback onDocs;
@@ -40,54 +43,81 @@ class HistoryFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Divider(height: AppBorder.thin, color: p.border),
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: HistorySizes.rowInset,
-            vertical: AppSpacing.xs,
-          ),
-          child: Row(
-            children: [
-              _Quick(
-                icon: AppIcons.knowledge,
-                label: HistoryStrings.knowledge,
-                compact: compact,
-                onTap: onKnowledge,
-              ),
-              _Quick(
-                icon: HistoryIcons.docs,
-                label: HistoryStrings.docs,
-                compact: compact,
-                onTap: onDocs,
-              ),
-              _Quick(
-                icon: StorageIcons.section,
-                label: HistoryStrings.storage,
-                compact: compact,
-                onTap: onStorage,
-              ),
-              _Quick(
-                icon: HistoryIcons.archive,
-                label: HistoryStrings.archived,
-                compact: compact,
-                selected: archivedActive,
-                onTap: onArchived,
-              ),
-            ],
-          ),
-        ),
-        _AccountRow(onProfile: onProfile, onSettings: onSettings),
-      ],
+    final tiles = [
+      _Destination(
+        icon: AppIcons.knowledge,
+        label: HistoryStrings.knowledge,
+        compact: compact,
+        onTap: onKnowledge,
+      ),
+      _Destination(
+        icon: HistoryIcons.docs,
+        label: HistoryStrings.docs,
+        compact: compact,
+        onTap: onDocs,
+      ),
+      _Destination(
+        icon: StorageIcons.section,
+        label: HistoryStrings.storage,
+        compact: compact,
+        onTap: onStorage,
+      ),
+      _Destination(
+        icon: HistoryIcons.archive,
+        label: HistoryStrings.archived,
+        compact: compact,
+        selected: archivedActive,
+        onTap: onArchived,
+      ),
+    ];
+    const gap = SizedBox(width: DrawerMotion.footerGap);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        DrawerMotion.itemInset,
+        AppSpacing.sm,
+        DrawerMotion.itemInset,
+        AppSpacing.sm,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (compact)
+            Row(
+              children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  if (i > 0) gap,
+                  Expanded(child: tiles[i]),
+                ],
+              ],
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(child: tiles[0]),
+                gap,
+                Expanded(child: tiles[1]),
+              ],
+            ),
+            const SizedBox(height: DrawerMotion.footerGap),
+            Row(
+              children: [
+                Expanded(child: tiles[2]),
+                gap,
+                Expanded(child: tiles[3]),
+              ],
+            ),
+          ],
+          const SizedBox(height: DrawerMotion.footerGap),
+          _AccountCard(onProfile: onProfile, onSettings: onSettings),
+        ],
+      ),
     );
   }
 }
 
-class _Quick extends StatelessWidget {
-  const _Quick({
+/// A drawer destination: icon and label in a stadium, filled when selected.
+class _Destination extends StatelessWidget {
+  const _Destination({
     required this.icon,
     required this.label,
     required this.compact,
@@ -103,41 +133,38 @@ class _Quick extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
-    final color = selected ? p.accent : p.textSecondary;
-    return Expanded(
-      child: Semantics(
-        button: true,
-        selected: selected,
-        label: label,
-        excludeSemantics: true,
+    final scheme = Theme.of(context).colorScheme;
+    final color = selected ? scheme.onSecondaryContainer : scheme.onSurface;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: Material(
+        color: selected ? scheme.secondaryContainer : scheme.surfaceContainer,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          borderRadius: BorderRadius.circular(HistorySizes.rowRadius),
           onTap: () {
             Haptics.tap();
             onTap();
           },
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: compact
-                  ? HistorySizes.iconButton
-                  : HistorySizes.quickHeight,
-            ),
-            child: Column(
+          child: SizedBox(
+            height: DrawerMotion.footerTileHeight,
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 AppIcon(icon, size: AppIconSize.md, color: color),
                 if (!compact) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
+                  const SizedBox(width: AppSpacing.sm),
+                  Flexible(
                     child: Text(
                       label,
                       maxLines: 1,
-                      style: context.text.bodySmall.copyWith(
-                        color: color,
-                        fontSize: HistorySizes.quickLabelMax,
-                      ),
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelLarge!.copyWith(color: color),
                     ),
                   ),
                 ],
@@ -150,8 +177,10 @@ class _Quick extends StatelessWidget {
   }
 }
 
-class _AccountRow extends StatelessWidget {
-  const _AccountRow({required this.onProfile, required this.onSettings});
+/// Avatar, name and email in a Settings group cell; the row opens Profile and
+/// the trailing button opens Settings.
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.onProfile, required this.onSettings});
 
   final VoidCallback onProfile;
   final VoidCallback onSettings;
@@ -164,65 +193,42 @@ class _AccountRow extends StatelessWidget {
       listenable: auth,
       builder: (context, _) {
         final user = auth.user;
-        return ConstrainedBox(
-          constraints: const BoxConstraints(
-            minHeight: HistorySizes.profileHeight,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  label: ProfileStrings.openProfile,
-                  excludeSemantics: true,
-                  child: InkWell(
-                    onTap: () {
-                      Haptics.tap();
-                      onProfile();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.screenPadding,
-                        vertical: AppSpacing.sm,
-                      ),
-                      child: Row(
-                        children: [
-                          UserAvatar(user: user, size: HistorySizes.avatar),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Text(
-                              user?.displayName ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.body.copyWith(
-                                fontVariations: const [
-                                  FontVariation.weight(500),
-                                ],
-                              ),
-                            ),
-                          ),
-                          AppIcon(
-                            AppIcons.chevronRight,
-                            size: AppIconSize.sm,
-                            color: p.textTertiary,
-                          ),
-                        ],
-                      ),
-                    ),
+        return SettingsGroup(
+          entries: [
+            GroupEntry(
+              Semantics(
+                button: true,
+                label: ProfileStrings.openProfile,
+                child: ListTile(
+                  contentPadding: const EdgeInsetsDirectional.only(
+                    start: AppSpacing.lg,
+                    end: AppSpacing.xs,
                   ),
+                  leading: UserAvatar(user: user, size: HistorySizes.avatar),
+                  title: Text(
+                    user?.displayName ?? SettingsStrings.accountFallback,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    user?.email ?? SettingsStrings.accountHelp,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: SidebarIconButton(
+                    icon: AppIcons.settings,
+                    label: HistoryStrings.openSettings,
+                    onTap: onSettings,
+                    color: p.textSecondary,
+                  ),
+                  onTap: () {
+                    Haptics.tap();
+                    onProfile();
+                  },
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.xs),
-                child: SidebarIconButton(
-                  icon: AppIcons.settings,
-                  label: HistoryStrings.openSettings,
-                  onTap: onSettings,
-                  color: p.textSecondary,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );

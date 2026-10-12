@@ -7,6 +7,7 @@ import 'package:app/data/conversation.dart';
 import 'package:app/data/conversations_api.dart';
 import 'package:app/features/chat/chat_controller.dart';
 import 'package:app/features/chat/widgets/app_drawer.dart';
+import 'package:app/features/chat/widgets/drawer_shell.dart';
 import 'package:app/features/history/history_controller.dart';
 import 'package:app/features/history/history_grouping.dart';
 import 'package:app/features/settings/settings_controller.dart';
@@ -101,7 +102,7 @@ Future<(_FakeConversations, HistoryController)> _pump(
   addTearDown(history.dispose);
   final chat = ChatController(ChatApi(), settings, api);
   addTearDown(chat.dispose);
-  final scaffold = GlobalKey<ScaffoldState>();
+  final shell = GlobalKey<DrawerShellState>();
   await tester.pumpWidget(
     MaterialApp(
       theme: theme ?? AppTheme.light,
@@ -112,13 +113,15 @@ Future<(_FakeConversations, HistoryController)> _pump(
         child: child!,
       ),
       home: Scaffold(
-        key: scaffold,
-        drawer: AppDrawer(chat: chat, history: history),
-        body: const SizedBox(),
+        body: DrawerShell(
+          key: shell,
+          drawer: AppDrawer(chat: chat, history: history),
+          child: const SizedBox(),
+        ),
       ),
     ),
   );
-  scaffold.currentState!.openDrawer();
+  shell.currentState!.open();
   await tester.pumpAndSettle();
   return (api, history);
 }
@@ -181,8 +184,8 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.text('sparky'), findsOneWidget);
         expect(find.text('Budget plan'), findsOneWidget);
-        expect(find.text(HistoryStrings.today), findsOneWidget);
-        expect(find.text(HistoryStrings.pinned), findsOneWidget);
+        expect(find.text(sentenceCase(HistoryStrings.today)), findsOneWidget);
+        expect(find.text(sentenceCase(HistoryStrings.pinned)), findsOneWidget);
       });
     }
   }

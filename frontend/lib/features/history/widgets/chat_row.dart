@@ -54,7 +54,7 @@ class ChatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
     final body = _body(context);
     if (renaming) return body;
     final archiveLabel = archivedList
@@ -103,13 +103,13 @@ class ChatRow extends StatelessWidget {
               : (chat.pinned ? AppIcons.unpin : AppIcons.pin),
           label: archivedList ? archiveLabel : pinLabel,
           alignment: Alignment.centerLeft,
-          color: p.surfaceRaised,
+          color: scheme.surfaceContainerHighest,
         ),
         secondaryBackground: _SwipeBackground(
           icon: archivedList ? AppIcons.unarchive : AppIcons.archive,
           label: archiveLabel,
           alignment: Alignment.centerRight,
-          color: p.surfaceRaised,
+          color: scheme.surfaceContainerHighest,
         ),
         child: body,
       ),
@@ -119,11 +119,13 @@ class ChatRow extends StatelessWidget {
   Widget _body(BuildContext context) {
     final p = context.palette;
     final t = context.text;
+    final scheme = Theme.of(context).colorScheme;
+    final titleColor = isCurrent ? scheme.onSecondaryContainer : null;
     final snippetText = chat.snippet ?? chat.preview;
     final snippet = query.trim().isNotEmpty && snippetText.isNotEmpty;
     final content = Padding(
       padding: const EdgeInsets.symmetric(
-        horizontal: HistorySizes.rowInset + AppSpacing.xs,
+        horizontal: AppSpacing.screenPadding,
         vertical: AppSpacing.xs,
       ),
       child: Row(
@@ -147,7 +149,13 @@ class ChatRow extends StatelessWidget {
                   HighlightedText(
                     _title,
                     query: query,
-                    style: t.body.copyWith(height: 1.3),
+                    style: t.body.copyWith(
+                      height: 1.3,
+                      color: titleColor,
+                      fontVariations: isCurrent
+                          ? const [FontVariation.weight(600)]
+                          : null,
+                    ),
                   ),
                 if (snippet && !renaming)
                   HighlightedText(
@@ -177,20 +185,18 @@ class ChatRow extends StatelessWidget {
       ),
     );
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: HistorySizes.rowInset,
-        vertical: AppSpacing.xxs / 2,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: HistorySizes.rowInset),
       child: Material(
-        color: isCurrent ? p.surfaceHigh : Colors.transparent,
-        borderRadius: BorderRadius.circular(HistorySizes.rowRadius),
+        // Material 3 navigation drawer item: a full-width stadium indicator.
+        color: isCurrent ? scheme.secondaryContainer : Colors.transparent,
+        shape: const StadiumBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: renaming ? null : onTap,
           onLongPress: renaming ? null : onLongPress,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              minHeight: HistorySizes.rowHeight - AppSpacing.xxs,
+              minHeight: HistorySizes.rowHeight,
             ),
             child: Align(alignment: Alignment.centerLeft, child: content),
           ),
@@ -218,7 +224,7 @@ class _SwipeBackground extends StatelessWidget {
     final p = context.palette;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: HistorySizes.rowInset),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       alignment: alignment,
       decoration: BoxDecoration(
         color: color,
@@ -229,7 +235,7 @@ class _SwipeBackground extends StatelessWidget {
         children: [
           AppIcon(icon, size: AppIconSize.md, color: p.textPrimary),
           const SizedBox(width: AppSpacing.sm),
-          Text(label, style: context.text.caption),
+          Text(label, style: Theme.of(context).textTheme.labelLarge),
         ],
       ),
     );
