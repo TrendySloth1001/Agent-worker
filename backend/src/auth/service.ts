@@ -85,11 +85,13 @@ export const deviceLabel = (req: Request, body?: unknown): string | null => {
 
 /**
  * Creates an account. Registration is open, so claiming OWNER_EMAIL also needs
- * proof: the static API_TOKEN as `ownerToken` (when one is configured).
+ * proof: the static API_TOKEN as `ownerToken`. With no API_TOKEN configured the
+ * OWNER_EMAIL cannot be claimed by password sign-up at all (fail closed).
  */
 export async function register(input: { email: string; password: string; name: string; ownerToken?: string }, device: string | null) {
   const email = normalizeEmail(input.email);
-  if (config.auth.ownerEmail && email === config.auth.ownerEmail && config.apiToken && !isStaticToken(input.ownerToken ?? "")) {
+  if (config.auth.ownerEmail && email === config.auth.ownerEmail && !(config.apiToken && isStaticToken(input.ownerToken ?? ""))) {
+    // Fail closed: without API_TOKEN configured nobody can prove ownership by password sign-up.
     throw new AppError(400, "register_failed", "Could not create an account with these details. If you already have one, sign in.");
   }
   const passwordHash = await hashPassword(input.password);

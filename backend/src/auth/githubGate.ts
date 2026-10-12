@@ -19,8 +19,16 @@ export async function githubGate(req: Request, _res: Response, next: NextFunctio
   if (!auth.publicOnly) return next();
   const m = req.path.match(/^\/repos\/([^/]+)\/([^/]+)/);
   if (m) {
-    const r = await repoRaw(decodeURIComponent(m[1]), decodeURIComponent(m[2])).catch(() => null);
-    if (r?.private) return next(new AppError(404, "not_found", "Repository not found"));
+    // Fail closed: if the visibility lookup errors we cannot prove the repo is public.
+    let priv: boolean;
+    try {
+      priv = !!(await repoRaw(decodeURIComponent(m[1]), decodeURIComponent(m[2])))?.private;
+    } catch (e) {
+      // A definite answer (not found, bad name) is passed on as is; anything else is unknown.
+      if (e instanceof AppError && (e.status === 404 || e.status === 400)) return next(e);
+      return next(new AppError(503, "github_unavailable", "Could not verify repository access. Try again shortly.", true));
+    }
+    if (priv) return next(new AppError(404, "not_found", "Repository not found"));
   }
   next();
 }

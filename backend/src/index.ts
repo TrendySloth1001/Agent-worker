@@ -3,7 +3,7 @@ import cors from "cors";
 import { config } from "./config.js";
 import { log } from "./util/logger.js";
 import { AppError, errorMiddleware } from "./util/errors.js";
-import { rateLimit } from "./util/rateLimit.js";
+import { failedAuthGuard, rateLimit } from "./util/rateLimit.js";
 import { initDb, closeDb, onDbUp } from "./db/prisma.js";
 import { reembedAll } from "./embeddings/reembed.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
@@ -30,6 +30,8 @@ import { githubGate } from "./auth/githubGate.js";
 
 const app = express();
 app.disable("x-powered-by");
+// Behind one reverse proxy (Coolify/Traefik): trust exactly one hop so req.ip is the real client.
+app.set("trust proxy", 1);
 // Saved conversations carry the full history, so they get a larger body limit.
 const smallJson = express.json({ limit: "256kb" });
 const largeJson = express.json({ limit: "4mb" });
@@ -41,6 +43,8 @@ app.use(cors());
 // as an admin/dev bypass that acts as the owner account (curl tests).
 app.use("/health", healthRouter);
 app.use("/auth", authPublicRouter);
+// Failed sign-ins (bad API_TOKEN / JWT) are counted per IP before anything is compared.
+app.use(failedAuthGuard());
 app.use(requireUser);
 app.use(telemetryScope);
 app.use("/auth", authRouter);
