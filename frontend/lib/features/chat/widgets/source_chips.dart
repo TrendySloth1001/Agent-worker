@@ -28,8 +28,7 @@ class SourceChips extends StatelessWidget {
     final byKey = <String, Citation>{};
     final cited = <String>{};
     for (final c in citations) {
-      final key =
-          '${c.kind.name}|${c.url.isNotEmpty ? c.url.split('#').first : c.title}';
+      final key = '${c.kind.name}|${c.url.isNotEmpty ? c.url.split('#').first : c.title}';
       byKey.putIfAbsent(key, () => c);
       if (used.contains(c.id)) cited.add(key);
     }

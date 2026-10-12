@@ -250,7 +250,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           draft: _controller.draft,
                           autocomplete: scope.settings.autocompleteOn,
                           voice: _voice,
-                          sendVoiceAutomatically: scope.settings.voiceAutoSend,
+                          sendVoiceAutomatically:
+                              scope.settings.voiceAutoSend,
                           conversationId: _controller.conversationId,
                           doc: _controller.doc,
                           onToggleDoc: _controller.toggleDoc,
