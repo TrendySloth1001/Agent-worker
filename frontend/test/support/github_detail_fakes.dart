@@ -182,14 +182,14 @@ final fakeTimeline = <Map<String, dynamic>>[
   {
     'kind': 'event',
     'id': 'e2',
-    'at': _ago(const Duration(hours: 8)),
+    'at': _ago(const Duration(minutes: 20)),
     'actor': _u('nickrivera'),
     'event': 'head_ref_force_pushed',
   },
   {
     'kind': 'review',
     'id': 'r2',
-    'at': _ago(const Duration(hours: 6)),
+    'at': _ago(const Duration(minutes: 10)),
     'actor': _u('ana-dev'),
     'event': 'reviewed',
     'state': 'approved',

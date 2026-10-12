@@ -96,7 +96,7 @@ void main() {
         _c(
           'b',
           'Explain pgvector indexes',
-          ago: const Duration(hours: 3),
+          ago: const Duration(minutes: 30),
           origin: 'fork',
         ),
         _c('c', 'Dinner ideas for six', ago: const Duration(days: 1, hours: 2)),
