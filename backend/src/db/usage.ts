@@ -5,7 +5,7 @@ import { currentUser } from "../auth/context.js";
 
 export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe" | "github";
 type Event = {
-  provider: "ollama" | "openrouter" | "groq" | "nvidia" | "github";
+  provider: "ollama" | "openrouter" | "groq" | "nvidia" | "github" | "web";
   model?: string;
   kind: UsageKind;
   ok: boolean;

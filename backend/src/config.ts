@@ -28,6 +28,10 @@ const schema = z.object({
   GOOGLE_WEB_CLIENT_ID: str,
   GOOGLE_WEB_CLIENT_SECRET: str,
   STACKEXCHANGE_KEY: str,
+  /** Comma-separated self-hosted SearXNG base URLs (JSON format enabled); last-resort web search fallback. */
+  SEARXNG_URLS: str,
+  /** "1" enables the Reddit search source (usually blocked from server IPs). */
+  WEB_SEARCH_REDDIT: str,
   OLLAMA_MONTHLY_REQUEST_BUDGET: optInt,
   API_TOKEN: str,
   S3_ENDPOINT: str,
@@ -80,6 +84,10 @@ export const config = {
    */
   google: { webClientId: env.GOOGLE_WEB_CLIENT_ID?.trim(), webClientSecret: env.GOOGLE_WEB_CLIENT_SECRET },
   stackExchangeKey: env.STACKEXCHANGE_KEY,
+  webSearch: {
+    searxngUrls: (env.SEARXNG_URLS ?? "").split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean),
+    reddit: env.WEB_SEARCH_REDDIT === "1",
+  },
   ollamaMonthlyBudget: env.OLLAMA_MONTHLY_REQUEST_BUDGET,
   apiToken: env.API_TOKEN,
   s3: {
