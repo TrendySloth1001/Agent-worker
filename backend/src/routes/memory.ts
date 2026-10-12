@@ -4,6 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { userOf } from "../auth/context.js";
 import { AppError } from "../util/errors.js";
+import { chatRecallEnabled, setChatRecallEnabled } from "../recall/index.js";
 import { MAX_MEMORIES, MAX_TEXT, KINDS, cleanText, looksSensitive } from "../memory/logic.js";
 import {
   countMemories,
@@ -53,23 +54,26 @@ function parse<T extends z.ZodTypeAny>(schema: T, data: unknown): z.infer<T> {
 memoryRouter.get("/", async (req, res) => {
   const userId = uid(req);
   const q = parse(listSchema, req.query);
-  const [{ items, total }, enabled] = await Promise.all([listMemories(userId, q), memoryEnabled(userId)]);
-  res.json({ enabled, total, max: MAX_MEMORIES, maxTextLength: MAX_TEXT, items: items.map(publicMemory) });
+  const [{ items, total }, enabled, chatRecall] = await Promise.all([listMemories(userId, q), memoryEnabled(userId), chatRecallEnabled(userId)]);
+  res.json({ enabled, chatRecall, total, max: MAX_MEMORIES, maxTextLength: MAX_TEXT, items: items.map(publicMemory) });
 });
 
-// GET /memory/settings -> { enabled, count }
+// GET /memory/settings -> { enabled, count, chatRecall }
 memoryRouter.get("/settings", async (req, res) => {
   const userId = uid(req);
-  const [enabled, count] = await Promise.all([memoryEnabled(userId), countMemories(userId)]);
-  res.json({ enabled, count });
+  const [enabled, count, chatRecall] = await Promise.all([memoryEnabled(userId), countMemories(userId), chatRecallEnabled(userId)]);
+  res.json({ enabled, count, chatRecall });
 });
 
-// PUT /memory/settings { enabled }
+// PUT /memory/settings { enabled?, chatRecall? }
+// chatRecall: search the user's past chats ("have we talked about this?"). Turning it off drops the index; on rebuilds it.
 memoryRouter.put("/settings", async (req, res) => {
   const userId = uid(req);
-  const { enabled } = parse(z.object({ enabled: z.boolean() }), req.body);
-  await setMemoryEnabled(userId, enabled);
-  res.json({ enabled, count: await countMemories(userId) });
+  const body = parse(z.object({ enabled: z.boolean().optional(), chatRecall: z.boolean().optional() }), req.body);
+  if (body.enabled !== undefined) await setMemoryEnabled(userId, body.enabled);
+  if (body.chatRecall !== undefined) await setChatRecallEnabled(userId, body.chatRecall);
+  const [enabled, count, chatRecall] = await Promise.all([memoryEnabled(userId), countMemories(userId), chatRecallEnabled(userId)]);
+  res.json({ enabled, count, chatRecall });
 });
 
 // POST /memory { text, kind?, pinned? }

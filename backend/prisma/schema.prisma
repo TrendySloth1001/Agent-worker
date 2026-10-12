@@ -43,6 +43,8 @@ model User {
   disabled     Boolean   @default(false)
   /// Long-term memory on/off (src/memory). Off: nothing is saved, recalled or injected.
   memoryEnabled Boolean  @default(true) @map("memory_enabled")
+  /// Cross-chat recall on/off (src/recall). Off: past chats are not indexed or searched, and the index is dropped.
+  chatRecallEnabled Boolean @default(true) @map("chat_recall_enabled")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
 
@@ -56,6 +58,7 @@ model User {
   githubOAuthFlows GithubOAuthFlow[]
   docs             Doc[]
   memories         Memory[]
+  conversationChunks ConversationChunk[]
 
   @@map("users")
 }
@@ -122,8 +125,11 @@ model Conversation {
   summaryUpto  Int       @default(0) @map("summary_upto")
   /// Fingerprint of those messages; a mismatch (edited history) invalidates the summary.
   summaryHash  String?   @map("summary_hash")
+  /// When the cross-chat recall index (conversation_chunks) last matched this chat's content.
+  recallIndexedAt DateTime? @map("recall_indexed_at") @db.Timestamptz(6)
 
   messages ConversationMessage[]
+  recallChunks ConversationChunk[]
   parent   Conversation?         @relation("ConversationForks", fields: [forkedFrom], references: [id], onDelete: SetNull, onUpdate: NoAction)
   forks    Conversation[]        @relation("ConversationForks")
   user     User?                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -156,6 +162,31 @@ model ConversationMessage {
 
   @@id([conversationId, position])
   @@map("conversation_messages")
+}
+
+// ---- cross-chat recall (src/recall) -------------------------------------------------
+
+/// Semantic index of a user's past conversations: ord 0 is the header (title + summary),
+/// the rest are turn chunks. CHECK kind IN ('header','turn'). Rows go with the chat
+/// (ON DELETE CASCADE). The HNSW index conversation_chunks_embedding_hnsw exists in SQL only.
+model ConversationChunk {
+  id             BigInt                      @id @default(autoincrement())
+  conversationId String                      @map("conversation_id") @db.Uuid
+  userId         String?                     @map("user_id") @db.Uuid
+  ord            Int
+  kind           String
+  content        String
+  contentHash    String                      @map("content_hash")
+  embedding      Unsupported("vector(1024)")
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conversationId, ord])
+  @@index([userId], map: "conversation_chunks_user_idx")
+  @@index([embedding], map: "conversation_chunks_embedding_hnsw")
+  @@map("conversation_chunks")
 }
 
 // ---- files -------------------------------------------------------------------

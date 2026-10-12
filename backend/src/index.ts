@@ -6,6 +6,7 @@ import { AppError, errorMiddleware } from "./util/errors.js";
 import { failedAuthGuard, rateLimit } from "./util/rateLimit.js";
 import { initDb, closeDb, onDbUp } from "./db/prisma.js";
 import { reembedAll } from "./embeddings/reembed.js";
+import { backfillRecall } from "./recall/index.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
 import { chatRouter } from "./routes/chat.js";
 import { modelsRouter } from "./routes/models.js";
@@ -96,7 +97,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 // After a model switch, rebuild stored vectors as soon as the database is ready.
-onDbUp(() => void reembedAll());
+onDbUp(() => void reembedAll().then(() => backfillRecall()));
 onDbUp(() => void failInterrupted());
 // Documents left mid-run by a restart can be resumed.
 onDbUp(() => void docStore.sweepInterrupted(liveDocIds()).then((n) => n && log.info("docs interrupted", { count: n })).catch(() => undefined));

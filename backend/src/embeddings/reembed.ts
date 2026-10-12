@@ -4,6 +4,7 @@ import { toVector } from "../db/vector.js";
 import { embeddingInput } from "../ingest/chunk.js";
 import { log } from "../util/logger.js";
 import { embedTexts } from "./index.js";
+import { dropAllIndexes } from "../recall/index.js";
 
 const BATCH = 64;
 let running = false;
@@ -37,6 +38,8 @@ export async function reembedAll(): Promise<void> {
       done += rows.length;
       lastId = rows[rows.length - 1].id;
     }
+    // The chat recall index is derived data: vectors of the old model are dropped and rebuilt by the backfill.
+    await dropAllIndexes();
     await tx((c) => markEmbeddingsCurrent(c));
     log.info("re-embedding finished", { chunks: done, ms: Date.now() - started });
   } catch (e) {

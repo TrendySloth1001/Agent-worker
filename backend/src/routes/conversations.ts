@@ -9,6 +9,7 @@ import { takeAi } from "../auth/limits.js";
 import { mergeBriefing, type MergeChat } from "../conversations/merge.js";
 import { deleteFile, getFileRow } from "../files/store.js";
 import { userOf } from "../auth/context.js";
+import { cancelIndex, scheduleIndex } from "../recall/index.js";
 import { searchConversationIds, snippetsFor } from "../conversations/search.js";
 
 export const conversationsRouter = Router();
@@ -20,7 +21,7 @@ const FILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const citationSchema = z
   .object({
     id: z.string(),
-    kind: z.enum(["kb", "web", "file"]),
+    kind: z.enum(["kb", "web", "file", "conversation"]),
     title: z.string(),
     url: z.string(),
     snippet: z.string().default(""),
@@ -335,6 +336,8 @@ conversationsRouter.put("/:id", async (req, res) => {
     return row;
   });
   const row = await withParent(saved);
+  // Cross-chat recall: index the new messages shortly after the last save (debounced, in the background).
+  scheduleIndex(id);
 
   // Name it once, after the first complete exchange.
   const firstReply = messages.find((m) => m.role === "assistant" && !m.isError && m.content.trim());
@@ -394,6 +397,8 @@ conversationsRouter.delete("/:id", async (req, res) => {
     }
   }
   for (const f of files) attached.add(f.id);
+  cancelIndex(id);
+  // The recall index rows go with the chat (ON DELETE CASCADE).
   await db().conversation.deleteMany({ where: { id } });
   for (const fileId of attached) {
     // Forks share attachments by reference: a file another chat still uses stays, owned by that chat.

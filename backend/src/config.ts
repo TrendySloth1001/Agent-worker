@@ -18,6 +18,7 @@ const schema = z.object({
   EMBEDDING_DIMENSIONS: num(1024),
   EMBEDDING_BATCH_SIZE: num(64),
   RAG_MIN_SIM: num(0.3),
+  CHAT_RECALL_MIN_SIM: num(0.5),
   RAG_TOP_K: num(6),
   /** Resolve follow-up questions into standalone queries with a small model (time-boxed). */
   RAG_REWRITE: z.preprocess(blank, z.enum(["true", "false"]).default("true")),
@@ -75,6 +76,8 @@ export const config = {
   embeddingDimensions: env.EMBEDDING_DIMENSIONS,
   embeddingBatchSize: env.EMBEDDING_BATCH_SIZE,
   ragMinSim: env.RAG_MIN_SIM,
+  /** Cosine similarity a past chat needs to be surfaced unasked (cross-chat recall). */
+  chatRecallMinSim: env.CHAT_RECALL_MIN_SIM,
   ragTopK: env.RAG_TOP_K,
   ragRewrite: env.RAG_REWRITE === "true",
   ragRerank: env.RAG_RERANK === "true",
