@@ -32,6 +32,11 @@ const schema = z.object({
   PUBLIC_BASE_URL: str,
   GOOGLE_WEB_CLIENT_ID: str,
   GOOGLE_WEB_CLIENT_SECRET: str,
+  /** Optional browser API key for the Google Picker (Drive "Pick files"). */
+  GOOGLE_PICKER_API_KEY: str,
+  /** Notion public integration (Apps → Notion); optional. */
+  NOTION_CLIENT_ID: str,
+  NOTION_CLIENT_SECRET: str,
   STACKEXCHANGE_KEY: str,
   /** Comma-separated self-hosted SearXNG base URLs (JSON format enabled); last-resort web search fallback. */
   SEARXNG_URLS: str,
@@ -93,6 +98,10 @@ export const config = {
    * secret is optional, reserved for later server-side Drive access.
    */
   google: { webClientId: env.GOOGLE_WEB_CLIENT_ID?.trim(), webClientSecret: env.GOOGLE_WEB_CLIENT_SECRET },
+  /** Google Picker browser key (Drive "Pick files"); without it the picker page explains what is missing. */
+  googlePickerApiKey: env.GOOGLE_PICKER_API_KEY?.trim() || undefined,
+  /** Notion public integration (OAuth); unset = "Not set up on this server". */
+  notion: { clientId: env.NOTION_CLIENT_ID?.trim() || undefined, clientSecret: env.NOTION_CLIENT_SECRET?.trim() || undefined },
   stackExchangeKey: env.STACKEXCHANGE_KEY,
   webSearch: {
     searxngUrls: (env.SEARXNG_URLS ?? "").split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean),

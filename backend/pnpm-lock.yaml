@@ -212,6 +212,9 @@ importers:
       '@node-rs/argon2':
         specifier: ^2.2.2
         version: 2.2.2
+      '@notionhq/client':
+        specifier: ^5.27.0
+        version: 5.27.0
       '@prisma/adapter-pg':
         specifier: 7.10.0
         version: 7.10.0
@@ -893,6 +896,10 @@ packages:
   '@node-rs/argon2@2.2.2':
     resolution: {integrity: sha512-NtdlPPWtR5U4BxX5EGJYza+UklNaoWORmkaKCMqf/nyKeXWKVwNt8KfQoRpNT7OB1DcEwmePafO4wZyW+sbfCQ==}
     engines: {node: '>= 10'}
+
+  '@notionhq/client@5.27.0':
+    resolution: {integrity: sha512-JnkLtAzSDrEnvtZ8dQ5L4KO+xyL5g01xK5qmKTmhJ5KFY8LWsMyFG033vHCj0mFcsz9thAMjfcAQz/SWxiexag==}
+    engines: {node: '>=18'}
 
   '@prisma/adapter-pg@7.10.0':
     resolution: {integrity: sha512-N7nwSor0HO1Kz6xBv0TPAjAPysKK0fac6p4fVN3ensLOuzc/83Fgmln5k92eK/cvzqdkSR/2kkAqlbcdwVrwpw==}
@@ -3515,6 +3522,8 @@ snapshots:
       '@node-rs/argon2-win32-arm64-msvc': 2.2.2
       '@node-rs/argon2-win32-ia32-msvc': 2.2.2
       '@node-rs/argon2-win32-x64-msvc': 2.2.2
+
+  '@notionhq/client@5.27.0': {}
 
   '@prisma/adapter-pg@7.10.0':
     dependencies:

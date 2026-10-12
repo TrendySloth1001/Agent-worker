@@ -4,6 +4,9 @@ import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/m3_copy.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/kb_source.dart';
+import '../../chat/widgets/markdown/inline_icon.dart';
+import '../../apps/apps_registry.dart';
+import '../../connectors/connector_brand.dart';
 
 /// The leading tile of a source row: a 40dp rounded tonal square holding the
 /// source's stored icon (site favicon, GitHub owner avatar). While it loads, or
@@ -19,6 +22,9 @@ class SourceIcon extends StatelessWidget {
   final ImageProvider Function(String url)? imageFor;
 
   bool get _local => const {'note', 'doc', 'file'}.contains(source.type);
+
+  /// Connected-app items show the app's brand mark.
+  AppBrand? get _brand => ConnectorBrand.forSourceType(source.type);
 
   String get _name {
     final t = source.title?.trim() ?? '';
@@ -39,7 +45,22 @@ class SourceIcon extends StatelessWidget {
     final monogram = _Monogram(_name);
     final url = source.iconUrl;
     final Widget content;
-    if (_local) {
+    final brand = _brand;
+    if (brand != null) {
+      content = Center(
+        child: InlineIcon(
+          set: brand.set,
+          name: brand.name,
+          size: KnowledgeSizes.iconGlyph,
+          color: scheme.onSurface,
+          fallback: AppIcon(
+            brand.fallback,
+            size: KnowledgeSizes.iconGlyph,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    } else if (_local) {
       content = Center(child: glyph);
     } else if (url == null || url.isEmpty) {
       content = monogram;

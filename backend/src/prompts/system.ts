@@ -297,7 +297,7 @@ export function buildContextMessage(kb: ContextItem[], web: ContextItem[], docs:
     `Citation rule for this answer: these sources are available: ${tags}. ` +
     "Base factual statements on them where they apply, and end every sentence that uses a source with its tag, " +
     'e.g. "Redis listens on port 6379 by default [W2]." Use one or two tags per sentence. ' +
-    "[D#] tags are the user's attached documents: when asked about them, answer from them and cite [D#]. " +
+    "[D#] tags are the user's attached documents (including Google Drive files and Notion pages from their connected apps): when asked about them, answer from them and cite [D#]. " +
     "[G#] tags are live GitHub data (repositories, commits, pull requests, issues): cite them for stars, dates, versions and commit facts. " +
     "If the sources do not cover something, answer from your own knowledge without a tag.";
   return [...parts, rule].join("\n");

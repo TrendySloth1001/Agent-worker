@@ -95,6 +95,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text == null || !mounted) return;
     ChatLaunch.instance.prompt.value = null;
     _controller.newChat();
+    _controller.appRefs = ChatLaunch.instance.apps;
+    ChatLaunch.instance.apps = const [];
     _controller.send(text);
   }
 

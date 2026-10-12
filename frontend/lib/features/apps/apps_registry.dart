@@ -5,11 +5,13 @@ import '../../core/constants/apps.dart';
 import '../../core/constants/memory.dart';
 import '../knowledge/knowledge_screen.dart';
 import '../memory/memory_screen.dart';
+import '../connectors/drive_screen.dart';
+import '../connectors/notion_screen.dart';
 import '../github/github_screen.dart';
 
 /// Where an app sits on the hub.
 enum AppSection {
-  /// An external account that can be linked (GitHub).
+  /// An external account that can be linked (GitHub, Google Drive, Notion).
   account,
 
   /// A feature of Sparky that lives here too (knowledge base, memory).
@@ -76,6 +78,25 @@ abstract final class AppsRegistry {
       open: (c) => _push(c, const GithubScreen()),
     ),
     AppConnector(
+      id: AppIds.googleDrive,
+      name: AppsStrings.googleDrive,
+      blurb: AppsStrings.googleDriveBlurb,
+      section: AppSection.account,
+      brand: const AppBrand(
+        AppsIcons.googleDrive,
+        AppsIcons.googleDriveFallback,
+      ),
+      open: (c) => _push(c, const DriveScreen()),
+    ),
+    AppConnector(
+      id: AppIds.notion,
+      name: AppsStrings.notion,
+      blurb: AppsStrings.notionBlurb,
+      section: AppSection.account,
+      brand: const AppBrand(AppsIcons.notion, AppsIcons.notionFallback),
+      open: (c) => _push(c, const NotionScreen()),
+    ),
+    AppConnector(
       id: AppIds.knowledge,
       name: AppsStrings.knowledge,
       blurb: AppsStrings.knowledgeBlurb,
@@ -92,25 +113,11 @@ abstract final class AppsRegistry {
       open: (c) => _push(c, const MemoryScreen()),
     ),
     const AppConnector(
-      id: AppIds.googleDrive,
-      name: AppsStrings.googleDrive,
-      blurb: AppsStrings.googleDriveBlurb,
-      section: AppSection.soon,
-      brand: AppBrand(AppsIcons.googleDrive, AppsIcons.googleDriveFallback),
-    ),
-    const AppConnector(
       id: AppIds.googlePhotos,
       name: AppsStrings.googlePhotos,
       blurb: AppsStrings.googlePhotosBlurb,
       section: AppSection.soon,
       brand: AppBrand(AppsIcons.googlePhotos, AppsIcons.photosFallback),
-    ),
-    const AppConnector(
-      id: AppIds.notion,
-      name: AppsStrings.notion,
-      blurb: AppsStrings.notionBlurb,
-      section: AppSection.soon,
-      brand: AppBrand(AppsIcons.notion, AppsIcons.notionFallback),
     ),
     const AppConnector(
       id: AppIds.gmail,

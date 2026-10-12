@@ -10,10 +10,14 @@ import type { WebCallback } from "./githubWeb.js";
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-export function callbackPage(cb: WebCallback, nonce: string): string {
+/** Which service the page speaks for (the connectors reuse it). */
+export type CallbackBrand = { name: string; mark: string; stopped: string };
+const GITHUB_BRAND: CallbackBrand = { name: "GitHub", mark: "github", stopped: "GitHub sign-in stopped" };
+
+export function callbackPage(cb: Pick<WebCallback, "ok" | "link" | "message">, nonce: string, brand: CallbackBrand = GITHUB_BRAND): string {
   const href = esc(cb.link);
-  const title = cb.ok ? "Back to sparky" : "GitHub sign-in stopped";
-  const lead = cb.ok ? "GitHub approved. Returning you to sparky…" : esc(cb.message);
+  const title = cb.ok ? "Back to sparky" : esc(brand.stopped);
+  const lead = cb.ok ? `${esc(brand.name)} approved. Returning you to sparky…` : esc(cb.message);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -42,7 +46,7 @@ padding:15px 18px;font-family:"Space Mono",ui-monospace,Menlo,monospace;font-wei
 </head>
 <body>
 <main>
-<div class="mark"><b>●</b> sparky · github</div>
+<div class="mark"><b>●</b> sparky · ${esc(brand.mark)}</div>
 <h1>${title}</h1>
 <p>${lead}</p>
 <a class="btn" id="go" href="${href}">RETURN TO SPARKY</a>

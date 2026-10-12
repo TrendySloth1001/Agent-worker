@@ -1,3 +1,4 @@
+import '../../connectors/connector_actions.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -166,7 +167,7 @@ class ExportChat {
   }
 }
 
-enum ExportFormat { markdown, pdf }
+enum ExportFormat { markdown, pdf, drive, notion }
 
 /// Asks for a format, then builds the file and opens the share sheet.
 /// [load] supplies the messages (from memory or the server).
@@ -179,9 +180,13 @@ Future<void> exportChat(
   final format = await showShareSheet<ExportFormat>(
     context,
     title: ShareStrings.exportTitle,
-    options: const [
+    options: [
       (ExportFormat.markdown, ShareIcons.markdown, ShareStrings.markdown),
       (ExportFormat.pdf, ShareIcons.pdf, ShareStrings.pdf),
+      ...connectorSaveOptions(
+        drive: ExportFormat.drive,
+        notion: ExportFormat.notion,
+      ),
     ],
   );
   if (format == null || !context.mounted) return;
@@ -201,8 +206,15 @@ Future<void> exportChat(
       toast(ShareStrings.nothingToExport);
       return;
     }
+    if (format == ExportFormat.drive || format == ExportFormat.notion) {
+      messenger.hideCurrentSnackBar();
+      if (!context.mounted) return;
+      final save = format == ExportFormat.drive ? saveToDrive : saveToNotion;
+      await save(context, title: chat.title, markdown: chatMarkdown(chat));
+      return;
+    }
     final (bytes, ext, mime) = switch (format) {
-      ExportFormat.markdown => (
+      ExportFormat.markdown || ExportFormat.drive || ExportFormat.notion => (
         Uint8List.fromList(utf8.encode(chatMarkdown(chat))),
         ShareStrings.mdExtension,
         ShareStrings.mdMime,

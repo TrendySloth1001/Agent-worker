@@ -34,9 +34,27 @@ class Connection {
       scopes = _strings(j['scopes']),
       missingScopes = _strings(j['missingScopes']),
       createdAt = _date(j['createdAt']),
-      lastUsedAt = _date(j['lastUsedAt']);
+      lastUsedAt = _date(j['lastUsedAt']),
+      accountName = _s(j['accountName']),
+      accountEmail = _s(j['accountEmail']),
+      meta = j['meta'] is Map<String, dynamic>
+          ? j['meta'] as Map<String, dynamic>
+          : const {},
+      needsReauth = j['needsReauth'] == true;
 
   final String provider, login, avatarUrl;
+
+  /// Account name and email (Google Drive, Notion); empty for GitHub.
+  final String accountName, accountEmail;
+
+  /// Non-secret extras (Notion: workspaceName, workspaceIcon).
+  final Map<String, dynamic> meta;
+
+  /// The app stopped accepting sparky's access: offer Reconnect.
+  final bool needsReauth;
+
+  String get workspaceName => _s(meta['workspaceName']);
+  String get workspaceIcon => _s(meta['workspaceIcon']);
   final List<String> scopes;
 
   /// Scopes sparky asks for that this grant lacks; reconnecting adds them.
@@ -54,6 +72,14 @@ class ConnectionsState {
       githubConfigured =
           ((j['providers'] as Map?)?['github'] as Map?)?['configured'] == true,
       githubWeb = ((j['providers'] as Map?)?['github'] as Map?)?['web'] == true,
+      configured = {
+        for (final e in ((j['providers'] as Map?) ?? const {}).entries)
+          if (e.key is String && e.value is Map)
+            e.key as String: (e.value as Map)['configured'] == true,
+      },
+      pickerReady =
+          ((j['providers'] as Map?)?['google_drive'] as Map?)?['picker'] ==
+          true,
       isOwner = j['isOwner'] == true;
 
   final List<Connection> items;
@@ -61,6 +87,15 @@ class ConnectionsState {
 
   /// One-tap OAuth web flow available (else the device code).
   final bool githubWeb;
+
+  /// Per provider: the server has its keys (Google Drive, Notion, GitHub).
+  final Map<String, bool> configured;
+
+  /// The Google Drive file picker has its API key on the server.
+  final bool pickerReady;
+
+  Connection? byProvider(String provider) =>
+      items.where((c) => c.provider == provider).firstOrNull;
 
   Connection? get github =>
       items.where((c) => c.provider == ConnectProviders.github).firstOrNull;

@@ -48,6 +48,7 @@ class _FakeChat extends ChatApi {
     String? conversationId,
     bool smartSuggestions = true,
     Set<SuggestKind> suppressSuggest = const {},
+    List<Map<String, String>> apps = const [],
   }) async* {
     calls.add(_Call(webMode, knowledge, suppressSuggest, smartSuggestions));
     final i = calls.length - 1;

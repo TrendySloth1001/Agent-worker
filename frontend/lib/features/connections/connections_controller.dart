@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/constants/connections.dart';
 import '../../core/constants/sso_constants.dart';
 import '../auth/sso/github_web_auth.dart';
+import '../../data/connect_api.dart';
 import '../../data/connections_api.dart';
 
 /// Where the GitHub connection stands, for the card and Settings.
@@ -209,6 +210,25 @@ class ConnectionsController extends ChangeNotifier {
     if (s != null) {
       s.items.removeWhere((c) => c.provider == ConnectProviders.github);
     }
+    notifyListeners();
+    await refresh();
+  }
+
+  // ---- connected apps (Google Drive, Notion) ------------------------------
+
+  /// The linked account of [provider], if any.
+  Connection? connection(String provider) => state?.byProvider(provider);
+
+  /// The server has [provider]'s keys. Null while the list is loading.
+  bool? configured(String provider) => state?.configured[provider];
+
+  /// A connect flow of a connected app finished: reload the list.
+  Future<void> appConnected() => refresh();
+
+  /// Disconnects [provider] (the server revokes the grant), then reloads.
+  Future<void> disconnectApp(String provider) async {
+    await ConnectApi.instance.disconnect(provider);
+    state?.items.removeWhere((c) => c.provider == provider);
     notifyListeners();
     await refresh();
   }

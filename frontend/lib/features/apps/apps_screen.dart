@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_scope.dart';
 import '../../core/constants/apps.dart';
+import '../../core/constants/connectors.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 import '../../core/widgets/app_icon.dart';
@@ -71,6 +72,21 @@ class _AppsScreenState extends State<AppsScreen> {
           GithubPhase.loading => AppsStrings.loading,
           _ => AppsStrings.notConnected,
         };
+      case AppIds.googleDrive || AppIds.notion:
+        final id = _providerOf(a.id)!;
+        final c = _connections.connection(id);
+        if (c != null) {
+          final who = c.accountEmail.isNotEmpty ? c.accountEmail : c.login;
+          final ws = c.workspaceName;
+          return id == ConnectorIds.notion && ws.isNotEmpty ? ws : who;
+        }
+        if (_connections.state == null) {
+          return _connections.loadFailed ? a.blurb : AppsStrings.loading;
+        }
+        if (_connections.configured(id) != true) {
+          return ConnectorStrings.notSetUp;
+        }
+        return a.blurb;
       case AppIds.knowledge:
         final n = _sources;
         if (n == null) return _sourcesFailed ? a.blurb : AppsStrings.loading;
@@ -86,19 +102,31 @@ class _AppsScreenState extends State<AppsScreen> {
       listenable: _connections,
       builder: (context, _) {
         final accounts = AppsRegistry.inSection(AppSection.account);
-        final connected = _connections.github != null;
+        bool linked(AppConnector a) => _isConnected(a);
+        final connectedApps = [
+          for (final a in accounts)
+            if (linked(a)) a,
+        ];
+        final available = [
+          for (final a in accounts)
+            if (!linked(a)) a,
+        ];
         return M3Page(
           title: AppsStrings.title,
           onRefresh: _refresh,
           slivers: [
             M3Body(
               children: [
-                M3Group(
-                  title: connected
-                      ? AppsStrings.sectionConnected
-                      : AppsStrings.sectionAvailable,
-                  children: [for (final a in accounts) _tile(a)],
-                ),
+                if (connectedApps.isNotEmpty)
+                  M3Group(
+                    title: AppsStrings.sectionConnected,
+                    children: [for (final a in connectedApps) _tile(a)],
+                  ),
+                if (available.isNotEmpty)
+                  M3Group(
+                    title: AppsStrings.sectionAvailable,
+                    children: [for (final a in available) _tile(a)],
+                  ),
                 M3Group(
                   title: AppsStrings.sectionBuiltIn,
                   children: [
@@ -122,9 +150,38 @@ class _AppsScreenState extends State<AppsScreen> {
     );
   }
 
+  static String? _providerOf(String appId) => switch (appId) {
+    AppIds.googleDrive => ConnectorIds.drive,
+    AppIds.notion => ConnectorIds.notion,
+    _ => null,
+  };
+
+  bool _isConnected(AppConnector a) {
+    if (a.id == AppIds.github) return _connections.github != null;
+    final p = _providerOf(a.id);
+    return p != null && _connections.connection(p) != null;
+  }
+
+  /// The trailing tag of a linkable app.
+  Widget? _accountTag(AppConnector a) {
+    if (a.section != AppSection.account) return null;
+    final p = _providerOf(a.id);
+    final c = p == null ? null : _connections.connection(p);
+    if (c != null && c.needsReauth) {
+      return const M3Tag(ConnectorStrings.reconnectTag);
+    }
+    if (_isConnected(a)) {
+      return const M3Tag(AppsStrings.connected, accent: true);
+    }
+    if (p != null &&
+        _connections.state != null &&
+        _connections.configured(p) != true) {
+      return const M3Tag(ConnectorStrings.notSetUpTag);
+    }
+    return const M3Tag(AppsStrings.connect);
+  }
+
   Widget _tile(AppConnector a) {
-    final isGithub = a.id == AppIds.github;
-    final connected = isGithub && _connections.github != null;
     return Opacity(
       opacity: a.isSoon ? AppsSizes.soonAlpha : 1,
       child: SettingsTile(
@@ -132,14 +189,7 @@ class _AppsScreenState extends State<AppsScreen> {
         leading: a.brand != null ? AppMark(a.brand!) : null,
         title: a.name,
         summary: _blurb(a),
-        trailing: a.isSoon
-            ? const M3Tag(AppsStrings.soon)
-            : isGithub
-            ? M3Tag(
-                connected ? AppsStrings.connected : AppsStrings.connect,
-                accent: connected,
-              )
-            : null,
+        trailing: a.isSoon ? const M3Tag(AppsStrings.soon) : _accountTag(a),
         onTap: a.open == null
             ? null
             : () {

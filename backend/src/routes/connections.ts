@@ -4,6 +4,7 @@ import { userOf } from "../auth/context.js";
 import { AppError } from "../util/errors.js";
 import { notConfigured } from "../connections/deviceFlow.js";
 import { deleteGithubConnection, deviceFlows, listConnections } from "../connections/store.js";
+import { connectorProviders } from "./connect.js";
 
 /** The signed-in user's linked accounts (GitHub today). Tokens never leave the server. */
 export const connectionsRouter = Router();
@@ -24,7 +25,10 @@ connectionsRouter.get("/", async (req, res) => {
   res.json({
     items: user.id ? await listConnections(user.id) : [],
     // web: the one-tap OAuth web flow is available (needs the client secret).
-    providers: { github: { configured: !!config.githubOAuth.clientId, web: !!(config.githubOAuth.clientId && config.githubOAuth.clientSecret) } },
+    providers: {
+      github: { configured: !!config.githubOAuth.clientId, web: !!(config.githubOAuth.clientId && config.githubOAuth.clientSecret) },
+      ...connectorProviders(),
+    },
     isOwner: user.role === "owner",
   });
 });

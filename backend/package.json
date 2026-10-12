@@ -28,6 +28,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@mozilla/readability": "^0.6.0",
     "@node-rs/argon2": "^2.2.2",
+    "@notionhq/client": "^5.27.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "cors": "^2.8.6",

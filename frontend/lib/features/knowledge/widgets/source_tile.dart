@@ -18,6 +18,8 @@ String kindLabel(String type) => switch (type) {
   'note' => KnowledgeCopy.kindNote,
   'file' => KnowledgeCopy.kindFile,
   'doc' => KnowledgeCopy.kindDocument,
+  'google_drive' => KnowledgeCopy.kindDrive,
+  'notion' => KnowledgeCopy.kindNotion,
   _ => KnowledgeCopy.kindWeb,
 };
 
@@ -33,7 +35,7 @@ enum SourceGroup {
   final String title;
 
   static SourceGroup of(String type) => switch (type) {
-    'doc' || 'file' => documents,
+    'doc' || 'file' || 'google_drive' || 'notion' => documents,
     'github' => github,
     'note' => notes,
     _ => web,

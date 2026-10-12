@@ -13,6 +13,7 @@ import 'data/usage_api.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/auth/sso/github_web_auth.dart';
+import 'features/connectors/connector_auth.dart';
 import 'features/settings/settings_controller.dart';
 import 'features/settings/usage_controller.dart';
 import 'features/connections/connections_controller.dart';
@@ -32,6 +33,7 @@ Future<void> main() async {
   AuthController.instance.restore();
   // GitHub one-tap sign-in: deep links back from GitHub, incl. a cold start.
   GithubWebAuth.instance.init();
+  ConnectorAuth.instance.init();
   runApp(App(settings: settings));
 }
 

@@ -102,6 +102,7 @@ class ChatApi {
     String? conversationId,
     bool smartSuggestions = true,
     Set<SuggestKind> suppressSuggest = const {},
+    List<Map<String, String>> apps = const [],
   }) async* {
     final request =
         http.Request('POST', Uri.parse('${AppConfig.apiBaseUrl}/chat'))
@@ -123,6 +124,7 @@ class ChatApi {
             if (!smartSuggestions) 'smartSuggestions': false,
             if (suppressSuggest.isNotEmpty)
               'suppressSuggest': [for (final k in suppressSuggest) k.name],
+            if (apps.isNotEmpty) 'apps': apps,
           });
 
     // [client] stays the caller's (closing it stops the stream); the
