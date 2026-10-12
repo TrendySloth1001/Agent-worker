@@ -2,6 +2,7 @@ import 'package:hugeicons/hugeicons.dart';
 
 import 'app_icons.dart';
 import 'app_sizes.dart';
+import 'brand_logos.dart';
 
 /// About sparky (Settings → ABOUT → ABOUT SPARKY, Profile footer): what the
 /// app does, privacy, backend, credits, licenses and feedback.
@@ -153,6 +154,14 @@ abstract final class AboutStrings {
       url: 'https://iconify.design/',
     ),
     (
+      icon: AboutIcons.logos,
+      label: 'BRAND LOGOS',
+      value:
+          'SVG Logos & Simple Icons (CC0), theSVG, VSCode Icons (MIT), '
+          'selfh.st/icons (CC BY 4.0). Logos are trademarks of their owners.',
+      url: 'https://github.com/gilbarbara/logos',
+    ),
+    (
       icon: AboutIcons.fonts,
       label: 'FONTS',
       value: 'Space Grotesk & Space Mono (SIL Open Font License)',
@@ -222,7 +231,8 @@ abstract final class AboutIcons {
   static const illustrations = HugeIcons.strokeRoundedPaintBrush01;
   static const icons = HugeIcons.strokeRoundedDashboardSquare01;
   static const fonts = HugeIcons.strokeRoundedTextFont;
-  static const flutter = AppIcons.code;
+  static const flutter = BrandLogos.flutter;
+  static const logos = HugeIcons.strokeRoundedCheckmarkBadge01;
   static const open = AppIcons.openExternal;
   static const copy = AppIcons.copy;
 

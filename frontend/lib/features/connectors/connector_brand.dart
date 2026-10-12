@@ -2,13 +2,10 @@ import '../../core/constants/apps.dart';
 import '../../core/constants/connectors.dart';
 import '../apps/apps_registry.dart';
 
-/// Brand marks of the connected apps (the Apps hub's Iconify marks).
+/// Official logos of the connected apps (the Apps hub's logos).
 abstract final class ConnectorBrand {
-  static const drive = AppBrand(
-    AppsIcons.googleDrive,
-    AppsIcons.googleDriveFallback,
-  );
-  static const notion = AppBrand(AppsIcons.notion, AppsIcons.notionFallback);
+  static const drive = AppBrand(AppsIcons.googleDrive);
+  static const notion = AppBrand(AppsIcons.notion);
 
   static AppBrand of(String provider) =>
       provider == ConnectorIds.notion ? notion : drive;

@@ -5,6 +5,7 @@ import '../../../../core/constants/app_config.dart';
 import '../../../../core/constants/app_icons.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
+import '../../../../core/constants/brand_logos.dart';
 import '../../../../core/constants/markdown_sizes.dart';
 import '../../../../core/haptics.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -128,8 +129,9 @@ String prepareCitations(String text, List<Citation> citations) {
   return out.join('\n');
 }
 
-/// Site logo. While it loads, or when it cannot (offline, no icon), a
-/// monogram of the site name stands in. Logos are cached by Flutter's image
+/// Site logo. While it loads, or when it cannot (offline, no icon), the
+/// site's bundled logo (GitHub, Reddit, Stack Overflow…) or else a monogram
+/// of the site name stands in. Logos are cached by Flutter's image
 /// cache, so one site's icon is fetched once however often it is cited.
 class SiteFavicon extends StatelessWidget {
   const SiteFavicon({super.key, required this.citation, required this.size});
@@ -144,12 +146,15 @@ class SiteFavicon extends StatelessWidget {
     if (citation.kind == CitationKind.conversation) {
       return AppIcon(AppIcons.chat, size: size, color: p.textTertiary);
     }
+    final logo = BrandLogos.forDomain(domain);
     final fallback = domain.isEmpty
         ? AppIcon(
             citation.isKb ? AppIcons.knowledge : AppIcons.web,
             size: size,
             color: p.textTertiary,
           )
+        : logo != null
+        ? AppIcon(logo, size: size, color: p.textPrimary)
         : _Monogram(name: citeShortName(citation), size: size);
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.sm),

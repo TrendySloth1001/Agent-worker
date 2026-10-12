@@ -47,12 +47,22 @@ class DriveFile {
       size = (j['size'] as num?)?.toInt(),
       webViewLink = _sn(j['webViewLink']),
       owner = _sn(j['owner']),
+      iconLink = _driveIcon(_sn(j['iconLink'])),
       kind = _s(j['kind']);
 
   final String id, name, mimeType, kind;
   final DateTime? modified;
   final int? size;
   final String? webViewLink, owner;
+
+  /// Google's own file-type icon for this file (Drive API `iconLink`).
+  final String? iconLink;
+
+  /// Drive serves the type icon at 16px; ask for a sharper size.
+  static String? _driveIcon(String? url) => url?.replaceFirst(
+    RegExp(r'/\d+/type/'),
+    '/${ConnectorSizes.driveIconPx}/type/',
+  );
 
   /// Readable as text (Docs, Sheets, PDFs, Office, plain text).
   bool get readable => kind.isNotEmpty && kind != 'none';

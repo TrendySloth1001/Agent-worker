@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
+import '../../../core/constants/brand_logos.dart';
 import '../../../core/constants/m3_copy.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/kb_source.dart';
-import '../../chat/widgets/markdown/inline_icon.dart';
 import '../../apps/apps_registry.dart';
 import '../../connectors/connector_brand.dart';
 
@@ -42,22 +42,26 @@ class SourceIcon extends StatelessWidget {
       size: KnowledgeSizes.iconGlyph,
       color: scheme.onSurfaceVariant,
     );
-    final monogram = _Monogram(_name);
+    // A well-known site without a stored favicon shows its real logo.
+    final siteLogo = BrandLogos.forDomain(Uri.tryParse(source.uri)?.host ?? '');
+    final Widget monogram = siteLogo != null
+        ? Center(
+            child: AppIcon(
+              siteLogo,
+              size: KnowledgeSizes.iconGlyph,
+              color: scheme.onSurface,
+            ),
+          )
+        : _Monogram(_name);
     final url = source.iconUrl;
     final Widget content;
     final brand = _brand;
     if (brand != null) {
       content = Center(
-        child: InlineIcon(
-          set: brand.set,
-          name: brand.name,
+        child: AppIcon(
+          brand.logo,
           size: KnowledgeSizes.iconGlyph,
           color: scheme.onSurface,
-          fallback: AppIcon(
-            brand.fallback,
-            size: KnowledgeSizes.iconGlyph,
-            color: scheme.onSurfaceVariant,
-          ),
         ),
       );
     } else if (_local) {

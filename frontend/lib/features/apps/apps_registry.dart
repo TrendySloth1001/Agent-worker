@@ -21,13 +21,11 @@ enum AppSection {
   soon,
 }
 
-/// An Iconify brand mark with a Hugeicons fallback while it loads.
+/// A connected app's official logo (bundled, see `BrandLogos`).
 class AppBrand {
-  const AppBrand(this.name, this.fallback, {this.set = AppsIcons.brandSet});
+  const AppBrand(this.logo);
 
-  final String set;
-  final String name;
-  final AppIconData fallback;
+  final AppIconData logo;
 }
 
 /// One entry of the Apps hub. Adding a connector later is one entry in
@@ -74,7 +72,7 @@ abstract final class AppsRegistry {
       name: AppsStrings.github,
       blurb: AppsStrings.githubBlurb,
       section: AppSection.account,
-      brand: const AppBrand(AppsIcons.github, AppsIcons.githubFallback),
+      brand: const AppBrand(AppsIcons.github),
       open: (c) => _push(c, const GithubScreen()),
     ),
     AppConnector(
@@ -82,10 +80,7 @@ abstract final class AppsRegistry {
       name: AppsStrings.googleDrive,
       blurb: AppsStrings.googleDriveBlurb,
       section: AppSection.account,
-      brand: const AppBrand(
-        AppsIcons.googleDrive,
-        AppsIcons.googleDriveFallback,
-      ),
+      brand: const AppBrand(AppsIcons.googleDrive),
       open: (c) => _push(c, const DriveScreen()),
     ),
     AppConnector(
@@ -93,7 +88,7 @@ abstract final class AppsRegistry {
       name: AppsStrings.notion,
       blurb: AppsStrings.notionBlurb,
       section: AppSection.account,
-      brand: const AppBrand(AppsIcons.notion, AppsIcons.notionFallback),
+      brand: const AppBrand(AppsIcons.notion),
       open: (c) => _push(c, const NotionScreen()),
     ),
     AppConnector(
@@ -117,28 +112,28 @@ abstract final class AppsRegistry {
       name: AppsStrings.googlePhotos,
       blurb: AppsStrings.googlePhotosBlurb,
       section: AppSection.soon,
-      brand: AppBrand(AppsIcons.googlePhotos, AppsIcons.photosFallback),
+      brand: AppBrand(AppsIcons.googlePhotos),
     ),
     const AppConnector(
       id: AppIds.gmail,
       name: AppsStrings.gmail,
       blurb: AppsStrings.gmailBlurb,
       section: AppSection.soon,
-      brand: AppBrand(AppsIcons.gmail, AppsIcons.mailFallback),
+      brand: AppBrand(AppsIcons.gmail),
     ),
     const AppConnector(
       id: AppIds.calendar,
       name: AppsStrings.calendar,
       blurb: AppsStrings.calendarBlurb,
       section: AppSection.soon,
-      brand: AppBrand(AppsIcons.calendar, AppsIcons.calendarFallback),
+      brand: AppBrand(AppsIcons.calendar),
     ),
     const AppConnector(
       id: AppIds.slack,
       name: AppsStrings.slack,
       blurb: AppsStrings.slackBlurb,
       section: AppSection.soon,
-      brand: AppBrand(AppsIcons.slack, AppsIcons.slackFallback),
+      brand: AppBrand(AppsIcons.slack),
     ),
   ];
 

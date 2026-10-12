@@ -3,6 +3,7 @@ import 'package:hugeicons/hugeicons.dart';
 
 import 'app_colors.dart';
 import 'app_icons.dart';
+import 'brand_logos.dart';
 
 /// Fenced languages of the live GitHub widgets.
 abstract final class GithubLang {
@@ -153,7 +154,7 @@ abstract final class GithubOcticons {
 
 /// Hugeicons for actions and chrome around the GitHub widgets.
 abstract final class GithubIcons {
-  static const github = HugeIcons.strokeRoundedGithub;
+  static const github = BrandLogos.github;
   static const branch = HugeIcons.strokeRoundedGitBranch;
   static const commit = HugeIcons.strokeRoundedGitCommit;
   static const pr = HugeIcons.strokeRoundedGitPullRequest;

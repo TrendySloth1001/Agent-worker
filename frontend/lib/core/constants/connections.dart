@@ -1,6 +1,7 @@
 import 'package:hugeicons/hugeicons.dart';
 
 import 'app_icons.dart';
+import 'brand_logos.dart';
 
 /// Linked accounts ("Connect your GitHub"): chat widget, Settings section and
 /// the device-flow sheet.
@@ -101,8 +102,8 @@ abstract final class ConnectStrings {
 
 abstract final class ConnectIcons {
   static const github = AppIcons.github;
-  static const googleDrive = HugeIcons.strokeRoundedGoogleDrive;
-  static const googlePhotos = HugeIcons.strokeRoundedImage01;
+  static const googleDrive = BrandLogos.googleDrive;
+  static const googlePhotos = BrandLogos.googlePhotos;
   static const connect = AppIcons.link;
   static const open = AppIcons.openExternal;
   static const copy = AppIcons.copy;

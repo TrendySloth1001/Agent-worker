@@ -9,14 +9,15 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/m3_kit_extras.dart';
 import '../../apps/apps_registry.dart';
 import '../../apps/apps_screen.dart';
-import '../../chat/widgets/markdown/inline_icon.dart';
+import '../../../core/constants/brand_logos.dart';
 import '../../settings/widgets/settings_kit.dart';
 import '../connector_auth.dart';
 
 /// Shared pieces of the Google Drive and Notion screens, in the GitHub
 /// screen's design: profile card, permission card, account actions.
 
-/// A brand mark (Iconify) with its Hugeicons fallback.
+/// A connected app's official logo. Given a [color] (e.g. on a filled
+/// button) it draws the single-color version of the logo in that color.
 class BrandGlyph extends StatelessWidget {
   const BrandGlyph(this.brand, {super.key, required this.size, this.color});
 
@@ -27,12 +28,10 @@ class BrandGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? Theme.of(context).colorScheme.onSurface;
-    return InlineIcon(
-      set: brand.set,
-      name: brand.name,
+    return AppIcon(
+      color == null ? brand.logo : BrandLogos.mono(brand.logo),
       size: size,
       color: c,
-      fallback: AppIcon(brand.fallback, size: size, color: c),
     );
   }
 }
@@ -323,7 +322,7 @@ class ConnectorAccountGroup extends StatelessWidget {
     return M3Group(
       children: [
         SettingsTile(
-          icon: brand.fallback,
+          icon: brand.logo,
           leading: AppMark(brand),
           title: openLabel,
           trailing: AppIcon(
@@ -434,7 +433,10 @@ class ConnectorRowIcon extends StatelessWidget {
         imageUrl!,
         width: ConnectorSizes.rowGlyph,
         height: ConnectorSizes.rowGlyph,
+        filterQuality: FilterQuality.medium,
         errorBuilder: (_, _, _) => glyph,
+        frameBuilder: (_, image, frame, sync) =>
+            sync || frame != null ? image : glyph,
       );
     }
     return Container(

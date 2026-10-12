@@ -1,6 +1,6 @@
 import 'package:hugeicons/hugeicons.dart';
 
-import 'app_icons.dart';
+import 'brand_logos.dart';
 
 /// The Apps hub (connectors) and the GitHub screens.
 
@@ -30,6 +30,7 @@ abstract final class AppsStrings {
   static const noSources = 'No sources yet';
 
   static const soon = 'SOON';
+  static String soonToast(String app) => '$app is coming soon.';
   static const googleDrive = 'Google Drive';
   static const googleDriveBlurb = 'Files and folders';
   static const googlePhotos = 'Google Photos';
@@ -61,24 +62,14 @@ abstract final class AppsIcons {
   /// Sidebar footer destination.
   static const hub = HugeIcons.strokeRoundedDashboardSquare01;
 
-  /// Iconify set for brand marks (monochrome, tinted by the theme).
-  static const brandSet = 'simple-icons';
-  static const github = 'github';
-  static const googleDrive = 'googledrive';
-  static const googlePhotos = 'googlephotos';
-  static const notion = 'notion';
-  static const gmail = 'gmail';
-  static const calendar = 'googlecalendar';
-  static const slack = 'slack';
-
-  /// Shown while a brand mark loads or when it is missing.
-  static const googleDriveFallback = HugeIcons.strokeRoundedGoogleDrive;
-  static const photosFallback = HugeIcons.strokeRoundedImage01;
-  static const notionFallback = HugeIcons.strokeRoundedNotebook;
-  static const mailFallback = HugeIcons.strokeRoundedMail01;
-  static const calendarFallback = HugeIcons.strokeRoundedCalendar03;
-  static const slackFallback = HugeIcons.strokeRoundedBubbleChat;
-  static const githubFallback = AppIcons.github;
+  /// Official logos, bundled (see [BrandLogos]).
+  static const github = BrandLogos.github;
+  static const googleDrive = BrandLogos.googleDrive;
+  static const googlePhotos = BrandLogos.googlePhotos;
+  static const notion = BrandLogos.notion;
+  static const gmail = BrandLogos.gmail;
+  static const calendar = BrandLogos.googleCalendar;
+  static const slack = BrandLogos.slack;
 }
 
 abstract final class AppsSizes {

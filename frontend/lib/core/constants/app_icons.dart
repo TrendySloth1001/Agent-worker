@@ -1,9 +1,12 @@
 import 'package:hugeicons/hugeicons.dart';
 
+import 'brand_logos.dart';
+
 /// Icon data type used by [AppIcon] (Hugeicons stroke-rounded paths).
 typedef AppIconData = List<List<dynamic>>;
 
-/// Every icon in the app, by meaning. Hugeicons, stroke rounded.
+/// Every icon in the app, by meaning. Hugeicons, stroke rounded; brands and
+/// file types are their real logos ([BrandLogos]).
 abstract final class AppIcons {
   // Navigation and actions
   static const back = HugeIcons.strokeRoundedArrowLeft01;
@@ -87,7 +90,7 @@ abstract final class AppIcons {
   static const about = HugeIcons.strokeRoundedInformationCircle;
   static const usage = HugeIcons.strokeRoundedActivity01;
   static const key = HugeIcons.strokeRoundedKey01;
-  static const github = HugeIcons.strokeRoundedGithub;
+  static const github = BrandLogos.github;
   static const embeddings = HugeIcons.strokeRoundedNeuralNetwork;
   static const server = HugeIcons.strokeRoundedServer;
   static const database = HugeIcons.strokeRoundedDatabase01;
@@ -121,10 +124,10 @@ abstract final class AppIcons {
   };
 
   // Providers
-  static const groq = HugeIcons.strokeRoundedFlash;
-  static const nvidia = HugeIcons.strokeRoundedCpu;
-  static const ollama = HugeIcons.strokeRoundedCloud;
-  static const openrouter = HugeIcons.strokeRoundedRoute01;
+  static const groq = BrandLogos.groq;
+  static const nvidia = BrandLogos.nvidia;
+  static const ollama = BrandLogos.ollama;
+  static const openrouter = BrandLogos.openrouter;
 
   // Theme
   static const themeSystem = HugeIcons.strokeRoundedSmartPhone01;
@@ -133,15 +136,15 @@ abstract final class AppIcons {
 
   // Knowledge source kinds
   static const sourceWeb = HugeIcons.strokeRoundedGlobe02;
-  static const sourceGithub = HugeIcons.strokeRoundedGithub;
-  static const sourceForum = HugeIcons.strokeRoundedComment01;
-  static const sourceNews = HugeIcons.strokeRoundedNews01;
-  static const sourceReddit = HugeIcons.strokeRoundedReddit;
+  static const sourceGithub = BrandLogos.github;
+  static const sourceForum = BrandLogos.stackoverflow;
+  static const sourceNews = BrandLogos.hackernews;
+  static const sourceReddit = BrandLogos.reddit;
   static const sourceNote = HugeIcons.strokeRoundedNote01;
-  static const filePdf = HugeIcons.strokeRoundedPdf01;
-  static const fileWord = HugeIcons.strokeRoundedDoc01;
-  static const fileText = HugeIcons.strokeRoundedTxt01;
-  static const fileMarkdown = HugeIcons.strokeRoundedDocumentCode;
+  static const filePdf = BrandLogos.pdf;
+  static const fileWord = BrandLogos.word;
+  static const fileText = BrandLogos.text;
+  static const fileMarkdown = BrandLogos.markdown;
   static const sourceAuto = HugeIcons.strokeRoundedMagicWand01;
 
   /// Icon for a knowledge source type id.
@@ -156,15 +159,10 @@ abstract final class AppIcons {
     _ => sourceWeb,
   };
 
-  /// Icon for an uploaded document by its file name (pdf, docx, md, txt), else the generic file icon.
+  /// Icon for an uploaded document by its file name: the real file-type
+  /// logo (pdf, docx, xlsx, pptx, md, txt), else the generic file icon.
   static AppIconData fileKind(String? name) =>
-      switch (name?.split('.').last.toLowerCase()) {
-        'pdf' => filePdf,
-        'doc' || 'docx' || 'rtf' || 'odt' => fileWord,
-        'md' || 'markdown' => fileMarkdown,
-        'txt' || 'text' || 'log' => fileText,
-        _ => file,
-      };
+      BrandLogos.forExtension(name?.split('.').last.toLowerCase()) ?? file;
 
   /// Icon for a chat mode id.
   static AppIconData mode(String id) => switch (id) {

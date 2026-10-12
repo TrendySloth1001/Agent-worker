@@ -8,7 +8,6 @@ import '../../core/haptics.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/knowledge_api.dart';
-import '../chat/widgets/markdown/inline_icon.dart';
 import '../connections/connections_controller.dart';
 import '../settings/widgets/settings_kit.dart';
 import 'apps_registry.dart';
@@ -181,17 +180,26 @@ class _AppsScreenState extends State<AppsScreen> {
     return const M3Tag(AppsStrings.connect);
   }
 
+  /// A coming-soon app cannot be connected yet: say so.
+  void _soon(AppConnector a) {
+    Haptics.tap();
+    final m = ScaffoldMessenger.maybeOf(context);
+    if (m == null) return;
+    m.hideCurrentSnackBar();
+    m.showSnackBar(SnackBar(content: Text(AppsStrings.soonToast(a.name))));
+  }
+
   Widget _tile(AppConnector a) {
     return Opacity(
       opacity: a.isSoon ? AppsSizes.soonAlpha : 1,
       child: SettingsTile(
-        icon: a.icon ?? a.brand!.fallback,
+        icon: a.icon ?? a.brand!.logo,
         leading: a.brand != null ? AppMark(a.brand!) : null,
         title: a.name,
         summary: _blurb(a),
         trailing: a.isSoon ? const M3Tag(AppsStrings.soon) : _accountTag(a),
         onTap: a.open == null
-            ? null
+            ? (a.isSoon ? () => _soon(a) : null)
             : () {
                 Haptics.tap();
                 a.open!(context);
@@ -218,16 +226,10 @@ class AppMark extends StatelessWidget {
         color: scheme.surfaceContainerHighest,
       ),
       child: Center(
-        child: InlineIcon(
-          set: brand.set,
-          name: brand.name,
+        child: AppIcon(
+          brand.logo,
           size: AppsSizes.brandGlyph,
           color: scheme.onSurface,
-          fallback: AppIcon(
-            brand.fallback,
-            size: AppsSizes.brandGlyph,
-            color: scheme.onSurface,
-          ),
         ),
       ),
     );
