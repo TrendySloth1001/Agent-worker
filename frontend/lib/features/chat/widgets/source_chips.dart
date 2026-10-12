@@ -24,15 +24,24 @@ class SourceChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Several passages of one page or doc show as one chip, cited if any is.
+    final byKey = <String, Citation>{};
+    final cited = <String>{};
+    for (final c in citations) {
+      final key = '${c.kind.name}|${c.url.isNotEmpty ? c.url.split('#').first : c.title}';
+      byKey.putIfAbsent(key, () => c);
+      if (used.contains(c.id)) cited.add(key);
+    }
+    final keys = byKey.keys.toList();
     return SizedBox(
       height: AppSizes.sourceChipHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: citations.length,
+        itemCount: keys.length,
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xs),
         itemBuilder: (context, i) => _SourceChip(
-          citation: citations[i],
-          used: used.contains(citations[i].id),
+          citation: byKey[keys[i]]!,
+          used: cited.contains(keys[i]),
         ),
       ),
     );

@@ -94,6 +94,10 @@ class _SuggestionChipsState extends State<SuggestionChips> {
           alignment: Alignment.topLeft,
           child: AnimatedSwitcher(
             duration: duration,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topLeft,
+              children: [...previous, ?current],
+            ),
             child: _open
                 ? Listener(
                     key: const ValueKey('open'),
