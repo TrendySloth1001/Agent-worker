@@ -14,7 +14,7 @@ import { decideSearch } from "../web/searchDecision.js";
 import { setTelemetry, withTelemetry } from "../db/usage.js";
 import { findImages, type ImageResult } from "../web/images.js";
 import { intentHint } from "../prompts/intent.js";
-import { buildContextMessage, buildSystemPrompt, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
+import { buildContextMessage, buildSystemPrompt, promptNeeds, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
 import { retrieve, type KbHit } from "../retrieval/search.js";
 import { embeddingsHealthy } from "../embeddings/index.js";
 import type { Message } from "../providers.js";
@@ -358,7 +358,9 @@ chatRouter.post("/", async (req, res) => {
       : Promise.resolve([]);
 
     // ---- generation -------------------------------------------------------
-    const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile) }];
+    // Optional prompt sections (HTML, GitHub, widget examples) only when the turn needs them.
+    const needs = promptNeeds(`${previousUser(body.messages)}\n${lastUser}`, githubItems.length > 0);
+    const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile, undefined, needs) }];
     const memoryBlock = await memTurn?.recall();
     if (memoryBlock) prompt.push({ role: "system", content: memoryBlock });
     if (compacted) prompt.push({ role: "system", content: summaryMessage(compacted.summary) });
