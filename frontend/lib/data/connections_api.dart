@@ -32,11 +32,15 @@ class Connection {
       login = _s(j['accountLogin']),
       avatarUrl = _s(j['avatarUrl']),
       scopes = _strings(j['scopes']),
+      missingScopes = _strings(j['missingScopes']),
       createdAt = _date(j['createdAt']),
       lastUsedAt = _date(j['lastUsedAt']);
 
   final String provider, login, avatarUrl;
   final List<String> scopes;
+
+  /// Scopes sparky asks for that this grant lacks; reconnecting adds them.
+  final List<String> missingScopes;
   final DateTime? createdAt, lastUsedAt;
 }
 

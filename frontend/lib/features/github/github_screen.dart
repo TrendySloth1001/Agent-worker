@@ -553,12 +553,36 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          if (connection.missingScopes.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              GithubHubStrings.fullAccessHint,
+              style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            FilledButton.icon(
+              onPressed: onReconnect,
+              icon: const AppIcon(
+                GithubHubIcons.fullAccess,
+                size: AppIconSize.sm,
+              ),
+              label: const Text(GithubHubStrings.fullAccess),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
-          FilledButton.icon(
-            onPressed: onOpen,
-            icon: const AppIcon(AppIcons.openExternal, size: AppIconSize.sm),
-            label: const Text(GithubHubStrings.openOnGithub),
-          ),
+          // The full-access prompt takes the filled slot when it shows.
+          if (connection.missingScopes.isEmpty)
+            FilledButton.icon(
+              onPressed: onOpen,
+              icon: const AppIcon(AppIcons.openExternal, size: AppIconSize.sm),
+              label: const Text(GithubHubStrings.openOnGithub),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: onOpen,
+              icon: const AppIcon(AppIcons.openExternal, size: AppIconSize.sm),
+              label: const Text(GithubHubStrings.openOnGithub),
+            ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [

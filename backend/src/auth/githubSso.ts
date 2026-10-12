@@ -5,6 +5,7 @@ import {
   fetchGithubEmails,
   fetchGithubUser,
   GithubDeviceFlow,
+  GITHUB_SCOPES,
   pickGithubEmail,
   type ConnectionRow,
   type DeviceGrant,
@@ -25,7 +26,8 @@ import { linkIdentity, ssoSignIn, type IdentitySummary, type SsoOutcome, type Ss
  * connection (repo read:org).
  */
 
-export const GITHUB_SSO_SCOPES = "repo read:user user:email read:org";
+/** Sign-in asks for the full set, so one approval also connects GitHub. */
+export const GITHUB_SSO_SCOPES = GITHUB_SCOPES;
 
 export type GithubSsoMeta = { device: string | null };
 

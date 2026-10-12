@@ -20,7 +20,27 @@ export const DEVICE_CODE_URL = "https://github.com/login/device/code";
 export const ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
 export const GITHUB_USER_URL = "https://api.github.com/user";
 export const GITHUB_EMAILS_URL = "https://api.github.com/user/emails";
-export const GITHUB_SCOPES = "repo read:user read:org";
+/**
+ * Everything sparky does on GitHub, asked for once: sign-in (read:user
+ * user:email), repos, pull requests, issues, reviews, merges and checks
+ * (repo), orgs (read:org), workflow files (workflow) and the inbox
+ * (notifications). Sign-in, connect and reconnect all request this set.
+ */
+export const GITHUB_SCOPES = "repo read:org read:user user:email workflow notifications";
+
+/** Scopes of [GITHUB_SCOPES] a grant lacks; none when its scopes are unknown. */
+export function missingGithubScopes(scopes: readonly string[]): string[] {
+  if (scopes.length === 0) return [];
+  const have = new Set(scopes);
+  // Broader scopes GitHub treats as including the narrower one.
+  const wider: Record<string, string[]> = {
+    "read:org": ["write:org", "admin:org"],
+    "read:user": ["user"],
+    "user:email": ["user"],
+  };
+  const implied = (s: string) => have.has(s) || (wider[s] ?? []).some((w) => have.has(w));
+  return GITHUB_SCOPES.split(" ").filter((s) => !implied(s));
+}
 const GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const TIMEOUT_MS = 12_000;
 /** Finished flows stay readable this long so a late poll still sees the result. */

@@ -2,7 +2,7 @@ import { config } from "../config.js";
 import { db } from "../db/prisma.js";
 import { log } from "../util/logger.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
-import { DeviceFlows, type ConnectionRow } from "./deviceFlow.js";
+import { DeviceFlows, missingGithubScopes, type ConnectionRow } from "./deviceFlow.js";
 
 /** Connections as the app sees them: never any token. */
 export type ConnectionSummary = {
@@ -11,6 +11,8 @@ export type ConnectionSummary = {
   accountId: string;
   avatarUrl: string | null;
   scopes: string[];
+  /** Scopes sparky asks for that this grant lacks; reconnecting adds them. */
+  missingScopes: string[];
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +35,7 @@ const summary = (c: {
   accountId: c.accountId,
   avatarUrl: c.avatarUrl,
   scopes: c.scopes,
+  missingScopes: c.provider === "github" ? missingGithubScopes(c.scopes) : [],
   expiresAt: c.expiresAt?.toISOString() ?? null,
   createdAt: c.createdAt.toISOString(),
   updatedAt: c.updatedAt.toISOString(),

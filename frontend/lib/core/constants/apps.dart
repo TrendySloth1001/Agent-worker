@@ -90,6 +90,12 @@ abstract final class AppsSizes {
 // ---- GitHub screens ------------------------------------------------------
 
 abstract final class GithubHubStrings {
+  // Shown when the connection was approved with fewer permissions than
+  // sparky now asks for: one reconnect grants them all.
+  static const fullAccess = 'Give full access';
+  static const fullAccessHint =
+      'Approve once on GitHub so sparky can comment, review, merge and '
+      'manage issues here.';
   static const title = 'GitHub';
   static const connectedStatus = 'CONNECTED';
   static const openOnGithub = 'Open on GitHub';
@@ -183,6 +189,7 @@ abstract final class GithubRepoStrings {
 }
 
 abstract final class GithubHubIcons {
+  static const fullAccess = HugeIcons.strokeRoundedShieldKey;
   static const repo = HugeIcons.strokeRoundedFolder01;
   static const pulls = HugeIcons.strokeRoundedGitPullRequest;
   static const issues = HugeIcons.strokeRoundedAlertCircle;

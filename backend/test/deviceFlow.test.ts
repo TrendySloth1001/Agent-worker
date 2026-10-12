@@ -69,7 +69,7 @@ test("start requests the right scopes and returns the user code", async () => {
   assert.equal(s.expiresIn, 900);
   const body = new URLSearchParams(h.calls[0].body);
   assert.equal(body.get("client_id"), "Iv1.test");
-  assert.equal(body.get("scope"), "repo read:user read:org");
+  assert.equal(body.get("scope"), "repo read:org read:user user:email workflow notifications");
 });
 
 test("polls GitHub at most once per interval, however often the client asks", async () => {

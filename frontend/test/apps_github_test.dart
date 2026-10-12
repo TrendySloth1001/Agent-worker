@@ -163,6 +163,15 @@ void main() {
       expect(_repo('nickrivera/sparky'), findsOneWidget);
     });
 
+    testWidgets('missing scopes ask for full access ($name)', (tester) async {
+      fakeConnected(missingScopes: ['workflow', 'notifications']);
+      await _pump(tester, const GithubScreen(), dark: dark);
+      await _settle(tester);
+      await shot(tester, 'github_full_access_$name');
+      expect(find.text(GithubHubStrings.fullAccess), findsOneWidget);
+      expect(find.text(GithubHubStrings.fullAccessHint), findsOneWidget);
+    });
+
     testWidgets('github screen renders not connected ($name)', (tester) async {
       fakeConnected(connected: false);
       await _pump(tester, const GithubScreen(), dark: dark, height: 1100);

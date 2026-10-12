@@ -471,7 +471,10 @@ final fakeEvents = <Map<String, dynamic>>[
 ];
 
 /// Puts the app's connection state in a known place without any network.
-void fakeConnected({bool connected = true}) {
+void fakeConnected({
+  bool connected = true,
+  List<String> missingScopes = const [],
+}) {
   ConnectionsController.instance.state = ConnectionsState({
     'items': [
       if (connected)
@@ -480,6 +483,7 @@ void fakeConnected({bool connected = true}) {
           'accountLogin': 'nickrivera',
           'avatarUrl': '',
           'scopes': ['repo'],
+          'missingScopes': missingScopes,
         },
     ],
     'providers': {

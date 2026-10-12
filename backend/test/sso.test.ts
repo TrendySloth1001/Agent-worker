@@ -160,7 +160,7 @@ test("github sso: asks for sign-in + connection scopes", async () => {
   const h = ghHarness([]);
   await h.flows.start(null, { device: "Pixel" });
   assert.equal(new URLSearchParams(h.calls[0].body).get("scope"), GITHUB_SSO_SCOPES);
-  assert.equal(GITHUB_SSO_SCOPES, "repo read:user user:email read:org");
+  assert.equal(GITHUB_SSO_SCOPES, "repo read:org read:user user:email workflow notifications");
 });
 
 test("github sso: pending, slow_down (reported once), then a session; the result is handed out once", async () => {
@@ -410,4 +410,11 @@ test("passwordless account: password login says how to sign in; the last method 
   } finally {
     await db().user.deleteMany({ where: { id: user.id } });
   }
+});
+
+test("missingGithubScopes: what a reconnect would add", async () => {
+  const { missingGithubScopes } = await import("../src/connections/deviceFlow.js");
+  assert.deepEqual(missingGithubScopes([]), []);
+  assert.deepEqual(missingGithubScopes(["repo", "read:user", "read:org"]), ["user:email", "workflow", "notifications"]);
+  assert.deepEqual(missingGithubScopes(["repo", "user", "admin:org", "workflow", "notifications"]), []);
 });
