@@ -1,9 +1,6 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
@@ -17,10 +14,10 @@ import '../../../core/constants/app_icons.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/m3_kit_extras.dart';
 import '../../settings/widgets/settings_kit.dart';
-import '../../../core/widgets/icon_label.dart';
 import '../../../data/chat_event.dart';
 import '../../../data/files_api.dart';
 import '../../../data/suggest_api.dart';
+import '../attach_picker.dart';
 import '../attachments_controller.dart';
 import '../autocomplete/autocomplete_bar.dart';
 import '../autocomplete/autocomplete_controller.dart';
@@ -29,6 +26,7 @@ import '../voice/voice_controller.dart';
 import '../voice/voice_permission.dart';
 import '../voice/voice_strip.dart';
 import 'attachment_bar.dart';
+import 'smart_chip.dart';
 import 'suggest_prompt.dart';
 
 /// Floating capsule with the text field and send button.
@@ -114,7 +112,7 @@ class ChatInput extends StatefulWidget {
 class _ChatInputState extends State<ChatInput> {
   final _controller = TextEditingController();
   final _files = AttachmentsController();
-  final _picker = ImagePicker();
+  final _picker = AttachPicker();
   bool _waiting = false;
 
   /// Text the user dismissed the document hint for.
@@ -342,66 +340,14 @@ class _ChatInputState extends State<ChatInput> {
   void _toast(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
-  void _report(String? problem) {
-    if (problem == null) return;
-    Haptics.error();
-    _toast(
-      problem == 'big' ? AppStrings.attachTooBig : AppStrings.attachUnsupported,
-    );
-  }
-
-  Future<void> _attach() async {
-    Haptics.tap();
-    if (_files.isFull) {
-      _toast(AppStrings.attachMax);
-      return;
-    }
-    final choice = await showAttachSheet(context);
-    if (choice == null || !mounted) return;
-    try {
-      switch (choice) {
-        case AttachChoice.media:
-          final free = _files.free;
-          final list = free < 2
-              ? [?await _picker.pickMedia()]
-              : await _picker.pickMultipleMedia(limit: free);
-          _addPicked(await _fromX(list));
-        case AttachChoice.photo:
-          final x = await _picker.pickImage(source: ImageSource.camera);
-          if (x != null) _addPicked(await _fromX([x]));
-        case AttachChoice.video:
-          final x = await _picker.pickVideo(source: ImageSource.camera);
-          if (x != null) _addPicked(await _fromX([x]));
-        case AttachChoice.document:
-          final list = await FilePicker.pickFiles();
-          _addPicked([
-            for (final f in list)
-              if (f.path != null) pickedFile(f.path!, f.name),
-          ]);
-      }
-    } catch (_) {
-      if (mounted) {
-        Haptics.error();
-        _toast(AppStrings.attachUnsupported);
-      }
-    }
-  }
-
-  void _addPicked(List<({String path, String name, int size})> picked) {
-    final problem = _files.add(picked);
-    if (_files.skipped > 0) {
-      Haptics.error();
-      _toast(AppStrings.attachSkipped(_files.skipped, AppFiles.maxPerMessage));
-    } else {
-      _report(problem);
-    }
-  }
-
-  Future<List<({String path, String name, int size})>> _fromX(
-    Iterable<XFile> xs,
-  ) async => [
-    for (final x in xs) (path: x.path, name: x.name, size: await x.length()),
-  ];
+  /// The "+": the same picker as the assistant overlay.
+  Future<void> _attach() => _picker.pick(
+    context,
+    _files,
+    say: (text) {
+      if (mounted) _toast(text);
+    },
+  );
 
   /// "write a report on …" with DOC off: offer a document, never start one.
   bool _suggestsDoc(String text) =>
@@ -597,7 +543,7 @@ class _ChatInputState extends State<ChatInput> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _Chip(
+                  SmartChip(
                     label: AppStrings.web,
                     icon: AppIcons.web,
                     active: widget.webMode == WebMode.on,
@@ -610,7 +556,7 @@ class _ChatInputState extends State<ChatInput> {
                     onTap: widget.onToggleWebSearch,
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  _Chip(
+                  SmartChip(
                     label: AppStrings.kb,
                     icon: AppIcons.knowledge,
                     active: widget.knowledge,
@@ -618,7 +564,7 @@ class _ChatInputState extends State<ChatInput> {
                   ),
                   if (widget.onToggleRoundTable != null) ...[
                     const SizedBox(width: AppSpacing.sm),
-                    _Chip(
+                    SmartChip(
                       label: TableStrings.chip,
                       icon: AppIcons.roundTable,
                       active: widget.roundTable,
@@ -627,7 +573,7 @@ class _ChatInputState extends State<ChatInput> {
                   ],
                   if (widget.onToggleDoc != null) ...[
                     const SizedBox(width: AppSpacing.sm),
-                    _Chip(
+                    SmartChip(
                       label: DocStrings.chip,
                       icon: AppIcons.doc,
                       active: widget.doc,
@@ -761,67 +707,6 @@ class _ChatInputState extends State<ChatInput> {
           ),
         );
       },
-    );
-  }
-}
-
-/// Small toggle pill: filled when on, outlined when off.
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.icon,
-    required this.active,
-    required this.onTap,
-    this.hint,
-    this.dim = false,
-  });
-
-  final String label;
-  final AppIconData icon;
-  final bool active;
-  final VoidCallback onTap;
-
-  /// Small state word after the label (WEB: AUTO / OFF).
-  final String? hint;
-
-  /// Shown muted: the tool is off.
-  final bool dim;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Haptics.tap();
-        onTap();
-      },
-      child: AnimatedContainer(
-        duration: AppDurations.fast,
-        height: AppSizes.chipHeight,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.chipHorizontalPadding,
-        ),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          color: active ? p.textPrimary : Colors.transparent,
-          border: Border.all(
-            color: active ? p.textPrimary : p.borderStrong,
-            width: AppBorder.thin,
-          ),
-        ),
-        child: IconLabel(
-          icon: icon,
-          text: hint == null ? label : '$label $hint',
-          style: context.text.caption,
-          color: active
-              ? p.textInverse
-              : dim
-              ? p.textTertiary
-              : p.textSecondary,
-        ),
-      ),
     );
   }
 }

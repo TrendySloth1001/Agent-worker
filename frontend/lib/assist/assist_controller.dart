@@ -7,14 +7,21 @@ import 'package:http/http.dart' as http;
 import '../core/constants/app_sizes.dart';
 import '../core/constants/app_strings.dart';
 import '../core/constants/assist.dart';
+import '../core/constants/docs.dart';
 import '../core/constants/smart_toggles.dart';
+import '../core/constants/suggest.dart';
 import '../core/haptics.dart';
+import '../data/ai_model.dart';
 import '../data/chat_api.dart';
 import '../data/chat_event.dart';
 import '../data/chat_message.dart';
 import '../data/conversations_api.dart';
+import '../data/doc_models.dart';
+import '../data/docs_api.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/chat/attachments_controller.dart';
+import '../features/chat/chat_turn.dart';
+import '../features/docs/doc_registry.dart';
 import '../features/settings/settings_controller.dart';
 import 'assist_bridge.dart';
 import 'screen_text.dart';
@@ -24,6 +31,11 @@ enum ScreenShare { none, loading, shared, empty }
 
 /// The overlay's state: one short conversation, the shared screen, and the
 /// hand-off to the app. Nothing is saved unless the user opens it in sparky.
+///
+/// Asks like the app's chat: the same request ([ChatTurn]) with the same
+/// toggles (WEB / KB / TABLE / DOC), smart suggestions, model and reply
+/// style, so web search, the knowledge base, memory, connected apps and
+/// Round Table all work here too.
 class AssistController extends ChangeNotifier {
   AssistController({
     required this.bridge,
@@ -32,9 +44,16 @@ class AssistController extends ChangeNotifier {
     required SettingsController settings,
     AttachmentsController? attachments,
     AuthController? auth,
+    DocsApi? docs,
   }) : _settings = settings,
        _auth = auth ?? AuthController.instance,
-       attachments = attachments ?? AttachmentsController();
+       _docsOverride = docs,
+       attachments = attachments ?? AttachmentsController() {
+    _resetToggles();
+  }
+
+  final DocsApi? _docsOverride;
+  DocsApi get _docs => _docsOverride ?? DocRegistry.instance.api;
 
   final AuthController _auth;
 
@@ -52,8 +71,123 @@ class AssistController extends ChangeNotifier {
   /// The app's settings changed while the overlay engine kept running.
   set settings(SettingsController next) {
     _settings = next;
+    // Nothing asked yet: start from the (possibly changed) defaults.
+    if (!hasThread) _resetToggles();
     notifyListeners();
   }
+
+  // ---- toggles (same as the app's composer) --------------------------------
+
+  /// WEB chip: auto (the server decides), on or off.
+  WebMode webMode = WebMode.auto;
+  bool knowledge = false;
+
+  /// Round Table: several models draft and cross-check, a chair answers.
+  bool roundTable = false;
+
+  /// DOC: the next question is written as a long-form document.
+  bool doc = false;
+  String docLength = DocConfig.defaultLength;
+
+  /// What the server suggested for the latest reply (Use KB? / Write as Doc?).
+  SuggestToggleEvent? suggestion;
+
+  /// Kinds already suggested in this opening: never asked twice.
+  final Set<SuggestKind> _suppressed = {};
+
+  /// Offered models, to send the Settings model only while it exists.
+  List<AiModel> models = [];
+
+  void _resetToggles() {
+    webMode = ChatTurn.defaultWeb(_settings);
+    knowledge = _settings.defaultKnowledge;
+    roundTable = _settings.defaultRoundTable;
+    doc = false;
+    docLength = DocConfig.defaultLength;
+    suggestion = null;
+    _suppressed.clear();
+  }
+
+  void cycleWebMode() {
+    webMode = webMode.next;
+    notifyListeners();
+  }
+
+  void toggleKnowledge() {
+    knowledge = !knowledge;
+    notifyListeners();
+  }
+
+  void toggleRoundTable() {
+    roundTable = !roundTable;
+    notifyListeners();
+  }
+
+  void toggleDoc() {
+    doc = !doc;
+    notifyListeners();
+  }
+
+  Future<void> loadModels() async {
+    if (models.isNotEmpty) return;
+    try {
+      models = await api.fetchModels();
+    } catch (_) {
+      // Auto until the server is reachable (the app does the same).
+    }
+  }
+
+  /// "Not now": the prompt goes away for this opening.
+  void dismissSuggestion() {
+    final s = suggestion;
+    if (s == null) return;
+    suggestion = null;
+    unawaited(
+      api.reportSuggestion(s.kind, 'dismissed', conversationId: conversationId),
+    );
+    notifyListeners();
+  }
+
+  /// "Use KB" asks again with the KB on; "Write as Doc" turns the question
+  /// into a document. The reply is replaced, like in the app.
+  void acceptSuggestion() {
+    final s = suggestion;
+    if (s == null) return;
+    suggestion = null;
+    unawaited(
+      api.reportSuggestion(s.kind, 'accepted', conversationId: conversationId),
+    );
+    if (sending) _cancelStream();
+    if (messages.lastOrNull?.role == Role.assistant) messages.removeLast();
+    final last = messages.lastOrNull;
+    if (last == null || last.role != Role.user) {
+      notifyListeners();
+      return;
+    }
+    switch (s.kind) {
+      case SuggestKind.kb:
+        knowledge = true;
+        _run();
+      case SuggestKind.doc:
+        _sendDoc(last);
+    }
+  }
+
+  /// Round Table taking too long: one model answers instead.
+  void answerFast() {
+    final reply = messages.lastOrNull;
+    if (!sending || reply == null || reply.role != Role.assistant) return;
+    _cancelStream();
+    messages.remove(reply);
+    if (messages.lastOrNull?.role != Role.user) {
+      notifyListeners();
+      return;
+    }
+    _run(roundTableOverride: false);
+  }
+
+  /// A short message above the pill (attachment problems and the like).
+  void say(String text) => _setNotice(text);
 
   AssistShow show = const AssistShow(source: AssistSource.assist);
 
@@ -120,7 +254,9 @@ class AssistController extends ChangeNotifier {
     for (final a in List.of(attachments.items)) {
       attachments.remove(a);
     }
+    _resetToggles();
     notifyListeners();
+    unawaited(loadModels());
   }
 
   // ---- screen --------------------------------------------------------------
@@ -228,14 +364,68 @@ class AssistController extends ChangeNotifier {
     attachments.clearSent();
     _screenshot = null;
     conversationId ??= ConversationsApi.newId();
-    messages.add(
-      ChatMessage(role: Role.user, content: content, attachments: files),
+    final question = ChatMessage(
+      role: Role.user,
+      content: content,
+      attachments: files,
     );
-    _run();
+    messages.add(question);
+    if (doc) {
+      _sendDoc(question);
+    } else {
+      _run();
+    }
     return true;
   }
 
-  void _run({bool withModel = true}) {
+  /// DOC: [question] becomes a document (POST /docs) that keeps being written
+  /// on the server; the reply is its card, opened in the app.
+  Future<void> _sendDoc(ChatMessage question) async {
+    final reply = ChatMessage(role: Role.assistant, isStreaming: true)
+      ..status = 'queued';
+    messages.add(reply);
+    sending = true;
+    notifyListeners();
+    final session = ++_session;
+    final chatId = conversationId ??= ConversationsApi.newId();
+    try {
+      final id = await _docs.create(
+        ChatTurn.docRequest(
+          settings,
+          prompt: question.content,
+          conversationId: chatId,
+          length: docLength,
+          webMode: webMode,
+          knowledge: knowledge,
+          attachments: question.attachments,
+        ),
+      );
+      if (session != _session) return;
+      final card = Doc(
+        id: id,
+        prompt: question.content,
+        conversationId: chatId,
+      );
+      reply
+        ..isStreaming = false
+        ..status = null
+        ..content = DocStrings.messageText(card.title)
+        ..meta = {...reply.meta, 'doc': card.toMeta()};
+      Haptics.send();
+    } catch (e) {
+      if (session != _session) return;
+      Haptics.error();
+      reply
+        ..isStreaming = false
+        ..status = null
+        ..isError = true
+        ..content = e is ApiException ? e.message : DocStrings.startFailed;
+    }
+    sending = false;
+    notifyListeners();
+  }
+
+  void _run({bool? roundTableOverride}) {
     final reply = ChatMessage(role: Role.assistant, isStreaming: true);
     final history = [
       for (final m in messages)
@@ -252,6 +442,7 @@ class AssistController extends ChangeNotifier {
     final client = http.Client();
     _client = client;
     final s = settings;
+    suggestion = null;
 
     void finish() {
       if (session != _session) return;
@@ -282,11 +473,36 @@ class AssistController extends ChangeNotifier {
         case StatusEvent(:final phase):
           reply.status = phase;
           notifyListeners();
+        case NoticeEvent(message: final text):
+          reply.notice = text;
+          notifyListeners();
         case SourcesEvent(:final citations):
           reply.citations = citations;
           notifyListeners();
+        case ImagesEvent(:final images):
+          reply.images = images;
         case EvidenceEvent(:final items):
           reply.evidence = items;
+        case final SuggestToggleEvent e:
+          if (s.smartSuggestions) {
+            suggestion = e;
+            _suppressed.add(e.kind);
+            notifyListeners();
+          }
+        case ToolsEvent(:final web, :final auto):
+          if (web && auto) {
+            reply.meta = {...reply.meta, SmartConfig.searchedKey: true};
+            notifyListeners();
+          }
+        case SuggestionsEvent(:final items):
+          reply.meta = {...reply.meta, SuggestConfig.followUpKey: items};
+        case MemoryEvent(:final ops):
+          reply.memoryOps = ops;
+          notifyListeners();
+        case TableEvent():
+          if (reply.tablePhase == null) Haptics.send();
+          applyTableEvent(reply, event, models);
+          notifyListeners();
         case ModelEvent(:final model):
           reply.modelId = model;
         case DeltaEvent(:final text):
@@ -294,6 +510,7 @@ class AssistController extends ChangeNotifier {
           _scheduleNotify();
         case ResetEvent():
           reply.content = '';
+          reply.notice = null;
           notifyListeners();
         case DoneEvent(:final model, :final used):
           reply.modelId = model ?? reply.modelId;
@@ -311,47 +528,34 @@ class AssistController extends ChangeNotifier {
       }
     }
 
-    _sub = api
-        .streamChat(
-          client,
-          history,
-          modelId: withModel ? s.modelId : null,
-          webMode: s.defaultWebSearch ? WebMode.auto : WebMode.off,
-          knowledge: s.defaultKnowledge,
-          mode: s.mode,
-          profile: s.profileJson(),
-          conversationId: conversationId,
-          smartSuggestions: false,
-          screen: screen?.toJson(),
-        )
-        .listen(
-          onEvent,
-          onError: (Object error) {
-            if (session != _session) return;
-            // A model the server no longer offers: ask again with Auto.
-            if (withModel &&
-                error is ApiException &&
-                error.status == 400 &&
-                reply.content.isEmpty &&
-                s.modelId != null) {
-              _closeStream();
-              messages.remove(reply);
-              _run(withModel: false);
-              return;
-            }
-            fail(_errorText(error));
-          },
-          onDone: () {
-            if (session != _session || !reply.isStreaming) return;
-            if (reply.content.isEmpty) {
-              fail(AppStrings.errorInterrupted);
-            } else {
-              reply.error = AppStrings.errorInterrupted;
-              finish();
-            }
-          },
-          cancelOnError: true,
-        );
+    _sub =
+        ChatTurn.of(
+              s,
+              models: models,
+              webMode: webMode,
+              knowledge: knowledge,
+              roundTable: roundTableOverride ?? roundTable,
+              conversationId: conversationId,
+              suppressSuggest: _suppressed,
+            )
+            .stream(api, client, history, screen: screen?.toJson())
+            .listen(
+              onEvent,
+              onError: (Object error) {
+                if (session != _session) return;
+                fail(_errorText(error));
+              },
+              onDone: () {
+                if (session != _session || !reply.isStreaming) return;
+                if (reply.content.isEmpty) {
+                  fail(AppStrings.errorInterrupted);
+                } else {
+                  reply.error = AppStrings.errorInterrupted;
+                  finish();
+                }
+              },
+              cancelOnError: true,
+            );
   }
 
   Future<bool> _signedIn() async {

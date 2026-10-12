@@ -31,6 +31,7 @@ abstract final class AssistStrings {
   static const copied = 'Copied';
   static const close = 'Close';
   static const thinking = 'THINKING';
+  static const docInApp = 'Being written. Open in sparky to follow it.';
   static const answerFailed = 'Something went wrong. Try again.';
   static const openFailed = 'Could not open the chat. Try again.';
   static const attachFailed = 'That photo could not be added.';
@@ -106,6 +107,9 @@ abstract final class AssistSizes {
   static const pillButton = 44.0;
   static const pillPadding = 8.0;
   static const chipHeight = 36.0;
+
+  /// WEB / KB / TABLE / DOC under the field (smaller than the app's).
+  static const toggleHeight = 28.0;
   static const sheetRadius = 28.0;
 
   /// The answer sheet takes at most this share of the free height.

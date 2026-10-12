@@ -51,6 +51,12 @@ class PendingAttachment {
 
 /// Files being attached to the next message.
 class AttachmentsController extends ChangeNotifier {
+  AttachmentsController({FilesApi? files})
+    : _files = files ?? FilesApi.instance;
+
+  /// Uploads go here (a fake in tests).
+  final FilesApi _files;
+
   final List<PendingAttachment> items = [];
 
   bool get isFull => items.length >= AppFiles.maxPerMessage;
@@ -99,7 +105,7 @@ class AttachmentsController extends ChangeNotifier {
       ..progress = 0
       ..error = null;
     var last = 0.0;
-    a.task = FilesApi.instance
+    a.task = _files
         .upload(
           a.localPath,
           name: a.name,
@@ -113,9 +119,7 @@ class AttachmentsController extends ChangeNotifier {
         )
         .then((info) {
           if (a.cancel.cancelled) {
-            unawaited(
-              FilesApi.instance.delete(info.id).catchError((Object _) {}),
-            );
+            unawaited(_files.delete(info.id).catchError((Object _) {}));
             return;
           }
           a.info = info.withLocalPath(a.localPath);
@@ -141,7 +145,7 @@ class AttachmentsController extends ChangeNotifier {
       await Future<void>.delayed(const Duration(seconds: 2));
       if (a.cancel.cancelled || !items.contains(a)) return;
       try {
-        final fresh = await FilesApi.instance.get(a.info!.id, force: true);
+        final fresh = await _files.get(a.info!.id, force: true);
         a.info = a.info!.withFresh(fresh);
         notifyListeners();
         if (fresh.status != FileStatus.processing) return;
@@ -155,7 +159,7 @@ class AttachmentsController extends ChangeNotifier {
     if (!a.failed) return;
     final old = a.info?.id;
     if (old != null) {
-      unawaited(FilesApi.instance.delete(old).catchError((Object _) {}));
+      unawaited(_files.delete(old).catchError((Object _) {}));
     }
     a.info = null;
     _start(a);
@@ -167,7 +171,7 @@ class AttachmentsController extends ChangeNotifier {
     a.cancel.cancel();
     final id = a.info?.id;
     if (id != null) {
-      unawaited(FilesApi.instance.delete(id).catchError((Object _) {}));
+      unawaited(_files.delete(id).catchError((Object _) {}));
     }
     notifyListeners();
   }

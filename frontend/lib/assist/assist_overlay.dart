@@ -1,26 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../core/constants/app_icons.dart';
 import '../core/constants/app_sizes.dart';
+import '../core/constants/app_strings.dart';
 import '../core/constants/assist.dart';
+import '../core/constants/docs.dart';
+import '../core/constants/smart_toggles.dart';
 import '../core/constants/voice.dart';
 import '../core/haptics.dart';
 import '../core/theme/app_palette.dart';
 import '../core/widgets/app_icon.dart';
 import '../core/widgets/dot_matrix_backdrop.dart';
 import '../core/widgets/icon_label.dart';
-import '../core/widgets/m3_kit_extras.dart';
+import '../features/settings/widgets/settings_kit.dart' show DotGrid;
 import '../data/chat_message.dart';
+import '../data/doc_models.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/auth/widgets/auth_widgets.dart' show Wordmark;
+import '../features/chat/attach_picker.dart';
 import '../features/chat/voice/voice_controller.dart';
 import '../features/chat/voice/voice_permission.dart';
 import '../features/chat/voice/voice_strip.dart';
 import '../features/chat/widgets/attachment_bar.dart';
 import '../features/chat/widgets/markdown/app_markdown.dart';
+import '../features/chat/widgets/image_strip.dart';
+import '../features/chat/widgets/memory_chip.dart';
+import '../features/chat/widgets/round_table_header.dart';
+import '../features/chat/widgets/round_table_panel.dart';
+import '../features/chat/widgets/smart_chip.dart';
+import '../features/chat/widgets/source_chips.dart';
+import '../features/chat/widgets/suggest_prompt.dart';
 import '../features/chat/widgets/thinking_indicator.dart';
-import '../features/settings/widgets/settings_kit.dart';
 import 'assist_controller.dart';
 
 /// Card colour of the overlay: white on light, raised black on dark.
@@ -37,7 +47,7 @@ class AssistOverlay extends StatefulWidget {
     required this.controller,
     this.voice,
     this.auth,
-    this.picker,
+    this.attach,
   });
 
   final AssistController controller;
@@ -45,7 +55,9 @@ class AssistOverlay extends StatefulWidget {
 
   /// Defaults to [AuthController.instance].
   final AuthController? auth;
-  final ImagePicker? picker;
+
+  /// The "+" (the app's picker: photos, camera, video, documents).
+  final AttachPicker? attach;
 
   @override
   State<AssistOverlay> createState() => _AssistOverlayState();
@@ -54,7 +66,7 @@ class AssistOverlay extends StatefulWidget {
 class _AssistOverlayState extends State<AssistOverlay> {
   final _field = TextEditingController();
   final _focus = FocusNode();
-  late final _picker = widget.picker ?? ImagePicker();
+  late final _attachPicker = widget.attach ?? AttachPicker();
   String _voiceBase = '';
   bool _talking = false;
 
@@ -166,37 +178,9 @@ class _AssistOverlayState extends State<AssistOverlay> {
 
   // ---- attach --------------------------------------------------------------
 
-  Future<void> _attach() async {
-    Haptics.tap();
-    if (_c.attachments.isFull) return;
-    final source = await showM3Sheet<ImageSource>(
-      context,
-      builder: (sheet) => M3ActionSheet(
-        rows: [
-          SettingsTile(
-            icon: AssistIcons.photos,
-            title: AssistStrings.attachPhotos,
-            onTap: () => Navigator.pop(sheet, ImageSource.gallery),
-          ),
-          SettingsTile(
-            icon: AssistIcons.camera,
-            title: AssistStrings.attachCamera,
-            onTap: () => Navigator.pop(sheet, ImageSource.camera),
-          ),
-        ],
-      ),
-    );
-    if (source == null || !mounted) return;
-    try {
-      final x = await _picker.pickImage(source: source);
-      if (x == null) return;
-      _c.attachments.add([
-        (path: x.path, name: x.name, size: await x.length()),
-      ]);
-    } catch (_) {
-      Haptics.error();
-    }
-  }
+  /// Same files as the app's chat: uploads with progress chips in the pill.
+  Future<void> _attach() =>
+      _attachPicker.pick(context, _c.attachments, say: _c.say);
 
   // ---- build ---------------------------------------------------------------
 
@@ -250,7 +234,9 @@ class _AssistOverlayState extends State<AssistOverlay> {
   DotMatrixMode _backdropMode() {
     if (widget.voice?.listening ?? false) return DotMatrixMode.listening;
     final last = _c.messages.lastOrNull;
-    if (_c.waitingUploads || (_c.streaming && last!.content.isEmpty)) {
+    if (_c.waitingUploads ||
+        (_c.streaming && last!.content.isEmpty) ||
+        (_c.sending && !_c.streaming)) {
       return DotMatrixMode.thinking;
     }
     if (_c.streaming) return DotMatrixMode.streaming;
@@ -275,6 +261,14 @@ class _AssistOverlayState extends State<AssistOverlay> {
             ),
           ),
         if (_c.hasThread) const SizedBox(height: AppSpacing.sm),
+        if (_c.suggestion != null) ...[
+          SuggestPrompt(
+            suggestion: _c.suggestion!,
+            onAccept: _c.acceptSuggestion,
+            onDismiss: _c.dismissSuggestion,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         if (_c.notice != null) ...[
           _Notice(controller: _c),
           const SizedBox(height: AppSpacing.sm),
@@ -333,6 +327,7 @@ class _AssistOverlayState extends State<AssistOverlay> {
               _trailing(context),
             ],
           ),
+          _Toggles(controller: _c),
         ],
       ),
     );
@@ -682,7 +677,7 @@ class _AnswerSheet extends StatelessWidget {
                     if (m.role == Role.user)
                       _Question(message: m)
                     else
-                      _Answer(message: m),
+                      _Answer(message: m, onAnswerFast: c.answerFast),
                 ],
               ),
             ),
@@ -758,14 +753,24 @@ String _attachLabel(ChatMessage m) {
 }
 
 class _Answer extends StatelessWidget {
-  const _Answer({required this.message});
+  const _Answer({required this.message, required this.onAnswerFast});
 
   final ChatMessage message;
+  final VoidCallback onAnswerFast;
 
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    if (message.isStreaming && message.content.isEmpty) {
+    final waiting = message.isStreaming && message.content.isEmpty;
+    if (waiting && message.tablePhase != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        child: RoundTablePanel(message: message, onAnswerFast: onAnswerFast),
+      );
+    }
+    final doc = message.isError ? null : DocLink.fromMeta(message.meta);
+    if (doc != null) return _DocCard(message: message);
+    if (waiting) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
         child: Align(
@@ -783,6 +788,10 @@ class _Answer extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (message.table != null) ...[
+          RoundTableHeader(table: message.table!, citations: message.citations),
+          const SizedBox(height: AppSpacing.md),
+        ],
         AppMarkdown(
           data: message.content,
           citations: message.citations,
@@ -797,7 +806,128 @@ class _Answer extends StatelessWidget {
               style: context.text.caption.copyWith(color: p.error),
             ),
           ),
+        if (message.notice != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(message.notice!, style: context.text.caption),
+        ],
+        if (message.memoryOps.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          MemoryChip(ops: message.memoryOps),
+        ],
+        if (message.images.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          ImageStrip(images: message.images),
+        ],
+        if (message.meta[SmartConfig.searchedKey] == true) ...[
+          const SizedBox(height: AppSpacing.sm),
+          const SearchedWebNote(),
+        ],
+        if (message.citations.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          SourceChips(citations: message.citations, used: message.usedIds),
+        ],
       ],
+    );
+  }
+}
+
+/// DOC: the document keeps being written on the server; it opens in the app.
+class _DocCard extends StatelessWidget {
+  const _DocCard({required this.message});
+
+  final ChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: _tonal(p),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      child: Row(
+        children: [
+          AppIcon(AppIcons.doc, size: AppIconSize.lg, color: p.textPrimary),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(message.content, style: context.text.body),
+                const SizedBox(height: AppSpacing.xs),
+                Text(AssistStrings.docInApp, style: context.text.caption),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// WEB / KB / TABLE / DOC, like the app's composer (smaller).
+class _Toggles extends StatelessWidget {
+  const _Toggles({required this.controller});
+
+  final AssistController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    const gap = SizedBox(width: AppSpacing.xs);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xs,
+        AppSpacing.xs,
+        AppSpacing.xs,
+        0,
+      ),
+      // Scrolls rather than overflowing on narrow phones.
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            SmartChip(
+              label: AppStrings.web,
+              icon: AppIcons.web,
+              active: c.webMode == WebMode.on,
+              hint: switch (c.webMode) {
+                WebMode.auto => SmartStrings.webAuto,
+                WebMode.off => SmartStrings.webOff,
+                WebMode.on => null,
+              },
+              dim: c.webMode == WebMode.off,
+              height: AssistSizes.toggleHeight,
+              onTap: c.cycleWebMode,
+            ),
+            gap,
+            SmartChip(
+              label: AppStrings.kb,
+              icon: AppIcons.knowledge,
+              active: c.knowledge,
+              height: AssistSizes.toggleHeight,
+              onTap: c.toggleKnowledge,
+            ),
+            gap,
+            SmartChip(
+              label: TableStrings.chip,
+              icon: AppIcons.roundTable,
+              active: c.roundTable,
+              height: AssistSizes.toggleHeight,
+              onTap: c.toggleRoundTable,
+            ),
+            gap,
+            SmartChip(
+              label: DocStrings.chip,
+              icon: AppIcons.doc,
+              active: c.doc,
+              height: AssistSizes.toggleHeight,
+              onTap: c.toggleDoc,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -25,6 +25,7 @@ import '../../data/files_api.dart';
 import '../docs/doc_controller.dart';
 import '../docs/doc_registry.dart';
 import '../settings/settings_controller.dart';
+import 'chat_turn.dart';
 import 'composer_state.dart';
 
 class ChatController extends ChangeNotifier {
@@ -161,12 +162,6 @@ class ChatController extends ChangeNotifier {
   /// Shows the background table's chat again (live).
   void openBackground() {
     if (_background != null) _reattach();
-  }
-
-  /// The model picked in Settings, only if the server still offers it.
-  String? get _requestedModel {
-    final id = _settings.modelId;
-    return id != null && models.any((m) => m.id == id) ? id : null;
   }
 
   String modelName(String? id) =>
@@ -346,14 +341,14 @@ class ChatController extends ChangeNotifier {
     final chatId = conversationId ??= ConversationsApi.newId();
     try {
       final id = await _docs.create(
-        DocRequest(
+        ChatTurn.docRequest(
+          _settings,
           prompt: brief ?? content,
           conversationId: chatId,
           length: docLength,
-          webSearch: webSearch,
+          webMode: webMode,
           knowledge: knowledge,
-          attachments: [for (final a in attachments) a.id],
-          profile: _settings.profileJson(),
+          attachments: attachments,
         ),
       );
       if (session != _session) return;
@@ -819,22 +814,19 @@ class ChatController extends ChangeNotifier {
       }
     }
 
-    _sub = _api
-        .streamChat(
-          client,
-          history,
-          modelId: _requestedModel,
-          webMode: webMode,
-          knowledge: knowledge,
-          mode: _settings.mode,
-          profile: _settings.profileJson(),
-          context: _contextText,
-          roundTable: roundTableOverride ?? roundTable,
-          conversationId: conversationId,
-          smartSuggestions: _settings.smartSuggestions,
-          suppressSuggest: Set.of(_suppressed),
-          apps: appRefs,
-        )
+    final turn = ChatTurn.of(
+      _settings,
+      models: models,
+      webMode: webMode,
+      knowledge: knowledge,
+      roundTable: roundTableOverride ?? roundTable,
+      context: _contextText,
+      conversationId: conversationId,
+      suppressSuggest: _suppressed,
+      apps: appRefs,
+    );
+    _sub = turn
+        .stream(_api, client, history)
         .listen(
           onEvent,
           onError: (Object error) => fail(_errorText(error)),
@@ -1083,11 +1075,7 @@ class ChatController extends ChangeNotifier {
   void _onTable(ChatMessage message, TableEvent e) {
     final first = message.tablePhase == null;
     final changed = message.tablePhase != e.phase;
-    message.tablePhase = e.phase;
-    message.tableSeen = {...message.tableSeen, e.phase};
-    if (e.elapsedMs != null) message.tableElapsedMs = e.elapsedMs!;
-    if (e.etaMs != null || e.phase == 'done') message.tableEtaMs = e.etaMs;
-    message.tableStamp = DateTime.now();
+    applyTableEvent(message, e, models);
     if (first) {
       // The table takes a while: a nudge, and the permission prompt for the
       // finished notification comes now rather than mid-wait.
@@ -1115,42 +1103,6 @@ class ChatController extends ChangeNotifier {
         message,
         id: bg != null && identical(bg.reply, message) ? bg.id : null,
       );
-    }
-    if (e.phase == 'researching') {
-      if (e.research.isNotEmpty) message.tableResearch = e.research;
-      return;
-    }
-    if (e.phase == 'seating') {
-      // Seating carries the searches that succeeded; failed ones are dropped.
-      message.liveSeats = [for (final s in e.seats) s..status = 'working'];
-      return;
-    }
-    if (e.phase == 'done') {
-      message.table = e.transcript;
-      return;
-    }
-    final seat = message.liveSeats.where((s) => s.seat == e.seat).firstOrNull;
-    if (seat == null || e.status == null) return;
-    if (e.phase == 'drafting') {
-      if (e.model != null && e.model != seat.model) {
-        seat
-          ..model = e.model!
-          ..name =
-              models.where((m) => m.id == e.model).firstOrNull?.name ??
-              e.model!;
-      }
-      seat.status = e.status!;
-      if (e.summary != null) seat.summary = e.summary!;
-    } else if (e.phase == 'reviewing') {
-      // The reviewer is busy, then back to its draft's state; the points
-      // it raises count against the drafts they are about.
-      seat.status = e.status == 'working' ? 'working' : 'done';
-      for (final p in e.points) {
-        final target = message.liveSeats.where((s) => s.seat == p.seat);
-        for (final t in target) {
-          t.objections++;
-        }
-      }
     }
   }
 

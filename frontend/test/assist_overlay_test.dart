@@ -9,18 +9,26 @@ import 'package:app/core/constants/assist.dart';
 import 'package:app/core/constants/smart_toggles.dart';
 import 'package:app/core/haptics.dart';
 import 'package:app/core/theme/app_theme.dart';
+import 'package:app/data/ai_model.dart';
 import 'package:app/data/chat_api.dart';
 import 'package:app/data/chat_event.dart';
 import 'package:app/data/chat_message.dart';
 import 'package:app/data/conversation.dart';
 import 'package:app/data/conversations_api.dart';
+import 'package:app/data/files_api.dart';
 import 'package:app/data/usage_api.dart';
 import 'package:app/features/auth/auth_controller.dart';
+import 'package:app/features/chat/attach_picker.dart';
+import 'package:app/features/chat/attachments_controller.dart';
 import 'package:app/features/chat/voice/voice_controller.dart';
 import 'package:app/features/chat/voice/voice_engine.dart';
 import 'package:app/features/chat/voice/voice_permission.dart';
 import 'package:app/features/settings/settings_controller.dart';
 import 'package:app/features/settings/usage_controller.dart';
+import 'package:app/core/constants/app_strings.dart';
+import 'package:app/core/widgets/m3_kit_extras.dart';
+import 'package:app/features/chat/widgets/round_table_panel.dart';
+import 'package:app/features/chat/widgets/suggest_prompt.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,7 +66,18 @@ class FakeBridge implements AssistBridge {
 class FakeChat extends ChatApi {
   final requests =
       <({List<ChatMessage> history, Map<String, Object>? screen})>[];
+  final flags = <({WebMode web, bool kb, bool table})>[];
   StreamController<ChatEvent>? live;
+
+  @override
+  Future<List<AiModel>> fetchModels() async => const [];
+
+  @override
+  Future<void> reportSuggestion(
+    SuggestKind kind,
+    String outcome, {
+    String? conversationId,
+  }) async {}
 
   @override
   Stream<ChatEvent> streamChat(
@@ -78,6 +97,7 @@ class FakeChat extends ChatApi {
     Map<String, Object>? screen,
   }) {
     requests.add((history: List.of(history), screen: screen));
+    flags.add((web: webMode, kb: knowledge, table: roundTable));
     live = StreamController<ChatEvent>();
     return live!.stream;
   }
@@ -100,6 +120,29 @@ class FakeConversations extends ConversationsApi {
       'updatedAt': '2026-10-13T10:00:00Z',
     });
   }
+}
+
+/// Uploads finish at once (no network).
+class FakeFiles extends Fake implements FilesApi {
+  @override
+  Future<FileInfo> upload(
+    String path, {
+    required String name,
+    String? conversationId,
+    void Function(double progress)? onProgress,
+    UploadCancel? cancel,
+  }) async {
+    onProgress?.call(1);
+    return FileInfo(
+      id: 'file-$name',
+      name: name,
+      mime: 'application/pdf',
+      status: FileStatus.ready,
+    );
+  }
+
+  @override
+  Future<void> delete(String id) async {}
 }
 
 class _Engine implements VoiceEngine {
@@ -140,6 +183,14 @@ Future<void> _fonts() async {
       loader.addFont(rootBundle.load('assets/fonts/$f'));
     }
     await loader.load();
+  }
+}
+
+/// The backdrop animates forever: pump through sheets and uploads instead
+/// of waiting for the last frame.
+Future<void> _settle(WidgetTester tester) async {
+  for (var i = 0; i < 12; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
   }
 }
 
@@ -254,7 +305,12 @@ class _Harness {
     api: chat,
     conversations: conversations,
     settings: settings,
+    attachments: AttachmentsController(files: FakeFiles()),
   );
+
+  /// What the document picker returns next.
+  List<PickedFile> documents = const [];
+  late final attach = AttachPicker(documents: () async => documents);
   final voice = VoiceController(onDevice: _Engine(), permission: _Granted());
 
   Widget app({required bool dark}) => AppScope(
@@ -271,7 +327,11 @@ class _Harness {
         children: [
           const Positioned.fill(child: _BehindApp()),
           Positioned.fill(
-            child: AssistOverlay(controller: controller, voice: voice),
+            child: AssistOverlay(
+              controller: controller,
+              voice: voice,
+              attach: attach,
+            ),
           ),
         ],
       ),
@@ -442,6 +502,116 @@ void main() {
       expect(find.text(AssistStrings.signInTitle), findsOneWidget);
       expect(find.text(AssistStrings.askHint), findsNothing);
       await _golden(tester, 'goldens/assist_signed_out_$theme.png');
+    });
+  }
+
+  testWidgets('+ adds a document like the app; it goes with the question', (
+    tester,
+  ) async {
+    _phone(tester);
+    final h = _Harness(settings);
+    h.documents = [
+      (path: '/tmp/itinerary.pdf', name: 'itinerary.pdf', size: 48000),
+    ];
+    h.controller.reset(const AssistShow(source: AssistSource.session));
+    await tester.pumpWidget(h.app(dark: false));
+    await tester.tap(find.bySemanticsLabel(AssistStrings.attach));
+    await _settle(tester);
+    await tester.tap(find.text(sentenceCase(AppStrings.attachDocument)));
+    await _settle(tester);
+    expect(find.text('itinerary.pdf'), findsOneWidget);
+    expect(
+      h.controller.attachments.items.single.info?.id,
+      'file-itinerary.pdf',
+    );
+
+    await tester.enterText(find.byType(TextField), 'Summarise this');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    final sent = h.chat.requests.single.history.single;
+    expect(sent.content, 'Summarise this');
+    expect(sent.attachments.single.id, 'file-itinerary.pdf');
+    h.controller.stop();
+  });
+
+  testWidgets('a document too big is refused with a note', (tester) async {
+    _phone(tester);
+    final h = _Harness(settings);
+    h.documents = [(path: '/tmp/huge.pdf', name: 'huge.pdf', size: 1 << 40)];
+    h.controller.reset(const AssistShow(source: AssistSource.session));
+    await tester.pumpWidget(h.app(dark: false));
+    await tester.tap(find.bySemanticsLabel(AssistStrings.attach));
+    await _settle(tester);
+    await tester.tap(find.text(sentenceCase(AppStrings.attachDocument)));
+    await _settle(tester);
+    expect(h.controller.attachments.items, isEmpty);
+    expect(find.text(AppStrings.attachTooBig), findsOneWidget);
+  });
+
+  testWidgets('WEB / KB / TABLE chips set the request', (tester) async {
+    _phone(tester);
+    final h = _Harness(settings);
+    h.controller.reset(const AssistShow(source: AssistSource.session));
+    await tester.pumpWidget(h.app(dark: false));
+    await tester.tap(find.textContaining(AppStrings.web));
+    await tester.tap(find.text(AppStrings.kb));
+    await tester.tap(find.text(TableStrings.chip));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'hi');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    expect(h.chat.flags.single, (
+      web: WebMode.auto.next,
+      kb: true,
+      table: true,
+    ));
+    h.controller.stop();
+  });
+
+  testWidgets('Use KB? shows inline and asks again', (tester) async {
+    _phone(tester);
+    final h = _Harness(settings);
+    h.controller.reset(const AssistShow(source: AssistSource.session));
+    await tester.pumpWidget(h.app(dark: false));
+    await tester.enterText(find.byType(TextField), 'my visa notes?');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    h.chat.live!
+      ..add(const DeltaEvent('Visas depend on…'))
+      ..add(const SuggestToggleEvent(SuggestKind.kb, reason: 'your notes'))
+      ..add(const DoneEvent());
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(SuggestPrompt), findsOneWidget);
+    await tester.tap(find.text(SmartStrings.kbUse));
+    await tester.pump();
+    expect(h.chat.flags.last.kb, isTrue);
+    expect(find.byType(SuggestPrompt), findsNothing);
+    h.controller.stop();
+  });
+
+  for (final dark in [false, true]) {
+    final theme = dark ? 'dark' : 'light';
+    testWidgets('round table progress in the sheet ($theme)', (tester) async {
+      _phone(tester);
+      final h = _Harness(settings);
+      h.controller.reset(const AssistShow(source: AssistSource.session));
+      h.controller.toggleRoundTable();
+      await tester.pumpWidget(h.app(dark: dark));
+      await tester.enterText(
+        find.byType(TextField),
+        'Should I take the train or fly to Porto?',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      h.chat.live!.add(
+        const TableEvent(phase: 'researching', elapsedMs: 4000, etaMs: 40000),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(RoundTablePanel), findsOneWidget);
+      await _golden(tester, 'goldens/assist_table_$theme.png');
+      h.controller.stop();
     });
   }
 
