@@ -162,13 +162,15 @@ export async function fitVideo(file: string, dir: string, durationS: number, max
 const SEGMENT_S = 600;
 const MAX_TRANSCRIBE_S = 3600;
 
-async function groqTranscribe(audio: Buffer, name: string): Promise<string> {
+/** One clip through Groq Whisper; [language] is an ISO-639-1 hint, the result carries the detected language. */
+export async function groqTranscribe(audio: Buffer, name: string, opts: { mime?: string; language?: string } = {}): Promise<{ text: string; language: string }> {
   const t0 = Date.now();
   const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(audio)], { type: "audio/mpeg" }), name);
+  form.append("file", new Blob([new Uint8Array(audio)], { type: opts.mime ?? "audio/mpeg" }), name);
   form.append("model", "whisper-large-v3-turbo");
-  form.append("response_format", "json");
+  form.append("response_format", "verbose_json");
   form.append("temperature", "0");
+  if (opts.language) form.append("language", opts.language);
   let status = 0;
   try {
     const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
@@ -179,9 +181,9 @@ async function groqTranscribe(audio: Buffer, name: string): Promise<string> {
     });
     status = res.status;
     if (!res.ok) throw new Error(`Groq transcription ${status}: ${(await res.text()).slice(0, 150)}`);
-    const j = (await res.json()) as { text?: string };
+    const j = (await res.json()) as { text?: string; language?: string };
     recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: true, status, latencyMs: Date.now() - t0 });
-    return (j.text ?? "").trim();
+    return { text: (j.text ?? "").trim(), language: j.language ?? "" };
   } catch (e) {
     recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: false, status: status || undefined, latencyMs: Date.now() - t0, errorMessage: (e as Error).message });
     throw e;
@@ -198,7 +200,7 @@ export async function transcribe(file: string, dir: string, durationS: number): 
     await run(FFMPEG, ["-y", "-ss", String(start), "-t", String(SEGMENT_S), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", dest], 180_000);
     const buf = await readFile(dest);
     if (buf.length < 1500) continue;
-    const text = await groqTranscribe(buf, `part${i}.mp3`);
+    const { text } = await groqTranscribe(buf, `part${i}.mp3`);
     if (text) parts.push(text);
   }
   const all = parts.join("\n").trim();
