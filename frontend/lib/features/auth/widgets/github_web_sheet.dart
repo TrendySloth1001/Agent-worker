@@ -67,8 +67,17 @@ class _GithubWebSheetState extends State<_GithubWebSheet> {
 
   void _close(GithubWebSheetResult r) {
     if (_result != null || !mounted) return;
+    // A sign-in already closed every pushed route (this sheet included) for
+    // the new account; popping now would pop the home route and leave a
+    // blank screen.
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive) return;
     _result = r;
-    Navigator.of(context).pop(r);
+    if (route.isCurrent) {
+      Navigator.of(context).pop(r);
+    } else {
+      Navigator.of(context).removeRoute(route, r);
+    }
   }
 
   @override
