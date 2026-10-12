@@ -15,7 +15,7 @@ void main() {
     for (final s in MascotState.values) {
       expect(s.illustration, isA<IllustrationKind>());
     }
-    expect(MascotState.github.illustration, IllustrationKind.github);
+    expect(MascotState.github.illustration, IllustrationKind.githubBranches);
     expect(MascotState.idle.illustration, IllustrationKind.hello);
   });
 
