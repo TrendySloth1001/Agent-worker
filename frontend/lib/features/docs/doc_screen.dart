@@ -11,17 +11,15 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/dot_meter.dart';
-import '../../data/chat_event.dart';
 import '../../data/doc_models.dart';
 import '../chat/share/share_sheet.dart';
 import '../chat/widgets/markdown/app_markdown.dart';
-import '../chat/widgets/markdown/evidence_sheet.dart';
-import '../chat/widgets/open_url.dart';
 import 'doc_controller.dart';
 import 'doc_export.dart';
 import 'doc_highlights.dart';
 import 'doc_progress.dart';
 import 'doc_qa.dart';
+import 'doc_references.dart';
 import 'doc_registry.dart';
 import 'doc_section_menu.dart';
 import 'doc_selection_edit.dart';
@@ -358,6 +356,7 @@ class _DocScreenState extends State<DocScreen> {
                   padding: const EdgeInsets.only(top: DocSizes.sectionGap),
                   child: DocReferences(
                     references: refs,
+                    counts: doc.citeCounts,
                     evidence: doc.evidence,
                   ),
                 ),
@@ -588,7 +587,7 @@ class _Header extends StatelessWidget {
             Text(DocStrings.abstractLabel, style: t.caption),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              doc.summary.trim(),
+              withoutCitations(doc.summary.trim()),
               style: t.body.copyWith(
                 fontSize: DocSizes.abstractSize,
                 height: DocSizes.bodyHeight,
@@ -1051,106 +1050,6 @@ class _LoadError extends StatelessWidget {
           DocTextButton(label: AppStrings.retry, onTap: onRetry),
         ],
       ),
-    );
-  }
-}
-
-/// The bibliography: cited sources in first-use order, hanging ids.
-class DocReferences extends StatelessWidget {
-  const DocReferences({
-    super.key,
-    required this.references,
-    this.evidence = const [],
-  });
-
-  final List<Citation> references;
-  final List<Evidence> evidence;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final t = context.text;
-    final style = t.body.copyWith(
-      fontSize: DocSizes.referenceSize,
-      height: DocSizes.referenceHeight,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(DocStrings.referencesLabel, style: t.caption),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          DocStrings.references,
-          style: t.title.copyWith(
-            fontSize: DocSizes.sectionHeading,
-            height: DocSizes.sectionHeadingHeight,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: DocSizes.headingGap),
-        for (final c in references)
-          InkWell(
-            onTap: () => c.url.isEmpty
-                ? showEvidenceSheet(context, c, evidence)
-                : openUrl(context, c.url),
-            onLongPress: () => showEvidenceSheet(context, c, evidence),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: DocSizes.referenceIdWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                      child: Text('[${c.id}]', style: t.caption),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        style: style,
-                        children: [
-                          TextSpan(
-                            text: c.title.isEmpty ? c.site : c.title,
-                            style: style.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          const TextSpan(text: '. '),
-                          if (c.isKb || c.url.isEmpty)
-                            TextSpan(
-                              text: DocStrings.knowledgeBase,
-                              style: style.copyWith(
-                                fontStyle: FontStyle.italic,
-                                color: p.textSecondary,
-                              ),
-                            )
-                          else ...[
-                            if (c.site.isNotEmpty)
-                              TextSpan(
-                                text: '${c.site}. ',
-                                style: style.copyWith(
-                                  fontStyle: FontStyle.italic,
-                                  color: p.textSecondary,
-                                ),
-                              ),
-                            TextSpan(
-                              text: c.url,
-                              style: t.caption.copyWith(
-                                color: p.textTertiary,
-                                decoration: TextDecoration.underline,
-                                decorationColor: p.border,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

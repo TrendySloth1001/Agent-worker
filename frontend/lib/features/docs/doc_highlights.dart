@@ -10,7 +10,7 @@ import '../../data/doc_models.dart';
 // Highlights: text-quote anchors (quote + prefix/suffix) drawn by wrapping
 // the quote in `==…==`, the reply markdown's existing highlight syntax.
 
-final _tag = RegExp(r'\[[KWDG]\d{1,3}\](?!\()');
+final _tag = RegExp(r'\[[KWDGC]\d{1,3}\](?!\()');
 final _fence = RegExp(r'^\s*(```|~~~)');
 final _markers = RegExp(r'[*_`]');
 final _ws = RegExp(r'\s+');
@@ -74,7 +74,7 @@ String applyHighlights(String markdown, Iterable<String> quotes) {
   for (final quote in list) {
     final words = quote.split(' ');
     final pattern = RegExp(
-      words.map(RegExp.escape).join(r'(?:[ \t]|[*_`]|\[[KWDG]\d{1,3}\])+'),
+      words.map(RegExp.escape).join(r'(?:[ \t]|[*_`]|\[[KWDGC]\d{1,3}\])+'),
     );
     var fenced = false;
     for (var i = 0; i < lines.length; i++) {

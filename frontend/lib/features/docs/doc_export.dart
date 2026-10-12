@@ -14,6 +14,7 @@ import '../../data/docs_api.dart';
 import '../chat/share/chat_export.dart';
 import '../chat/share/markdown_pdf_writer.dart';
 import '../chat/share/share_sheet.dart';
+import '../chat/widgets/markdown/citation_chip.dart';
 import 'doc_section_menu.dart';
 
 /// Section markdown without a leading `## Heading` the server may have
@@ -37,11 +38,42 @@ String _metaLine(Doc doc) => DocStrings.meta(
   status: doc.status,
 );
 
+/// Source number (1-based, first-use order) by citation id.
+Map<String, int> citeNumbers(Doc doc) => {
+  for (final (i, c) in doc.references.indexed) c.id: i + 1,
+};
+
+final _citeRun = RegExp(
+  r'[ \t]*\[[KWDGC]\d{1,3}\](?!\()(?:[ \t,]*\[[KWDGC]\d{1,3}\](?!\())*',
+);
+final _citeTag = RegExp(r'\[([KWDGC]\d{1,3})\]');
+
+/// Citation tags as source numbers. With [links] they are superscript
+/// links to the numbered references list (`<sup>[1](#ref-1)</sup>`),
+/// otherwise plain `[1,2]`. Adjacent tags share one mark, unknown ids go.
+String numberCitations(
+  String text,
+  Map<String, int> numbers, {
+  required bool links,
+}) => text.replaceAllMapped(_citeRun, (m) {
+  final nums = {
+    for (final t in _citeTag.allMatches(m[0]!))
+      if (numbers[t[1]] != null) numbers[t[1]]!,
+  }.toList()..sort();
+  if (nums.isEmpty) return '';
+  return links
+      ? '<sup>${nums.map((n) => '[$n](#ref-$n)').join(',')}</sup>'
+      : ' [${nums.join(',')}]';
+});
+
+/// "github · Title url": the site name leads each reference.
 String _referenceLine(Citation c, {bool links = true}) {
   final title = c.title.isEmpty ? c.site : c.title;
-  if (c.isKb || c.url.isEmpty) return '$title. ${DocStrings.knowledgeBase}.';
-  final site = c.site.isEmpty || c.site == title ? '' : ' ${c.site}.';
-  return links ? '$title.$site <${c.url}>' : '$title.$site ${c.url}';
+  final name = citeShortName(c);
+  if (c.isKb || c.url.isEmpty) {
+    return '$name · $title. ${DocStrings.knowledgeBase}.';
+  }
+  return links ? '**$name** · $title <${c.url}>' : '$name · $title ${c.url}';
 }
 
 /// The whole document as portable Markdown: title, abstract, sections
@@ -49,6 +81,8 @@ String _referenceLine(Citation c, {bool links = true}) {
 String docMarkdown(Doc doc, {DateTime? now}) {
   final date = now ?? DateTime.now();
   final title = doc.title.trim().isEmpty ? DocStrings.untitled : doc.title;
+  final numbers = citeNumbers(doc);
+  String cite(String md) => numberCitations(md, numbers, links: true);
   final b = StringBuffer()
     ..writeln('# $title')
     ..writeln();
@@ -66,7 +100,7 @@ String docMarkdown(Doc doc, {DateTime? now}) {
     b
       ..writeln('## ${DocStrings.abstractTitle}')
       ..writeln()
-      ..writeln(doc.summary.trim())
+      ..writeln(cite(doc.summary.trim()))
       ..writeln();
   }
   for (final s in doc.body) {
@@ -76,7 +110,7 @@ String docMarkdown(Doc doc, {DateTime? now}) {
       ..writeln();
     if (body.isNotEmpty) {
       b
-        ..writeln(portableMarkdown(body, doc.sources))
+        ..writeln(portableMarkdown(cite(body), doc.sources))
         ..writeln();
     }
   }
@@ -85,8 +119,8 @@ String docMarkdown(Doc doc, {DateTime? now}) {
     b
       ..writeln('## ${DocStrings.references}')
       ..writeln();
-    for (final c in refs) {
-      b.writeln('- [${c.id}] ${_referenceLine(c)}');
+    for (final (i, c) in refs.indexed) {
+      b.writeln('${i + 1}. <a id="ref-${i + 1}"></a>${_referenceLine(c)}');
     }
     b.writeln();
   }
@@ -112,6 +146,8 @@ Future<Uint8List> buildDocPdf(Doc doc, {DateTime? now}) async {
   final h = w.body.copyWith(fontWeight: MarkdownPdfWriter.bold);
   final refs = doc.references;
   final sections = doc.body;
+  final numbers = citeNumbers(doc);
+  String cite(String md) => numberCitations(md, numbers, links: false);
 
   List<pw.Widget> heading(String text, double size) => [
     pw.SizedBox(height: PdfSizes.messageGap),
@@ -151,7 +187,7 @@ Future<Uint8List> buildDocPdf(Doc doc, {DateTime? now}) async {
           pw.SizedBox(height: PdfSizes.messageGap),
           pw.Text(DocStrings.abstractLabel, style: w.caption),
           pw.SizedBox(height: PdfSizes.blockGap),
-          ...w.markdown(doc.summary.trim()),
+          ...w.markdown(cite(doc.summary.trim())),
         ],
         // Contents.
         pw.NewPage(),
@@ -181,11 +217,11 @@ Future<Uint8List> buildDocPdf(Doc doc, {DateTime? now}) async {
             '${DocStrings.sectionNo(i + 1)}  ${s.heading}',
             PdfSizes.h1,
           ),
-          ...w.markdown(sectionBody(s)),
+          ...w.markdown(cite(sectionBody(s))),
         ],
         if (refs.isNotEmpty) ...[
           ...heading(DocStrings.references, PdfSizes.h1),
-          for (final c in refs)
+          for (final (i, c) in refs.indexed)
             pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: PdfSizes.blockGap / 2),
               child: pw.Row(
@@ -193,7 +229,7 @@ Future<Uint8List> buildDocPdf(Doc doc, {DateTime? now}) async {
                 children: [
                   pw.SizedBox(
                     width: PdfSizes.indent * 2.5,
-                    child: pw.Text('[${c.id}]', style: w.caption),
+                    child: pw.Text('${i + 1}', style: w.caption),
                   ),
                   pw.Expanded(
                     child: pw.RichText(

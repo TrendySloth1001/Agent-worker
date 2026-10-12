@@ -82,6 +82,13 @@ abstract final class DocStrings {
   static const abstractLabel = 'ABSTRACT';
   static const references = 'References';
   static const referencesLabel = 'REFERENCES';
+  static const refWeb = 'WEB';
+  static const refKnowledge = 'KNOWLEDGE BASE';
+  static const refFiles = 'DOCUMENTS';
+  static const refChats = 'YOUR CHATS';
+
+  /// "×3": how often a source is cited.
+  static String citedTimes(int n) => '×$n';
   static const glossary = 'GLOSSARY';
   static const knowledgeBase = 'Knowledge base';
   static const accessed = 'Retrieved';
@@ -418,6 +425,12 @@ abstract final class DocSizes {
   static const referenceSize = 14.0;
   static const referenceHeight = 1.5;
   static const referenceIdWidth = 40.0;
+  static const referenceFavicon = 28.0;
+  static const referenceTitleLines = 2;
+
+  /// Divider inset: row padding plus logo plus gap.
+  static const referenceInset =
+      AppSpacing.md + referenceFavicon + AppSpacing.md;
 
   static const sectionGap = 56.0;
   static const headingGap = AppSpacing.lg;

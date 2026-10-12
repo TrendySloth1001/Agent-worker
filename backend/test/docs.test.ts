@@ -9,7 +9,7 @@ import { runPipeline, runRewrite, addSection, DEFAULT_LIMITS, type DocDeps } fro
 import { answerQuestion, editSelection, locateSpan, planNextSection } from "../src/docs/followup.js";
 import { finishJob, registerJob, Semaphore } from "../src/docs/registry.js";
 import { anchorQuote, memoryStore, MAX_REVISIONS, prismaStore, type DocStore } from "../src/docs/store.js";
-import { toDocx, toMarkdown } from "../src/docs/export.js";
+import { citationOrder, replaceCitations, siteName, toDocx, toMarkdown } from "../src/docs/export.js";
 import type { DocSource, DocState } from "../src/docs/types.js";
 import { ChatFailure } from "../src/llm/router.js";
 import { UpstreamError, type Message } from "../src/providers.js";
@@ -400,6 +400,37 @@ test("export: markdown and a valid docx zip", async () => {
   const buf = await toDocx(st);
   assert.equal(buf.subarray(0, 2).toString(), "PK");
   assert.ok(buf.includes(Buffer.from("word/document.xml")));
+});
+
+test("export: citation tags become numbers that link to a named references list", () => {
+  assert.equal(siteName({ kind: "web", title: "t", url: "https://developer.mozilla.org/en-US/docs", site: "developer.mozilla.org" }), "mozilla");
+  assert.equal(siteName({ kind: "web", title: "t", url: "https://github.com/acme/widget/issues", site: "github.com" }), "widget");
+  assert.equal(siteName({ kind: "web", title: "t", url: "https://www.bbc.co.uk/news", site: "bbc.co.uk" }), "bbc");
+  assert.equal(siteName({ kind: "file", title: "My report", url: "", site: "document" }), "My report");
+  const order = ["W2", "W1"];
+  assert.equal(replaceCitations("Fluids [W2][W1]. Alone [W1]. Gone [W9].", order, "markdown"), "Fluids<sup>[1](#ref-1),[2](#ref-2)</sup>. Alone<sup>[2](#ref-2)</sup>. Gone.");
+  assert.equal(replaceCitations("A [W2], [W1] b", order, "docx"), "A\uE0001,2\uE001 b");
+  const st = {
+    id: "d",
+    userId: "u",
+    title: "T",
+    summary: "",
+    outline: null,
+    sources: [
+      { id: "W1", kind: "web", title: "WHO page", url: "https://who.int/x", site: "who.int", snippet: "", text: "" },
+      { id: "W2", kind: "web", title: "AHA", url: "https://www.heart.org", site: "heart.org", snippet: "", text: "" },
+    ],
+    sections: [
+      { sectionId: "s1", ord: 0, heading: "One", markdown: "Fluids [W2] and nerves [W1][W2].", usedIds: [], images: [], status: "done" },
+      { sectionId: "references", ord: 1, heading: "References", markdown: "stale [W1]", usedIds: [], images: [], status: "done" },
+    ],
+  } as unknown as DocState;
+  assert.deepEqual(citationOrder(st), ["W2", "W1"]);
+  const md = toMarkdown(st);
+  assert.match(md, /Fluids<sup>\[1\]\(#ref-1\)<\/sup> and nerves<sup>\[1\]\(#ref-1\),\[2\]\(#ref-2\)<\/sup>\./);
+  assert.match(md, /1\. <a id="ref-1"><\/a>\*\*heart\*\* · \[AHA\]\(https:\/\/www\.heart\.org\)/);
+  assert.match(md, /2\. <a id="ref-2"><\/a>\*\*who\*\* · \[WHO page\]/);
+  assert.doesNotMatch(md, /\[W\d\]/);
 });
 
 // ---- database: isolation, limits, revisions -----------------------------------------

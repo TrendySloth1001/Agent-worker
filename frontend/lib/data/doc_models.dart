@@ -316,6 +316,17 @@ class Doc {
     ];
   }
 
+  /// How often each source is cited in the body, by id.
+  Map<String, int> get citeCounts {
+    final counts = <String, int>{};
+    for (final s in body) {
+      for (final id in _tagsIn(s.markdown)) {
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
   /// Every evidence passage, for citation chips anywhere in the doc.
   List<Evidence> get evidence => [for (final s in sections) ...s.evidence];
 
@@ -829,11 +840,16 @@ class DocErrorEvent extends DocEvent {
 int _countWords(String md) =>
     RegExp(r"[A-Za-z0-9À-ɏЀ-ӿ]+(?:['’][A-Za-z]+)?").allMatches(md).length;
 
-final _tagRe = RegExp(r'\[([KWDG]\d{1,3})\](?!\()');
+final _tagRe = RegExp(r'\[([KWDGC]\d{1,3})\](?!\()');
 
 List<String> _tagsIn(String md) => [
   for (final m in _tagRe.allMatches(md)) m[1]!,
 ];
+
+/// [text] without citation tags, for places that show plain text (the
+/// abstract) and their leading space.
+String withoutCitations(String text) =>
+    text.replaceAll(RegExp(r'[ \t]*\[[KWDGC]\d{1,3}\](?!\()'), '');
 
 /// Words in [markdown] (for live counts before the server reports them).
 int countWords(String markdown) => _countWords(markdown);
