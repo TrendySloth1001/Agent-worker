@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/auth_constants.dart';
 import '../../../core/constants/sso_constants.dart';
 import '../../../core/haptics.dart';
 import '../../../core/platform/google_auth.dart';
@@ -13,21 +14,35 @@ import 'auth_widgets.dart';
 import 'github_device_sheet.dart';
 import 'github_web_sheet.dart';
 
-/// "OR" and the CONTINUE WITH GITHUB / GOOGLE buttons under the email form.
-/// Shows only the providers the server has set up (GET /auth/providers), so
-/// adding the Google client id on the server needs no app rebuild.
+/// "or" and the "Continue with GitHub / Google" buttons under the email
+/// form. Shows only the providers the server has set up
+/// (GET /auth/providers), so adding the Google client id on the server needs
+/// no app rebuild.
 class SsoSection extends StatefulWidget {
   const SsoSection({super.key, this.enabled = true});
 
   /// False while the email form is submitting.
   final bool enabled;
 
+  /// The last providers answer, so the next auth page shows the buttons at
+  /// once instead of popping them in.
+  static SsoProviders? get cached => _cached;
+  static SsoProviders? _cached;
+  static SsoProviders? _debug;
+
+  /// Pins the providers (tests, screenshots); null asks the server again.
+  @visibleForTesting
+  static set debugProviders(SsoProviders? p) {
+    _debug = p;
+    _cached = p;
+  }
+
   @override
   State<SsoSection> createState() => _SsoSectionState();
 }
 
 class _SsoSectionState extends State<SsoSection> {
-  SsoProviders? _providers;
+  SsoProviders? _providers = SsoSection._cached;
   bool _github = false, _google = false;
   String? _error;
 
@@ -36,8 +51,10 @@ class _SsoSectionState extends State<SsoSection> {
   @override
   void initState() {
     super.initState();
+    if (SsoSection._debug != null) return;
     SsoApi.instance.providers().then(
       (p) {
+        SsoSection._cached = p;
         if (mounted) setState(() => _providers = p);
       },
       // Offline or an older server: no buttons, the email form still works.
@@ -79,7 +96,6 @@ class _SsoSectionState extends State<SsoSection> {
   Future<void> _continueWithGoogle() async {
     final clientId = _providers?.googleWebClientId;
     if (clientId == null) return;
-    Haptics.tap();
     setState(() {
       _google = true;
       _error = null;
@@ -135,14 +151,19 @@ class _SsoSectionState extends State<SsoSection> {
   }
 }
 
-/// Thin rule with "OR" in the middle.
+/// Hairline rule with a lowercase "or" in the middle.
 class OrDivider extends StatelessWidget {
   const OrDivider({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final line = Expanded(
-      child: Divider(color: context.palette.border, height: AppBorder.thin),
+      child: Divider(
+        color: Theme.of(context).colorScheme.outlineVariant,
+        height: AppBorder.thin,
+        thickness: AppBorder.thin,
+      ),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
@@ -153,7 +174,10 @@ class OrDivider extends StatelessWidget {
             padding: const EdgeInsets.symmetric(
               horizontal: SsoSizes.dividerGap,
             ),
-            child: Text(SsoStrings.or, style: context.text.caption),
+            child: Text(
+              SsoStrings.or,
+              style: context.text.bodySmall.copyWith(color: p.textSecondary),
+            ),
           ),
           line,
         ],
@@ -162,7 +186,9 @@ class OrDivider extends StatelessWidget {
   }
 }
 
-/// Full-width outlined pill with a brand mark; a spinner while [loading].
+/// Full-width outlined pill: the brand mark at a fixed spot on the left and
+/// the label centered, so stacked buttons line up. A spinner while
+/// [loading].
 class SsoButton extends StatelessWidget {
   const SsoButton({
     super.key,
@@ -180,15 +206,18 @@ class SsoButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final scheme = Theme.of(context).colorScheme;
     final active = onPressed != null || loading;
     return SizedBox(
-      height: AppSizes.buttonHeight,
+      height: AuthSizes.buttonHeight,
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           shape: const StadiumBorder(),
+          padding: EdgeInsets.zero,
           foregroundColor: p.textPrimary,
+          backgroundColor: p.background,
           side: BorderSide(
-            color: active ? p.borderStrong : p.border,
+            color: active ? scheme.outline : scheme.outlineVariant,
             width: AppBorder.thin,
           ),
         ),
@@ -198,34 +227,40 @@ class SsoButton extends StatelessWidget {
                 Haptics.tap();
                 onPressed!();
               },
-        child: loading
-            ? SizedBox.square(
-                dimension: AppIconSize.md,
-                child: CircularProgressIndicator(
-                  strokeWidth: AppBorder.thick,
-                  color: p.textPrimary,
-                ),
-              )
-            : Opacity(
-                opacity: active ? 1 : SsoSizes.disabledAlpha,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    mark,
-                    const SizedBox(width: AppSpacing.md),
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.titleSmall!.copyWith(color: p.textPrimary),
-                      ),
-                    ),
-                  ],
+        child: Opacity(
+          opacity: active ? 1 : SsoSizes.disabledAlpha,
+          child: Row(
+            children: [
+              SizedBox(
+                width: AuthSizes.ssoSide,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: loading
+                      ? SizedBox.square(
+                          dimension: AuthSizes.spinner,
+                          child: CircularProgressIndicator(
+                            strokeWidth: AppBorder.thick,
+                            color: p.textPrimary,
+                          ),
+                        )
+                      : mark,
                 ),
               ),
+              Expanded(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium!.copyWith(color: p.textPrimary),
+                ),
+              ),
+              const SizedBox(width: AuthSizes.ssoSide),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/auth_constants.dart';
 import '../../core/haptics.dart';
+import '../../core/theme/app_palette.dart';
 import '../../data/chat_api.dart';
 import 'auth_controller.dart';
 import 'register_screen.dart';
 import 'widgets/auth_widgets.dart';
 import 'widgets/sso_buttons.dart';
+import 'widgets/trouble_sheet.dart';
 
 final _emailRe = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
@@ -78,17 +80,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return AuthScaffold(
       title: AuthStrings.loginTitle,
       subtitle: AuthStrings.loginSubtitle,
+      footer: SwitchPrompt(
+        question: AuthStrings.noAccount,
+        action: AuthStrings.toRegister,
+        onTap: _loading ? null : _toRegister,
+      ),
       children: [
+        FormError(_formError),
         AuthField(
           label: AuthStrings.email,
-          hint: AuthStrings.emailHint,
+          showLabel: false,
           controller: _email,
           icon: AuthIcons.email,
           error: _emailError,
           enabled: !_loading,
+          gap: AppSpacing.md,
           keyboardType: TextInputType.emailAddress,
           autofillHints: const [AutofillHints.email, AutofillHints.username],
           onSubmitted: (_) => _passwordFocus.requestFocus(),
@@ -98,12 +108,15 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         AuthField(
           label: AuthStrings.password,
+          showLabel: false,
           controller: _password,
           focusNode: _passwordFocus,
           icon: AuthIcons.password,
           error: _passwordError,
           enabled: !_loading,
+          gap: 0,
           obscure: true,
+          keyboardType: TextInputType.visiblePassword,
           autofillHints: const [AutofillHints.password],
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _submit(),
@@ -111,19 +124,28 @@ class _LoginScreenState extends State<LoginScreen> {
             if (_passwordError != null) setState(() => _passwordError = null);
           },
         ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            style: TextButton.styleFrom(foregroundColor: p.textSecondary),
+            onPressed: _loading ? null : () => showTroubleSheet(context),
+            child: Text(
+              AuthStrings.trouble,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium!.copyWith(color: p.textSecondary),
+            ),
+          ),
+        ),
         const SizedBox(height: AppSpacing.sm),
-        FormError(_formError),
         PillButton(
           label: AuthStrings.signIn,
+          loadingLabel: AuthStrings.signingIn,
+          height: AuthSizes.buttonHeight,
           loading: _loading,
           onPressed: _submit,
         ),
         SsoSection(enabled: !_loading),
-        SwitchPrompt(
-          question: AuthStrings.noAccount,
-          action: AuthStrings.toRegister,
-          onTap: _loading ? null : _toRegister,
-        ),
       ],
     );
   }

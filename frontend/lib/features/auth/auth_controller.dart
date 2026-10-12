@@ -20,7 +20,11 @@ class AuthController extends ChangeNotifier {
   static final instance = AuthController._();
 
   final _storage = const FlutterSecureStorage();
-  final _plain = http.Client();
+  http.Client _plain = http.Client();
+
+  /// Swaps the HTTP client (tests).
+  @visibleForTesting
+  set debugHttp(http.Client client) => _plain = client;
 
   AuthStatus status = AuthStatus.restoring;
   AuthUser? user;

@@ -32,8 +32,8 @@ abstract final class IllustrationSizes {
   static const defaultHeight = 160.0;
 
   // Auth screens: shrink, then hide, as the screen gets shorter.
-  static const login = 132.0;
-  static const loginCompact = 92.0;
+  static const login = 156.0;
+  static const loginCompact = 104.0;
   static const loginCompactBelow = 720.0;
   static const loginHiddenBelow = 560.0;
 
