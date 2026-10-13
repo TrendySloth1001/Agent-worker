@@ -183,6 +183,7 @@ class SettingsTile extends StatelessWidget {
     this.iconColor,
     this.titleColor,
     this.leading,
+    this.titleBadge,
   });
 
   final AppIconData icon;
@@ -190,21 +191,36 @@ class SettingsTile extends StatelessWidget {
   final String? summary;
   final Widget? trailing;
 
+  /// A small tag right after the title (e.g. BETA), shown in every state.
+  final Widget? titleBadge;
+
   /// Replaces the icon circle (e.g. a brand mark or avatar).
   final Widget? leading;
   final VoidCallback? onTap;
   final Color? iconColor, titleColor;
 
+  Widget _title() {
+    final text = Text(
+      title,
+      // Only the color: size and weight stay the row's own, so a red
+      // "Disconnect" matches its neighbours.
+      style: titleColor == null ? null : TextStyle(color: titleColor),
+    );
+    if (titleBadge == null) return text;
+    return Row(
+      children: [
+        Flexible(child: text),
+        const SizedBox(width: AppSpacing.sm),
+        titleBadge!,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: leading ?? SettingsIconCircle(icon, color: iconColor),
-      title: Text(
-        title,
-        // Only the color: size and weight stay the row's own, so a red
-        // "Disconnect" matches its neighbours.
-        style: titleColor == null ? null : TextStyle(color: titleColor),
-      ),
+      title: _title(),
       subtitle: summary == null || summary!.isEmpty ? null : Text(summary!),
       trailing: trailing,
       onTap: onTap == null

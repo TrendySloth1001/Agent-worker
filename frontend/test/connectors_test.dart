@@ -441,6 +441,15 @@ void main() {
     expect(find.text(AppsStrings.beta), findsOneWidget);
   });
 
+  testWidgets('apps hub: Drive keeps its BETA tag when connected', (
+    tester,
+  ) async {
+    _fakeState(drive: true);
+    await _pump(tester, AppsScreen(sourceCount: () async => 0));
+    expect(find.text(AppsStrings.beta), findsOneWidget);
+    expect(find.text(AppsStrings.connected), findsWidgets);
+  });
+
   testWidgets('apps hub tags an app the server lacks', (tester) async {
     _fakeState(notionConfigured: false);
     await _pump(tester, AppsScreen(sourceCount: () async => 0));
