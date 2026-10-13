@@ -68,6 +68,8 @@ class _AboutScreenState extends State<AboutScreen> {
   void initState() {
     super.initState();
     _loadVersion();
+    // The hero and the Updates group show the status: keep it current.
+    UpdateController.instance.refreshIfStale();
   }
 
   @override
@@ -346,15 +348,19 @@ class _Hero extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.white, Colors.transparent],
-                    stops: AboutSizes.heroFade,
-                  ).createShader(rect),
-                  child: const DotMatrixBackdrop.page(),
+                // The energy's halos and glow paint past the art's edge:
+                // clip them so nothing red leaks onto the wordmark.
+                ClipRect(
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.white, Colors.transparent],
+                      stops: AboutSizes.heroFade,
+                    ).createShader(rect),
+                    child: const DotMatrixBackdrop.page(),
+                  ),
                 ),
                 const Align(
                   alignment: Alignment.bottomCenter,

@@ -115,6 +115,18 @@ void main() {
     });
   });
 
+  test('About refreshes a status older than 2 minutes', () async {
+    final r = UpdateRig();
+    await r.controller.refreshIfStale(); // never checked
+    expect(r.api.checks, 1);
+    r.now = r.now.add(const Duration(minutes: 1));
+    await r.controller.refreshIfStale(); // still fresh
+    expect(r.api.checks, 1);
+    r.now = r.now.add(UpdateConfig.freshFor);
+    await r.controller.refreshIfStale(); // stale
+    expect(r.api.checks, 2);
+  });
+
   group('download and install', () {
     test('a patch downloads by itself on Wi-Fi', () async {
       final r = UpdateRig(info: _with(UpdateKind.patch));

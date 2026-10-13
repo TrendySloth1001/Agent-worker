@@ -167,6 +167,16 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     if (UpdatePolicy.checkDue(s.lastCheckAt, _clock())) await check();
   }
 
+  /// Checks again when the last check is older than [UpdateConfig.freshFor]:
+  /// screens that show the status (About) call this so it is never stale.
+  Future<void> refreshIfStale() async {
+    final s = await _s();
+    final last = s.lastCheckAt;
+    if (last == null || _clock().difference(last) > UpdateConfig.freshFor) {
+      await check();
+    }
+  }
+
   // ---- checking ------------------------------------------------------------
 
   /// Asks the server for a newer build. Never throws; failures are silent

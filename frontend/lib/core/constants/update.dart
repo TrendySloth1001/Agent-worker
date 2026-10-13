@@ -13,6 +13,9 @@ abstract final class UpdateConfig {
   /// A resume checks again when the last check is older than this.
   static const resumeAfter = Duration(hours: 6);
 
+  /// A status older than this is re-checked when About opens.
+  static const freshFor = Duration(minutes: 2);
+
   /// The app is open this long before a sheet may appear.
   static const calmAfter = Duration(seconds: 20);
   static const calmPoll = Duration(seconds: 5);
