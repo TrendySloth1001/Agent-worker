@@ -8,6 +8,7 @@ import type { Message } from "../providers.js";
 import { AppError } from "../util/errors.js";
 import { CHUNK_THRESHOLD } from "./process.js";
 import { toJpeg } from "./media.js";
+import { IMAGE_JPEG_QUALITY, IMAGE_MAX_EDGE } from "../llm/vision.js";
 import { INFO_SELECT, toFileRow, type FileRow } from "./store.js";
 
 export const ATTACH_PLACEHOLDER = "(no message text, only attachments)";
@@ -78,7 +79,7 @@ async function pixels(row: FileRow): Promise<string[]> {
   if (hit) return hit;
   let out: string[];
   if (row.kind === "image") {
-    out = [(await toJpeg(await getObject(row.s3Key), 1280, 80)).data.toString("base64")];
+    out = [(await toJpeg(await getObject(row.s3Key), IMAGE_MAX_EDGE, IMAGE_JPEG_QUALITY)).data.toString("base64")];
   } else {
     const keys = (row.meta?.frameKeys as string[] | undefined) ?? [];
     out = await Promise.all(keys.map(async (k) => (await getObject(k)).toString("base64")));

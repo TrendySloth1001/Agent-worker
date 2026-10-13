@@ -193,7 +193,19 @@ export function preferSmall(candidates: string[]): string[] {
  * if it produced nothing; if it already produced text, Auto resets and moves
  * on, an explicit model fails.
  */
-export async function runChat(candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean, opts: { maxTokens?: number; /** Test hook. */ stream?: typeof streamModel } = {}): Promise<RunResult> {
+export async function runChat(
+  candidates: string[],
+  messages: Message[],
+  signal: AbortSignal,
+  hooks: RunHooks,
+  auto: boolean,
+  opts: {
+    maxTokens?: number;
+    /** Auto: a model with no visible text after this long is abandoned for the next candidate (the last one always gets to finish). */
+    firstTokenMs?: number;
+    /** Test hook. */ stream?: typeof streamModel;
+  } = {},
+): Promise<RunResult> {
   const stream = opts.stream ?? streamModel;
   // Auto never calls a model whose quota is known to be exhausted.
   const queue = auto ? candidates.filter((id) => !isQuotaBlocked(id)) : [...candidates];
@@ -256,6 +268,18 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     let produced = false;
     let ttft: number | null = null;
     let handle: Awaited<ReturnType<typeof streamModel>> | null = null;
+    // Slow first token (e.g. a reasoning model thinking for 30 s): give way to the next model while one remains.
+    const attemptCtl = new AbortController();
+    const onOuterAbort = () => attemptCtl.abort();
+    signal.addEventListener("abort", onOuterAbort, { once: true });
+    let slowFirstToken = false;
+    const firstTokenTimer = auto && opts.firstTokenMs && queue.some((q) => !isQuotaBlocked(q))
+      ? setTimeout(() => {
+          if (produced) return;
+          slowFirstToken = true;
+          attemptCtl.abort();
+        }, opts.firstTokenMs)
+      : null;
     const think = new ThinkFilter();
     const emit = (visible: string) => {
       if (!visible) return;
@@ -264,12 +288,13 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         if (!visible.trim()) return;
         produced = true;
         ttft = Date.now() - started;
+        if (firstTokenTimer) clearTimeout(firstTokenTimer);
         hooks.onModel(id, attempt);
       }
       hooks.onDelta(visible);
     };
     try {
-      handle = await stream(id, messages, { signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens });
+      handle = await stream(id, messages, { signal: attemptCtl.signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens });
       for await (const token of handle.tokens) emit(think.push(token));
       emit(think.flush());
       const completed = handle.usage.completed;
@@ -307,6 +332,15 @@ export async function runChat(candidates: string[], messages: Message[], signal:
       };
     } catch (e) {
       if (signal.aborted) throw e;
+      if (slowFirstToken) {
+        // Not a health problem, just slow: no cooldown, try the next model.
+        lastError = new UpstreamError(0, "slow first token");
+        recordUsage({ provider, model: id.slice(provider.length + 1), kind: "chat", ok: false, latencyMs: Date.now() - started, attempt, errorMessage: "slow first token" });
+        console.warn(`[chat] ${id} gave no visible text within ${opts.firstTokenMs} ms, trying the next model`);
+        const next = queue.find((q) => !isQuotaBlocked(q));
+        if (next) hooks.onFallback(id, next);
+        continue;
+      }
       const err = e instanceof UpstreamError ? e : new UpstreamError(0, (e as Error).message ?? "unknown error");
       // A quota block found at call time (another request just hit it) costs nothing: no usage row, no cooldown.
       const skipped = err instanceof QuotaBlockedError;
@@ -342,6 +376,8 @@ export async function runChat(candidates: string[], messages: Message[], signal:
       const next = queue.find((q) => !isQuotaBlocked(q));
       if (next && !skipped) hooks.onFallback(id, next);
     } finally {
+      if (firstTokenTimer) clearTimeout(firstTokenTimer);
+      signal.removeEventListener("abort", onOuterAbort);
       release();
     }
   }

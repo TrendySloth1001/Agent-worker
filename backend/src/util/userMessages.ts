@@ -24,6 +24,7 @@ export const USER_MSG = {
   visionSwitched: "That model can't see images, so another one is answering.",
   visionUnavailable: "Couldn't read that image, so I answered from your text.",
   webSearchFailed: "Couldn't search the web just now, so I answered without it.",
+  answerIncomplete: "I couldn't put an answer together just now — please try again.",
   kbUnavailable: "Your knowledge base isn't available right now, so I answered without it.",
   fallback: "Switching to another model…",
   roundTableSkipped: "Short message, so I answered without the round table.",

@@ -324,15 +324,15 @@ test("router: when every model fails the user gets a human message, code all_mod
 
 // ---- vision -----------------------------------------------------------------------
 
-test("vision chain: every provider contributes, most reliable first", () => {
+test("vision chain: every provider contributes, fast models first, reasoning/omni last", () => {
   assert.deepEqual(VISION_MODELS, [
     "groq:qwen/qwen3.8-27b",
-    "nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
     "nvidia:meta/llama-3.2-11b-vision-instruct",
-    "ollama:gemma4:31b",
-    "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "openrouter:google/gemma-4-31b-it:free",
     "openrouter:google/gemma-4-26b-a4b-it:free",
+    "ollama:gemma4:31b",
+    "nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   ]);
   // OpenRouter's server-side fallbacks for an image request are vision models only.
   const alts = fallbackModels("google/gemma-4-31b-it:free", true);
@@ -351,15 +351,15 @@ test("vision chain: quota-exhausted Ollama, cooling Groq and busy NVIDIA fall th
   const r = await runChat(chain, [{ role: "user", content: "what is this?", images: ["AAAA"] }], new AbortController().signal, h, true, {
     stream: stubStream(
       {
-        "nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": fail(500, NV_BUSY),
-        "nvidia:meta/llama-3.2-11b-vision-instruct": fail(0, "timeout waiting for response"),
-        "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": ok("A red square."),
+        "nvidia:meta/llama-3.2-11b-vision-instruct": fail(500, NV_BUSY),
+        "openrouter:google/gemma-4-31b-it:free": fail(0, "timeout waiting for response"),
+        "openrouter:google/gemma-4-26b-a4b-it:free": ok("A red square."),
       },
       calls,
     ),
   });
-  assert.equal(r.model, "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
-  assert.deepEqual(calls, ["nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "nvidia:meta/llama-3.2-11b-vision-instruct", "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"]);
+  assert.equal(r.model, "openrouter:google/gemma-4-26b-a4b-it:free");
+  assert.deepEqual(calls, ["nvidia:meta/llama-3.2-11b-vision-instruct", "openrouter:google/gemma-4-31b-it:free", "openrouter:google/gemma-4-26b-a4b-it:free"]);
   cleanup(VISION_MODELS);
 });
 

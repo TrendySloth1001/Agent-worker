@@ -159,11 +159,20 @@ const GITHUB_RULE = `    - GITHUB (live cards; the app fetches fresh data itself
 /** Widget examples are 6-space indented fences inside the WIDGETS list. */
 const WIDGET_EXAMPLE_RE = /\n {6}```[a-z]+\n[\s\S]*?\n {6}```/g;
 
-export type PromptNeeds = { html?: boolean; github?: boolean; widgetExamples?: boolean };
+export type PromptNeeds = {
+  html?: boolean;
+  github?: boolean;
+  widgetExamples?: boolean;
+  /** Image turns: the rich-block/widget catalogue is replaced by one line (~6k fewer characters, so the prompt fits Groq's minute window). */
+  compact?: boolean;
+};
 
 const HTML_NEED_RE = /\b(html|web ?page|landing|dashboard|cheat ?sheet|mock-?up|demo|interactive|website|\bui\b|form|game|calculator app)\b/i;
 const GITHUB_NEED_RE = /\b(github|git|repos?|repositor(y|ies)|commits?|branch(es)?|pull requests?|prs?|issues?|merge[ds]?|fork(s|ed)?|diff)\b|\w[\w.-]*\/[\w.-]+/i;
 const WIDGET_NEED_RE = /\b(quiz|test me|flash ?cards?|calculat\w*|chart|graph|plot|visuali[sz]\w*|timeline|history of|roadmap|stats|kpi|metrics|checklist|to-?do|compare|comparison|vs\.?|versus|pros|cons|tree|hierarch\w*|structure|progress|rating|score|flow|diagram|steps?|process|trend|breakdown|share)\b/i;
+
+/** Whether the user's text asks for a widget (chart, quiz, checklist...) by name. */
+export const asksForWidget = (text: string): boolean => WIDGET_NEED_RE.test(text);
 
 /** Which optional sections a request needs, from the user's recent text. */
 export function promptNeeds(text: string, hasGithubContext = false, intent?: IntentResult): PromptNeeds {
@@ -177,7 +186,13 @@ export function promptNeeds(text: string, hasGithubContext = false, intent?: Int
   };
 }
 
+/** The rich-block and widget catalogue in BASE (dropped by `compact`). */
+const RICH_BLOCKS_RE = /\n- Rich blocks the app renders as cards\.[\s\S]*?(?=\n- No emoji characters)/;
+const RICH_SHORT =
+  "\n- Rich blocks (email and message drafts, cards, callouts, checklists, charts, quizzes and other widgets) are not needed for this answer: reply in prose, with short lists or a small Markdown table where they help.";
+
 function baseFor(needs: PromptNeeds | undefined): string {
+  if (needs?.compact) return BASE.replace(RICH_BLOCKS_RE, RICH_SHORT);
   const base = needs && !needs.widgetExamples ? BASE.replace(WIDGET_EXAMPLE_RE, "") : BASE;
   return base
     .replace(HTML_SLOT, needs && !needs.html ? HTML_SHORT : HTML_RULE)
@@ -302,6 +317,13 @@ export function buildContextMessage(kb: ContextItem[], web: ContextItem[], docs:
     "If the sources do not cover something, answer from your own knowledge without a tag.";
   return [...parts, rule].join("\n");
 }
+
+/**
+ * For image/vision turns and re-asks after a tool call: some vision models answer
+ * "search the web" with tool-call JSON, which the app would show raw.
+ */
+export const NO_TOOLS_NOTE =
+  'You cannot call tools or functions in this chat: no web search, browsing or code-execution calls. Never output JSON, a tool call or function-call syntax (such as {"type": "websearch", ...}, {"name": "search", "arguments": ...}, <tool_call> tags or search(...)). Always answer the user directly in prose. If web results are provided, use and cite them. If the user asked you to search and no web results are provided, say in one short sentence that you could not check the web just now, then answer from what the image shows and what you know.';
 
 // The per-turn "which tools were active" note lives with the smart-toggle logic.
 export { toolsNote } from "../toggles/suggest.js";

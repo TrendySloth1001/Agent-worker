@@ -6,8 +6,10 @@ import { AppError, errorBody } from "../util/errors.js";
 import { USER_MSG } from "../util/userMessages.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
-import { pickCandidates, pickTextFallback, pickVisionCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor, type RunHooks } from "../llm/router.js";
-import { isVisionModel } from "../llm/vision.js";
+import { pickCandidates, pickTextFallback, pickVisionCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor, type RunHooks, type RunResult } from "../llm/router.js";
+import { isVisionModel, VISION_FIRST_TOKEN_MS } from "../llm/vision.js";
+import { ToolCallGuard } from "../llm/toolCall.js";
+import { identificationMessage, identifyImage, identifyModels, imageWantsWeb, pipelineImageSearch, searchIdentified, type ImageIdentification } from "../context/imageWeb.js";
 import { researchWeb, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
@@ -19,7 +21,7 @@ import { newTurnCounters, recordTurnSummary, setTelemetry, withTelemetry } from 
 import { findImages, type ImageResult } from "../web/images.js";
 import { intentHint } from "../prompts/intent.js";
 import { safetyNote } from "../nlp/pii.js";
-import { buildContextMessage, buildSystemPrompt, promptNeeds, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
+import { asksForWidget, buildContextMessage, buildSystemPrompt, NO_TOOLS_NOTE, promptNeeds, MODES, TONES, LENGTHS, type ContextItem } from "../prompts/system.js";
 import { retrieve, type KbHit } from "../retrieval/search.js";
 import { embeddingsHealthy, embedQueries } from "../embeddings/index.js";
 import type { Message } from "../providers.js";
@@ -244,6 +246,20 @@ chatRouter.post("/", async (req, res) => {
     if (prepared.failed.length > 0) {
       sse.send("notice", { code: "attachment_failed", message: `Couldn't read ${prepared.failed.join(", ")}.` });
     }
+    // ---- image + web: a fast vision call names what the image shows, the web is searched for it, a text model answers.
+    const webMode = resolveWebMode(body);
+    const latestImage = latestIds.some((id) => fileRows.get(id)?.kind === "image" && fileRows.get(id)?.status === "ready")
+      ? [...prepared.messages].reverse().find((m) => m.role === "user")?.images?.at(-1)
+      : undefined;
+    const imageWeb = wantsVision && !body.roundTable && !!latestImage && imageWantsWeb({ text: lastUserText, webMode, hasImage: true });
+    let ident: ImageIdentification | null = null;
+    let imageSearched = false;
+    if (imageWeb) sse.send("status", { phase: "analyzing_image" });
+    const identP: Promise<ImageIdentification | null> = imageWeb
+      ? withTelemetry({ purpose: "image-identify" }, () =>
+          identifyImage({ image: latestImage!, question: lastUserText, screenText: body.screen?.text, models: identifyModels(candidates), signal: ctl.signal }),
+        ).catch(() => null)
+      : Promise.resolve(null);
     const docItems: ContextItem[] = prepared.docs;
     docItems.forEach((d) =>
       citations.push({ id: d.id, kind: "file", title: d.title, url: d.url, snippet: snippet(d.text), site: "document" }),
@@ -257,7 +273,6 @@ chatRouter.post("/", async (req, res) => {
 
     // ---- preflight: ONE small-model call replaces the standalone rewrite, search decision, web query plan and RAG variants.
     // The local NLP and rules decide alone when they are confident; the model is asked only for what they cannot settle.
-    const webMode = resolveWebMode(body);
     const wantWeb = webMode !== "off" && !aboutAttachments;
     // On: always search (except small talk); auto: the local rules / preflight decide; off: never.
     const webLocal: SearchDecision | null = !wantWeb
@@ -383,7 +398,28 @@ chatRouter.post("/", async (req, res) => {
       }
     };
 
+    /** Image + web: search what the vision model identified (cached like any other search). */
+    const imageSearch = async () => {
+      ident = await identP;
+      log.info("image identify", { requestId, model: ident?.model ?? null, ms: ident?.ms ?? null, kind: ident?.kind ?? null, queries: ident?.queries.length ?? 0 });
+      if (!ident?.queries.length || ctl.signal.aborted) return;
+      imageSearched = true;
+      sse.send("status", { phase: "searching" });
+      const { results, failed } = await searchIdentified(ident, pipelineImageSearch(nlp.language), ctl.signal);
+      if (failed) {
+        sse.send("notice", { code: "web_search_failed", message: USER_MSG.webSearchFailed });
+        log.warn("image web search failed", { requestId });
+      }
+      results.forEach((r, i) => {
+        const id = `W${i + 1}`;
+        webItems.push({ id, title: r.title, url: r.url, text: r.content, full: r.full });
+        citations.push({ id, kind: "web", title: r.title, url: r.url, snippet: snippet(r.content), site: hostOf(r.url) });
+      });
+      fitBudget(webItems, `${ident.subject} ${lastUserText}`).forEach((w, i) => (webItems[i].text = w.text));
+    };
+
     const webTask = async () => {
+      if (imageWeb) return imageSearch();
       const urlMatch = lastUser.match(URL_RE);
       if (!searching && !urlMatch) return;
       if (searching) sse.send("status", { phase: "searching" });
@@ -520,7 +556,8 @@ chatRouter.post("/", async (req, res) => {
       log.info("suggest_toggle", { requestId, conversationId: body.conversationId, event: "shown", kind: suggestion.kind, reason: suggestion.reason });
     }
     // Which tools actually ran this turn (the app shows "Searched the web" after an automatic search).
-    sse.send("tools", { web: searching && webItems.length > 0, webMode, kb: body.knowledge && kbItems.length > 0 });
+    const webSearched = searching || imageSearched;
+    sse.send("tools", { web: webSearched && webItems.length > 0, webMode, kb: body.knowledge && kbItems.length > 0 });
     ctx.memory = await memoryP;
     if (ctl.signal.aborted) return;
     const rank = { kb: 0, web: 1, file: 2, conversation: 3 } as const;
@@ -540,6 +577,11 @@ chatRouter.post("/", async (req, res) => {
     // ---- generation -------------------------------------------------------
     // Optional prompt sections (HTML, GitHub, widget examples) only when the turn needs them.
     const needs = promptNeeds(`${previousUser(body.messages)}\n${lastUser}`, githubItems.length > 0, nlp.intent);
+    // An image alone does not call for the widget catalogue (~6k characters that push a vision prompt past Groq's minute window).
+    if (wantsVision) {
+      needs.widgetExamples = asksForWidget(`${previousUser(body.messages)}\n${lastUser}`);
+      needs.compact = !needs.widgetExamples && !needs.html && !needs.github;
+    }
     const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile, undefined, needs) }];
     if (ctx.memory) prompt.push({ role: "system", content: ctx.memory });
     if (compacted) prompt.push({ role: "system", content: summaryMessage(compacted.summary) });
@@ -568,10 +610,13 @@ chatRouter.post("/", async (req, res) => {
     if (shape) prompt.push({ role: "system", content: shape });
     if (githubHint) prompt.push({ role: "system", content: githubHint });
     if (appsHint) prompt.push({ role: "system", content: appsHint });
+    // The image was identified: a text model answers from the identification (no pixels), which is much faster.
+    if (ident) prompt.push({ role: "system", content: identificationMessage(ident) });
+    if (wantsVision) prompt.push({ role: "system", content: NO_TOOLS_NOTE });
     prompt.push({
       role: "system",
       content: toolsNote({
-        web: searching && webItems.length > 0 ? "searched" : searching ? "unavailable" : webMode === "off" ? "off" : "auto-none",
+        web: webSearched && webItems.length > 0 ? "searched" : webSearched ? "unavailable" : webMode === "off" ? "off" : "auto-none",
         kb: body.knowledge ? "on" : "off",
         kbSuggested: suggestion?.kind === "kb",
         docSuggested: suggestion?.kind === "doc",
@@ -579,7 +624,7 @@ chatRouter.post("/", async (req, res) => {
     });
     // Small talk does not need the whole history: the last few turns are enough (fewer prompt tokens against Groq's per-minute window).
     const noFiles = !prepared.messages.some((m) => (m.images?.length ?? 0) > 0) && attachmentIds.length === 0;
-    let turnsSent = prepared.messages;
+    let turnsSent = ident ? prepared.messages.map((m) => (m.images?.length ? { ...m, images: undefined } : m)) : prepared.messages;
     if (smallTalk && noFiles && turnsSent.length > SMALL_TALK_TURNS) {
       turnsSent = turnsSent.slice(-SMALL_TALK_TURNS);
       while (turnsSent.length > 1 && turnsSent[0].role !== "user") turnsSent = turnsSent.slice(1);
@@ -629,6 +674,17 @@ chatRouter.post("/", async (req, res) => {
     const chairAt = Date.now();
     let firstTokenAt: number | null = null;
     const trivialAuto = auto && smallTalk && !table && !wantsVision;
+    // A reply that starts with a tool call ({"type":"websearch",...}) is held back, never shown (see llm/toolCall.ts).
+    const toolGuard = new ToolCallGuard();
+    const show = (chunk: string) => {
+      const raw = table ? unresolved.push(chunk) : chunk;
+      if (!raw) return;
+      const t = keepValid(tags.push(raw));
+      if (!t) return;
+      firstTokenAt ??= Date.now();
+      text += t;
+      sse.send("delta", { text: t });
+    };
     const chatHooks: RunHooks = {
       onQueued: () => sse.send("status", { phase: "queued" }),
       onModel: (model, attempt) => {
@@ -636,15 +692,11 @@ chatRouter.post("/", async (req, res) => {
         sse.send("model", { model, attempt });
       },
       onDelta: (chunk) => {
-        const raw = table ? unresolved.push(chunk) : chunk;
-        if (!raw) return;
-        const t = keepValid(tags.push(raw));
-        if (!t) return;
-        firstTokenAt ??= Date.now();
-        text += t;
-        sse.send("delta", { text: t });
+        const g = toolGuard.push(chunk);
+        if (g) show(g);
       },
       onReset: () => {
+        toolGuard.reset();
         tags.reset();
         unresolved.reset();
         text = "";
@@ -654,23 +706,78 @@ chatRouter.post("/", async (req, res) => {
       onFallback: (from, to) => log.info("chat fallback", { requestId, from, to }),
     };
     const maxTokens = maxTokensFor({ mode: body.mode, intent: nlp.intent, length: body.profile?.length });
+    // Image identified: a text model writes the answer (the requested model, if one was picked).
+    const genCandidates = ident ? (requested ? [requested] : await pickTextFallback()) : candidates;
+    // Vision turns: a model still silent after a few seconds (a reasoning model thinking) gives way to the next.
+    const firstTokenMs = wantsVision && !ident && !table ? VISION_FIRST_TOKEN_MS : undefined;
     const generate = (models: string[], messages: Message[]) =>
-      withTelemetry({ purpose: table ? "table-chair" : "chat" }, () => runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens }));
-    let result;
+      withTelemetry({ purpose: table ? "table-chair" : "chat" }, async () => {
+        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs });
+        const held = toolGuard.flush();
+        if (held) show(held);
+        return r;
+      });
+    let result: RunResult;
     try {
       result = await generate(
-        table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(candidates) : candidates, promptChars) : candidates,
+        table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(genCandidates) : genCandidates, promptChars) : genCandidates,
         table ? [...prompt, table.chairMessage] : prompt,
       );
     } catch (e) {
       // No vision model could read the image (none available, all busy or out of quota): answer the text with a text model.
-      if (!(wantsVision && auto && !table && e instanceof ChatFailure && e.code === "all_models_failed") || ctl.signal.aborted) throw e;
+      if (!(wantsVision && !ident && auto && !table && e instanceof ChatFailure && e.code === "all_models_failed") || ctl.signal.aborted) throw e;
       log.warn("vision unavailable, answering text only", { requestId });
       sse.send("notice", { code: "vision_unavailable", message: USER_MSG.visionUnavailable });
       const textOnly = prompt.map((m) => (m.images?.length ? { ...m, images: undefined } : m));
       textOnly.splice(Math.max(0, textOnly.length - 1), 0, { role: "system", content: VISION_UNAVAILABLE_NOTE });
       result = await generate(preferForPrompt(await pickTextFallback(), promptChars), textOnly);
     }
+
+    // ---- tool-call interception: the model asked for a search instead of answering.
+    // Run the search it asked for (when the web is allowed) and ask again, the offending model last.
+    let reaskPrompt = table ? [...prompt, table.chairMessage] : prompt;
+    for (let round = 0; round < 2; round++) {
+      const call = toolGuard.call();
+      if (!call || text.trim().length >= 40 || ctl.signal.aborted) break;
+      log.info("tool call intercepted", { requestId, model: result.model, tool: call.name, query: call.query?.slice(0, 80) ?? null, round });
+      if (text) sse.send("reset", { reason: "tool_call" });
+      text = "";
+      tags.reset();
+      unresolved.reset();
+      toolGuard.reset();
+      const extra: Message[] = [];
+      if (call.query && webMode !== "off") {
+        sse.send("status", { phase: "searching" });
+        const found = await researchWeb({ question: call.query, focused: call.query, signal: ctl.signal, context: { language: nlp.language } }).catch(() => []);
+        const known = new Set(webItems.map((w) => urlKey(w.url)));
+        const added: ContextItem[] = [];
+        for (const r of found) {
+          if (known.has(urlKey(r.url))) continue;
+          const id = `W${webItems.length + 1}`;
+          const item = { id, title: r.title, url: r.url, text: r.content, full: r.full };
+          webItems.push(item);
+          added.push(item);
+          citations.push({ id, kind: "web", title: r.title, url: r.url, snippet: snippet(r.content), site: hostOf(r.url) });
+          validTags.add(id);
+        }
+        fitBudget(added, call.query).forEach((w, i) => (added[i].text = w.text));
+        const block = buildContextMessage([], added);
+        if (block) {
+          extra.push({ role: "system", content: block });
+          citations.sort((a, b) => rank[a.kind] - rank[b.kind]);
+          sse.send("sources", { citations });
+          sse.send("tools", { web: true, webMode, kb: body.knowledge && kbItems.length > 0 });
+        }
+      }
+      extra.push({ role: "system", content: `${NO_TOOLS_NOTE}${extra.length ? " The search you asked for was run; its results are above." : ""}` });
+      const at = reaskPrompt.length - (table ? 1 : turnsSent.length);
+      reaskPrompt = [...reaskPrompt.slice(0, at), ...extra, ...reaskPrompt.slice(at)];
+      const pool = table ? table.candidates : genCandidates;
+      const order = auto || table ? [...pool.filter((m) => m !== result.model), result.model] : pool;
+      sse.send("status", { phase: "generating" });
+      result = await generate(order, reaskPrompt);
+    }
+    if (toolGuard.call() && !text.trim()) show(USER_MSG.answerIncomplete);
 
     const held = table ? unresolved.flush() : "";
     if (held) {

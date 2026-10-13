@@ -34,8 +34,8 @@ export const PROVIDER_LIMITS: Record<ProviderId, { scope: "model" | "provider"; 
 
 /** Local estimates keep this share of each limit free, for estimate error and other processes. */
 export const SAFETY = 0.9;
-/** Rough tokens one attached image costs on a vision model. */
-export const IMAGE_TOKENS = 1_000;
+/** Tokens one attached image costs on a vision model (Groq bills ~1.8k per image whatever its size, measured 2026-10). */
+export const IMAGE_TOKENS = 1_800;
 /** Reply tokens reserved when the call sets no (or a huge) max_tokens. */
 export const REPLY_RESERVE = 1_500;
 const MINUTE = 60_000;
