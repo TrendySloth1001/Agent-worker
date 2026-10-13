@@ -97,6 +97,7 @@ class ChatRow extends StatelessWidget {
         if (chat.pinned) HistoryStrings.pinnedState,
         if (chat.isFork) HistoryStrings.forked,
         if (chat.isMerge) HistoryStrings.merged,
+        if (chat.isAssistant) HistoryStrings.fromAssistant,
         if (running) HistoryStrings.running,
       ].join(', '),
       onTap: onTap,
@@ -200,10 +201,14 @@ class ChatRow extends StatelessWidget {
               ],
             ),
           ),
-          if (chat.isFork || chat.isMerge) ...[
+          if (chat.isFork || chat.isMerge || chat.isAssistant) ...[
             const SizedBox(width: AppSpacing.sm),
             AppIcon(
-              chat.isFork ? HistoryIcons.fork : HistoryIcons.merge,
+              chat.isFork
+                  ? HistoryIcons.fork
+                  : chat.isMerge
+                  ? HistoryIcons.merge
+                  : HistoryIcons.assistant,
               size: AppIconSize.xs,
               color: p.textTertiary,
             ),

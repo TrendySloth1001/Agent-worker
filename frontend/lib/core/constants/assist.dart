@@ -141,6 +141,10 @@ abstract final class AssistStrings {
   static const liveBody =
       'The talk button starts a spoken conversation: sparky answers aloud '
       'and listens again. Tap or start talking to interrupt.';
+  static const saveTitle = 'Save assistant chats to history';
+  static const saveBody =
+      'Questions and answers from the assistant appear in your chats. What is '
+      'on your screen is never saved.';
 }
 
 abstract final class AssistSizes {
@@ -221,6 +225,7 @@ abstract final class AssistIcons {
   static const shortcuts = HugeIcons.strokeRoundedTouchInteraction01;
   static const actions = HugeIcons.strokeRoundedAlarmClock;
   static const liveVoice = HugeIcons.strokeRoundedAiVoice;
+  static const history = HugeIcons.strokeRoundedClock01;
 }
 
 /// The overlay engine's channel. Mirrors AssistProtocol in AssistEngine.kt:

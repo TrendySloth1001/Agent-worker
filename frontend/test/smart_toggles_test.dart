@@ -73,8 +73,9 @@ class _FakeConversations extends ConversationsApi {
   @override
   Future<ConversationSummary> save(
     String id,
-    List<ChatMessage> messages,
-  ) async => ConversationSummary(
+    List<ChatMessage> messages, {
+    String? origin,
+  }) async => ConversationSummary(
     id: id,
     title: 'Chat',
     preview: '',

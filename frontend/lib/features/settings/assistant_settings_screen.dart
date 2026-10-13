@@ -141,6 +141,15 @@ class _AssistantSettingsScreenState extends State<AssistantSettingsScreen>
                     onChanged: settings.setAssistLive,
                   ),
                 ),
+                GroupEntry(
+                  SettingsSwitchTile(
+                    icon: AssistIcons.history,
+                    title: AssistStrings.saveTitle,
+                    summary: AssistStrings.saveBody,
+                    value: settings.assistSaveHistory,
+                    onChanged: settings.setAssistSaveHistory,
+                  ),
+                ),
               ],
             ),
           ),

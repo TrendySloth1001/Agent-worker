@@ -69,6 +69,7 @@ abstract final class AppIcons {
   // Chat
   static const web = HugeIcons.strokeRoundedGlobe02;
   static const assistant = HugeIcons.strokeRoundedAiChat02;
+  static const power = HugeIcons.strokeRoundedPower;
   static const chat = HugeIcons.strokeRoundedBubbleChat;
   static const diagram = HugeIcons.strokeRoundedFlowchart01;
   static const code = HugeIcons.strokeRoundedCodeSquare;

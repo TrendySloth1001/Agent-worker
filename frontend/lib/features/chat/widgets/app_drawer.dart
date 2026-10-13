@@ -46,7 +46,9 @@ class AppDrawer extends StatefulWidget {
   State<AppDrawer> createState() => AppDrawerState();
 }
 
-class AppDrawerState extends State<AppDrawer> implements PanelBackHandler {
+class AppDrawerState extends State<AppDrawer>
+    with WidgetsBindingObserver
+    implements PanelBackHandler {
   HistoryController? _history;
   bool _ownsHistory = false;
   final _search = TextEditingController();
@@ -58,6 +60,7 @@ class AppDrawerState extends State<AppDrawer> implements PanelBackHandler {
   void initState() {
     super.initState();
     ConversationEvents.instance.addListener(_onWiped);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -84,11 +87,20 @@ class AppDrawerState extends State<AppDrawer> implements PanelBackHandler {
   @override
   void dispose() {
     ConversationEvents.instance.removeListener(_onWiped);
+    WidgetsBinding.instance.removeObserver(this);
     if (_shell?.panelBack == this) _shell!.panelBack = null;
     if (_ownsHistory) _history?.dispose();
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// Back in the app: chats the assistant overlay saved meanwhile show up.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !(_history?.selecting ?? true)) {
+      _history?.load();
+    }
   }
 
   /// Reloads the list; called each time the drawer opens.

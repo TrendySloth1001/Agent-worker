@@ -37,8 +37,12 @@ class ConversationSummary {
   bool get isFork => origin == originFork;
   bool get isMerge => origin == originMerge;
 
+  /// Saved from the assistant overlay.
+  bool get isAssistant => origin == originAssistant;
+
   static const originFork = 'fork';
   static const originMerge = 'merge';
+  static const originAssistant = 'assistant';
 
   factory ConversationSummary.fromJson(Map<String, dynamic> j) =>
       ConversationSummary(

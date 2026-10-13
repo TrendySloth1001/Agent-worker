@@ -12,6 +12,7 @@ abstract final class AppPrefs {
   static const voiceHighAccuracy = 'voice_high_accuracy';
   static const assistActions = 'assist_actions';
   static const assistLive = 'assist_live';
+  static const assistSaveHistory = 'assist_save_history';
   static const mode = 'chat_mode';
   static const profileName = 'profile_name';
   static const profileRole = 'profile_role';

@@ -120,13 +120,18 @@ class FakeChat extends ChatApi {
 class FakeConversations extends ConversationsApi {
   FakeConversations() : super('http://test');
   final saved = <String, List<ChatMessage>>{};
+  final origins = <String, String?>{};
+  int saves = 0;
 
   @override
   Future<ConversationSummary> save(
     String id,
-    List<ChatMessage> messages,
-  ) async {
+    List<ChatMessage> messages, {
+    String? origin,
+  }) async {
+    saves++;
     saved[id] = List.of(messages);
+    origins[id] = origin;
     return ConversationSummary.fromJson({
       'id': id,
       'title': 'Flight',
@@ -751,6 +756,112 @@ void main() {
       'At 04:45.',
     ]);
     expect(h.bridge.opened.single, 'sparky://chat/$id');
+  });
+
+  testWidgets('the keyboard action key sends (plain text keyboard)', (
+    tester,
+  ) async {
+    _phone(tester);
+    final h = _Harness(settings);
+    h.controller.reset(const AssistShow(source: AssistSource.session));
+    await tester.pumpWidget(h.app(dark: false));
+    final field = tester.widget<TextField>(find.byType(TextField));
+    // A multiline keyboard would insert a newline on its Enter key.
+    expect(field.keyboardType, TextInputType.text);
+    expect(field.textInputAction, TextInputAction.send);
+    await tester.showKeyboard(find.byType(TextField));
+    final args = tester.testTextInput.setClientArgs!;
+    expect((args['inputType'] as Map)['name'], 'TextInputType.text');
+    expect(args['inputAction'], 'TextInputAction.send');
+    await tester.enterText(find.byType(TextField), 'Open on youtube music');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    expect(
+      h.chat.requests.single.history.last.content,
+      'Open on youtube music',
+    );
+    h.controller.stop();
+  });
+
+  group('history autosave', () {
+    Future<_Harness> answered(
+      WidgetTester tester, {
+      bool screen = false,
+    }) async {
+      _phone(tester);
+      final h = _Harness(settings);
+      h.bridge.screen = _screen;
+      h.controller.reset(
+        AssistShow(source: AssistSource.session, screen: screen),
+      );
+      await tester.pumpWidget(h.app(dark: false));
+      if (screen) {
+        await tester.tap(find.text(AssistStrings.shareScreen));
+        await tester.pump();
+      }
+      await tester.enterText(find.byType(TextField), 'When do I leave?');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      h.chat.live!
+        ..add(const DeltaEvent('At 04:45.'))
+        ..add(const DoneEvent());
+      await tester.pump();
+      await tester.pump();
+      return h;
+    }
+
+    testWidgets('each answered turn is saved as an assistant chat', (
+      tester,
+    ) async {
+      final h = await answered(tester);
+      final id = h.controller.conversationId!;
+      expect(h.conversations.saved[id]!.map((m) => m.content), [
+        'When do I leave?',
+        'At 04:45.',
+      ]);
+      expect(h.conversations.origins[id], ConversationSummary.originAssistant);
+      // Open in sparky opens the saved chat without saving it again.
+      final saves = h.conversations.saves;
+      await tester.tap(find.text(AssistStrings.openInSparky));
+      await tester.pump();
+      expect(h.conversations.saves, saves);
+      expect(h.bridge.opened.single, 'sparky://chat/$id');
+    });
+
+    test('the sidebar knows assistant chats by their origin', () {
+      ConversationSummary row(String? origin) => ConversationSummary.fromJson({
+        'id': 'c1',
+        'title': 'Flight',
+        'createdAt': '2026-10-13T10:00:00Z',
+        'updatedAt': '2026-10-13T10:00:00Z',
+        'origin': ?origin,
+      });
+      expect(row('assistant').isAssistant, isTrue);
+      expect(row(null).isAssistant, isFalse);
+      expect(row('fork').isAssistant, isFalse);
+    });
+
+    testWidgets('the shared screen text is never stored', (tester) async {
+      final h = await answered(tester, screen: true);
+      expect(h.chat.requests.last.screen?['text'], _screen.text);
+      final saved = h.conversations.saved[h.controller.conversationId!]!;
+      final stored = saved.map((m) => m.toStorageJson().toString()).join();
+      expect(stored, isNot(contains('TP 1351')));
+      expect(stored, isNot(contains('Lisbon')));
+    });
+
+    testWidgets('setting off: nothing is saved until Open in sparky', (
+      tester,
+    ) async {
+      settings.setAssistSaveHistory(false);
+      final h = await answered(tester);
+      expect(h.conversations.saves, 0);
+      await tester.tap(find.text(AssistStrings.openInSparky));
+      await tester.pump();
+      final id = h.controller.conversationId!;
+      expect(h.conversations.saved[id], hasLength(2));
+      expect(h.conversations.origins[id], ConversationSummary.originAssistant);
+    });
   });
 
   testWidgets('tapping outside closes; signed out opens the app', (
