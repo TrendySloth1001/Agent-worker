@@ -68,11 +68,14 @@ async function askOnce(modelId: string, messages: Message[], opts: AskOptions): 
           }
         }
         if (!stripThink(text).trim()) throw new UpstreamError(0, "empty response");
-        recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
-        if (modelId.endsWith(":free")) noteOpenRouterFreeRequest();
-        clearCooldown(modelId);
-        clearQuota(modelId);
-        health.success(modelId);
+        recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens, keySource: handle.keySource ?? "server" });
+        // A call on the user's own key says nothing about the server's key health.
+        if (handle.keySource !== "user") {
+          if (modelId.endsWith(":free")) noteOpenRouterFreeRequest();
+          clearCooldown(modelId);
+          clearQuota(modelId);
+          health.success(modelId);
+        }
         return text;
       } catch (e) {
         const err = timedOut
@@ -83,7 +86,7 @@ async function askOnce(modelId: string, messages: Message[], opts: AskOptions): 
               ? e
               : new UpstreamError(0, (e as Error).message ?? "unknown error");
         if (err instanceof UpstreamError && !(err instanceof QuotaBlockedError)) {
-          recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: false, status: err.status || undefined, latencyMs: Date.now() - started, ttftMs: ttft, errorMessage: err.message });
+          recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: false, status: err.status || undefined, latencyMs: Date.now() - started, ttftMs: ttft, errorMessage: err.message, keySource: err.userKey ? "user" : "server" });
           // A caller-imposed (short) timeout says nothing about the model's health.
           if (!timedOut) applyCooldown(modelId, err);
         }

@@ -5,11 +5,13 @@ import { recordUsage, withTelemetry } from "../db/usage.js";
 import { getOpenRouterKeyInfo, noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
 import { BudgetBlockedError, check as budgetCheck, estimateRequestTokens, noteAuxDeferred, noteWait, sleep } from "./budget.js";
 import { slots, type Priority } from "./slots.js";
+import { noteKeyWorked, primeUserKeys, activeUserKey, setUserCooldown, slotsForUserKey, userCooldownUntil, usesUserKey } from "../keys/store.js";
 import { health } from "./health.js";
 import { classifyError, clearQuota, formatUntil, isQuotaBlocked, markQuota, PROVIDER_NAMES, quotaBlock, QuotaBlockedError, restoreQuota, setQuotaProber, type ErrorClass } from "./quota.js";
 import { VISION_MODELS } from "./vision.js";
 import { ThinkFilter } from "./think.js";
 import { log } from "../util/logger.js";
+import { currentUser } from "../auth/context.js";
 import { USER_MSG } from "../util/userMessages.js";
 
 const FIRST_BYTE_MS = 20_000;
@@ -19,9 +21,27 @@ const MAX_AUTO_ATTEMPTS = 6;
 export const BUDGET_WAIT_MAX_MS = 4_000;
 
 
-export function providerConfigured(provider: ModelInfo["provider"]) {
+/** The server has its own key for [provider]. */
+export function serverConfigured(provider: ModelInfo["provider"]) {
   const keys = { ollama: config.ollamaApiKey, openrouter: config.openrouterApiKey, groq: config.groqApiKey, nvidia: config.nvidiaApiKey };
   return !!keys[provider];
+}
+
+/** A key exists for [provider] for this request: the server's, or the caller's own. */
+export function providerConfigured(provider: ModelInfo["provider"]) {
+  return serverConfigured(provider) || usesUserKey(provider);
+}
+
+/** Cooldown that applies to this request: the caller's own for a model on their key, else the shared one. */
+export function cooldownFor(id: string): number | null {
+  const uk = activeUserKey(providerOf(id));
+  return uk ? userCooldownUntil(uk.userId, id) : cooldownUntil(id);
+}
+
+/** The concurrency pool for [provider]: the caller's own when they use their key, else the shared server pool. */
+export function slotPool(provider: ModelInfo["provider"]) {
+  const uk = activeUserKey(provider);
+  return uk ? slotsForUserKey(uk.userId, provider) : slots[provider];
 }
 
 async function openRouterExhausted(): Promise<boolean> {
@@ -36,7 +56,7 @@ const providerOf = (id: string) => id.slice(0, id.indexOf(":")) as ModelInfo["pr
  * (hard limits). Soft cooldowns (rate limits, breaker) are applied by [healthyFirst].
  */
 function usable(ids: string[], orExhausted: boolean): string[] {
-  return ids.filter((id) => providerConfigured(providerOf(id)) && !isQuotaBlocked(id) && !(providerOf(id) === "openrouter" && orExhausted));
+  return ids.filter((id) => providerConfigured(providerOf(id)) && !isQuotaBlocked(id) && !(providerOf(id) === "openrouter" && orExhausted && !usesUserKey("openrouter")));
 }
 
 /**
@@ -45,15 +65,16 @@ function usable(ids: string[], orExhausted: boolean): string[] {
  * first, so Auto never ends up with nothing to try while a provider has quota.
  */
 export function healthyFirst(ids: string[]): string[] {
-  const healthy = ids.filter((id) => cooldownUntil(id) === null);
+  const healthy = ids.filter((id) => cooldownFor(id) === null);
   if (healthy.length > 0 || ids.length === 0) return healthy;
   log.warn("no healthy model, trying the soonest-recovering ones", { models: ids.length });
-  return [...ids].sort((a, b) => (cooldownUntil(a) ?? 0) - (cooldownUntil(b) ?? 0));
+  return [...ids].sort((a, b) => (cooldownFor(a) ?? 0) - (cooldownFor(b) ?? 0));
 }
 
 /** Ordered list of model ids to try. `requested` undefined/"auto" means Auto. */
 export async function pickCandidates(requested?: string): Promise<string[]> {
   await restoreQuota();
+  await primeUserKeys();
   if (requested && requested !== "auto") return [requested];
   return healthyFirst(usable(MODELS.map((m) => m.id), await openRouterExhausted()));
 }
@@ -61,6 +82,7 @@ export async function pickCandidates(requested?: string): Promise<string[]> {
 /** Auto for a turn with images or video frames: the vision models, healthiest first. */
 export async function pickVisionCandidates(): Promise<string[]> {
   await restoreQuota();
+  await primeUserKeys();
   return healthyFirst(usable(VISION_MODELS, await openRouterExhausted()));
 }
 
@@ -90,7 +112,7 @@ export function preferForPrompt(candidates: string[], promptChars: number): stri
   }
   // Skip models whose minute/day budget can't fit this prompt right now (headers + local accounting).
   const need = Math.ceil(promptChars / 3.5) + 1_500;
-  const fits = candidates.filter((id) => budgetCheck(id, need).ok);
+  const fits = candidates.filter((id) => usesUserKey(providerOf(id)) || budgetCheck(id, need).ok);
   if (fits.length > 0) candidates = fits;
   if (promptChars < LONG_CONTEXT_CHARS) return candidates;
   return [...candidates.filter((id) => LONG_CONTEXT_MODELS.has(id)), ...candidates.filter((id) => !LONG_CONTEXT_MODELS.has(id))];
@@ -134,6 +156,15 @@ function describe(e: UpstreamError): string {
  */
 export function applyCooldown(id: string, e: UpstreamError): ErrorClass {
   const c = classifyError(id, e);
+  if (e.userKey) {
+    // The caller's own key failed: only their own cooldown moves (a dead key was already recorded on the key itself).
+    const uid = currentUser()?.id;
+    if (uid) {
+      if (c.kind === "rate_limited" || c.kind === "upstream_busy") setUserCooldown(uid, id, c.cooldownMs);
+      else if (c.kind === "transient") setUserCooldown(uid, id, 30_000);
+    }
+    return c;
+  }
   switch (c.kind) {
     case "quota_exhausted":
       markQuota(id, c, e.message);
@@ -207,6 +238,8 @@ export async function runChat(
   } = {},
 ): Promise<RunResult> {
   const stream = opts.stream ?? streamModel;
+  await primeUserKeys();
+  const serverRetried = new Set<string>();
   // Auto never calls a model whose quota is known to be exhausted.
   const queue = auto ? candidates.filter((id) => !isQuotaBlocked(id)) : [...candidates];
   const deferred = new Set<string>();
@@ -226,7 +259,7 @@ export async function runChat(
   // Budgets: Auto tries the models that fit their minute/day windows first. When none fits (or the
   // one picked model doesn't) but a window frees within a few seconds, wait briefly instead of failing.
   const need = estimateRequestTokens(messages, opts.maxTokens);
-  const verdicts = new Map(queue.map((id) => [id, budgetCheck(id, need)] as const));
+  const verdicts = new Map(queue.map((id) => [id, usesUserKey(providerOf(id)) ? ({ ok: true } as const) : budgetCheck(id, need)] as const));
   const fitting = queue.filter((id) => verdicts.get(id)!.ok);
   if (auto && fitting.length > 0 && fitting.length < queue.length) {
     const rest = queue.filter((id) => !verdicts.get(id)!.ok);
@@ -246,12 +279,13 @@ export async function runChat(
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
     const id = queue.shift()!;
     const provider = providerOf(id);
-    const sem = slots[provider];
+    const sem = slotPool(provider);
+    const userKey = usesUserKey(provider);
 
     // In Auto, a model whose quota ran out or whose circuit opened meanwhile (another request) is skipped
     // while a healthy one remains; when all are cooling down they are tried in order rather than giving up.
     if (auto && isQuotaBlocked(id)) continue;
-    if (auto && cooldownUntil(id) !== null && queue.some((q) => cooldownUntil(q) === null && !isQuotaBlocked(q))) continue;
+    if (auto && cooldownFor(id) !== null && queue.some((q) => cooldownFor(q) === null && !isQuotaBlocked(q))) continue;
 
     // In Auto, prefer a provider that is free right now over waiting in line.
     if (auto && sem && !sem.available && !deferred.has(id) && queue.length > 0) {
@@ -311,17 +345,25 @@ export async function runChat(
         attempt,
         promptTokens: handle.usage.promptTokens,
         completionTokens: handle.usage.completionTokens,
+        keySource: userKey ? "user" : "server",
       });
-      if (id.endsWith(":free")) noteOpenRouterFreeRequest();
-      clearQuota(id);
+      if (userKey) {
+        const uid = currentUser()?.id;
+        if (uid) noteKeyWorked(uid, provider);
+      } else {
+        if (id.endsWith(":free")) noteOpenRouterFreeRequest();
+        clearQuota(id);
+      }
       let finishReason = handle.usage.finishReason ?? "stop";
       if (completed) {
-        clearCooldown(id);
-        health.success(id);
+        if (!userKey) {
+          clearCooldown(id);
+          health.success(id);
+        }
       } else {
         // Text already reached the client: keep it, flag the cut-off, and count it against the model.
         finishReason = "interrupted";
-        setCooldown(id, health.failure(id));
+        if (!userKey) setCooldown(id, health.failure(id));
         console.warn(`[chat] ${id} stream ended without completion`);
       }
       return {
@@ -335,7 +377,7 @@ export async function runChat(
       if (slowFirstToken) {
         // Not a health problem, just slow: no cooldown, try the next model.
         lastError = new UpstreamError(0, "slow first token");
-        recordUsage({ provider, model: id.slice(provider.length + 1), kind: "chat", ok: false, latencyMs: Date.now() - started, attempt, errorMessage: "slow first token" });
+        recordUsage({ provider, model: id.slice(provider.length + 1), kind: "chat", ok: false, latencyMs: Date.now() - started, attempt, errorMessage: "slow first token", keySource: userKey ? "user" : "server" });
         console.warn(`[chat] ${id} gave no visible text within ${opts.firstTokenMs} ms, trying the next model`);
         const next = queue.find((q) => !isQuotaBlocked(q));
         if (next) hooks.onFallback(id, next);
@@ -356,6 +398,7 @@ export async function runChat(
           ttftMs: ttft,
           attempt,
           errorMessage: err.message,
+          keySource: userKey ? "user" : "server",
           promptTokens: handle?.usage.promptTokens ?? null,
           completionTokens: handle?.usage.completionTokens ?? null,
         });
@@ -365,6 +408,17 @@ export async function runChat(
       }
       const cls = applyCooldown(id, err);
       if (!skipped) console.warn(`[chat] ${id} failed (${cls.kind}): ${describe(err)}`);
+
+      // The user's own key was refused or ran out of credit (it is now marked, so the next call uses the
+      // server key): retry this model once on the server key, if the server has one. The request was
+      // already admitted under the user's normal daily limits; nothing here ever bills a key to someone else.
+      if (userKey && !usesUserKey(provider) && serverConfigured(provider) && !serverRetried.has(id) && !produced) {
+        serverRetried.add(id);
+        queue.unshift(id);
+        attempt--;
+        tried--;
+        continue;
+      }
 
       if (!auto) {
         const blocked = quotaBlock(id);
@@ -396,7 +450,7 @@ export const AUX_SLOT_WAIT_MS = 1_500;
  */
 export async function withSlot<T>(id: string, signal: AbortSignal, fn: () => Promise<T>, o: { priority?: Priority; purpose?: string } = {}): Promise<T> {
   const provider = id.slice(0, id.indexOf(":")) as ModelInfo["provider"];
-  const sem = slots[provider];
+  const sem = slotPool(provider);
   if (!sem) return fn();
   let release: () => void;
   try {
