@@ -214,8 +214,8 @@ abstract final class DotMatrixSizes {
   /// The page variant uses every constant above (the same red energy, heat,
   /// halos, opening wave and touches as the assistant overlay). It only
   /// differs by: no veil, no microphone, the page's ink grid, and it rests.
-  /// The idle glow's breathing freezes this long (s) after opening so the
-  /// field can settle and the ticker stop; the glow stays on screen.
+  /// The opening glow fades out over this long (s) after opening, so the
+  /// field settles to the plain ink grid and the ticker can stop.
   static const pageFreeze = 2.4;
 
   /// The page rests (ticker stops, still frame) once the wave is over, it

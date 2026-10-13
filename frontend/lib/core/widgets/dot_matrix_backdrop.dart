@@ -685,6 +685,11 @@ class DotMatrixFrame extends ChangeNotifier {
     return (x & 0xFFFFFF) / 0x1000000;
   }
 
+  static double _smooth(double x) {
+    final v = x.clamp(0.0, 1.0);
+    return v * v * (3 - 2 * v);
+  }
+
   /// Where each dot's spring wants to rest this frame: the breathing glow
   /// (lifted by the microphone) plus the thinking waves.
   void _computeTargets() {
@@ -704,9 +709,13 @@ class DotMatrixFrame extends ChangeNotifier {
         DotMatrixSizes.idleRest +
         (DotMatrixSizes.idleStrength - DotMatrixSizes.idleRest) * fresh;
     final l = listen.clamp(0.0, 1.0);
+    // Pages let the opening glow fade out completely, so nothing red sits
+    // behind content once the dots rest.
+    final fade = page ? _smooth(1 - age / DotMatrixSizes.pageFreeze) : 1.0;
     final strength =
         (idle + (DotMatrixSizes.listenStrength - idle) * l) *
-        (1 - DotMatrixSizes.busyDim * busy);
+        (1 - DotMatrixSizes.busyDim * busy) *
+        fade;
     final pulse =
         DotMatrixSizes.listenPulseDepth *
         (1 + math.sin(now * DotMatrixSizes.listenPulseSpeed)) /
@@ -1104,9 +1113,10 @@ class DotMatrixPainter extends CustomPainter {
     frame.layout(size);
     final c = _cache..ensure(frame, size, palette);
     final rect = Offset.zero & size;
-    // The page variant has no veil (content stays readable) but the same haze.
+    // The page variant has no veil and no resting haze, so content stays
+    // readable; its energy (waves, touches) is the overlay's.
     if (!frame.page) canvas.drawRect(rect, c.veil);
-    if (frame.glow) {
+    if (frame.glow && !frame.page) {
       canvas.drawRect(
         Rect.fromLTRB(
           0,
