@@ -26,7 +26,7 @@ function isConnError(e: unknown): boolean {
   return /Connection terminated|timeout exceeded|ECONNREFUSED|ECONNRESET|Can't reach database|server closed the connection/i.test(err?.message ?? "");
 }
 
-const unavailable = () => new AppError(503, "unavailable", "Database unavailable", true);
+const unavailable = () => new AppError(503, "unavailable", "sparky can't reach its storage right now — try again shortly.", true);
 
 function mapError(e: unknown): unknown {
   if (e instanceof AppError) return e;

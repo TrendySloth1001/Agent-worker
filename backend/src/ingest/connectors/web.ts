@@ -161,7 +161,7 @@ export const web: Connector = {
         }
       } catch (e) {
         if (depth === 0) {
-          throw new AppError(502, "upstream_failed", `Could not fetch ${start.hostname}: ${(e as Error).message}`);
+          throw new AppError(502, "upstream_failed", `Couldn't open ${start.hostname}.`);
         }
         ctx.skip((e as Error).message);
       }

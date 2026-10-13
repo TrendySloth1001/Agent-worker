@@ -22,7 +22,7 @@ const ghHeaders = (): Record<string, string> => ({
 function parse(input: string): { owner: string; repo: string; branch?: string; path?: string } {
   const s = input.trim().replace(/\.git$/, "");
   let m = s.match(/^(?:https?:\/\/(?:www\.)?github\.com\/)?([\w-]+)\/([\w.-]+?)(?:\/(?:tree|blob)\/([^/]+)(?:\/(.+?))?)?\/?$/);
-  if (!m) throw new AppError(400, "bad_request", "Expected owner/repo or a github.com URL");
+  if (!m) throw new AppError(400, "bad_request", "Enter a repository like owner/repo or paste its GitHub link.");
   return { owner: m[1], repo: m[2], branch: m[3], path: m[4]?.replace(/\/$/, "") };
 }
 
@@ -50,8 +50,8 @@ export const github: Connector = {
       meta = (await fetchJson(api, { headers: ghHeaders() })).data;
     } catch (e) {
       const st = (e as { status?: number }).status;
-      if (st === 404) throw new AppError(502, "upstream_failed", "Repository not found or private");
-      if (st === 403 || st === 429) throw new AppError(502, "upstream_failed", "GitHub rate limit reached. Set GITHUB_TOKEN or retry later");
+      if (st === 404) throw new AppError(502, "upstream_failed", "Couldn't find that repository — it may be private.");
+      if (st === 403 || st === 429) throw new AppError(502, "upstream_failed", "GitHub needs a short break — try again in a few minutes.");
       throw e;
     }
     ctx.setTitle(meta.full_name);

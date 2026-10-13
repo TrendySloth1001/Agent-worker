@@ -301,7 +301,7 @@ function gqlSource(owner: string, repo: string, signal?: AbortSignal): Source {
         vars,
         { signal, partial: true },
       );
-      if (!d?.repository) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+      if (!d?.repository) throw new AppError(404, "not_found", "Couldn't find that on GitHub — it may be private.");
       return streams.map((_, i) => {
         const h = d.repository![`s${i}`]?.history;
         if (!h) return { items: [], more: false };
@@ -462,7 +462,7 @@ async function startGql(owner: string, repo: string, requested: string[], signal
     { signal },
   );
   const r = meta?.repository;
-  if (!r) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+  if (!r) throw new AppError(404, "not_found", "Couldn't find that on GitHub — it may be private.");
   const def = r.defaultBranchRef as { name: string; target: { oid: string } | null } | null;
   if (!def?.target) return { v: 1, s: "graphql", repo: r.nameWithOwner, def: def?.name ?? "", t: 0, b: [] };
   const wanted = (requested.length ? requested : await recentBranches(owner, repo, def.name, signal))

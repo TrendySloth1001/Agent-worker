@@ -5,6 +5,7 @@ import { deleteObject, listKeys, presign } from "../storage/s3.js";
 import { log } from "../util/logger.js";
 import { config } from "../config.js";
 import type { FileKind } from "./kinds.js";
+import { USER_MSG, userSafe } from "../util/userMessages.js";
 
 export type FileRow = {
   id: string;
@@ -79,7 +80,7 @@ export function plainInfo(r: FileRow): FileInfo {
     size: Number(r.size),
     kind: r.kind,
     status: r.status,
-    error: r.error,
+    error: userSafe(r.error, USER_MSG.fileFailed),
     meta,
     createdAt: r.createdAt.toISOString(),
   };

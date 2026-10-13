@@ -14,7 +14,7 @@ async function getJson<T>(path: string): Promise<T> {
     return (await fetchJson<T>(`${base}${path}`, { delayMs: 2000, headers: HEADERS })).data;
   } catch (e) {
     const st = (e as { status?: number }).status;
-    if (st === 403 || st === 429) throw new AppError(502, "upstream_failed", "Reddit blocked or rate limited the request (no OAuth). Try a Hacker News or Stack Overflow source instead");
+    if (st === 403 || st === 429) throw new AppError(502, "upstream_failed", "Reddit isn't letting sparky in right now. Try a Hacker News or Stack Overflow source instead.");
     if (st === 404) throw new AppError(502, "upstream_failed", "Reddit thread or subreddit not found");
     throw e;
   }

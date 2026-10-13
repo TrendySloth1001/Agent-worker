@@ -18,6 +18,7 @@ import {
 } from "../src/llm/quota.js";
 import { ALL_BUSY_MESSAGE, ALL_QUOTA_MESSAGE, applyCooldown, ChatFailure, healthyFirst, preferForPrompt, runChat, type RunHooks } from "../src/llm/router.js";
 import { VISION_MODELS } from "../src/llm/vision.js";
+import { USER_MSG } from "../src/util/userMessages.js";
 import { fallbackModels } from "../src/llm/stream-openrouter.js";
 import { ThinkFilter, stripThink } from "../src/llm/think.js";
 import { MODELS, clearCooldown, cooldownUntil, setCooldown } from "../src/models.js";
@@ -218,7 +219,7 @@ test("router: an explicitly chosen model with an exhausted quota fails with a hu
   const { h } = hooks();
   await assert.rejects(
     runChat(["ollama:gpt-oss:120b"], [{ role: "user", content: "hi" }], new AbortController().signal, h, false, { stream: stubStream({}, []) }),
-    (e: unknown) => e instanceof ChatFailure && e.code === "model_busy" && /^Ollama has used up its quota until 1 Nov/.test(e.message),
+    (e: unknown) => e instanceof ChatFailure && e.code === "model_busy" && e.message === USER_MSG.modelQuota && !/ollama|quota/i.test(e.message),
   );
 });
 

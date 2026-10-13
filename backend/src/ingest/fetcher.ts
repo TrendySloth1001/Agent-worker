@@ -99,7 +99,7 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
   } catch {
     throw new AppError(400, "bad_request", "Invalid URL");
   }
-  if (u.protocol !== "http:" && u.protocol !== "https:") throw new AppError(400, "bad_request", "Only http and https URLs are allowed");
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new AppError(400, "bad_request", "Only web links can be added.");
   const host = u.hostname.replace(/^\[|\]$/g, "");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
     throw new AppError(400, "bad_request", "Private network URLs are not allowed");
@@ -200,7 +200,7 @@ function once(url: URL, opts: FetchOpts): Promise<{ status: number; headers: htt
 export async function fetchText(rawUrl: string, opts: FetchOpts = {}): Promise<FetchResult> {
   let url = new URL(rawUrl);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new FetchError("Only http and https URLs are allowed");
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new FetchError("Only web links can be added.");
     const host = url.hostname.replace(/^\[|\]$/g, "");
     if (net.isIP(host) && isPrivateIp(host)) throw new FetchError("Blocked: private network address");
     await politeWait(url.host, opts.delayMs ?? 1000);

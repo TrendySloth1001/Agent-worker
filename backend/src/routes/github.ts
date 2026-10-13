@@ -32,7 +32,7 @@ async function send(res: Response, data: unknown, resource = "core") {
 
 // Works with the server token (GITHUB_TOKEN) or the caller's connected account.
 githubRouter.use(async (_req, _res, next) => {
-  if ((await ghAuth()).kind === "none") return next(new AppError(503, "github_disabled", "GitHub is not configured (GITHUB_TOKEN)"));
+  if ((await ghAuth()).kind === "none") return next(new AppError(503, "github_disabled", "GitHub isn't available right now."));
   next();
 });
 
@@ -116,7 +116,7 @@ githubRouter.get("/repos/:owner/:repo/commits/:sha", async (req, res) => {
 // `base...head` (two dots also accepted).
 githubRouter.get("/repos/:owner/:repo/compare/:spec", async (req, res) => {
   const m = req.params.spec.match(/^(.+?)\.{2,3}(.+)$/);
-  if (!m) throw new AppError(400, "bad_request", "Expected base...head");
+  if (!m) throw new AppError(400, "bad_request", "Pick two branches to compare.");
   await send(res, await svc.compare(req.params.owner, req.params.repo, m[1], m[2]));
 });
 

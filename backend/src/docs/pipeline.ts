@@ -25,6 +25,7 @@ import { makeOutline, OUTLINE_MODELS, type AskFn } from "./outline.js";
 import { pickSectionSources, researchSections, SourceBook, type SearchFn } from "./research.js";
 import { keepValidTags, writeSection, type ImagesFn, type RunChatFn, type SectionEvents } from "./section.js";
 import { prismaStore, type DocStore } from "./store.js";
+import { userMessage } from "../util/userMessages.js";
 import {
   citedIds,
   countWords,
@@ -307,7 +308,7 @@ export async function runPipeline(job: LiveJob, mode: StartMode, deps: DocDeps):
         );
       } catch (e) {
         if (c.signal.aborted) return await finish(c);
-        const message = (e as Error).message || "Could not plan the document.";
+        const message = userMessage("upstream_failed", (e as Error).message, "Couldn't plan the document — try again.");
         c.budget.calls -= 2;
         await persist(c, { status: "failed" });
         send(c, "doc_error", { message, retryable: true });
@@ -364,20 +365,20 @@ async function gatherContext(c: Ctx) {
   };
   if (fetched.status === "fulfilled") for (const r of fetched.value) if (r) addWeb(r);
   if (searched.status === "fulfilled") searched.value.forEach(addWeb);
-  else if (o.web) notice("web_search_failed", "Web search failed; writing from the remaining sources.");
+  else if (o.web) notice("web_search_failed", "Couldn't search the web just now, so I'm writing from the other sources.");
   if (kb.status === "fulfilled") {
     for (const h of kb.value) {
       const { added: a } = book.add("kb", { title: h.title || h.url, url: h.url, content: h.content, site: h.site, sourceType: h.sourceType, key: `${h.chunkId}` });
       if (a) added.push(a);
     }
-  } else if (o.kb) notice("kb_unavailable", "Knowledge base is unavailable; writing without it.");
+  } else if (o.kb) notice("kb_unavailable", "Your knowledge base isn't available right now, so I'm writing without it.");
   if (files.status === "fulfilled") {
     for (const f of files.value.items) {
       const { added: a } = book.add("file", { title: f.title, url: f.url, content: f.text, full: f.full, site: "document", key: f.id });
       if (a) added.push(a);
     }
-    if (files.value.failed.length) notice("attachment_failed", `Could not read: ${files.value.failed.join(", ")}`);
-  } else if (o.attachments?.length) notice("attachment_failed", "Could not read the attachments.");
+    if (files.value.failed.length) notice("attachment_failed", `Couldn't read ${files.value.failed.join(", ")}.`);
+  } else if (o.attachments?.length) notice("attachment_failed", "Couldn't read the attachments.");
   book.shared = shared;
   await persist(c, { sources: book.items, options: { ...o, sharedIds: shared } });
   if (added.length) send(c, "doc_sources", { citations: added.map(publicSource) });
@@ -406,7 +407,7 @@ async function writeAll(c: Ctx, mode: StartMode) {
       onSources: (added) => send(c, "doc_sources", { citations: added.map(publicSource) }),
     });
     own = r.own;
-    if (r.failed && r.failed === r.searches) send(c, "doc_notice", { code: "web_search_failed", message: "Section research failed; using the shared sources." });
+    if (r.failed && r.failed === r.searches) send(c, "doc_notice", { code: "web_search_failed", message: "Couldn't research this section, so I used the shared sources." });
   }
   for (const s of needs) secOf(s.id).sourceIds = pickSectionSources(s, own.get(s.id) ?? [], book);
   await persist(c, { sources: book.items });

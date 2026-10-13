@@ -34,7 +34,7 @@ export const MAX_PAGE_CHARS = 150_000;
 const ID_RE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
 export function checkNotionId(id: string): string {
-  if (!ID_RE.test(id)) throw new AppError(400, "bad_request", "Invalid Notion page id");
+  if (!ID_RE.test(id)) throw new AppError(400, "bad_request", "Couldn't find that Notion page.");
   return id.replace(/-/g, "").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5").toLowerCase();
 }
 
@@ -74,9 +74,9 @@ function appErrorOf(e: unknown): AppError {
   const status = notionStatus(e);
   const message = (e as Error)?.message ?? "";
   if (status === 404) return new AppError(404, "not_found", "Notion page not found. Share it with sparky in Notion, then try again.");
-  if (status === 403) return new AppError(403, "notion_forbidden", "sparky is not allowed to do that in Notion. Check the integration's capabilities.");
+  if (status === 403) return new AppError(403, "notion_forbidden", "sparky isn't allowed to do that in Notion. Check its access in Notion.");
   if (status === 429) return new AppError(429, "connector_rate_limited", "Notion is busy. Try again in a minute.", true);
-  if (status === 400) return new AppError(400, "notion_bad_request", `Notion refused the request${message ? `: ${message.slice(0, 120)}` : ""}.`);
+  if (status === 400) return new AppError(400, "notion_bad_request", "Notion couldn't do that — check the page and try again.");
   if (!status && /timed? ?out/i.test(message)) return new AppError(504, "connector_timeout", "Notion took too long to answer.", true);
   return new AppError(502, "notion_failed", "Notion did not answer. Try again in a moment.", true);
 }

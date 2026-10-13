@@ -8,6 +8,7 @@ import { chunkMarkdown, embeddingInput, sha, type Chunk } from "./chunk.js";
 import { connectors } from "./connectors/index.js";
 import { backfillIcons, hasRemoteIcon, storeIcon } from "./icon.js";
 import type { DocInput, IngestCtx } from "./types.js";
+import { USER_MSG, userMessage } from "../util/userMessages.js";
 
 const limit = pLimit(1);
 const queued = new Set<string>();
@@ -148,11 +149,11 @@ async function runSource(id: string): Promise<void> {
   try {
     await connector.run({ id, type: src.type, uri: src.uri, options: src.options ?? {}, userId: src.userId }, ctx);
     await flush();
-    if (stored === 0 && done > 0 && firstError && seen.size === 0) throw new AppError(502, "upstream_failed", firstError);
+    if (stored === 0 && done > 0 && firstError && seen.size === 0) throw new AppError(502, "upstream_failed", userMessage("upstream_failed", firstError, USER_MSG.knowledgeFailed));
     // refresh semantics: drop documents that no longer exist upstream (only after a fully successful run)
     if (seen.size > 0) await db().document.deleteMany({ where: { sourceId: id, url: { notIn: [...seen] } } });
     const [docs, chunks] = await db().$transaction([db().document.count({ where: { sourceId: id } }), db().chunk.count({ where: { sourceId: id } })]);
-    if (chunks === 0) throw new AppError(502, "upstream_failed", firstError ?? "No content could be extracted from this source");
+    if (chunks === 0) throw new AppError(502, "upstream_failed", userMessage("upstream_failed", firstError ?? "No content could be found in this source.", USER_MSG.knowledgeFailed));
     const now = new Date();
     const finished = Math.max(done, docs);
     await db().source.updateMany({

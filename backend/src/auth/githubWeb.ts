@@ -9,6 +9,7 @@ import { log } from "../util/logger.js";
 import { GITHUB_SSO_SCOPES, githubGrantProfile, saveGrantConnection } from "./githubSso.js";
 import type { Tokens, UserRow } from "./service.js";
 import { linkIdentity, resolveSsoUser, ssoSessionFor, type IdentitySummary, type SsoOutcome, type SsoProfile } from "./sso.js";
+import { isUserSafe } from "../util/userMessages.js";
 
 /**
  * GitHub over the OAuth web flow (authorization code + PKCE), one tap instead
@@ -113,7 +114,7 @@ export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex"
 export const pkceChallenge = (verifier: string) => b64url(createHash("sha256").update(verifier).digest());
 
 export const webNotConfigured = () =>
-  new AppError(503, "github_oauth_not_configured", "GitHub web sign-in is not set up on this server (GITHUB_OAUTH_CLIENT_ID/SECRET)");
+  new AppError(503, "github_oauth_not_configured", "GitHub sign-in isn't available right now.");
 
 const deepLink = (params: Record<string, string | null | undefined>) => {
   const q = new URLSearchParams();
@@ -217,7 +218,7 @@ export function createGithubWeb(deps: GithubWebDeps) {
   async function callback(q: { code?: string; state?: string; error?: string }): Promise<WebCallback> {
     const state = q.state ?? "";
     const fail = (code: string, mode: WebMode | null, message?: string): WebCallback => {
-      const msg = (message ?? MESSAGES[code] ?? MESSAGES.failed).slice(0, 200);
+      const msg = isUserSafe(message) ? message : (MESSAGES[code] ?? MESSAGES.failed);
       return { ok: false, mode, message: msg, link: deepLink({ error: code, message: msg, mode, state }) };
     };
     if (!state) return fail("bad_request", null);

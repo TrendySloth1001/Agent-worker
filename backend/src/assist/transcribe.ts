@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { withTelemetry } from "../db/usage.js";
 import { groqTranscribe } from "../files/media.js";
 import { AppError } from "../util/errors.js";
+import { USER_MSG } from "../util/userMessages.js";
 
 /** About two minutes of m4a/opus voice is well under this. */
 export const MAX_VOICE_BYTES = 4 * 1024 * 1024;
@@ -32,7 +33,7 @@ function receive(req: Request, res: Response): Promise<void> {
       if (!err) return resolve();
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") return reject(new AppError(413, "payload_too_large", "Recording is too long."));
-        return reject(new AppError(400, "bad_request", err.message));
+        return reject(new AppError(400, "bad_request", USER_MSG.voiceFailed));
       }
       reject(err);
     });
@@ -48,13 +49,13 @@ export function languageHint(raw: unknown): string | undefined {
 export const transcribeRouter = Router();
 
 transcribeRouter.post("/transcribe", async (req, res) => {
-  if (!req.is("multipart/form-data")) throw new AppError(400, "bad_request", "Expected multipart/form-data with a `file` field");
+  if (!req.is("multipart/form-data")) throw new AppError(400, "bad_request", USER_MSG.voiceFailed);
   const declared = Number(req.headers["content-length"]);
   if (Number.isFinite(declared) && declared > MAX_VOICE_BYTES + MULTIPART_SLACK) throw new AppError(413, "payload_too_large", "Recording is too long.");
   await receive(req, res);
   const f = req.file;
-  if (!f || f.size === 0) throw new AppError(400, "bad_request", "Missing `file` field");
-  if (!config.groqApiKey) throw new AppError(503, "unavailable", "Transcription is not configured.", true);
+  if (!f || f.size === 0) throw new AppError(400, "bad_request", USER_MSG.voiceFailed);
+  if (!config.groqApiKey) throw new AppError(503, "unavailable", USER_MSG.voiceUnavailable, true);
   try {
     const out = await withTelemetry({ purpose: "transcribe" }, () =>
       groqTranscribe(f.buffer, f.originalname || "voice.m4a", {
@@ -64,6 +65,6 @@ transcribeRouter.post("/transcribe", async (req, res) => {
     );
     res.json(out);
   } catch {
-    throw new AppError(502, "upstream_error", "Transcription failed, try again.", true);
+    throw new AppError(502, "upstream_error", USER_MSG.voiceFailed, true);
   }
 });

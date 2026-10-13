@@ -9,6 +9,7 @@ import { classifyError, clearQuota, formatUntil, isQuotaBlocked, markQuota, PROV
 import { VISION_MODELS } from "./vision.js";
 import { ThinkFilter } from "./think.js";
 import { log } from "../util/logger.js";
+import { USER_MSG } from "../util/userMessages.js";
 
 const FIRST_BYTE_MS = 20_000;
 const IDLE_MS = 30_000;
@@ -184,12 +185,13 @@ export function applyCooldown(id: string, e: UpstreamError): ErrorClass {
 }
 
 /** What the user reads when Auto ran out of models. The code stays all_models_failed. */
-export const ALL_BUSY_MESSAGE = "All free models are busy right now — try again in a minute.";
-export const ALL_QUOTA_MESSAGE = "The free models have used up their quota for now — try again later.";
+export const ALL_BUSY_MESSAGE = USER_MSG.busy;
+export const ALL_QUOTA_MESSAGE = USER_MSG.allQuota;
 
+/** A picked model whose allowance ran out (the provider and reset time go to the logs only). */
 function quotaMessage(id: string, until: number): string {
-  const name = PROVIDER_NAMES[providerOf(id)] ?? providerOf(id);
-  return `${name} has used up its quota until ${formatUntil(until)}. Pick another model or use Auto.`;
+  log.info("picked model out of quota", { model: id, provider: PROVIDER_NAMES[providerOf(id)] ?? providerOf(id), until: formatUntil(until) });
+  return USER_MSG.modelQuota;
 }
 
 /** Default output cap for chat per mode. Generous: reasoning models spend part of it thinking. */
@@ -349,7 +351,7 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         const blocked = quotaBlock(id);
         if (blocked) throw new ChatFailure("model_busy", quotaMessage(id, blocked.until), true);
         const busy = err.retryable;
-        throw new ChatFailure(busy ? "model_busy" : "upstream_failed", busy ? "This model is busy. Try another or use Auto." : `Model rejected the request: ${describe(err)}`, busy);
+        throw new ChatFailure(busy ? "model_busy" : "upstream_failed", busy ? USER_MSG.modelBusy : USER_MSG.modelRejected, busy);
       }
       if (produced) hooks.onReset();
       const next = queue.find((q) => !isQuotaBlocked(q));

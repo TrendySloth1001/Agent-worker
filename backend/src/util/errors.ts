@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { log } from "./logger.js";
+import { USER_MSG, userMessage } from "./userMessages.js";
 
 export class AppError extends Error {
   constructor(
@@ -14,15 +15,16 @@ export class AppError extends Error {
   }
 }
 
+/** The JSON error body. A message unfit for users (upstream text, codes, names) is replaced by a friendly line for its code. */
 export function errorBody(code: string, message: string, retryable = false) {
-  return { error: { code, message: message.slice(0, 200), retryable } };
+  return { error: { code, message: userMessage(code, message), retryable } };
 }
 
 // Express requires the 4-arg signature to treat this as an error handler.
 export function errorMiddleware(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   let status = 500;
   let code = "internal";
-  let message = "Internal server error";
+  let message: string = USER_MSG.generic;
   let retryable = false;
 
   if (err instanceof AppError) {
@@ -30,19 +32,20 @@ export function errorMiddleware(err: unknown, _req: Request, res: Response, _nex
   } else if (err instanceof ZodError) {
     status = 400;
     code = "bad_request";
-    message = err.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; ");
+    message = USER_MSG.badRequest;
   } else if (err && typeof err === "object" && (err as { type?: string }).type === "entity.too.large") {
     status = 413;
     code = "payload_too_large";
-    message = "Payload too large";
+    message = "That's too large to send.";
   } else if (err && typeof err === "object" && (err as { type?: string }).type === "entity.parse.failed") {
     status = 400;
     code = "bad_request";
-    message = "Invalid JSON body";
+    message = USER_MSG.badRequest;
   } else {
     log.error("unhandled error", { message: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200) });
   }
 
+  if (userMessage(code, message) !== message) log.info("error text hidden from user", { code, status, message: message.slice(0, 200) });
   if (res.headersSent) {
     res.end();
     return;
