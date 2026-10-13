@@ -6,4 +6,12 @@
     <!-- After allowing the microphone for the assistant overlay. -->
     <string name="assistant_mic_ready">Microphone on. Hold the power button to talk to sparky.</string>
     <string name="assistant_mic_denied">Microphone not allowed. You can still type to sparky.</string>
+    <!-- Quick Settings tile, share sheet entry and launcher shortcuts. -->
+    <string name="tile_ask_sparky">Ask sparky</string>
+    <string name="share_ask_sparky">Ask sparky</string>
+    <string name="shortcut_ask_short">Ask sparky</string>
+    <string name="shortcut_ask_long">Ask sparky over any app</string>
+    <string name="shortcut_circle_short">Circle to search</string>
+    <string name="shortcut_circle_long">Circle anything on screen to search</string>
+    <string name="shortcut_disabled">Open sparky to use this shortcut</string>
 </resources>

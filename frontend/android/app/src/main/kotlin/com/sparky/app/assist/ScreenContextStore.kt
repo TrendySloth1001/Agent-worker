@@ -32,6 +32,10 @@ object ScreenContextStore {
     private var url: String? = null
     private var screenshot: File? = null
 
+    /** Size of the screen the screenshot shows (before it was scaled down). */
+    private var screenWidth = 0
+    private var screenHeight = 0
+
     /** A session started: forget the previous screen. */
     fun begin(context: Context, withAssist: Boolean): Int {
         session++
@@ -44,6 +48,8 @@ object ScreenContextStore {
         url = null
         screenshot?.delete()
         screenshot = null
+        screenWidth = 0
+        screenHeight = 0
         // Old screenshots of crashed sessions.
         dir(context).listFiles()?.forEach { it.delete() }
         return session
@@ -77,6 +83,8 @@ object ScreenContextStore {
             screenshotDone = true
             return
         }
+        screenWidth = bitmap.width
+        screenHeight = bitmap.height
         // A software copy now (the system may reuse the bitmap), the JPEG on
         // a worker thread; the result lands back on main.
         val scaled = try {
@@ -132,6 +140,8 @@ object ScreenContextStore {
         AssistProtocol.URL to url,
         AssistProtocol.SCREENSHOT to screenshot?.absolutePath,
         AssistProtocol.STRUCTURE_ARRIVED to structureDone,
+        AssistProtocol.SCREEN_WIDTH to screenWidth,
+        AssistProtocol.SCREEN_HEIGHT to screenHeight,
     )
 
     private fun dir(context: Context): File =
