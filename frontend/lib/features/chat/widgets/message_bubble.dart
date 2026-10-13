@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/app_scope.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/knowledge_api.dart';
+import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
@@ -165,7 +166,11 @@ class MessageBubble extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
         ],
         if (message.isError)
-          Text(message.content, style: t.body.copyWith(color: p.accent))
+          Text(
+            // Old saved chats may hold raw server text.
+            safeOr(message.content, ErrorCopy.generic),
+            style: t.body.copyWith(color: p.accent),
+          )
         else if (waiting && message.tablePhase != null)
           RoundTablePanel(
             message: message,
@@ -197,11 +202,14 @@ class MessageBubble extends StatelessWidget {
           ),
         if (message.error != null) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(message.error!, style: t.caption.copyWith(color: p.accent)),
+          Text(
+            safeOr(message.error, ErrorCopy.generic),
+            style: t.caption.copyWith(color: p.accent),
+          ),
         ],
-        if (message.notice != null && !message.isError) ...[
+        if (safeOrNull(message.notice) != null && !message.isError) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(message.notice!, style: t.caption),
+          Text(safeOrNull(message.notice)!, style: t.caption),
         ],
         if (message.memoryOps.isNotEmpty && !message.isError) ...[
           const SizedBox(height: AppSpacing.sm),
@@ -372,7 +380,7 @@ class _SaveActionState extends State<_SaveAction> {
         if (mounted) setState(() => _state = _SaveState.saved);
         return;
       }
-      _fail(e.message);
+      _fail(friendlyException(e));
     } catch (_) {
       _fail(AppStrings.errorGeneric);
     }
