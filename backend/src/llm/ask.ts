@@ -14,6 +14,7 @@ export type AskOptions = {
   timeoutMs: number;
   maxTokens?: number;
   reasoningEffort?: "low";
+  temperature?: number;
   /** Stop collecting (and cancel the stream) once this many characters arrived. */
   maxChars?: number;
   signal?: AbortSignal;
@@ -34,7 +35,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
   if (!isAux(opts.purpose)) return askOnce(modelId, messages, opts);
   // Aux work: skipped while the model's budget or slots are tight, and shared between identical requests.
   auxGate(modelId, estimateRequestTokens(messages, opts.maxTokens), opts.purpose!);
-  return auxOnce(opts.purpose!, messages, () => askOnce(modelId, messages, opts), `${opts.maxTokens ?? ""}|${opts.maxChars ?? ""}`);
+  return auxOnce(opts.purpose!, messages, () => askOnce(modelId, messages, opts), `${opts.maxTokens ?? ""}|${opts.maxChars ?? ""}|${opts.temperature ?? ""}`);
 }
 
 async function askOnce(modelId: string, messages: Message[], opts: AskOptions): Promise<string> {
@@ -56,7 +57,7 @@ async function askOnce(modelId: string, messages: Message[], opts: AskOptions): 
       let ttft: number | null = null;
       try {
         const left = Math.max(1_000, opts.timeoutMs);
-        const handle = await streamModel(modelId, messages, { signal: ctl.signal, firstByteMs: left, idleMs: left, maxTokens: opts.maxTokens, reasoningEffort: opts.reasoningEffort });
+        const handle = await streamModel(modelId, messages, { signal: ctl.signal, firstByteMs: left, idleMs: left, maxTokens: opts.maxTokens, reasoningEffort: opts.reasoningEffort, temperature: opts.temperature });
         let text = "";
         for await (const token of handle.tokens) {
           ttft ??= Date.now() - started;

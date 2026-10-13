@@ -23,8 +23,9 @@ class VoiceListener {
   /// Loudness, 0..1.
   final void Function(double level) onLevel;
 
-  /// The finished transcript; may be empty.
-  final void Function(String text) onFinal;
+  /// The finished transcript; may be empty. [confidence] (0..1) when the
+  /// recognizer rates its result.
+  final void Function(String text, [double? confidence]) onFinal;
   final void Function(VoiceFailure failure, [String? message]) onError;
 }
 

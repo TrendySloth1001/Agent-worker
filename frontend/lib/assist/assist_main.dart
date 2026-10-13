@@ -54,7 +54,10 @@ class _AssistAppState extends State<AssistApp> {
     conversations: ConversationsApi(AppConfig.apiBaseUrl),
     settings: _settings,
   );
-  late final VoiceController _voice = createVoiceController(_settings);
+  late final VoiceController _voice = createVoiceController(
+    _settings,
+    context: () => voiceTurns(_controller.messages),
+  );
   StreamSubscription<AssistShow>? _shows;
   StreamSubscription<SharedPayload>? _shared;
 

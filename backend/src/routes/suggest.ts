@@ -13,7 +13,7 @@ const COMPLETE_TIMEOUT_MS = 1_500;
 const STARTERS_TTL_MS = 10 * 60_000;
 
 /** Per-user fixed-window limiter (the shared one is per IP). */
-function perUser(max: number, windowMs = 60_000) {
+export function perUser(max: number, windowMs = 60_000) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   setInterval(() => {
     const now = Date.now();

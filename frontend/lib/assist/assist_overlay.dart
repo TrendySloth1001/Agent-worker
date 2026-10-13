@@ -26,6 +26,7 @@ import '../features/auth/auth_controller.dart';
 import '../features/auth/widgets/auth_widgets.dart' show Wordmark;
 import '../features/chat/attach_picker.dart';
 import '../features/chat/voice/voice_controller.dart';
+import '../features/chat/voice/voice_fix_field.dart';
 import '../features/chat/voice/voice_locale.dart';
 import '../features/chat/voice/voice_permission.dart';
 import '../features/chat/voice/voice_strip.dart';
@@ -86,7 +87,7 @@ class AssistOverlay extends StatefulWidget {
 }
 
 class _AssistOverlayState extends State<AssistOverlay> {
-  final _field = TextEditingController();
+  final _field = VoiceFixTextController();
   final _focus = FocusNode();
   late final _attachPicker = widget.attach ?? AttachPicker();
   String _voiceBase = '';
@@ -249,6 +250,9 @@ class _AssistOverlayState extends State<AssistOverlay> {
       text: all,
       selection: TextSelection.collapsed(offset: all.length),
     );
+    if (isFinal) {
+      _field.showFix(widget.voice?.lastFix, offset: _voiceBase.length);
+    }
     if (isFinal && _talking) {
       _talking = false;
       _submit();
@@ -449,6 +453,7 @@ class _AssistOverlayState extends State<AssistOverlay> {
                     onRetry: _startVoice,
                     onSettings: voice.openSettings,
                   ),
+                if (voice != null) VoiceFixChip(controller: _field),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
