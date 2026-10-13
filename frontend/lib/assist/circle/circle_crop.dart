@@ -36,7 +36,8 @@ class JpegCircleCropper implements CircleCropper {
           viewHeight: view.height,
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('circle: crop isolate failed: $e');
       return null;
     }
   }

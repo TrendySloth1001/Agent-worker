@@ -299,6 +299,7 @@ class _AssistOverlayState extends State<AssistOverlay> {
                         _c.circleSelect(rect, view);
                       },
                       onCancel: _c.cancelCircle,
+                      onDrawStart: _c.circleDrawing,
                       onEmpty: () => _c.say(CircleStrings.nothingSelected),
                     );
                   }

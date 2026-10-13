@@ -335,7 +335,12 @@ class AssistController extends ChangeNotifier {
   ScreenContext? _circleScreen;
   FileInfo? _circleFile;
 
+  /// Bumped for every new selection (and on cancel): a cut-out that finishes
+  /// for an older one is dropped.
+  int _cropGen = 0;
+
   void _resetCircle() {
+    _cropGen++;
     circle = CirclePhase.off;
     _circleScreen = null;
     _circleFile = null;
@@ -364,7 +369,18 @@ class AssistController extends ChangeNotifier {
       return;
     }
     final session = _session;
-    final ctx = screen ?? await bridge.screenContext();
+    ScreenContext? ctx;
+    try {
+      ctx =
+          screen ??
+          await bridge.screenContext().timeout(CircleConfig.screenTimeout);
+    } catch (e) {
+      debugPrint('circle: reading the screen failed: $e');
+      if (session != _session) return;
+      Haptics.error();
+      _setNotice(CircleStrings.screenFailed);
+      return;
+    }
     if (session != _session) return;
     if (ctx == null || !ctx.hasScreenshot) {
       Haptics.error();
@@ -383,10 +399,14 @@ class AssistController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Back from drawing: to the answer about the last selection, or out.
+  /// Back from drawing (or cutting out): to the answer about the last
+  /// selection, or out.
   void cancelCircle() {
-    if (circle != CirclePhase.selecting) return;
+    if (circle != CirclePhase.selecting && circle != CirclePhase.cropping) {
+      return;
+    }
     Haptics.tap();
+    _cropGen++;
     if (circleCrop != null && hasThread) {
       circle = CirclePhase.results;
     } else {
@@ -395,30 +415,63 @@ class AssistController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The user started drawing a new selection: a cut-out still running for
+  /// the previous one is dropped and drawing goes on.
+  void circleDrawing() {
+    if (circle != CirclePhase.cropping) {
+      if (notice != null && circle == CirclePhase.selecting) {
+        notice = null;
+        notifyListeners();
+      }
+      return;
+    }
+    _cropGen++;
+    circle = CirclePhase.selecting;
+    circleSelection = null;
+    notice = null;
+    notifyListeners();
+  }
+
   /// The user circled (or tapped) [selection] on a [view]-sized overlay:
-  /// cut it out, find its text, and search for it.
+  /// cut it out, find its text, and search for it. A newer selection
+  /// replaces this one at any point; a cut-out that fails or takes longer
+  /// than [CircleConfig.cropTimeout] offers a retry instead of spinning.
   Future<void> circleSelect(Rect selection, Size view) async {
     final image = circleImage;
     final ctx = _circleScreen;
-    if (image == null || ctx == null || circle == CirclePhase.cropping) {
-      return;
-    }
-    final session = _session;
+    if (image == null || ctx == null || circle == CirclePhase.off) return;
+    final gen = ++_cropGen;
+    // The answer about the previous selection stops.
+    if (sending) stop();
     circle = CirclePhase.cropping;
     circleSelection = selection;
     circleView = view;
     notice = null;
     notifyListeners();
-    final path = await cropper.crop(image, selection, view);
-    if (session != _session || circle != CirclePhase.cropping) return;
+    String? path;
+    var text = '';
+    try {
+      path = await cropper
+          .crop(image, selection, view)
+          .timeout(CircleConfig.cropTimeout);
+      if (path != null) {
+        text = selectionText(selection, view: view, screen: ctx);
+      }
+    } catch (e) {
+      debugPrint('circle: cutting out the selection failed: $e');
+      path = null;
+    }
+    // Replaced by a newer selection, cancelled or closed meanwhile.
+    if (gen != _cropGen || circle != CirclePhase.cropping) return;
     if (path == null) {
       circle = CirclePhase.selecting;
+      circleSelection = null;
       Haptics.error();
       _setNotice(CircleStrings.cropFailed);
       return;
     }
     circleCrop = path;
-    circleText = selectionText(selection, view: view, screen: ctx);
+    circleText = text;
     _circleFile = null;
     circle = CirclePhase.results;
     notifyListeners();

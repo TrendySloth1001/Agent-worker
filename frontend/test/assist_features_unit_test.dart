@@ -103,6 +103,43 @@ void main() {
       expect(selectionOf(const [], view: view), isNull);
     });
 
+    test('a thin selection is padded to a minimum box, kept on screen', () {
+      // A straight horizontal line.
+      final line = padToMin(
+        const Rect.fromLTRB(100, 300, 300, 302),
+        view: view,
+        minSide: 96,
+      );
+      expect(line, const Rect.fromLTRB(100, 253, 300, 349));
+      // A short line in the corner grows inwards.
+      final corner = padToMin(
+        const Rect.fromLTRB(0, 0, 40, 1),
+        view: view,
+        minSide: 96,
+      );
+      expect(corner, const Rect.fromLTRB(0, 0, 96, 96));
+      // Never larger than the view.
+      final tiny = padToMin(
+        const Rect.fromLTRB(10, 10, 20, 20),
+        view: const Size(50, 50),
+        minSide: 96,
+      );
+      expect(tiny, const Rect.fromLTRB(0, 0, 50, 50));
+      // Big enough already: unchanged.
+      const big = Rect.fromLTRB(10, 10, 210, 210);
+      expect(padToMin(big, view: view, minSide: 96), big);
+    });
+
+    test('several strokes select the union of their boxes', () {
+      final box = selectionOfStrokes(const [
+        [Offset(100, 100), Offset(200, 160)],
+        [Offset(200, 160), Offset(150, 260)],
+        [Offset(150, 260), Offset(90, 160)],
+      ], view: view)!;
+      expect(box, const Rect.fromLTRB(90, 100, 200, 260));
+      expect(selectionOfStrokes(const [[], []], view: view), isNull);
+    });
+
     test('crop rect: padded, scaled to the image, clamped, whole pixels', () {
       // The image is half the view's size.
       final r = cropRectFor(
