@@ -117,6 +117,37 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.7.0',
+      date: '13 Oct 2026',
+      headline: 'Updates, built in',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'In-app updates',
+          detail:
+              'New versions download inside sparky and install in a tap. '
+              'No more hunting for APKs.',
+          icon: HugeIcons.strokeRoundedDownload04,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Gentle reminders',
+          detail:
+              'sparky asks once per version, at a quiet moment. Later means '
+              'later: it waits days, not minutes.',
+          icon: HugeIcons.strokeRoundedNotification01,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Saves your data',
+          detail:
+              'Small fixes download on Wi-Fi only. You can change that in '
+              'About.',
+          icon: HugeIcons.strokeRoundedWifi01,
+        ),
+      ],
+    ),
+    (
       version: '1.6.1',
       date: '13 Oct 2026',
       headline: 'Say it, sparky fixes it',
