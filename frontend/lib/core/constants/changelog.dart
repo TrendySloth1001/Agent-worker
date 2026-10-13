@@ -155,7 +155,7 @@ abstract final class Changelog {
         ),
         (
           kind: ChangeKind.fixed,
-          title: 'Circle to search',
+          title: 'Sharper circle search',
           detail:
               'Answers stick to what you circled, and a blank capture says '
               'so instead of guessing.',
