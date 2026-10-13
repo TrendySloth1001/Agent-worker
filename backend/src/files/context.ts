@@ -2,7 +2,8 @@ import { db } from "../db/prisma.js";
 import { toVector } from "../db/vector.js";
 import { ownerFilter } from "../auth/context.js";
 import { embedTexts } from "../embeddings/index.js";
-import { getObject } from "../storage/s3.js";
+import { getUserObject } from "../storage/s3.js";
+import { userCrypto } from "../crypto/userData.js";
 import type { ContextItem } from "../prompts/system.js";
 import type { Message } from "../providers.js";
 import { AppError } from "../util/errors.js";
@@ -79,18 +80,18 @@ async function pixels(row: FileRow): Promise<string[]> {
   if (hit) return hit;
   let out: string[];
   if (row.kind === "image") {
-    out = [(await toJpeg(await getObject(row.s3Key), IMAGE_MAX_EDGE, IMAGE_JPEG_QUALITY)).data.toString("base64")];
+    out = [(await toJpeg(await getUserObject(row.userId ?? null, row.s3Key), IMAGE_MAX_EDGE, IMAGE_JPEG_QUALITY)).data.toString("base64")];
   } else {
     const keys = (row.meta?.frameKeys as string[] | undefined) ?? [];
-    out = await Promise.all(keys.map(async (k) => (await getObject(k)).toString("base64")));
+    out = await Promise.all(keys.map(async (k) => (await getUserObject(row.userId ?? null, k)).toString("base64")));
   }
   remember(row.id, out);
   return out;
 }
 
 async function docText(id: string): Promise<string> {
-  const row = await db().storedFile.findUnique({ where: { id }, select: { text: true } });
-  return row?.text ?? "";
+  const row = await db().storedFile.findUnique({ where: { id }, select: { text: true, userId: true } });
+  return row?.text ? (await userCrypto(row.userId)).open("files", "text", row.text) : "";
 }
 
 async function excerpt(row: FileRow, text: string, question: string, perDocChunks: number): Promise<string> {
@@ -110,7 +111,8 @@ async function excerpt(row: FileRow, text: string, question: string, perDocChunk
       chunks = await db().fileChunk.findMany({ where: { fileId: row.id }, orderBy: { ord: "asc" }, take: perDocChunks, select: { ord: true, content: true } });
     }
     chunks.sort((a, b) => a.ord - b.ord);
-    return chunks.map((c) => c.content).join("\n[...]\n");
+    const crypto = await userCrypto(row.userId ?? null);
+    return chunks.map((c) => crypto.open("file_chunks", "content", c.content)).join("\n[...]\n");
   } catch {
     return head();
   }

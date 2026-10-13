@@ -96,6 +96,8 @@ export function scrub(msg: string | undefined | null): string | null {
     .replace(/(bearer|authorization|api[_-]?key|access[_-]?token|secret|password)([\s:=]+)\S+/gi, "$1$2[redacted]")
     .replace(/\b(sk|gsk|nvapi|ghp|gho|github_pat|or)[-_][A-Za-z0-9_-]{8,}/g, "[redacted]")
     .replace(/[A-Za-z0-9_\-]{32,}/g, "[redacted]")
+    // Upstream errors sometimes quote the request ("invalid input: \"<user text>\""): long quoted runs are user content, not telemetry.
+    .replace(/"[^"]{24,}"|'[^']{24,}'|`[^`]{24,}`/g, "[quoted text removed]")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 300);

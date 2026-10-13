@@ -1,3 +1,4 @@
+import { userCrypto } from "../crypto/userData.js";
 import { fuzzyScore, needsFuzzy } from "../nlp/text.js";
 import { db, Prisma } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
@@ -116,11 +117,12 @@ export async function listFiles(userId: string | null, q: ListQuery): Promise<{ 
     ? await db().conversation.findMany({ where: { id: { in: [...new Set(loose)] }, userId }, select: { id: true, title: true } })
     : [];
   const byId = new Map(extra.map((c) => [c.id, c]));
+  const crypto = await userCrypto(userId);
   const files = await Promise.all(
     page.map(async (r) => {
       const info = await signedInfo(r);
       const conv = convs.get(r.id) ?? (r.conversationId ? byId.get(r.conversationId) ?? null : null);
-      return { ...info, conversation: conv ? { id: conv.id, title: conv.title } : null };
+      return { ...info, conversation: conv ? { id: conv.id, title: conv.title ? crypto.open("conversations", "title", conv.title) : null } : null };
     }),
   );
   const last = page[page.length - 1];

@@ -1,7 +1,9 @@
 import { unindex } from "../ingest/indexer.js";
 import { db, type Prisma } from "../db/prisma.js";
 import { ownerFilter } from "../auth/context.js";
-import { deleteObject, listKeys, presign } from "../storage/s3.js";
+import { deleteObject, listKeys } from "../storage/s3.js";
+import { userCrypto } from "../crypto/userData.js";
+import { blobUrl } from "./blobUrl.js";
 import { log } from "../util/logger.js";
 import { config } from "../config.js";
 import type { FileKind } from "./kinds.js";
@@ -21,6 +23,8 @@ export type FileRow = {
   meta: Record<string, any>;
   text?: string | null;
   createdAt: Date;
+  /** Owner: whose data key seals the stored text and the objects. */
+  userId?: string | null;
 };
 
 export type FileInfo = {
@@ -53,6 +57,7 @@ export const INFO_SELECT = {
   thumbKey: true,
   meta: true,
   createdAt: true,
+  userId: true,
 } satisfies Prisma.StoredFileSelect;
 
 type Selected = Prisma.StoredFileGetPayload<{ select: typeof INFO_SELECT }> & { text?: string | null };
@@ -90,11 +95,8 @@ export async function signedInfo(r: FileRow): Promise<FileInfo> {
   // A video too big for storage is only stored once it is re-encoded; until
   // then its key names nothing, so no link is handed out (players would 404).
   const pending = r.status === "processing" && r.size > config.s3.maxObjectBytes;
-  const [url, thumbUrl] = await Promise.all([
-    pending ? Promise.resolve(undefined) : presign(r.s3Key),
-    r.thumbKey ? presign(r.thumbKey) : Promise.resolve(null),
-  ]);
-  return { ...plainInfo(r), url, thumbUrl };
+  // Objects are encrypted, so a storage link would hand out ciphertext: links point at the API, which decrypts (src/routes/blob.ts).
+  return { ...plainInfo(r), url: pending ? undefined : blobUrl(r.id, "original"), thumbUrl: r.thumbKey ? blobUrl(r.id, "thumb") : null };
 }
 
 /** A file of the current request's user (any file outside a request). */
@@ -104,7 +106,10 @@ export async function getFileRow(id: string, withText = false): Promise<FileRow 
     where: { id, ...(unscoped ? {} : { userId: uid }) },
     select: { ...INFO_SELECT, text: withText },
   });
-  return row ? toFileRow(row) : null;
+  if (!row) return null;
+  // The extracted text is sealed at rest.
+  if (withText && row.text) row.text = (await userCrypto(row.userId)).open("files", "text", row.text);
+  return toFileRow(row);
 }
 
 /** Storage keys a file row names (original, thumbnail, video frames). */

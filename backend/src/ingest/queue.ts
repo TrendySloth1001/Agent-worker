@@ -9,6 +9,7 @@ import { connectors } from "./connectors/index.js";
 import { backfillIcons, hasRemoteIcon, storeIcon } from "./icon.js";
 import type { DocInput, IngestCtx } from "./types.js";
 import { USER_MSG, userMessage } from "../util/userMessages.js";
+import { userCrypto, type UserCrypto } from "../crypto/userData.js";
 
 const limit = pLimit(1);
 const queued = new Set<string>();
@@ -46,7 +47,7 @@ onDbUp(recoverQueue);
 const vec = toVector;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 200);
 
-type Pending = { doc: DocInput; hash: string; chunks: Chunk[]; reuse: Map<string, string>; need: number[] };
+export type Pending = { doc: DocInput; hash: string; chunks: Chunk[]; reuse: Map<string, string>; need: number[] };
 
 async function runSource(id: string): Promise<void> {
   if (!isDbUp()) return;
@@ -55,6 +56,10 @@ async function runSource(id: string): Promise<void> {
   const src = { ...row, options: (row.options ?? {}) as Record<string, any> };
   const connector = connectors[src.type as keyof typeof connectors];
   if (!connector) return;
+  // Chunk text is sealed with the source owner's key; hashes are keyed so they reveal nothing about the text.
+  const crypto = await userCrypto(src.userId);
+  // Titles of notes and generated docs are user-written text: sealed (sources.title, documents.title).
+  const sealTitles = src.type === "note" || src.type === "doc";
   const lim: number = Math.min(Math.max(Number(src.options?.limit) || 20, 1), 100);
   // updateMany throughout: the source may be deleted while it is being ingested.
   await db().source.updateMany({
@@ -91,7 +96,7 @@ async function runSource(id: string): Promise<void> {
     slots.forEach(([bi, ci], i) => fresh.set(`${bi}:${ci}`, vec(embs[i])));
     for (let bi = 0; bi < batch.length; bi++) {
       const p = batch[bi];
-      await storeDoc(id, p, (ci) => fresh.get(`${bi}:${ci}`) ?? p.reuse.get(p.chunks[ci].hash)!);
+      await storeDoc(id, p, crypto, sealTitles, (ci) => fresh.get(`${bi}:${ci}`) ?? p.reuse.get(p.chunks[ci].hash)!);
       stored++;
       done++;
       await saveProgress();
@@ -105,7 +110,8 @@ async function runSource(id: string): Promise<void> {
       void saveProgress(true);
     },
     setTitle: (t) => {
-      void withDb((c) => c.source.updateMany({ where: { id, title: null }, data: { title: t.slice(0, 200) } })).catch(() => {});
+      const title = t.slice(0, 200);
+      void withDb((c) => c.source.updateMany({ where: { id, title: null }, data: { title: sealTitles ? crypto.seal("sources", "title", title) : title } })).catch(() => {});
     },
     skip: (reason) => {
       done++;
@@ -120,14 +126,14 @@ async function runSource(id: string): Promise<void> {
         done++;
         return;
       }
-      const hash = sha(markdown);
+      const hash = crypto.blindIndex("documents", "content_hash", sha(markdown));
       const existing = await db().document.findUnique({ where: { sourceId_url: { sourceId: id, url: doc.url } }, select: { id: true, contentHash: true } });
       if (existing?.contentHash === hash) {
         done++; // unchanged: keep chunks and embeddings
         await saveProgress();
         return;
       }
-      const chunks = chunkMarkdown(markdown, doc.title);
+      const chunks = chunkMarkdown(markdown, doc.title).map((ch) => ({ ...ch, hash: crypto.blindIndex("chunks", "content_hash", ch.hash) }));
       if (!chunks.length) {
         done++;
         return;
@@ -168,9 +174,10 @@ async function runSource(id: string): Promise<void> {
   }
 }
 
-async function storeDoc(sourceId: string, p: Pending, embFor: (ci: number) => string): Promise<void> {
+export async function storeDoc(sourceId: string, p: Pending, crypto: UserCrypto, sealTitles: boolean, embFor: (ci: number) => string): Promise<void> {
   await tx(async (c) => {
-    const doc = { title: p.doc.title?.slice(0, 300) ?? null, contentHash: p.hash, meta: (p.doc.meta ?? {}) as Prisma.InputJsonValue };
+    const title = p.doc.title?.slice(0, 300) ?? null;
+    const doc = { title: title !== null && sealTitles ? crypto.seal("documents", "title", title) : title, contentHash: p.hash, meta: (p.doc.meta ?? {}) as Prisma.InputJsonValue };
     const d = await c.document.upsert({
       where: { sourceId_url: { sourceId, url: p.doc.url } },
       create: { sourceId, url: p.doc.url, ...doc },
@@ -182,10 +189,12 @@ async function storeDoc(sourceId: string, p: Pending, embFor: (ci: number) => st
     for (let i = 0; i < p.chunks.length; i += 50) {
       const values = p.chunks.slice(i, i + 50).map(
         (ch, j) =>
-          Prisma.sql`(${d.id}::uuid, ${sourceId}::uuid, ${ch.ord}, ${ch.headingPath}, ${ch.content}, ${ch.tokenCount}, ${ch.hash}, ${embFor(i + j)}::vector)`,
+          // content and heading are sealed; tsv (keyword search) is the stripped lexeme vector of the plaintext, computed here
+          // because the column can no longer be generated from ciphertext (see migration 20261020100000).
+          Prisma.sql`(${d.id}::uuid, ${sourceId}::uuid, ${ch.ord}, ${ch.headingPath === null ? null : crypto.seal("chunks", "heading_path", ch.headingPath)}, ${crypto.seal("chunks", "content", ch.content)}, ${ch.tokenCount}, ${ch.hash}, ${embFor(i + j)}::vector, strip(to_tsvector('english'::regconfig, ${ch.content}::text)))`,
       );
       await c.$executeRaw`
-        INSERT INTO chunks (document_id, source_id, ord, heading_path, content, token_count, content_hash, embedding)
+        INSERT INTO chunks (document_id, source_id, ord, heading_path, content, token_count, content_hash, embedding, tsv)
         VALUES ${Prisma.join(values)}`;
     }
   });

@@ -11,7 +11,7 @@ import { config } from "../config.js";
 import { deleteFile, getFileRow, INFO_SELECT, markAttachments, signedInfo, toFileRow } from "../files/store.js";
 import { cleanRename, listFiles, parseListQuery, usageByKind } from "../files/library.js";
 import { processFile } from "../files/process.js";
-import { putObject } from "../storage/s3.js";
+import { OBJECT_OVERHEAD, putUserObject } from "../storage/s3.js";
 import { userOf } from "../auth/context.js";
 import { checkUpload, limitsFor, recordUpload, resetsAt, usageFor } from "../auth/limits.js";
 import { USER_MSG } from "../util/userMessages.js";
@@ -81,7 +81,8 @@ filesRouter.post("/", async (req, res) => {
   await checkUpload(user, f.size);
 
   // Storage refuses objects over its limit (Supabase Free: 50 MiB): such videos are re-encoded to fit while processing.
-  const transcode = f.size > config.s3.maxObjectBytes;
+  // Stored objects are a few bytes larger than the upload (encryption header and tag).
+  const transcode = f.size + OBJECT_OVERHEAD > config.s3.maxObjectBytes;
   if (transcode && cls.kind !== "video") {
     throw new AppError(413, "payload_too_large", `Files can be at most ${fmtMb(config.s3.maxObjectBytes)}.`);
   }
@@ -90,7 +91,7 @@ filesRouter.post("/", async (req, res) => {
   const key = `${id}/original${ext ? "." + ext : ""}`;
   if (!transcode) {
     try {
-      await putObject(key, f.buffer, cls.mime);
+      await putUserObject(user.id, key, f.buffer, cls.mime);
     } catch (e) {
       const msg = (e as Error).message ?? "";
       if (/maximum allowed size|EntityTooLarge|too large/i.test(msg)) {
@@ -105,7 +106,7 @@ filesRouter.post("/", async (req, res) => {
     select: INFO_SELECT,
   });
   await recordUpload(user, f.size);
-  const target = { id, name, kind: cls.kind, s3Key: key, transcode };
+  const target = { id, name, kind: cls.kind, s3Key: key, transcode, userId: user.id };
   const done = processFile(target, f.buffer);
   // Images are quick: answer with the finished state.
   if (cls.kind === "image") await Promise.race([done, new Promise((r) => setTimeout(r, 4000))]);

@@ -2,6 +2,7 @@
 // turn; once it passes a token budget, the older turns are replaced by a short
 // summary (cached on the conversation row, and extended incrementally) and only
 // the recent turns are sent as messages.
+import { userCrypto, type UserCrypto } from "../crypto/userData.js";
 import { createHash } from "node:crypto";
 import { currentUser } from "../auth/context.js";
 import { ask } from "../conversations/ask.js";
@@ -54,6 +55,9 @@ export function fingerprint(messages: Turn[]): string {
   for (const m of messages) h.update(`${m.role}\u0000${m.content}\u0001`);
   return h.digest("hex");
 }
+
+/** The fingerprint as stored in conversations.summary_hash: keyed with the owner's data key. */
+export const keyedFingerprint = (c: UserCrypto, messages: Turn[]): string => c.blindIndex("conversations", "summary_hash", fingerprint(messages));
 
 const SYSTEM =
   "You compress the older part of a chat between a user and an AI assistant into a running summary that replaces those messages. " +
@@ -113,8 +117,10 @@ export async function compactHistory<T extends Turn>(messages: T[], conversation
     if (cached && cached.upto <= older.length && cached.hash === fingerprint(older.slice(0, cached.upto))) base = cached;
     if (!base && dbId) {
       const row = await db().conversation.findFirst({ where: { id: dbId, userId }, select: { summary: true, summaryUpto: true, summaryHash: true } });
-      if (row?.summary && row.summaryUpto <= older.length && row.summaryHash === fingerprint(older.slice(0, row.summaryUpto))) {
-        base = { summary: row.summary, upto: row.summaryUpto };
+      // The stored fingerprint is keyed (a plain hash of the messages would let anyone with DB access confirm a guess).
+      const c = await userCrypto(userId);
+      if (row?.summary && row.summaryUpto <= older.length && row.summaryHash === keyedFingerprint(c, older.slice(0, row.summaryUpto))) {
+        base = { summary: c.open("conversations", "summary", row.summary), upto: row.summaryUpto };
       }
     }
     if (base && base.upto === older.length) return { summary: base.summary, recent };
@@ -131,9 +137,10 @@ export async function compactHistory<T extends Turn>(messages: T[], conversation
       if (mem.size > MEM_MAX) mem.delete(mem.keys().next().value as string);
     }
     if (dbId) {
+      const sealer = await userCrypto(userId);
       // updateMany: a conversation that is not saved yet simply matches no row.
       void db()
-        .conversation.updateMany({ where: { id: dbId, userId }, data: { summary, summaryUpto: older.length, summaryHash: hash } })
+        .conversation.updateMany({ where: { id: dbId, userId }, data: { summary: sealer.seal("conversations", "summary", summary), summaryUpto: older.length, summaryHash: keyedFingerprint(sealer, older) } })
         .catch((e) => log.warn("summary save failed", { error: String(e).slice(0, 120) }));
     }
     return { summary, recent };

@@ -2,6 +2,8 @@
 // saved conversations. Indexing is incremental (only new or changed chunks are
 // embedded), debounced per chat, and never throws into a request. Deleting a
 // chat or user removes its rows through ON DELETE CASCADE.
+import { userCrypto } from "../crypto/userData.js";
+import { MSG, openConversationText } from "../conversations/codec.js";
 import { db, isDbUp, Prisma, tx } from "../db/prisma.js";
 import { embedTexts } from "../embeddings/index.js";
 import { log } from "../util/logger.js";
@@ -40,7 +42,15 @@ export async function indexConversation(id: string): Promise<number | null> {
   if (!conv) return null;
   if (!(await chatRecallEnabled(conv.userId))) return null;
 
-  const wanted = buildChunks({ title: conv.title, summary: conv.summary, preview: conv.preview, messages: conv.messages });
+  const crypto = await userCrypto(conv.userId);
+  const text = openConversationText(crypto, conv);
+  // Chunk hashes are keyed (blind index): a plain hash of a chunk would let anyone with DB access confirm guesses of its text.
+  const wanted = buildChunks({
+    title: text.title,
+    summary: text.summary,
+    preview: text.preview,
+    messages: conv.messages.map((m) => ({ ...m, content: crypto.open(MSG, "content", m.content) })),
+  }).map((ch) => ({ ...ch, hash: crypto.blindIndex("conversation_chunks", "content_hash", ch.hash) }));
   // Raw: reads the hash column of a table with a vector column.
   const rows = await db().$queryRaw<Array<{ ord: number; content_hash: string }>>`SELECT ord, content_hash FROM conversation_chunks WHERE conversation_id = ${id}::uuid`;
   const { remove, add } = diffChunks(new Map(rows.map((r) => [r.ord, r.content_hash])), wanted);
@@ -55,7 +65,7 @@ export async function indexConversation(id: string): Promise<number | null> {
     if (!still) return;
     if (remove.length) await c.$executeRaw`DELETE FROM conversation_chunks WHERE conversation_id = ${id}::uuid AND ord = ANY(${remove}::int[])`;
     for (let i = 0; i < add.length; i++) {
-      await c.$executeRaw(upsertSql({ conversationId: id, uid: still.userId, ord: add[i].ord, kind: add[i].kind, content: add[i].content, hash: add[i].hash, vec: vectors[i] }));
+      await c.$executeRaw(upsertSql({ conversationId: id, uid: still.userId, ord: add[i].ord, kind: add[i].kind, content: crypto.seal("conversation_chunks", "content", add[i].content), hash: add[i].hash, vec: vectors[i] }));
     }
     await c.conversation.update({ where: { id }, data: { recallIndexedAt: new Date() } });
   });

@@ -1,6 +1,7 @@
 import { db, isDbUp, onDbUp } from "../db/prisma.js";
 import { log } from "../util/logger.js";
 import { enqueue } from "./queue.js";
+import { userCrypto } from "../crypto/userData.js";
 
 /**
  * Keeps the user's generated docs and uploaded documents in the knowledge base:
@@ -27,7 +28,9 @@ async function upsertSource(kind: IndexKind, userId: string | null, id: string, 
     return existing.id;
   }
   try {
-    const row = await db().source.create({ data: { type: kind, uri, title: title?.slice(0, 200) ?? null, userId, options: {} }, select: { id: true } });
+    // A generated doc's title is user text: sealed. A file's name is plaintext metadata (files.name).
+    const stored = title && kind === "doc" ? (await userCrypto(userId)).seal("sources", "title", title.slice(0, 200)) : (title?.slice(0, 200) ?? null);
+    const row = await db().source.create({ data: { type: kind, uri, title: stored, userId, options: {} }, select: { id: true } });
     return row.id;
   } catch (e) {
     // Lost a race with a concurrent hook: the other insert wins.
@@ -93,7 +96,7 @@ export async function backfillIndex(): Promise<{ docs: number; files: number; re
     const docs = await db().doc.findMany({ where: { status: { in: ["done", "partial", "interrupted"] } }, select: { id: true, userId: true, title: true }, orderBy: { updatedAt: "desc" }, take: 1000 });
     for (const d of docs) {
       if (have.has(uriOf("doc", d.id))) continue;
-      await indexNow("doc", d.userId, d.id, d.title);
+      await indexNow("doc", d.userId, d.id, (await userCrypto(d.userId)).open("docs", "title", d.title));
       out.docs++;
     }
     const files = await db().storedFile.findMany({

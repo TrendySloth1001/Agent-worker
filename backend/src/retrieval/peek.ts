@@ -2,6 +2,7 @@ import { db, isDbUp, Prisma } from "../db/prisma.js";
 import { toVector } from "../db/vector.js";
 import { embedQueries } from "../embeddings/index.js";
 import { ownerFilter } from "../auth/context.js";
+import { userCrypto } from "../crypto/userData.js";
 import type { KbPeekHit } from "../toggles/suggest.js";
 
 const PEEK_ROWS = 8;
@@ -20,10 +21,12 @@ export async function peekKb(query: string): Promise<{ hits: KbPeekHit[]; hasCon
   if (!any) return { hits: [], hasContent: false };
   const [vec] = (await embedQueries([text])).map(toVector);
   const mine = unscoped ? Prisma.empty : Prisma.sql`AND s.user_id IS NOT DISTINCT FROM ${uid}::uuid`;
-  const rows = await db().$queryRaw<{ title: string | null; url: string; sim: number }[]>`
-    SELECT d.title, d.url, 1 - (c.embedding <=> ${vec}::vector) AS sim
+  const rows = await db().$queryRaw<{ title: string | null; url: string; sim: number; owner_id: string | null }[]>`
+    SELECT d.title, d.url, 1 - (c.embedding <=> ${vec}::vector) AS sim, s.user_id::text AS owner_id
     FROM chunks c JOIN documents d ON d.id = c.document_id JOIN sources s ON s.id = c.source_id
     WHERE true ${mine}
     ORDER BY c.embedding <=> ${vec}::vector LIMIT ${PEEK_ROWS}`;
-  return { hits: rows.map((r) => ({ title: r.title || r.url, sim: Number(r.sim) })), hasContent: true };
+  const hits: KbPeekHit[] = [];
+  for (const r of rows) hits.push({ title: (r.title ? (await userCrypto(r.owner_id)).open("documents", "title", r.title) : "") || r.url, sim: Number(r.sim) });
+  return { hits, hasContent: true };
 }

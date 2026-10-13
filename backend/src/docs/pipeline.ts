@@ -2,6 +2,8 @@
 // research → sections (2 per doc, 3 across all docs) → takeaways + references.
 // Runs as an in-process background job; state is persisted after every
 // section and streamed to attached clients through the registry.
+import { userCrypto } from "../crypto/userData.js";
+import { MSG } from "../conversations/codec.js";
 import pLimit from "p-limit";
 import type { NextFunction } from "express";
 import { ask } from "../llm/ask.js";
@@ -16,7 +18,7 @@ import { finishMessages, sectionMessages } from "../prompts/doc.js";
 import { parseJson } from "../table/roundTable.js";
 import { expectedMs, recordLatency } from "../table/latency.js";
 import { withTelemetry } from "../db/usage.js";
-import { db } from "../db/prisma.js";
+import { db, type Prisma } from "../db/prisma.js";
 import { runAs, type AuthUser } from "../auth/context.js";
 import { log } from "../util/logger.js";
 import { computeEvidence } from "../web/evidence.js";
@@ -112,9 +114,19 @@ export function defaultDeps(): DocDeps {
     linkMessage: async (doc) => {
       if (!doc.conversationId) return;
       const card = { id: doc.id, title: doc.title, status: doc.status, words: doc.words, sections: bodySections(doc).length };
-      await db().$executeRaw`
-        UPDATE conversation_messages SET meta = jsonb_set(meta, '{doc}', ${JSON.stringify(card)}::jsonb)
-        WHERE conversation_id = ${doc.conversationId}::uuid AND meta->'doc'->>'id' = ${doc.id}`;
+      // Message meta is sealed, so the doc card is found and rewritten in the app (the caller's own chat only).
+      const own = await db().conversation.findFirst({ where: { id: doc.conversationId, userId: doc.userId }, select: { id: true } });
+      if (!own) return;
+      const c = await userCrypto(doc.userId);
+      const rows = await db().conversationMessage.findMany({ where: { conversationId: own.id }, select: { position: true, meta: true } });
+      for (const r of rows) {
+        const meta = c.openJson<Record<string, unknown>>(MSG, "meta", r.meta);
+        if ((meta?.doc as { id?: string } | undefined)?.id !== doc.id) continue;
+        await db().conversationMessage.update({
+          where: { conversationId_position: { conversationId: own.id, position: r.position } },
+          data: { meta: c.sealJson(MSG, "meta", { ...meta, doc: card }) as Prisma.InputJsonValue },
+        });
+      }
     },
     limits: DEFAULT_LIMITS,
     slots: sectionSlots,
