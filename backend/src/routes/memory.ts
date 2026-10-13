@@ -18,6 +18,7 @@ import {
   setMemoryEnabled,
   updateMemory,
 } from "../memory/store.js";
+import { USER_MSG } from "../util/userMessages.js";
 
 export const memoryRouter = Router();
 
@@ -47,7 +48,7 @@ const listSchema = z.object({
 
 function parse<T extends z.ZodTypeAny>(schema: T, data: unknown): z.infer<T> {
   const r = schema.safeParse(data);
-  if (!r.success) throw new AppError(400, "bad_request", r.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; "));
+  if (!r.success) throw new AppError(400, "bad_request", USER_MSG.badRequest);
   return r.data;
 }
 

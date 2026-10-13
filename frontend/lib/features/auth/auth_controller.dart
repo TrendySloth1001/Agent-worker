@@ -129,10 +129,7 @@ class AuthController extends ChangeNotifier {
       throw const ApiException(AuthStrings.errNetwork);
     }
     if (res.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(res.body, res.statusCode),
-        status: res.statusCode,
-      );
+      throw ApiException.fromResponse(res.body, res.statusCode);
     }
     await _apply(jsonDecode(res.body) as Map<String, dynamic>);
     notice = null;

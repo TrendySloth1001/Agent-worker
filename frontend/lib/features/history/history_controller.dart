@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/chat_cleanup.dart';
 import '../../core/constants/history.dart';
@@ -89,7 +90,7 @@ class HistoryController extends ChangeNotifier {
       error = null;
     } on ApiException catch (e) {
       if (request != _request) return;
-      error = e.message;
+      error = friendlyException(e);
     }
     loading = false;
     loadingMore = false;

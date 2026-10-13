@@ -205,6 +205,8 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         if (o.providers.isNotEmpty) _providers(context, o),
         if (models.groups.isNotEmpty) _models(context, models, errors),
         if (provider == null && o.turns != null) _turns(context, o.turns!),
+        if (provider == null && o.budgets != null)
+          _budgets(context, o.budgets!),
         if (errors.isNotEmpty) _errors(context, errors),
         if (provider == null && o.users.isNotEmpty) _users(context, o),
         _calls(context),
@@ -335,6 +337,41 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
             unit: true,
             sub: '${TelemetryStrings.p50.toLowerCase()} ${ms(t.ttftP50)}',
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _budgets(BuildContext context, TelemetryBudgets b) {
+    return TSection(
+      title: TelemetryCopy.budgets,
+      icon: TelemetryIcons.tokens,
+      note: TelemetryCopy.budgetsNote,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SummaryRow(
+            stats: [
+              SummaryStat(compact(b.skips), TelemetryCopy.budgetSkips),
+              SummaryStat(compact(b.waits), TelemetryCopy.budgetWaits),
+              SummaryStat(
+                compact(b.auxDeferred),
+                TelemetryCopy.budgetAuxDeferred,
+                sub:
+                    '${compact(b.auxCacheHits)} ${TelemetryCopy.budgetAuxCached.toLowerCase()}',
+              ),
+              SummaryStat(compact(b.userCaps), TelemetryCopy.budgetUserCaps),
+            ],
+          ),
+          if (b.scopes.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            PlainList(
+              children: [
+                for (final s in b.scopes.take(TelemetrySizes.budgetsShown))
+                  KeyValue(budgetScopeLabel(s.scope), budgetLine(s)),
+              ],
+            ),
+          ],
         ],
       ),
     );

@@ -45,10 +45,7 @@ class ConversationsApi {
       throw const ApiException(AppStrings.errorNetwork);
     }
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     return response;
   }

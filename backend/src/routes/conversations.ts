@@ -278,7 +278,7 @@ conversationsRouter.post("/:id/fork", async (req, res) => {
     const parent = await c.conversation.findFirst({ where: { id, userId: uid }, select: { title: true, preview: true } });
     if (!parent) throw new AppError(404, "not_found", "Conversation not found");
     const count = await c.conversationMessage.count({ where: { conversationId: id } });
-    if (at > count) throw new AppError(400, "bad_request", `at must be between 1 and ${count}`);
+    if (at > count) throw new AppError(400, "bad_request", "That message isn't in this chat anymore.");
     const base = (parent.title || parent.preview || "Untitled chat").replace(/ · fork$/, "");
     const created = await c.conversation.create({
       data: {

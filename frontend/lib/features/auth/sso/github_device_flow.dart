@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/connections.dart';
 import '../../../core/constants/sso_constants.dart';
 import '../../../data/sso_api.dart';
@@ -57,7 +58,7 @@ class GithubDeviceFlow extends ChangeNotifier {
       _tick = Timer.periodic(ConnectDurations.tick, (_) => _onTick());
     } on SsoException catch (e) {
       phase = DeviceFlowPhase.failed;
-      error = e.message;
+      error = friendlyException(e);
     }
     _notify();
   }
@@ -85,7 +86,7 @@ class GithubDeviceFlow extends ChangeNotifier {
       // 404: the server forgot the flow (restart); 4xx: give up. Else retry.
       final s = e.status ?? 0;
       if (s >= 400 && s < 500 && s != 429) {
-        _end(DeviceFlowPhase.failed, e.message);
+        _end(DeviceFlowPhase.failed, friendlyException(e));
       } else {
         _schedule(f.interval);
       }
@@ -102,7 +103,7 @@ class GithubDeviceFlow extends ChangeNotifier {
       case SsoFlowStatus.denied:
         _end(DeviceFlowPhase.denied);
       default:
-        _end(DeviceFlowPhase.failed, r.error ?? SsoStrings.failed);
+        _end(DeviceFlowPhase.failed, safeOr(r.error, SsoStrings.failed));
     }
   }
 

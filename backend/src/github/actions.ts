@@ -49,7 +49,7 @@ const REVIEW_EVENTS = new Set(["APPROVE", "REQUEST_CHANGES", "COMMENT"]);
 export async function submitReview(owner: string, repo: string, n: number, input: { event?: unknown; body?: unknown }) {
   target(owner, repo, n);
   const event = String(input.event ?? "").toUpperCase();
-  if (!REVIEW_EVENTS.has(event)) throw new AppError(400, "bad_request", "event must be APPROVE, REQUEST_CHANGES or COMMENT");
+  if (!REVIEW_EVENTS.has(event)) throw new AppError(400, "bad_request", "Pick approve, request changes or comment.");
   const body = text(input.body, "body", TEXT_MAX, event !== "APPROVE");
   const r = await ghSend("POST", `/repos/${owner}/${repo}/pulls/${n}/reviews`, { event, ...(body ? { body } : {}) });
   return { id: r?.id ?? null, state: String(r?.state ?? "").toLowerCase(), url: r?.html_url ?? "" };

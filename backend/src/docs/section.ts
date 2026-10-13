@@ -7,6 +7,7 @@ import type { ImageResult } from "../web/images.js";
 import { ChatFailure, type RunHooks, type RunResult } from "../llm/router.js";
 import type { Message } from "../providers.js";
 import { continueMessage } from "../prompts/doc.js";
+import { log } from "../util/logger.js";
 import { citedIds, countWords, type DocImage, type DocSource } from "./types.js";
 
 const HEAD_HOLD = 200;
@@ -188,7 +189,8 @@ export async function writeSection(args: {
         emitText(base);
       } else filter.reset();
     },
-    onFallback: (from, to) => args.events.notice("fallback", `${from} failed, trying ${to}.`),
+    // Silent for the user: only the logs see model fallbacks.
+    onFallback: (from, to) => log.info("doc section fallback", { from, to }),
   });
 
   calls++;
@@ -211,7 +213,7 @@ export async function writeSection(args: {
     } catch (e) {
       if (args.signal.aborted) throw e;
       if (!(e instanceof ChatFailure)) throw e;
-      args.events.notice("continuation_failed", "Could not continue a cut-off section; keeping what was written.");
+      args.events.notice("continuation_failed", "Couldn't finish this section, so I kept what was written.");
     }
   }
 

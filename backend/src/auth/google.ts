@@ -25,7 +25,7 @@ export const googleVerify: GoogleVerifier = async (idToken, audience) => {
 };
 
 export const googleNotConfigured = () =>
-  new AppError(503, "google_not_configured", "Google sign-in is not set up on this server (GOOGLE_WEB_CLIENT_ID)");
+  new AppError(503, "google_not_configured", "Google sign-in isn't available right now.");
 
 const invalid = () => new AppError(401, "invalid_google_token", "Google sign-in failed. Try again.");
 

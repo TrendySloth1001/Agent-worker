@@ -16,7 +16,7 @@ class UsageApi {
         .get(Uri.parse('$baseUrl$path'), headers: apiHeaders())
         .timeout(AppDurations.usageTimeout);
     if (response.statusCode >= 400) {
-      throw Exception('HTTP ${response.statusCode}');
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }

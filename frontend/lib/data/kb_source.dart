@@ -1,3 +1,5 @@
+import '../core/constants/error_copy.dart';
+
 /// A knowledge-base source, mirrored from GET /knowledge/sources.
 class KbSource {
   const KbSource({
@@ -35,7 +37,11 @@ class KbSource {
       progressTotal: progress is Map ? progress['total'] as int? : null,
       docCount: j['docCount'] as int? ?? 0,
       chunkCount: j['chunkCount'] as int? ?? 0,
-      error: j['error'] as String?,
+      // Kept non-null on failure; raw server text is never shown.
+      error: switch (j['error']) {
+        final String e => safeOr(e, ErrorCopy.sourceFailed),
+        _ => null,
+      },
       iconUrl: j['iconUrl'] as String?,
       lastIngestedAt: DateTime.tryParse(j['lastIngestedAt'] as String? ?? ''),
     );

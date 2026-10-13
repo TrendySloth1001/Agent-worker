@@ -20,6 +20,7 @@ import { DOC_LENGTHS, publicDoc, REFERENCES_ID, REWRITE_OPS, SELECTION_OPS, TAKE
 import { finishJob, emit } from "../docs/registry.js";
 import { runAs } from "../auth/context.js";
 import { log } from "../util/logger.js";
+import { USER_MSG, userMessage } from "../util/userMessages.js";
 
 export const docsRouter = Router();
 
@@ -48,7 +49,7 @@ const createSchema = z.object({
 
 function parse<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const r = schema.safeParse(body ?? {});
-  if (!r.success) throw new AppError(400, "bad_request", r.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; "));
+  if (!r.success) throw new AppError(400, "bad_request", USER_MSG.badRequest);
   return r.data;
 }
 
@@ -208,7 +209,7 @@ docsRouter.post("/:id/start", async (req, res) => {
     try {
       normalized = normalizeOutline(merged, doc.options.length, doc.title, 14);
     } catch (e) {
-      throw new AppError(400, "bad_request", (e as Error).message);
+      throw new AppError(400, "bad_request", userMessage("bad_request", (e as Error).message));
     }
     doc.outline = normalized.outline;
     if (body.outline.glossary) doc.glossary = normalized.glossary;
@@ -363,7 +364,7 @@ docsRouter.post("/:id/sections", async (req, res) => {
   if (job) throw busy();
   if (!doc.outline) throw new AppError(409, "bad_state", "The document has no outline yet.");
   const body = parse(z.object({ after: z.string().max(40).nullable().optional(), heading: z.string().trim().min(1).max(120), goal: z.string().trim().max(300).default("") }), req.body);
-  if (body.after && !doc.outline.sections.some((s) => s.id === body.after)) throw new AppError(400, "bad_request", "after: unknown section");
+  if (body.after && !doc.outline.sections.some((s) => s.id === body.after)) throw new AppError(400, "bad_request", "That section isn't in this document anymore.");
   if (doc.outline.sections.filter((s) => !s.kind).length >= 14) throw new AppError(400, "bad_request", "A document has at most 14 sections.");
   const section = await addSection(store, doc, body.after ?? null, body.heading, body.goal || body.heading);
   res.status(201).json({ section, outline: doc.outline, version: doc.version });
@@ -430,7 +431,7 @@ docsRouter.delete("/:id/highlights", async (req, res) => {
 docsRouter.get("/:id/export", async (req, res) => {
   const { doc } = await load(req);
   const format = req.query.format === "docx" ? "docx" : req.query.format === "md" || req.query.format === undefined ? "md" : null;
-  if (!format) throw new AppError(400, "bad_request", "format must be md or docx");
+  if (!format) throw new AppError(400, "bad_request", "Pick Markdown or Word to export.");
   if (format === "md") {
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName(doc, "md")}"`);

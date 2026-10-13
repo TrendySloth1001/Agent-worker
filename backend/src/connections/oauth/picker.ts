@@ -5,6 +5,7 @@ import { log } from "../../util/logger.js";
 import { sha256 } from "../../auth/githubWeb.js";
 import { connectDeepLink, prismaFlowStore, type FlowStore } from "./flow.js";
 import { connectorTokens, type TokenManager } from "./tokens.js";
+import { userMessage } from "../../util/userMessages.js";
 
 /**
  * Google Picker for drive.file: Google only grants sparky the files the user
@@ -78,7 +79,7 @@ export function createPicker(deps: PickerDeps) {
       const token = await deps.tokens.accessToken(row.userId, "google_drive");
       return { ok: true, token, apiKey, appId: projectNumber(deps.clientId()), origin: deps.baseUrl(), ticket };
     } catch (e) {
-      return { ok: false, title: "Reconnect Google Drive", message: (e as Error).message.slice(0, 200), link: back };
+      return { ok: false, title: "Reconnect Google Drive", message: userMessage("connector_reauth", (e as Error).message, "Reconnect Google Drive in sparky, then try again."), link: back };
     }
   }
 

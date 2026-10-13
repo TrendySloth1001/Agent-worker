@@ -52,7 +52,7 @@ function identityData(p: SsoProfile) {
 
 /** Finds or creates the account for [p] inside transaction [c]. */
 export async function resolveSsoUser(c: Tx, p: SsoProfile): Promise<{ user: UserRow; outcome: SsoOutcome }> {
-  if (!p.providerUserId) throw new AppError(400, "sso_failed", `${LABEL[p.provider]} returned no account id.`);
+  if (!p.providerUserId) throw new AppError(400, "sso_failed", `${LABEL[p.provider]} sign-in didn't finish — please try again.`);
   // (a) already linked.
   const linked = await c.authIdentity.findUnique({
     where: { provider_providerUserId: { provider: p.provider, providerUserId: p.providerUserId } },
@@ -163,7 +163,7 @@ const summary = (i: { id: string; provider: string; email: string | null; login:
 
 /** Adds [p] to signed-in user [userId] (Profile → LINK). */
 export async function linkIdentityTx(c: Tx, userId: string, p: SsoProfile): Promise<IdentitySummary> {
-  if (!p.providerUserId) throw new AppError(400, "sso_failed", `${LABEL[p.provider]} returned no account id.`);
+  if (!p.providerUserId) throw new AppError(400, "sso_failed", `${LABEL[p.provider]} sign-in didn't finish — please try again.`);
   const taken = await c.authIdentity.findUnique({
     where: { provider_providerUserId: { provider: p.provider, providerUserId: p.providerUserId } },
   });

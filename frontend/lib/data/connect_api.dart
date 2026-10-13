@@ -15,10 +15,9 @@ class ConnectException extends ApiException {
   const ConnectException(
     super.message, {
     super.status,
-    this.code,
+    super.code,
     this.offline = false,
   });
-  final String? code;
 
   /// No answer at all (no network, timeout).
   final bool offline;

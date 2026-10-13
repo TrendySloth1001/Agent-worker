@@ -138,7 +138,7 @@ export type PollResult = {
 };
 
 export const notConfigured = () =>
-  new AppError(503, "github_oauth_not_configured", "GitHub sign-in is not set up on this server (GITHUB_OAUTH_CLIENT_ID)");
+  new AppError(503, "github_oauth_not_configured", "GitHub sign-in isn't available right now.");
 
 const ghHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
@@ -239,18 +239,18 @@ export class GithubDeviceFlow<R, M = undefined> {
     try {
       r = await this.post(DEVICE_CODE_URL, { client_id: clientId, scope: this.opts.scope });
     } catch {
-      throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
+      throw new AppError(504, "upstream_timeout", "GitHub took too long to answer — try again.", true);
     }
     const j = r.json ?? {};
     if (r.status >= 400 || j.error || !j.device_code || !j.user_code) {
       const code = String(j.error ?? r.status);
       if (code === "device_flow_disabled") {
-        throw new AppError(503, "github_oauth_not_configured", "Device flow is disabled for this GitHub OAuth app (enable it in the app settings)");
+        throw new AppError(503, "github_oauth_not_configured", "GitHub sign-in isn't available right now.");
       }
       if (code === "incorrect_client_credentials" || r.status === 404 || r.status === 401) {
-        throw new AppError(503, "github_oauth_not_configured", "GitHub did not accept GITHUB_OAUTH_CLIENT_ID");
+        throw new AppError(503, "github_oauth_not_configured", "GitHub sign-in isn't available right now.");
       }
-      throw new AppError(502, "upstream_failed", `GitHub could not start sign-in (${code})`.slice(0, 160), true);
+      throw new AppError(502, "upstream_failed", "GitHub couldn't start sign-in — try again.", true);
     }
     const now = this.opts.now();
     const expiresIn = Number(j.expires_in) > 0 ? Number(j.expires_in) : 900;

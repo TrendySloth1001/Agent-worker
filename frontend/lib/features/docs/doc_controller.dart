@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/docs.dart';
 import '../../core/haptics.dart';
 import '../../data/chat_api.dart';
@@ -138,7 +139,9 @@ class DocController extends ChangeNotifier {
       loadError = null;
     } catch (e) {
       if (!loaded) {
-        loadError = e is ApiException ? e.message : DocStrings.loadFailed;
+        loadError = e is ApiException
+            ? friendlyException(e)
+            : DocStrings.loadFailed;
       }
     }
     _notify();
@@ -231,11 +234,11 @@ class DocController extends ChangeNotifier {
       case DocSectionFailedEvent():
         final s = _section(e.sectionId);
         s.status = DocSectionStatus.failed;
-        s.error = e.message;
+        s.error = safeOr(e.message, DocStrings.sectionFailed);
         s.retryable = e.retryable;
         _bump(s.id);
-      case DocNoticeEvent(:final message):
-        doc.notice = message.isEmpty ? null : message;
+      case DocNoticeEvent(:final code, :final message):
+        doc.notice = friendlyNotice(code, message);
       case DocDoneEvent():
         doc.status = e.status;
         if (e.words != null) doc.words = e.words!;
@@ -246,7 +249,7 @@ class DocController extends ChangeNotifier {
         Haptics.received();
         _bumpAll();
       case DocErrorEvent(:final message):
-        doc.error = message.isEmpty ? DocStrings.loadFailed : message;
+        doc.error = safeOr(message, DocStrings.loadFailed);
         if (doc.isRunning) doc.status = DocStatus.failed;
         Haptics.error();
     }
@@ -506,7 +509,9 @@ class DocController extends ChangeNotifier {
             apply(e, fromRewrite: true);
           },
           onError: (Object e) {
-            lastError = e is ApiException ? e.message : DocStrings.addFailed;
+            lastError = e is ApiException
+                ? friendlyException(e)
+                : DocStrings.addFailed;
             if (!done.isCompleted) done.complete(false);
           },
           onDone: () {
@@ -550,7 +555,9 @@ class DocController extends ChangeNotifier {
       );
       await refresh();
     } catch (e) {
-      lastError = e is ApiException ? e.message : DocStrings.addFailed;
+      lastError = e is ApiException
+          ? friendlyException(e)
+          : DocStrings.addFailed;
       return false;
     }
     _bumpAll();
@@ -647,7 +654,9 @@ class DocController extends ChangeNotifier {
       Haptics.received();
       return saved;
     } catch (e) {
-      lastError = e is ApiException ? e.message : DocStrings.askFailed;
+      lastError = e is ApiException
+          ? friendlyException(e)
+          : DocStrings.askFailed;
       if (fresh) {
         highlights = [
           for (final x in highlights)

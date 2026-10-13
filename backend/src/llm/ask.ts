@@ -6,6 +6,8 @@ import { applyCooldown, withSlot } from "./router.js";
 import { clearQuota, quotaGuard, QuotaBlockedError } from "./quota.js";
 import { stripThink } from "./think.js";
 import { health } from "./health.js";
+import { auxGate, auxOnce, isAux } from "./aux.js";
+import { estimateRequestTokens } from "./budget.js";
 
 export type AskOptions = {
   /** Whole-call budget, including the wait for a provider slot. */
@@ -29,6 +31,13 @@ type Provider = "ollama" | "openrouter" | "groq" | "nvidia";
 export async function ask(modelId: string, messages: Message[], opts: AskOptions): Promise<string> {
   // An exhausted quota fails at once: no slot, no network, no usage row; the caller tries its next model.
   quotaGuard(modelId);
+  if (!isAux(opts.purpose)) return askOnce(modelId, messages, opts);
+  // Aux work: skipped while the model's budget or slots are tight, and shared between identical requests.
+  auxGate(modelId, estimateRequestTokens(messages, opts.maxTokens), opts.purpose!);
+  return auxOnce(opts.purpose!, messages, () => askOnce(modelId, messages, opts), `${opts.maxTokens ?? ""}|${opts.maxChars ?? ""}`);
+}
+
+async function askOnce(modelId: string, messages: Message[], opts: AskOptions): Promise<string> {
   const ctl = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -79,7 +88,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
         }
         throw err;
       }
-    });
+    }, { priority: isAux(opts.purpose) ? "aux" : "main", purpose: opts.purpose });
   } catch (e) {
     if (timedOut && !(e instanceof UpstreamError)) throw new UpstreamError(0, "timeout waiting for a slot");
     throw e;

@@ -296,7 +296,7 @@ test("writes send the right payload and drop the repository's cached reads", asy
 
 test("write input is validated before GitHub is called", async () => {
   await assert.rejects(actions.addComment("o", "r", 12, "  "), /empty/);
-  await assert.rejects(actions.submitReview("o", "r", 12, { event: "SHIP_IT" }), /event must be/);
+  await assert.rejects(actions.submitReview("o", "r", 12, { event: "SHIP_IT" }), /Pick approve, request changes or comment/);
   await assert.rejects(actions.submitReview("o", "r", 12, { event: "REQUEST_CHANGES" }), /body is required/);
   await assert.rejects(actions.mergePull("o", "r", 12, { method: "octopus" }), /method must be/);
   await assert.rejects(actions.updateIssue("o", "r", 5, {}), /Nothing to change/);

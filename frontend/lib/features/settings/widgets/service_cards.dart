@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_palette.dart';
@@ -146,7 +147,12 @@ class GithubCard extends StatelessWidget {
         ],
         if (g.limitLabel != null) InfoRow(AppStrings.limitLabel, g.limitLabel!),
         if (g.purpose != null) InfoRow(AppStrings.purpose, g.purpose!),
-        if (failed) InfoRow(AppStrings.failed, g.error!, valueColor: p.accent),
+        if (failed)
+          InfoRow(
+            AppStrings.failed,
+            safeOr(g.error, ErrorCopy.unavailable),
+            valueColor: p.accent,
+          ),
       ],
     );
   }

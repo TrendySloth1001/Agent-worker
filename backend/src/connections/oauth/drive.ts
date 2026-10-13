@@ -94,7 +94,7 @@ export function toDriveFile(j: Record<string, unknown>): DriveFile {
 
 const ID_RE = /^[A-Za-z0-9_-]{10,200}$/;
 export function checkFileId(id: string): string {
-  if (!ID_RE.test(id)) throw new AppError(400, "bad_request", "Invalid Drive file id");
+  if (!ID_RE.test(id)) throw new AppError(400, "bad_request", "Couldn't find that Drive file. Pick it again.");
   return id;
 }
 
@@ -105,7 +105,7 @@ async function errorOf(res: Response, what: string): Promise<AppError> {
   const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
   if (res.status === 404) return new AppError(404, "not_found", "That Drive file is gone or sparky cannot see it. Pick it again.");
   if (res.status === 403) return new AppError(403, "drive_forbidden", "Google Drive refused access to that file. Pick it again in Drive.");
-  return new AppError(502, "drive_failed", `${what} failed on Google Drive${j.error?.message ? `: ${j.error.message.slice(0, 120)}` : ""}.`);
+  return new AppError(502, "drive_failed", `${what} didn't work on Google Drive — try again.`);
 }
 
 export function createDrive(tokens: TokenManager = connectorTokens, f: typeof fetch = fetch) {

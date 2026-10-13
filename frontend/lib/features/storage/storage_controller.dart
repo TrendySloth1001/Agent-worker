@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/storage.dart';
 import '../../data/chat_api.dart';
 import '../../data/files_api.dart';
@@ -66,7 +67,9 @@ class StorageController extends ChangeNotifier {
       selected.removeWhere((id) => !files.any((f) => f.id == id));
     } catch (e) {
       if (gen != _generation) return;
-      error = e is ApiException ? e.message : StorageStrings.loadFailed;
+      error = e is ApiException
+          ? friendlyException(e)
+          : StorageStrings.loadFailed;
     } finally {
       if (gen == _generation) {
         loading = false;

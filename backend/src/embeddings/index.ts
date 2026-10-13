@@ -3,6 +3,7 @@ import { getEmbeddingGuardError } from "../db/embeddingGuard.js";
 import { recordUsage } from "../db/usage.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
+import { USER_MSG, userMessage } from "../util/userMessages.js";
 
 const ENDPOINTS = {
   nvidia: { url: "https://integrate.api.nvidia.com/v1/embeddings", key: () => config.nvidiaApiKey },
@@ -81,16 +82,16 @@ async function embedBatch(batch: string[], kind: "document" | "query"): Promise<
   }
   lastFailAt = Date.now();
   log.warn("embedding request failed", { reason: lastErr });
-  throw new AppError(503, "unavailable", `Embedding service failed: ${lastErr}`.slice(0, 200), true);
+  throw new AppError(503, "unavailable", USER_MSG.knowledgeUnavailable, true);
 }
 
 const BATCH_CONCURRENCY = 2;
 
 /** 1024-dim, L2-normalized embeddings. Batches inputs (two requests in flight); retries 429/5xx with backoff. */
 export async function embedTexts(texts: string[], kind: "document" | "query", opts: { reembed?: boolean } = {}): Promise<number[][]> {
-  if (!endpoint().key()) throw new AppError(503, "unavailable", `Embeddings not configured (${config.embeddingProvider} key missing)`);
+  if (!endpoint().key()) throw new AppError(503, "unavailable", USER_MSG.knowledgeUnavailable);
   const guard = getEmbeddingGuardError();
-  if (guard && !opts.reembed) throw new AppError(503, "unavailable", guard);
+  if (guard && !opts.reembed) throw new AppError(503, "unavailable", userMessage("unavailable", guard, USER_MSG.knowledgeUnavailable));
   const size = Math.max(1, config.embeddingBatchSize);
   const batches: string[][] = [];
   for (let i = 0; i < texts.length; i += size) {

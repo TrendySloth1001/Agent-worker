@@ -126,6 +126,18 @@ abstract final class TelemetryCopy {
   static const github = 'GitHub';
   static const other = 'Other';
   static const perTurn = 'Cost per message';
+  static const budgets = 'Budgets';
+  static const budgetsNote =
+      'This minute and today, per model or account. Calls that would not fit are skipped before they hit a rate limit.';
+  static const budgetSkips = 'Skipped';
+  static const budgetWaits = 'Waited';
+  static const budgetAuxDeferred = 'Deferred';
+  static const budgetAuxCached = 'Cached';
+  static const budgetUserCaps = 'User caps';
+  static const budgetMinute = 'min';
+  static const budgetToday = 'today';
+  static const budgetReq = 'req';
+  static const budgetTok = 'tok';
   static const turnMessages = 'Messages';
   static const turnExtraCalls = 'Extra calls';
   static const turnTtft = 'First token';

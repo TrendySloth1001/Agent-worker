@@ -6,6 +6,7 @@ import { log } from "../../util/logger.js";
 import { pkceChallenge, sha256 } from "../../auth/githubWeb.js";
 import { PROVIDERS, callToken, parseGrant, providerConfigured, type AccountProfile, type OAuthProvider, type ProviderId, type TokenGrant } from "./providers.js";
 import { connectorTokens, providerNotConfigured } from "./tokens.js";
+import { isUserSafe } from "../../util/userMessages.js";
 
 /**
  * The OAuth web flow of the connectors (authorization code, + PKCE where the
@@ -131,7 +132,7 @@ export function createOAuthFlow(deps: FlowDeps) {
     const state = q.state ?? "";
     const msg = messages(p.name);
     const fail = (code: string, message?: string): ConnectCallback => {
-      const m = (message ?? msg[code] ?? msg.failed).slice(0, 200);
+      const m = isUserSafe(message) ? message : (msg[code] ?? msg.failed);
       return { ok: false, provider, providerName: p.name, message: m, link: connectDeepLink({ provider, error: code, message: m, state }) };
     };
     if (!state) return fail("bad_request");

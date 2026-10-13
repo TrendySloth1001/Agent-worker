@@ -50,9 +50,11 @@ class TelemetryApi {
         .get(_uri(path, q), headers: apiHeaders())
         .timeout(TelemetryDurations.timeout);
     if (response.statusCode >= 400) {
+      // Owner-only screen: keeps the raw server detail.
       throw ApiException(
-        errorMessage(response.body, response.statusCode),
+        rawErrorMessage(response.body) ?? 'HTTP ${response.statusCode}',
         status: response.statusCode,
+        code: errorCode(response.body),
       );
     }
     return jsonDecode(response.body) as Map<String, dynamic>;

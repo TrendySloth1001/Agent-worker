@@ -1,8 +1,18 @@
 import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { recordUsage } from "../db/usage.js";
+import { auxGate, auxOnce, isAux } from "../llm/aux.js";
+import { estimateRequestTokens } from "../llm/budget.js";
+import { withSlot } from "../llm/router.js";
 
 /** One non-streaming completion from a single model, with usage recorded. Throws on failure or timeout. */
 export async function ask(model: string, messages: Message[], timeoutMs: number, purpose?: string): Promise<string> {
+  if (!isAux(purpose)) return askOnce(model, messages, timeoutMs, purpose);
+  // Titles, memory and summaries are aux work: skipped while budgets are tight, shared when identical.
+  auxGate(model, estimateRequestTokens(messages), purpose!);
+  return auxOnce(purpose!, messages, () => withSlot(model, AbortSignal.timeout(timeoutMs), () => askOnce(model, messages, timeoutMs, purpose), { priority: "aux", purpose }));
+}
+
+async function askOnce(model: string, messages: Message[], timeoutMs: number, purpose?: string): Promise<string> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   const started = Date.now();

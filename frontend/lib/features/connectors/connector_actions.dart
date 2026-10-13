@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/connectors.dart';
 import '../../core/haptics.dart';
@@ -45,7 +46,7 @@ Future<void> openExternal(BuildContext context, String url) async {
 }
 
 String _errorText(Object e) => e is ConnectException
-    ? (e.rateLimited ? ConnectorStrings.rateLimited : e.message)
+    ? (e.rateLimited ? ConnectorStrings.rateLimited : friendlyException(e))
     : ConnectorStrings.saveFailed;
 
 /// ADD TO KNOWLEDGE BASE.

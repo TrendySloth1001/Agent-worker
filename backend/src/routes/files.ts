@@ -14,6 +14,7 @@ import { processFile } from "../files/process.js";
 import { putObject } from "../storage/s3.js";
 import { userOf } from "../auth/context.js";
 import { checkUpload, limitsFor, recordUpload, resetsAt, usageFor } from "../auth/limits.js";
+import { USER_MSG } from "../util/userMessages.js";
 
 export const filesRouter = Router();
 
@@ -32,7 +33,7 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     const name = fixName(file.originalname);
     if (!classify(name, file.mimetype)) {
-      return cb(new AppError(415, "unsupported_media_type", `Unsupported file type: ${name.split(".").pop() || file.mimetype}`));
+      return cb(new AppError(415, "unsupported_media_type", "sparky can't open this kind of file."));
     }
     cb(null, true);
   },
@@ -44,7 +45,7 @@ function receive(req: Request, res: Response): Promise<void> {
       if (!err) return resolve();
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") return reject(new AppError(413, "payload_too_large", "File is too large."));
-        return reject(new AppError(400, "bad_request", err.message));
+        return reject(new AppError(400, "bad_request", USER_MSG.uploadFailed));
       }
       reject(err);
     });
@@ -57,7 +58,7 @@ const fmtMb =(n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
 filesRouter.post("/", async (req, res) => {
   db();
-  if (!req.is("multipart/form-data")) throw new AppError(400, "bad_request", "Expected multipart/form-data with a `file` field");
+  if (!req.is("multipart/form-data")) throw new AppError(400, "bad_request", USER_MSG.uploadFailed);
   // Refuse early on the declared size, before multer buffers the body in memory.
   const declared = Number(req.headers["content-length"]);
   if (Number.isFinite(declared) && declared > 0) {
@@ -66,16 +67,16 @@ filesRouter.post("/", async (req, res) => {
   }
   await receive(req, res);
   const f = req.file;
-  if (!f) throw new AppError(400, "bad_request", "Missing `file` field");
+  if (!f) throw new AppError(400, "bad_request", USER_MSG.uploadFailed);
   const name = fixName(f.originalname);
   const cls = classify(name, f.mimetype);
-  if (!cls) throw new AppError(415, "unsupported_media_type", "Unsupported file type");
+  if (!cls) throw new AppError(415, "unsupported_media_type", "sparky can't open this kind of file.");
   if (f.size > SIZE_LIMITS[cls.kind]) {
     throw new AppError(413, "payload_too_large", `${cls.kind[0].toUpperCase()}${cls.kind.slice(1)} files can be at most ${fmtMb(SIZE_LIMITS[cls.kind])}.`);
   }
   if (f.size === 0) throw new AppError(400, "bad_request", "File is empty");
   const conversationId = typeof req.body?.conversationId === "string" && req.body.conversationId ? req.body.conversationId : null;
-  if (conversationId && !UUID_RE.test(conversationId)) throw new AppError(400, "bad_request", "conversationId must be a UUID");
+  if (conversationId && !UUID_RE.test(conversationId)) throw new AppError(400, "bad_request", USER_MSG.badRequest);
   const user = userOf(req);
   await checkUpload(user, f.size);
 
@@ -96,7 +97,7 @@ filesRouter.post("/", async (req, res) => {
         throw new AppError(413, "payload_too_large", `Files can be at most ${fmtMb(config.s3.maxObjectBytes)}.`);
       }
       log.warn("file store failed", { kind: cls.kind, size: f.size, message: msg.slice(0, 160) });
-      throw new AppError(503, "unavailable", "File storage is unavailable, try again shortly.", true);
+      throw new AppError(503, "unavailable", USER_MSG.uploadsUnavailable, true);
     }
   }
   const created = await db().storedFile.create({
@@ -144,7 +145,7 @@ const bulkSchema = z.object({ ids: z.array(z.string().regex(UUID_RE, "must be a 
 filesRouter.post("/bulk-delete", async (req, res) => {
   db();
   const parsed = bulkSchema.safeParse(req.body);
-  if (!parsed.success) throw new AppError(400, "bad_request", parsed.error.issues[0]?.message ?? "ids must be file ids");
+  if (!parsed.success) throw new AppError(400, "bad_request", USER_MSG.badRequest);
   const ids = [...new Set(parsed.data.ids.map((i) => i.toLowerCase()))];
   const missing: string[] = [];
   let deleted = 0;

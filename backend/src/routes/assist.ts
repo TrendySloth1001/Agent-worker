@@ -124,7 +124,7 @@ async function ask(model: string, messages: Message[]): Promise<string> {
 
 assistRouter.post("/email", async (req, res) => {
   const body = bodySchema.parse(req.body);
-  if (body.action === "custom" && !body.instruction) throw new AppError(400, "bad_request", "instruction: required for custom");
+  if (body.action === "custom" && !body.instruction) throw new AppError(400, "bad_request", "Say how you'd like it changed.");
   const d = body.draft;
   const signature = (body.profile?.signature ?? "").replace(/\r/g, "").trim();
   const change = body.action === "custom" ? `Apply this instruction from the user: ${body.instruction}` : ACTIONS[body.action]!;
@@ -167,7 +167,7 @@ assistRouter.post("/email", async (req, res) => {
       if (/\b(401|402|404|429)\b/.test(last)) setCooldown(id, 60_000);
     }
   }
-  throw new AppError(502, "assist_failed", `Could not rewrite the email${last ? `: ${last}` : ""}`, true);
+  throw new AppError(502, "assist_failed", "Couldn't rewrite the email — try again.", true);
 });
 
 const profileSchema = z.object({
@@ -223,5 +223,5 @@ assistRouter.post("/profile", async (req, res) => {
       if (/\b(401|402|404|429)\b/.test(last)) setCooldown(id, 60_000);
     }
   }
-  throw new AppError(502, "assist_failed", `Could not format the text${last ? `: ${last}` : ""}`, true);
+  throw new AppError(502, "assist_failed", "Couldn't format the text — try again.", true);
 });

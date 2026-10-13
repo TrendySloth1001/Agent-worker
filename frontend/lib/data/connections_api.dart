@@ -10,8 +10,7 @@ import 'chat_api.dart';
 /// A failed /connections call, with the backend's error code when it sent one
 /// (e.g. `github_oauth_not_configured`).
 class ConnectionsException extends ApiException {
-  const ConnectionsException(super.message, {super.status, this.code});
-  final String? code;
+  const ConnectionsException(super.message, {super.status, super.code});
 
   bool get notConfigured => code == ConnectCodes.notConfigured;
 }
