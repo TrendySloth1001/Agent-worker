@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -88,9 +89,67 @@ ActionOutcome outcomeOf(String? result) => switch (result) {
 
 /// The `deviceActions` object of POST /chat: the phone can run actions, and
 /// its local time (with offset) for "in 10 minutes" / "tomorrow at 9".
-Map<String, Object> deviceActionsRequest([DateTime? now]) => {
+/// [installed]: keys of the known media apps on the phone, so "play it in my
+/// music app" picks one that is there.
+Map<String, Object> deviceActionsRequest([
+  DateTime? now,
+  List<String>? installed,
+]) => {
   DeviceActionWire.localTime: localIso(now ?? DateTime.now()),
+  DeviceActionWire.installedApps: ?installed,
 };
+
+/// Which of [MediaApps.all] are installed, by key; asked of the phone at
+/// most every [DeviceActionSizes.installedFresh]. Null when unknown (no
+/// bridge, or the phone did not answer in time). A request uses [cached]
+/// and calls [warm] so it never waits: the overlay warms it when it opens.
+abstract final class InstalledMediaApps {
+  static List<String>? _keys;
+  static DateTime? _at;
+
+  @visibleForTesting
+  static void reset() {
+    _keys = null;
+    _at = null;
+  }
+
+  /// What the phone last said (null before it answered or when stale).
+  static List<String>? get cached {
+    final at = _at;
+    return at != null &&
+            DateTime.now().difference(at) < DeviceActionSizes.installedFresh
+        ? _keys
+        : null;
+  }
+
+  /// Asks the phone again in the background unless the answer is fresh.
+  static void warm({DeviceActionRunner? runner}) {
+    if (cached == null) unawaited(keys(runner: runner));
+  }
+
+  static Future<List<String>?> keys({DeviceActionRunner? runner}) async {
+    if (!DeviceActionRunner.supported) return null;
+    final at = _at;
+    if (_keys != null &&
+        at != null &&
+        DateTime.now().difference(at) < DeviceActionSizes.installedFresh) {
+      return _keys;
+    }
+    try {
+      final r = await (runner ?? DeviceActionRunner.instance).appAvailability([
+        for (final a in MediaApps.all) a.package,
+      ]);
+      _keys = [
+        for (final a in MediaApps.all)
+          if (r[a.package] ?? false) a.key,
+      ];
+      _at = DateTime.now();
+      return _keys;
+    } catch (_) {
+      return _keys;
+    }
+  }
+}
 
 /// "2026-10-13T14:05:00+02:00".
 String localIso(DateTime t) {

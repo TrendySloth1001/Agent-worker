@@ -130,7 +130,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(MediaAppStrings.openInBrowser), findsNothing);
-      await tester.tap(find.text(MediaAppStrings.open));
+      await tester.tap(find.text(MediaAppStrings.openIn('YouTube Music')));
       await tester.pump();
       expect(runner.runs.single[DeviceActionWire.package], ytmPackage);
       expect(find.text(DeviceActionStrings.opened), findsOneWidget);
@@ -184,7 +184,7 @@ void main() {
           '"app":"YouTube Music","package":"$ytmPackage"}';
       await tester.pumpWidget(host(ActionCard(source: search, runner: runner)));
       await tester.pump();
-      await tester.tap(find.text(MediaAppStrings.open));
+      await tester.tap(find.text(MediaAppStrings.openIn('YouTube Music')));
       await tester.pump();
       expect(runner.runs.single[DeviceActionWire.url], contains('/search?q='));
       expect(runner.runs.single[DeviceActionWire.package], ytmPackage);

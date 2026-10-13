@@ -479,6 +479,9 @@ class _AssistOverlayState extends State<AssistOverlay> {
       focusNode: _focus,
       minLines: 1,
       maxLines: AssistSizes.fieldMaxLines,
+      // A plain text keyboard: its action key sends (a multiline keyboard
+      // would insert a newline instead). Long questions still wrap.
+      keyboardType: TextInputType.text,
       textCapitalization: TextCapitalization.sentences,
       textInputAction: TextInputAction.send,
       onSubmitted: (_) => _submit(),

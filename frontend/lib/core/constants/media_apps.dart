@@ -7,13 +7,23 @@ import 'brand_logos.dart';
 /// itself ("Open in YouTube Music"). Mirrors MEDIA_APPS in the backend's
 /// `src/context/openIntent.ts`; the package is what Android opens the link
 /// with when the app is installed (`<queries>` in AndroidManifest.xml).
+/// What kind of app it is: "play it in my music app" picks one of the kind.
+enum MediaCategory { music, video, shopping, maps }
+
 class MediaApp {
   const MediaApp({
+    required this.key,
+    required this.category,
     required this.label,
     required this.package,
     required this.hosts,
     required this.logo,
   });
+
+  /// The backend's MEDIA_APPS key ("youtube_music"): sent as installedApps.
+  final String key;
+
+  final MediaCategory category;
 
   /// "YouTube Music": the chip and card say "Open in {label}".
   final String label;
@@ -49,54 +59,72 @@ class MediaApp {
 
 abstract final class MediaApps {
   static const youtubeMusic = MediaApp(
+    key: 'youtube_music',
+    category: MediaCategory.music,
     label: 'YouTube Music',
     package: 'com.google.android.apps.youtube.music',
     hosts: ['music.youtube.com'],
     logo: BrandLogos.youtubeMusic,
   );
   static const youtube = MediaApp(
+    key: 'youtube',
+    category: MediaCategory.video,
     label: 'YouTube',
     package: 'com.google.android.youtube',
     hosts: ['youtube.com', 'youtu.be'],
     logo: BrandLogos.youtube,
   );
   static const spotify = MediaApp(
+    key: 'spotify',
+    category: MediaCategory.music,
     label: 'Spotify',
     package: 'com.spotify.music',
     hosts: ['open.spotify.com'],
     logo: BrandLogos.spotify,
   );
   static const jiosaavn = MediaApp(
+    key: 'jiosaavn',
+    category: MediaCategory.music,
     label: 'JioSaavn',
     package: 'com.jio.media.jiobeats',
     hosts: ['jiosaavn.com'],
     logo: BrandLogos.jiosaavn,
   );
   static const gaana = MediaApp(
+    key: 'gaana',
+    category: MediaCategory.music,
     label: 'Gaana',
     package: 'com.gaana',
     hosts: ['gaana.com'],
     logo: BrandLogos.gaana,
   );
   static const appleMusic = MediaApp(
+    key: 'apple_music',
+    category: MediaCategory.music,
     label: 'Apple Music',
     package: 'com.apple.android.music',
     hosts: ['music.apple.com'],
     logo: BrandLogos.appleMusic,
   );
   static const amazon = MediaApp(
+    key: 'amazon',
+    category: MediaCategory.shopping,
     label: 'Amazon',
     package: 'in.amazon.mShop.android.shopping',
     hosts: ['amazon.in', 'amazon.com', 'amazon.co.uk', 'amzn.in', 'amzn.to'],
     logo: BrandLogos.amazon,
   );
   static const flipkart = MediaApp(
+    key: 'flipkart',
+    category: MediaCategory.shopping,
     label: 'Flipkart',
     package: 'com.flipkart.android',
     hosts: ['flipkart.com'],
     logo: BrandLogos.flipkart,
   );
   static const maps = MediaApp(
+    key: 'maps',
+    category: MediaCategory.maps,
     label: 'Google Maps',
     package: 'com.google.android.apps.maps',
     hosts: [
@@ -157,6 +185,15 @@ abstract final class MediaAppWire {
   /// The Play Store page of an app (Kotlin tries `market://` first).
   static String storePage(String package) =>
       'https://play.google.com/store/apps/details?id=$package';
+
+  /// A YouTube video's thumbnail (the card's cover when none was sent).
+  static String youtubeThumb(String id) =>
+      'https://${MediaAppSizes.youtubeThumbHost}/vi/$id/hqdefault.jpg';
+
+  /// The video id of a youtube.com / music.youtube.com / youtu.be link.
+  static final youtubeId = RegExp(
+    r'(?:[?&]v=|youtu\.be\/|\/shorts\/)([\w-]{6,})',
+  );
 }
 
 abstract final class MediaAppStrings {
@@ -174,9 +211,22 @@ abstract final class MediaAppStrings {
 abstract final class MediaAppSizes {
   /// "Open in {app}" chips under one answer.
   static const maxChips = 3;
+
+  /// "Open in {app}" chips shown once the phone said which apps it has.
+  static const shownChips = 2;
   static const chipHeight = 32.0;
   static const chipLogo = 16.0;
   static const cardLogo = 22.0;
+
+  /// Rich link card: the cover (or the app logo when there is none).
+  static const cover = 72.0;
+  static const coverLogo = 36.0;
+  static const badgeLogo = 14.0;
+
+  /// YouTube thumbnails (hqdefault) are 4:3 with black bars around the
+  /// 16:9 picture: zoomed by this much, the bars fall outside the cover.
+  static const youtubeZoom = 4 / 3;
+  static const youtubeThumbHost = 'i.ytimg.com';
 }
 
 abstract final class MediaAppIcons {

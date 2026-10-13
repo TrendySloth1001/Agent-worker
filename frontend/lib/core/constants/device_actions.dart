@@ -9,6 +9,7 @@ abstract final class DeviceActionWire {
   /// The `deviceActions` object of POST /chat.
   static const request = 'deviceActions';
   static const localTime = 'localTime';
+  static const installedApps = 'installedApps';
 
   /// Channel to DeviceActions.kt (both engines).
   static const channel = 'app/actions';
@@ -42,6 +43,12 @@ abstract final class DeviceActionWire {
 
   /// url action: open this package's store page (`market://` first).
   static const store = 'store';
+
+  /// url action, rich card only (never sent to Kotlin): who made the item,
+  /// its cover image and the site name ([title] is the item's name).
+  static const subtitle = 'subtitle';
+  static const image = 'image';
+  static const site = 'site';
 
   // Channel keys that differ from the model's (normalised in Dart)
   static const hour = 'hour';
@@ -163,6 +170,9 @@ abstract final class DeviceActionSizes {
 
   /// Longest timer the card accepts (24 h).
   static const maxTimerSeconds = 24 * 3600;
+
+  /// Installed media apps are asked again after this long.
+  static const installedFresh = Duration(minutes: 2);
 }
 
 abstract final class DeviceActionIcons {
