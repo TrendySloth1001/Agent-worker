@@ -121,15 +121,13 @@ class DocsApi {
   }
 
   static ApiException _error(http.Response r) {
-    final message = errorMessage(r.body, r.statusCode);
     final code = errorCode(r.body);
     return ApiException(
-      r.statusCode == 429 && code == 'daily_limit'
-          ? dailyLimitMessage(message)
-          : r.statusCode == 409 && code == 'doc_running'
+      r.statusCode == 409 && code == 'doc_running'
           ? DocStrings.docRunning
-          : message,
+          : errorMessage(r.body, r.statusCode),
       status: r.statusCode,
+      code: code,
     );
   }
 

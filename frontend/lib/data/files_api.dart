@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 import '../core/constants/app_config.dart';
+import '../core/constants/error_copy.dart';
 import '../core/constants/app_files.dart';
 import 'chat_api.dart';
 import 'api_client.dart';
@@ -89,7 +90,11 @@ class FileInfo {
       size: (j['size'] as num?)?.toInt() ?? 0,
       kind: _kind(j['kind']),
       status: _status(j['status']),
-      error: j['error'] as String?,
+      // Kept non-null on failure; raw server text is never shown.
+      error: switch (j['error']) {
+        final String e => safeOr(e, ErrorCopy.fileFailed),
+        _ => null,
+      },
       url: j['url'] as String?,
       thumbUrl: j['thumbUrl'] as String?,
       meta: j['meta'] is Map<String, dynamic>
@@ -300,13 +305,7 @@ class FilesApi {
           .timeout(AppFiles.uploadTimeout);
       final text = await streamed.stream.bytesToString();
       if (streamed.statusCode >= 400) {
-        final message = errorMessage(text, streamed.statusCode);
-        throw ApiException(
-          streamed.statusCode == 429 && errorCode(text) == 'daily_limit'
-              ? dailyLimitMessage(message)
-              : message,
-          status: streamed.statusCode,
-        );
+        throw ApiException.fromResponse(text, streamed.statusCode);
       }
       final info = _parse(text);
       _cache[info.id] = (DateTime.now(), info);
@@ -315,7 +314,7 @@ class FilesApi {
     } on ApiException {
       rethrow;
     } catch (_) {
-      throw const ApiException('Upload failed');
+      throw const ApiException(ErrorCopy.uploadFailed);
     } finally {
       client.close();
     }
@@ -324,7 +323,7 @@ class FilesApi {
   FileInfo _parse(String body) {
     final json = jsonDecode(body);
     final f = json is Map<String, dynamic> ? json['file'] : null;
-    if (f is! Map<String, dynamic>) throw const ApiException('Bad response');
+    if (f is! Map<String, dynamic>) throw const ApiException(ErrorCopy.generic);
     return FileInfo.fromJson(f);
   }
 
@@ -349,10 +348,7 @@ class FilesApi {
         .get(_uri('/files/$id'), headers: apiHeaders())
         .timeout(AppFiles.requestTimeout);
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     final info = _parse(response.body);
     _cache[id] = (DateTime.now(), info);
@@ -369,13 +365,10 @@ class FilesApi {
         .get(_uri('/files/$id/text?limit=$limit'), headers: apiHeaders())
         .timeout(AppFiles.requestTimeout);
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     final j = jsonDecode(response.body);
-    if (j is! Map<String, dynamic>) throw const ApiException('Bad response');
+    if (j is! Map<String, dynamic>) throw const ApiException(ErrorCopy.generic);
     return FileText(
       text: j['text'] as String? ?? '',
       truncated: j['truncated'] == true,
@@ -383,10 +376,8 @@ class FilesApi {
     );
   }
 
-  Never _fail(http.Response r) => throw ApiException(
-    errorMessage(r.body, r.statusCode),
-    status: r.statusCode,
-  );
+  Never _fail(http.Response r) =>
+      throw ApiException.fromResponse(r.body, r.statusCode);
 
   /// One page of the user's files (Storage screen).
   Future<FilePage> list({
@@ -409,7 +400,7 @@ class FilesApi {
         .timeout(AppFiles.requestTimeout);
     if (r.statusCode >= 400) _fail(r);
     final j = jsonDecode(r.body);
-    if (j is! Map<String, dynamic>) throw const ApiException('Bad response');
+    if (j is! Map<String, dynamic>) throw const ApiException(ErrorCopy.generic);
     final files = [
       for (final f in j['files'] as List? ?? const [])
         if (f is Map<String, dynamic>) FileInfo.fromJson(f),
@@ -428,7 +419,7 @@ class FilesApi {
         .timeout(AppFiles.requestTimeout);
     if (r.statusCode >= 400) _fail(r);
     final j = jsonDecode(r.body);
-    if (j is! Map<String, dynamic>) throw const ApiException('Bad response');
+    if (j is! Map<String, dynamic>) throw const ApiException(ErrorCopy.generic);
     return StorageUsage.fromJson(j);
   }
 
@@ -477,14 +468,14 @@ class FilesApi {
       return File(local).copy(target.path);
     }
     final url = (await get(f.id)).url;
-    if (url == null) throw const ApiException('No link');
+    if (url == null) throw const ApiException(ErrorCopy.downloadFailed);
     final client = http.Client();
     try {
       final r = await client
           .send(http.Request('GET', Uri.parse(url)))
           .timeout(AppFiles.requestTimeout);
       if (r.statusCode >= 400) {
-        throw ApiException('Download failed', status: r.statusCode);
+        throw ApiException(ErrorCopy.downloadFailed, status: r.statusCode);
       }
       final sink = target.openWrite();
       await r.stream.pipe(sink);
@@ -500,10 +491,7 @@ class FilesApi {
         .delete(_uri('/files/$id'), headers: apiHeaders())
         .timeout(AppFiles.requestTimeout);
     if (response.statusCode >= 400 && response.statusCode != 404) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     changes.value++;
   }

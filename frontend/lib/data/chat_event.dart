@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/constants/error_copy.dart';
 import '../core/constants/smart_toggles.dart';
 
 /// Where a cited source comes from: the knowledge base (`K<n>`), the web
@@ -227,6 +228,7 @@ sealed class ChatEvent {
         return ErrorEvent(
           e is Map<String, dynamic> ? e['message'] as String? ?? '' : '',
           e is Map<String, dynamic> && e['retryable'] == true,
+          code: e is Map<String, dynamic> ? e['code'] as String? : null,
         );
     }
     return null;
@@ -242,7 +244,12 @@ class StatusEvent extends ChatEvent {
 
 class NoticeEvent extends ChatEvent {
   const NoticeEvent(this.code, this.message);
+
+  /// Raw server text: show [text] instead.
   final String code, message;
+
+  /// What the user sees, or null for silent notices (model switches).
+  String? get text => friendlyNotice(code, message);
 }
 
 class SourcesEvent extends ChatEvent {
@@ -318,9 +325,12 @@ class DoneEvent extends ChatEvent {
 }
 
 class ErrorEvent extends ChatEvent {
-  const ErrorEvent(this.message, this.retryable);
+  const ErrorEvent(this.message, this.retryable, {this.code});
+
+  /// Raw server text: show [friendlyError] of it, never this directly.
   final String message;
   final bool retryable;
+  final String? code;
 }
 
 // ---- Round Table ----------------------------------------------------------
