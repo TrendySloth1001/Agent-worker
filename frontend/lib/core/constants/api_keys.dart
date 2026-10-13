@@ -29,7 +29,7 @@ abstract final class ApiKeysStrings {
       'Add a key from a provider you already use and sparky sends your '
       'chats through it. Your key is only ever used for you.';
   static const howItWorks = 'How it works';
-  static const providersHeader = 'PROVIDERS';
+  static const providersHeader = 'Providers';
   static const emptyRow = 'No key yet';
   static const loadFailed = 'Couldn\'t load your keys. Pull down to retry.';
 
