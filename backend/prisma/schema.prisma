@@ -62,6 +62,7 @@ model User {
   docs             Doc[]
   memories         Memory[]
   conversationChunks ConversationChunk[]
+  appInstall       AppInstall?
 
   @@map("users")
 }
@@ -602,4 +603,38 @@ model WebCache {
 
   @@index([expiresAt])
   @@map("web_cache")
+}
+
+/// A sideloaded-APK release (OTA updates). `build` is the pubspec build number N (versionCode = 2000 + N).
+model AppRelease {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version           String
+  build             Int       @unique
+  /// patch | feature | major | critical
+  kind              String
+  title             String    @default("")
+  /// string[] highlights, at most 6
+  notes             Json      @default("[]")
+  apkKey            String    @map("apk_key")
+  sha256            String
+  size              BigInt
+  minSupportedBuild Int?      @map("min_supported_build")
+  /// draft | live | pulled
+  status            String    @default("draft")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt       DateTime? @map("published_at") @db.Timestamptz(6)
+
+  @@map("app_releases")
+}
+
+/// Last build each user's app reported on an update check (owner-visible adoption).
+model AppInstall {
+  userId  String   @id @map("user_id") @db.Uuid
+  build   Int
+  version String
+  seenAt  DateTime @default(now()) @map("seen_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("app_installs")
 }
