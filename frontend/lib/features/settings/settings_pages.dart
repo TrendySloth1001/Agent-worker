@@ -120,6 +120,8 @@ Future<void> openSettingsCategory(
   SettingsCategory c, {
   String? focusId,
 }) {
+  // Owner-only pages never open for anyone else, whatever the route.
+  if (c.ownerOnly && !isOwner()) return Future.value();
   switch (c) {
     case SettingsCategory.telemetry:
       return Navigator.push(context, settingsRoute(const TelemetryScreen()));
