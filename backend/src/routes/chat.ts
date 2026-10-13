@@ -35,6 +35,7 @@ import { kbRelevance, pickSuggestion, referencesKb, resolveWebMode, toolsNote, t
 import { peekKb } from "../retrieval/peek.js";
 import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { screenContextMessage, screenSchema } from "../context/screen.js";
+import { deviceActionsMessage, deviceActionsSchema } from "../context/deviceActions.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
 import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
@@ -111,6 +112,8 @@ const bodySchema = z.object({
   context: z.string().max(8000).optional(),
   // Assistant overlay: the screen the user chose to share (text, app, URL); the screenshot is an attachment.
   screen: screenSchema.optional(),
+  // The Android app can run confirmed device actions (alarm, event, dial...): teach the action block.
+  deviceActions: deviceActionsSchema.optional(),
   // Connected-app items the user attached ("Ask Sparky about this page"): read live, cited as documents.
   apps: z
     .array(z.object({ provider: z.enum(["google_drive", "notion"]), id: z.string().min(10).max(200), title: z.string().max(200).optional() }))
@@ -547,6 +550,8 @@ chatRouter.post("/", async (req, res) => {
     }
     const screenNote = screenContextMessage(body.screen);
     if (screenNote) prompt.push({ role: "system", content: screenNote });
+    const actionsNote = deviceActionsMessage(body.deviceActions);
+    if (actionsNote) prompt.push({ role: "system", content: actionsNote });
     const context = buildContextMessage(kbItems, webItems, docItems, githubItems);
     if (context) prompt.push({ role: "system", content: context });
     const hint = lastUserText ? intentHint(lastUserText, nlp.intent) : null;
