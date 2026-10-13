@@ -7,6 +7,7 @@ import 'package:app/features/settings/api_keys/api_keys_controller.dart';
 import 'package:app/features/settings/api_keys/api_keys_screen.dart';
 import 'package:app/features/settings/api_keys/key_usage_screen.dart';
 import 'package:app/features/settings/api_keys/keys_intro_screen.dart';
+import 'package:app/features/settings/api_keys/usage_intro_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -371,8 +372,18 @@ void main() {
   });
 
   group('usage', () {
+    setUp(
+      () => SharedPreferences.setMockInitialValues({
+        ApiKeysPrefs.usageIntroSeen('u1'): true,
+      }),
+    );
+
     testWidgets('renders the user\'s own numbers', (tester) async {
-      await pumpScreen(tester, KeyUsageScreen(api: _FakeApi()), height: 1700);
+      await pumpScreen(
+        tester,
+        KeyUsageScreen(api: _FakeApi(), userId: 'u1'),
+        height: 1700,
+      );
       await _settleArt(tester);
       expect(find.text(KeyUsageStrings.byDay), findsOneWidget);
       expect(find.text(KeyUsageStrings.byModel), findsOneWidget);
@@ -394,13 +405,103 @@ void main() {
           byModel: [],
           byProvider: [],
         );
-      await pumpScreen(tester, KeyUsageScreen(api: api), height: 1000);
+      await pumpScreen(
+        tester,
+        KeyUsageScreen(api: api, userId: 'u1'),
+        height: 1000,
+      );
       await _settleArt(tester);
       expect(find.text(KeyUsageStrings.empty), findsOneWidget);
       await tester.tap(find.text(KeyUsageStrings.days30));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text(KeyUsageStrings.empty), findsOneWidget);
+    });
+  });
+
+  group('usage intro', () {
+    Future<void> openUsage(WidgetTester tester, {bool seen = false}) async {
+      SharedPreferences.setMockInitialValues({
+        if (seen) ApiKeysPrefs.usageIntroSeen('u1'): true,
+      });
+      await pumpScreen(
+        tester,
+        KeyUsageScreen(api: _FakeApi(), userId: 'u1'),
+        height: 1400,
+      );
+      await _settleArt(tester);
+    }
+
+    testWidgets('shows on first open only', (tester) async {
+      await openUsage(tester);
+      expect(find.byType(UsageIntroScreen), findsOneWidget);
+      expect(find.text(UsageIntroStrings.analyticsTitle), findsOneWidget);
+      await tester.tap(find.text(UsageIntroStrings.skip));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(UsageIntroScreen), findsNothing);
+
+      // Opened again (same prefs): it was remembered.
+      await tester.pumpWidget(const SizedBox());
+      await pumpScreen(
+        tester,
+        KeyUsageScreen(api: _FakeApi(), userId: 'u1'),
+        height: 1400,
+      );
+      await _settleArt(tester);
+      expect(find.byType(UsageIntroScreen), findsNothing);
+    });
+
+    testWidgets('is remembered per user', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        ApiKeysPrefs.usageIntroSeen('someone-else'): true,
+      });
+      await pumpScreen(
+        tester,
+        KeyUsageScreen(api: _FakeApi(), userId: 'u1'),
+        height: 1400,
+      );
+      await _settleArt(tester);
+      expect(find.byType(UsageIntroScreen), findsOneWidget);
+    });
+
+    testWidgets('Skip closes it and the numbers are there', (tester) async {
+      await openUsage(tester);
+      await tester.tap(find.text(UsageIntroStrings.skip));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(UsageIntroScreen), findsNothing);
+      expect(find.text(KeyUsageStrings.byDay), findsOneWidget);
+    });
+
+    testWidgets('Next walks the three pages; See my usage closes it', (
+      tester,
+    ) async {
+      await openUsage(tester);
+      for (final title in [
+        UsageIntroStrings.onlyYoursTitle,
+        UsageIntroStrings.workTitle,
+      ]) {
+        await tester.tap(find.text(UsageIntroStrings.next));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 800));
+        expect(find.text(title), findsOneWidget);
+      }
+      await tester.tap(find.text(UsageIntroStrings.done));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(UsageIntroScreen), findsNothing);
+      expect(find.text(KeyUsageStrings.byDay), findsOneWidget);
+    });
+
+    testWidgets('the info icon reopens it', (tester) async {
+      await openUsage(tester, seen: true);
+      expect(find.byType(UsageIntroScreen), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('usage-how-it-works')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(UsageIntroScreen), findsOneWidget);
     });
   });
 
@@ -436,6 +537,33 @@ void main() {
         });
       }
 
+      for (final (i, name) in ['analytics', 'only_yours', 'work'].indexed) {
+        testWidgets('usage intro $name ($theme)', (tester) async {
+          tester.view.physicalSize = const Size(412 * 2.6, 915 * 2.6);
+          tester.view.devicePixelRatio = 2.6;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            MaterialApp(
+              debugShowCheckedModeBanner: false,
+              theme: data,
+              home: const UsageIntroScreen(),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 600));
+          for (var n = 0; n < i; n++) {
+            await tester.tap(find.text(UsageIntroStrings.next));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 800));
+          }
+          await _settleArt(tester);
+          await settleBackdrop(tester);
+          await expectLater(
+            find.byType(MaterialApp),
+            matchesGoldenFile('goldens/usage_intro_${name}_$theme.png'),
+          );
+        });
+      }
+
       testWidgets('keys page ($theme)', (tester) async {
         await _open(
           tester,
@@ -459,9 +587,12 @@ void main() {
       });
 
       testWidgets('usage ($theme)', (tester) async {
+        SharedPreferences.setMockInitialValues({
+          ApiKeysPrefs.usageIntroSeen('u1'): true,
+        });
         await pumpScreen(
           tester,
-          KeyUsageScreen(api: _FakeApi()),
+          KeyUsageScreen(api: _FakeApi(), userId: 'u1'),
           theme: data,
           height: 1500,
         );

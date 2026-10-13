@@ -63,11 +63,15 @@ class DotMonogram extends StatelessWidget {
     required this.text,
     required this.size,
     this.color,
+    this.bordered = true,
   });
 
   final String text;
   final double size;
   final Color? color;
+
+  /// Draws the thin outline (off when it sits in a ring of its own).
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +85,7 @@ class DotMonogram extends StatelessWidget {
           text: text,
           color: color ?? p.textPrimary,
           background: p.surfaceRaised,
-          border: p.borderStrong,
+          border: bordered ? p.borderStrong : const Color(0x00000000),
         ),
       ),
     );
