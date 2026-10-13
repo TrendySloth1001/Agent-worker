@@ -117,6 +117,92 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.6.1',
+      date: '13 Oct 2026',
+      headline: 'Say it, sparky fixes it',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Smart dictation',
+          detail:
+              'What you say is tidied up as you speak: punctuation, numbers, '
+              'names and misheard words. Hinglish stays Hinglish.',
+          icon: HugeIcons.strokeRoundedMic01,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Undo any fix',
+          detail: 'Tap "Undo fix" to get back exactly what you said.',
+          icon: HugeIcons.strokeRoundedTextCheck,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Simpler settings',
+          detail:
+              'Technical details are tucked away; only what you need shows.',
+          icon: HugeIcons.strokeRoundedSettings02,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'Answers keep going',
+          detail:
+              'If the connection drops, sparky reconnects and carries on '
+              'instead of stopping.',
+          icon: HugeIcons.strokeRoundedRefresh,
+        ),
+      ],
+    ),
+    (
+      version: '1.5.3',
+      date: '13 Oct 2026',
+      headline: 'Open it anywhere',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Open in your apps',
+          detail:
+              'Say "play it" or "open in music app" and sparky finds the song '
+              'and opens it in the app you have.',
+          icon: HugeIcons.strokeRoundedMusicNote01,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Assistant chats saved',
+          detail: 'Chats from the assistant now show up in your history.',
+          icon: HugeIcons.strokeRoundedLink01,
+        ),
+      ],
+    ),
+    (
+      version: '1.5.0',
+      date: '13 Oct 2026',
+      headline: 'Circle to search',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Circle to search',
+          detail:
+              'Hold the power button, circle anything on screen, and sparky '
+              'tells you what it is.',
+          icon: HugeIcons.strokeRoundedSearch01,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Phone actions',
+          detail:
+              'Alarms, reminders, events, directions and messages, always '
+              'after you confirm.',
+          icon: HugeIcons.strokeRoundedTarget02,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Better web search',
+          detail: 'Faster, more reliable answers with sources.',
+          icon: HugeIcons.strokeRoundedWifi01,
+        ),
+      ],
+    ),
+    (
       version: '1.4.1',
       date: '13 Oct 2026',
       headline: 'The assistant gets smarter',

@@ -142,6 +142,8 @@ void main() {
       );
 
       // Collapses again.
+      await tester.ensureVisible(find.text(second.headline));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(second.headline));
       await tester.pumpAndSettle();
       expect(find.text(second.items.first.title), findsNothing);
