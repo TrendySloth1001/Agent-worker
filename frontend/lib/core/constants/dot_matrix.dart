@@ -226,6 +226,35 @@ abstract final class DotMatrixSizes {
   static const pageRestDisplacement = 0.03;
 }
 
+/// The radial aura (page variant, e.g. around the profile avatar): dots are
+/// densest right at the inner edge and fade smoothly to nothing over
+/// [reach], in opacity and in size. The wave and touches use the same red
+/// energy, scaled by the same falloff.
+abstract final class DotMatrixAuraSizes {
+  /// Gap (dp) between the avatar's edge and the first dot.
+  static const gap = 5.0;
+
+  /// How far (dp) beyond the inner edge the dots fade out completely.
+  static const reach = 78.0;
+
+  /// The falloff curve: smoothstep of the distance, raised to this power
+  /// (above 1 = a dark core that thins out quickly, then a long soft tail).
+  static const falloffPower = 1.5;
+
+  /// Resting ink dot opacity and radius at the inner edge (weight 1).
+  static const inkAlphaLight = 0.62;
+  static const inkAlphaDark = 0.8;
+  static const inkRadius = 1.9;
+
+  /// Smallest dot radius (at the faint outer end) and the weight below which
+  /// a dot is not drawn at all.
+  static const minRadius = 0.45;
+  static const cutoff = 0.03;
+
+  /// Opacity / size steps (one batched draw call each).
+  static const levels = 16;
+}
+
 /// The springs of the backdrop's field.
 abstract final class DotMatrixPhysics {
   /// One swing of a dot (s) and its damping ratio: low enough that kicks

@@ -63,6 +63,7 @@ class DotMatrixBackdrop extends StatefulWidget {
        spacing = null,
        child = null,
        mask = null,
+       aura = null,
        glow = true;
 
   /// The calm page-background variant (see the class docs).
@@ -72,6 +73,7 @@ class DotMatrixBackdrop extends StatefulWidget {
     this.spacing,
     this.child,
     this.mask,
+    this.aura,
     this.glow = true,
   }) : mode = DotMatrixMode.idle,
        wave = 0,
@@ -104,6 +106,11 @@ class DotMatrixBackdrop extends StatefulWidget {
   /// shape them into a ring.
   final ShaderCallback? mask;
 
+  /// Page variant: a radial aura around the centre instead of a full grid.
+  /// Dots fade out smoothly from [DotMatrixAura.inner]; the opening wave
+  /// radiates from the centre.
+  final DotMatrixAura? aura;
+
   /// Page variant: whether a red glow rests along the bottom. Off, the dots
   /// are plain ink and only light up while a wave or a touch passes.
   final bool glow;
@@ -119,6 +126,7 @@ class _DotMatrixBackdropState extends State<DotMatrixBackdrop>
     page: widget.page,
     spacing: widget.spacing,
     glow: widget.glow,
+    aura: widget.aura,
   );
   final _cache = DotMatrixCache();
   bool _still = false;
@@ -305,31 +313,59 @@ class _Blend {
   }
 }
 
+/// Where a radial aura starts (the radius of what it surrounds, dp). The
+/// gap, reach and falloff are [DotMatrixAuraSizes].
+class DotMatrixAura {
+  const DotMatrixAura({required this.radius});
+
+  /// Radius (dp) of the avatar the aura surrounds.
+  final double radius;
+
+  /// Radius where the dots start.
+  double get inner => radius + DotMatrixAuraSizes.gap;
+
+  /// Radius where they have faded out.
+  double get outer => inner + DotMatrixAuraSizes.reach;
+
+  /// Dot weight (0..1) at distance [d] from the centre: 1 at the inner edge,
+  /// smoothly 0 at the outer one, 0 inside the avatar.
+  double weight(double d) {
+    if (d < inner) return 0;
+    final t = ((d - inner) / DotMatrixAuraSizes.reach).clamp(0.0, 1.0);
+    final s = t * t * (3 - 2 * t);
+    return math.pow(1 - s, DotMatrixAuraSizes.falloffPower).toDouble();
+  }
+}
+
 /// The animated state the painter reads: the spring field (one spring per
 /// dot), the open front, the mode weights and the microphone level.
 class DotMatrixFrame extends ChangeNotifier {
-  DotMatrixFrame({this.page = false, this.glow = true, double? spacing})
-    : spacing = spacing ?? DotMatrixSizes.spacing,
-      field = SpringField(
-        spring: AppSprings.spring(
-          period: DotMatrixPhysics.period,
-          damping: DotMatrixPhysics.damping,
-        ),
-        coupling: DotMatrixPhysics.waveSpeed * DotMatrixPhysics.waveSpeed,
-        timestep: DotMatrixPhysics.timestep,
-        maxSubsteps: DotMatrixPhysics.maxSubsteps,
-        limit: DotMatrixPhysics.limit,
-      ),
-      ripples = SpringField(
-        spring: AppSprings.spring(
-          period: DotMatrixPhysics.ripplePeriod,
-          damping: DotMatrixPhysics.rippleDamping,
-        ),
-        coupling: DotMatrixPhysics.rippleSpeed * DotMatrixPhysics.rippleSpeed,
-        timestep: DotMatrixPhysics.timestep,
-        maxSubsteps: DotMatrixPhysics.maxSubsteps,
-        limit: DotMatrixPhysics.limit,
-      );
+  DotMatrixFrame({
+    this.page = false,
+    this.glow = true,
+    this.aura,
+    double? spacing,
+  }) : spacing = spacing ?? DotMatrixSizes.spacing,
+       field = SpringField(
+         spring: AppSprings.spring(
+           period: DotMatrixPhysics.period,
+           damping: DotMatrixPhysics.damping,
+         ),
+         coupling: DotMatrixPhysics.waveSpeed * DotMatrixPhysics.waveSpeed,
+         timestep: DotMatrixPhysics.timestep,
+         maxSubsteps: DotMatrixPhysics.maxSubsteps,
+         limit: DotMatrixPhysics.limit,
+       ),
+       ripples = SpringField(
+         spring: AppSprings.spring(
+           period: DotMatrixPhysics.ripplePeriod,
+           damping: DotMatrixPhysics.rippleDamping,
+         ),
+         coupling: DotMatrixPhysics.rippleSpeed * DotMatrixPhysics.rippleSpeed,
+         timestep: DotMatrixPhysics.timestep,
+         maxSubsteps: DotMatrixPhysics.maxSubsteps,
+         limit: DotMatrixPhysics.limit,
+       );
 
   /// The glow: stiff springs that chase their targets (the breathing, the
   /// thinking waves) and ring when the open front kicks them.
@@ -349,6 +385,12 @@ class DotMatrixFrame extends ChangeNotifier {
 
   /// Distance between dot centres, in dp.
   final double spacing;
+
+  /// Radial aura (page variant), or null for the full grid.
+  final DotMatrixAura? aura;
+
+  /// Per dot, with an aura: its falloff weight (0 = not drawn).
+  Float32List? auraWeight;
 
   /// Page variant only: everything has settled and been quiet for a while,
   /// so the widget stops its ticker. Cleared by the next touch.
@@ -483,7 +525,13 @@ class DotMatrixFrame extends ChangeNotifier {
     if (size == _size) return;
     _size = size;
     final step = spacing;
-    if (page) {
+    if (page && aura != null) {
+      // Centred on the aura, so the dots are symmetric around the avatar.
+      cols = math.max(1, (size.width / step).floor());
+      rows = math.max(1, (size.height / step).floor());
+      originX = (size.width - (cols - 1) * step) / 2;
+      originY = (size.height - (rows - 1) * step) / 2;
+    } else if (page) {
       // Anchored top-left, from half a step in (like DotGridBackground), at
       // the overlay's spacing.
       cols = math.max(1, ((size.width - step / 2) / step).ceil());
@@ -532,6 +580,23 @@ class DotMatrixFrame extends ChangeNotifier {
       }
     }
     _frontReach = size.height * DotMatrixSizes.openReach;
+    final a = aura;
+    if (a != null) {
+      // A circular front from the centre, out to where the dots end.
+      final cy = size.height / 2;
+      final weights = Float32List(cols * rows);
+      for (var r = 0; r < rows; r++) {
+        final dy = originY + r * step - cy;
+        for (var c = 0; c < cols; c++) {
+          final dx = _colX[c] - cx;
+          final d = math.sqrt(dx * dx + dy * dy);
+          _openDist[r * cols + c] = d;
+          weights[r * cols + c] = a.weight(d);
+        }
+      }
+      auraWeight = weights;
+      _frontReach = a.outer;
+    }
 
     if (_pendingSettle) {
       _pendingSettle = false;
@@ -990,6 +1055,11 @@ class DotMatrixCache {
 
   /// The page grid: every dot, in the static grid's colour and radius.
   void _buildPageInk(DotMatrixFrame f, AppPalette p) {
+    final weights = f.auraWeight;
+    if (weights != null) {
+      _buildAuraInk(f, p, weights);
+      return;
+    }
     final pts = Float32List(f.cols * f.rows * 2);
     var i = 0;
     for (var r = 0; r < f.rows; r++) {
@@ -1005,6 +1075,44 @@ class DotMatrixCache {
     inkPaints
       ..clear()
       ..add(_dotPaint(p.dotGrid, AppSizes.dotGridRadius));
+  }
+
+  /// The aura's resting dots: opacity and size both follow the weight.
+  void _buildAuraInk(DotMatrixFrame f, AppPalette p, Float32List weights) {
+    const n = DotMatrixAuraSizes.levels;
+    final buckets = List.generate(n + 1, (_) => <double>[]);
+    for (var r = 0; r < f.rows; r++) {
+      final y = f.originY + r * f.spacing;
+      for (var c = 0; c < f.cols; c++) {
+        final w = weights[r * f.cols + c];
+        if (w < DotMatrixAuraSizes.cutoff) continue;
+        final b = (w * n).round();
+        if (b <= 0) continue;
+        buckets[b]
+          ..add(f.originX + c * f.spacing)
+          ..add(y);
+      }
+    }
+    inkPoints.clear();
+    inkPaints.clear();
+    final alpha = p.isDark
+        ? DotMatrixAuraSizes.inkAlphaDark
+        : DotMatrixAuraSizes.inkAlphaLight;
+    for (var b = 1; b <= n; b++) {
+      if (buckets[b].isEmpty) continue;
+      final w = b / n;
+      inkPoints.add(Float32List.fromList(buckets[b]));
+      inkPaints.add(
+        _dotPaint(
+          p.textPrimary.withValues(alpha: alpha * w),
+          ui.lerpDouble(
+            DotMatrixAuraSizes.minRadius,
+            DotMatrixAuraSizes.inkRadius,
+            w,
+          )!,
+        ),
+      );
+    }
   }
 
   void _buildInk(DotMatrixFrame f, Size s, Color ink, bool isDark) {
@@ -1147,6 +1255,7 @@ class DotMatrixPainter extends CustomPainter {
     final lutMax = lut.length - 1;
     final counts = c.energyCounts..fillRange(0, levels, 0);
     final xf = c.haloXforms, colors = c.haloColors;
+    final weights = f.auraWeight;
     var halos = 0;
 
     // The aurora first: one big halo per column, behind everything.
@@ -1177,7 +1286,8 @@ class DotMatrixPainter extends CustomPainter {
       final y = f.originY + row * step;
       final base = row * cols;
       for (var col = 0; col < cols; col++) {
-        final e = f.energy(base + col);
+        var e = f.energy(base + col);
+        if (weights != null) e *= weights[base + col];
         if (e < lo) continue;
         var b = ((e - lo) * levelScale).floor();
         if (b >= levels) b = levels - 1;

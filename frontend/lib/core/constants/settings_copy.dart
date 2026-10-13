@@ -259,17 +259,15 @@ abstract final class SettingsSizes {
   static const dotSpacing = 8.0;
   static const dotRadius = 1.2;
   static const heroAvatar = 96.0;
-  static const heroDotField = 168.0;
+  static const heroDotField = 188.0;
 
   /// Spacing of the animated dots inside the hero circle.
   static const heroDotSpacing = 8.0;
 
-  /// The ring of dots around the avatar: its width, the soft fade at each
-  /// edge, and the avatar-edit badge's size and border.
-  static const heroRingWidth = 18.0;
-  static const heroRingFade = 7.0;
-  static const heroBadge = 30.0;
-  static const heroBadgeBorder = 3.0;
+  /// The square the aura of dots is painted in (the avatar plus its
+  /// fade-out); the layout box is [heroDotField] tall, the rest spills over.
+  static const heroAuraField = 232.0;
+
   static const accentDot = 6.0;
   static const accentGap = 2.0;
   static const badge = 32.0;
