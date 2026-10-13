@@ -50,6 +50,10 @@ class ChatMessage {
   /// Failure after some text arrived; the partial text is kept.
   String? error;
 
+  /// The stream broke and the automatic retries were spent: the answer shows
+  /// "Answer interrupted · Retry" (calm, never an error line). Not saved.
+  bool interrupted = false;
+
   /// Extra saved data, e.g. a merge briefing's sources.
   Map<String, dynamic> meta = const {};
 

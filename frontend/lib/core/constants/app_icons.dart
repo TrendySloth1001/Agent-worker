@@ -29,6 +29,9 @@ abstract final class AppIcons {
   static const copy = HugeIcons.strokeRoundedCopy01;
   static const check = HugeIcons.strokeRoundedTick02;
   static const regenerate = HugeIcons.strokeRoundedRefresh;
+
+  /// An answer whose stream broke ("Answer interrupted · Retry").
+  static const interrupted = HugeIcons.strokeRoundedUnlink04;
   static const edit = HugeIcons.strokeRoundedPencilEdit01;
   static const delete = HugeIcons.strokeRoundedDelete02;
   static const more = HugeIcons.strokeRoundedMoreVertical;

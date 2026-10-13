@@ -28,6 +28,7 @@ import '../docs/doc_registry.dart';
 import '../settings/settings_controller.dart';
 import 'chat_turn.dart';
 import 'composer_state.dart';
+import 'stream_retry.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController(
@@ -131,6 +132,9 @@ class ChatController extends ChangeNotifier {
   http.Client? _client;
   StreamSubscription<ChatEvent>? _sub;
   Timer? _throttle;
+
+  /// Waits to re-send a turn whose stream broke ([StreamRetry]).
+  Timer? _retryTimer;
   bool _pending = false;
   DateTime _lastTick = DateTime.fromMillisecondsSinceEpoch(0);
   late (bool, bool) _lastDefaults;
@@ -652,7 +656,14 @@ class ChatController extends ChangeNotifier {
   /// Drops the last reply and asks again.
   void regenerate() {
     if (isSending || messages.isEmpty) return;
-    if (messages.last.role != Role.assistant) return;
+    final last = messages.last;
+    if (last.role != Role.assistant) return;
+    // "Answer interrupted · Retry": the partial text stays until the new
+    // answer starts.
+    if (last.interrupted && !last.isError) {
+      _run(into: last);
+      return;
+    }
     messages.removeLast();
     if (messages.isEmpty || messages.last.role != Role.user) {
       notifyListeners();
@@ -703,9 +714,23 @@ class ChatController extends ChangeNotifier {
     _run();
   }
 
-  void _run({bool? roundTableOverride}) {
-    final message = ChatMessage(role: Role.assistant, isStreaming: true);
+  /// Streams a reply to the last user turn. [into] re-sends the turn for a
+  /// reply whose stream broke: its partial text stays until the new answer's
+  /// first text replaces it. [attempt] counts automatic retries.
+  void _run({bool? roundTableOverride, ChatMessage? into, int attempt = 0}) {
+    if (into != null) messages.remove(into);
     final history = _history();
+    final message =
+        into ?? ChatMessage(role: Role.assistant, isStreaming: true);
+    if (into != null) {
+      message
+        ..isStreaming = true
+        ..interrupted = false
+        ..error = null
+        ..status = StreamRetry.reconnectingPhase;
+    }
+    // Text from the broken stream, replaced when the new answer starts.
+    var stale = into != null && message.content.isNotEmpty;
     messages.add(message);
     isSending = true;
     notifyListeners();
@@ -752,6 +777,48 @@ class ChatController extends ChangeNotifier {
       finish();
     }
 
+    // The stream broke ([error] null: it closed without `done`). A dropped
+    // connection or a restarting server is re-sent after a short wait (twice
+    // at most), keeping the partial text; then "Answer interrupted · Retry".
+    void broke(Object? error) {
+      if (!alive()) return;
+      final retryable = StreamRetry.retryable(error);
+      final wait = StreamRetry.delay(attempt);
+      if (retryable &&
+          wait != null &&
+          foreground() &&
+          message.tablePhase == null) {
+        _closeStream();
+        _throttle?.cancel();
+        _throttle = null;
+        _pending = false;
+        message.status = StreamRetry.reconnectingPhase;
+        notifyListeners();
+        _retryTimer?.cancel();
+        _retryTimer = Timer(wait, () {
+          _retryTimer = null;
+          if (session != _session) return;
+          _run(
+            roundTableOverride: roundTableOverride,
+            into: message,
+            attempt: attempt + 1,
+          );
+        });
+        return;
+      }
+      if (!retryable) {
+        fail(_errorText(error!));
+        return;
+      }
+      if (stale) stale = false;
+      message.interrupted = true;
+      if (message.content.isEmpty) {
+        message.isError = true;
+        message.content = AppStrings.answerInterrupted;
+      }
+      finish();
+    }
+
     void onEvent(ChatEvent event) {
       if (!alive()) return;
       switch (event) {
@@ -791,6 +858,10 @@ class ChatController extends ChangeNotifier {
           message.modelId = model;
           notifyListeners();
         case DeltaEvent(:final text):
+          if (stale) {
+            stale = false;
+            message.content = '';
+          }
           message.content += text;
           _scheduleNotify();
           if (foreground()) _tick();
@@ -799,10 +870,15 @@ class ChatController extends ChangeNotifier {
           _memoryNotes(added);
           notifyListeners();
         case ResetEvent():
+          stale = false;
           message.content = '';
           message.notice = null;
           notifyListeners();
         case DoneEvent(:final model, :final used):
+          if (stale) {
+            stale = false;
+            message.content = '';
+          }
           message.modelId = model ?? message.modelId;
           message.usedIds = used.toSet();
           Haptics.received();
@@ -836,16 +912,11 @@ class ChatController extends ChangeNotifier {
         .stream(_api, client, history)
         .listen(
           onEvent,
-          onError: (Object error) => fail(_errorText(error)),
+          onError: broke,
           onDone: () {
             if (!alive() || !message.isStreaming) return;
             // The stream closed without a done event.
-            if (message.content.isEmpty) {
-              fail(AppStrings.errorInterrupted);
-            } else {
-              message.error = AppStrings.errorInterrupted;
-              finish();
-            }
+            broke(null);
           },
           cancelOnError: true,
         );
@@ -1138,6 +1209,8 @@ class ChatController extends ChangeNotifier {
   }
 
   void _teardown() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _clearProgress();
     _stopWatchingReply();
     _throttle?.cancel();
