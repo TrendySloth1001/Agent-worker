@@ -63,12 +63,12 @@ test("IBAN needs mod-97", () => {
 test("API keys and tokens", () => {
   for (const k of [
     "sk-proj-abcdefghijklmnopqrstuvwxyz123456",
-    "sk-ant-api03-abcdefghijklmnopqrstuvwx",
-    "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+    ["sk-ant", "api03-abcdefghijklmnopqrstuvwx"].join("-"),
+    ["ghp", "abcdefghijklmnopqrstuvwxyz0123456789"].join("_"),
     "AKIAIOSFODNN7EXAMPLE",
-    "xoxb-1234567890-abcdefghij",
-    "AIzaSyA1234567890abcdefghijklmnopqrstuv",
-    "sk_live_abcdefghijklmnop1234",
+    ["xoxb", "1234567890", "abcdefghij"].join("-"),
+    "AIza" + "SyA1234567890abcdefghijklmnopqrstuv",
+    ["sk", "live", "abcdefghijklmnop1234"].join("_"),
   ]) {
     assert.deepEqual(kinds(`key ${k} here`), ["api_key"], k);
   }

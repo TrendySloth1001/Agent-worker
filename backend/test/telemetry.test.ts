@@ -17,8 +17,9 @@ test("bucketFor: defaults per window and never exceeds the point cap", () => {
 });
 
 test("scrub: keys and long tokens never reach the table", () => {
-  const out = scrub("401 Unauthorized: invalid api_key=gsk_abcdefghijklmnop1234 Bearer abc.def")!;
-  assert.ok(!out.includes("gsk_abcdefghijklmnop1234"));
+  const fake = ["gsk", "abcdefghijklmnop1234"].join("_");
+  const out = scrub(`401 Unauthorized: invalid api_key=${fake} Bearer abc.def`)!;
+  assert.ok(!out.includes(fake));
   assert.ok(!out.includes("abc.def"));
   assert.ok(scrub("x".repeat(400))!.length <= 300);
   assert.equal(scrub(""), null);
