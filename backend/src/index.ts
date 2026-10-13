@@ -33,11 +33,14 @@ import { prismaStore as docStore } from "./docs/store.js";
 import { liveIds as liveDocIds } from "./docs/registry.js";
 import { githubGate } from "./auth/githubGate.js";
 import { siteRouter } from "./routes/site.js";
+import { drainGuard, gracefulShutdown } from "./util/lifecycle.js";
 
 const app = express();
 app.disable("x-powered-by");
 // Behind one reverse proxy (Coolify/Traefik): trust exactly one hop so req.ip is the real client.
 app.set("trust proxy", 1);
+// During a redeploy: new requests get a friendly 503 and /health reports 503 so the proxy stops routing here.
+app.use(drainGuard());
 // Saved conversations carry the full history, so they get a larger body limit.
 const smallJson = express.json({ limit: "256kb" });
 const largeJson = express.json({ limit: "4mb" });
@@ -118,16 +121,18 @@ onDbUp(() => void docStore.sweepInterrupted(liveDocIds()).then((n) => n && log.i
 initDb();
 const server = app.listen(config.port, () => log.info(`Server listening on http://localhost:${config.port}`));
 
-let closing = false;
-function shutdown() {
-  if (closing) return;
-  closing = true;
-  server.close();
-  server.closeAllConnections();
-  flushUsage()
-    .catch(() => {})
-    .finally(() => closeDb().finally(() => process.exit(0)));
-  setTimeout(() => process.exit(0), 3000).unref();
+// SIGTERM (redeploy): stop taking new requests, let in-flight answer streams finish, then exit.
+// The container's stop timeout must exceed SHUTDOWN_GRACE_MS (see docker-compose.coolify.yml).
+function shutdown(signal: string) {
+  log.info("shutdown signal", { signal });
+  void gracefulShutdown(server, {
+    graceMs: config.shutdownGraceMs,
+    cleanup: () => flushUsage().catch(() => {}).finally(() => closeDb()),
+    exit: (code) => process.exit(code),
+    log: (m, meta) => log.info(m, meta),
+  });
+  // Hard stop just after the grace period, whatever cleanup is doing.
+  setTimeout(() => process.exit(0), config.shutdownGraceMs + 5_000).unref();
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

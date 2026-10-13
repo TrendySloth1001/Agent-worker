@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { trackStream } from "./lifecycle.js";
 
 export type SseWriter = {
   send(event: string, data: unknown): void;
@@ -15,6 +16,8 @@ export function openSse(res: Response): SseWriter {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
   res.socket?.setNoDelay(true);
+  // A redeploy waits for this stream to finish before the process exits.
+  trackStream(res);
 
   let open = true;
   res.on("close", () => {

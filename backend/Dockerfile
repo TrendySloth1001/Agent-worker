@@ -27,5 +27,9 @@ USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/health || exit 1
-# Applies pending migrations, then starts the server.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/index.js"]
+# Redeploys send SIGTERM; the server drains in-flight answer streams (SHUTDOWN_GRACE_MS, default 60 s)
+# before exiting, so the stop timeout (compose stop_grace_period) must be longer than that.
+STOPSIGNAL SIGTERM
+# Applies pending migrations, then starts the server. `exec` makes node PID 1 so it receives SIGTERM
+# (a plain `sh -c` would swallow it and the container would be SIGKILLed mid-stream).
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && exec node dist/index.js"]

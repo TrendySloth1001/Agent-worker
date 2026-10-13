@@ -3,10 +3,16 @@ import { config } from "../config.js";
 import { isDbUp } from "../db/prisma.js";
 import { embeddingsHealthy } from "../embeddings/index.js";
 import { kbStats } from "../retrieval/search.js";
+import { isDraining } from "../util/lifecycle.js";
 
 export const healthRouter = Router();
 
 healthRouter.get("/", async (_req, res) => {
+  // Draining for a redeploy: report unhealthy so the proxy stops sending new traffic here.
+  if (isDraining()) {
+    res.status(503).json({ status: "draining", uptimeS: Math.round(process.uptime()) });
+    return;
+  }
   try {
     const db = isDbUp();
     const embeddings = embeddingsHealthy();

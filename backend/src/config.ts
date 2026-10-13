@@ -64,12 +64,15 @@ const schema = z.object({
   LIMIT_STORAGE_MB: num(1024),
   LIMIT_DOCS_PER_DAY: num(5),
   LIMIT_AI_PER_DAY: num(150),
+  /** On SIGTERM, how long in-flight answer streams may keep running before the process exits. */
+  SHUTDOWN_GRACE_MS: num(60_000),
 });
 
 const env = schema.parse(process.env);
 
 export const config = {
   port: env.PORT,
+  shutdownGraceMs: env.SHUTDOWN_GRACE_MS,
   openrouterApiKey: env.OPENROUTER_API_KEY,
   ollamaApiKey: env.OLLAMA_API_KEY,
   groqApiKey: env.GROQ_API_KEY,
