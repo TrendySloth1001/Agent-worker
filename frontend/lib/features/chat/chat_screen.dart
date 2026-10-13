@@ -69,7 +69,10 @@ class _ChatScreenState extends State<ChatScreen> {
       ConversationsApi(scope.baseUrl),
     );
     _controller.loadModels();
-    _voice = createVoiceController(scope.settings);
+    _voice = createVoiceController(
+      scope.settings,
+      context: () => voiceTurns(_controller.messages),
+    );
     // After an app update: a one-time "What's new" sheet (never on first install).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) WhatsNew.maybeShow(context);

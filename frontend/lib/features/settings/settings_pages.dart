@@ -18,6 +18,7 @@ import '../../core/constants/smart_toggles.dart';
 import '../../core/constants/storage.dart';
 import '../../core/constants/telemetry.dart';
 import '../../core/constants/voice.dart';
+import '../../core/constants/voice_fix.dart';
 import '../../core/platform/browsers.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/browser_picker.dart';
@@ -450,6 +451,33 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 summary: VoiceStrings.accuracyHelp,
                 value: s.voiceHighAccuracy,
                 onChanged: s.setVoiceHighAccuracy,
+              ),
+            ),
+            SettingItem(
+              id: 'voice-autofix',
+              title: VoiceFixStrings.autoFixLabel,
+              keywords:
+                  'voice dictate microphone speech fix correct grammar '
+                  'punctuation transcription auto',
+              build: (_) => SettingsSwitchTile(
+                icon: AppIcons.aiFormat,
+                title: VoiceFixStrings.autoFixLabel,
+                summary: VoiceFixStrings.autoFixHelp,
+                value: s.voiceAutoFix,
+                onChanged: s.setVoiceAutoFix,
+              ),
+            ),
+            SettingItem(
+              id: 'voice-exact',
+              title: VoiceFixStrings.exactLabel,
+              keywords:
+                  'voice dictate exact words verbatim punctuation only fix',
+              build: (_) => SettingsSwitchTile(
+                icon: AppIcons.mic,
+                title: VoiceFixStrings.exactLabel,
+                summary: VoiceFixStrings.exactHelp,
+                value: s.voiceExactWords,
+                onChanged: s.setVoiceExactWords,
               ),
             ),
           ],

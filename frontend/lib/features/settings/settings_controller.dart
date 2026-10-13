@@ -21,6 +21,8 @@ class SettingsController extends ChangeNotifier {
     autocompleteOn = _prefs?.getBool(AppPrefs.autocomplete) ?? true;
     voiceAutoSend = _prefs?.getBool(AppPrefs.voiceAutoSend) ?? false;
     voiceHighAccuracy = _prefs?.getBool(AppPrefs.voiceHighAccuracy) ?? false;
+    voiceAutoFix = _prefs?.getBool(AppPrefs.voiceAutoFix) ?? true;
+    voiceExactWords = _prefs?.getBool(AppPrefs.voiceExactWords) ?? false;
     assistActions = _prefs?.getBool(AppPrefs.assistActions) ?? true;
     assistLive = _prefs?.getBool(AppPrefs.assistLive) ?? true;
     assistSaveHistory = _prefs?.getBool(AppPrefs.assistSaveHistory) ?? true;
@@ -75,6 +77,9 @@ class SettingsController extends ChangeNotifier {
 
   /// Voice input: send when dictation ends / always transcribe on the server.
   late bool voiceAutoSend, voiceHighAccuracy;
+
+  /// Dictation: correct what was heard / only punctuation and capitals.
+  late bool voiceAutoFix, voiceExactWords;
 
   /// Assistant: answers may propose phone actions (alarm, event, call...)
   /// shown as cards that run only on Confirm.
@@ -155,6 +160,18 @@ class SettingsController extends ChangeNotifier {
   void setVoiceHighAccuracy(bool value) {
     voiceHighAccuracy = value;
     _prefs?.setBool(AppPrefs.voiceHighAccuracy, value);
+    notifyListeners();
+  }
+
+  void setVoiceAutoFix(bool value) {
+    voiceAutoFix = value;
+    _prefs?.setBool(AppPrefs.voiceAutoFix, value);
+    notifyListeners();
+  }
+
+  void setVoiceExactWords(bool value) {
+    voiceExactWords = value;
+    _prefs?.setBool(AppPrefs.voiceExactWords, value);
     notifyListeners();
   }
 
@@ -337,6 +354,8 @@ class SettingsController extends ChangeNotifier {
     autocompleteOn = true;
     voiceAutoSend = false;
     voiceHighAccuracy = false;
+    voiceAutoFix = true;
+    voiceExactWords = false;
     assistActions = true;
     assistLive = true;
     assistSaveHistory = true;
@@ -355,6 +374,8 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.autocomplete,
       AppPrefs.voiceAutoSend,
       AppPrefs.voiceHighAccuracy,
+      AppPrefs.voiceAutoFix,
+      AppPrefs.voiceExactWords,
       AppPrefs.assistActions,
       AppPrefs.assistLive,
       AppPrefs.assistSaveHistory,

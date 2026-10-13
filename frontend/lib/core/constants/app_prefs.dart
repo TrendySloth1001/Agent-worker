@@ -10,6 +10,8 @@ abstract final class AppPrefs {
   static const autocomplete = 'autocomplete_on';
   static const voiceAutoSend = 'voice_auto_send';
   static const voiceHighAccuracy = 'voice_high_accuracy';
+  static const voiceAutoFix = 'voice_auto_fix';
+  static const voiceExactWords = 'voice_exact_words';
   static const assistActions = 'assist_actions';
   static const assistLive = 'assist_live';
   static const assistSaveHistory = 'assist_save_history';

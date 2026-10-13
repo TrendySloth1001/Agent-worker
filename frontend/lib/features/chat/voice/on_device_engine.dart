@@ -18,6 +18,7 @@ class OnDeviceVoiceEngine implements VoiceEngine {
   Future<bool>? _init;
   VoiceListener? _listener;
   String _last = '';
+  double? _confidence;
   bool _finished = false;
 
   @override
@@ -35,6 +36,7 @@ class OnDeviceVoiceEngine implements VoiceEngine {
   Future<void> start(String locale, VoiceListener listener) async {
     _listener = listener;
     _last = '';
+    _confidence = null;
     _finished = false;
     String? localeId;
     try {
@@ -61,6 +63,7 @@ class OnDeviceVoiceEngine implements VoiceEngine {
 
   void _onResult(SpeechRecognitionResult r) {
     _last = r.recognizedWords;
+    if (r.finalResult && r.hasConfidenceRating) _confidence = r.confidence;
     _listener?.onPartial(_last);
     if (r.finalResult) _finish();
   }
@@ -90,7 +93,7 @@ class OnDeviceVoiceEngine implements VoiceEngine {
     final l = _listener;
     if (_finished || l == null) return;
     _finished = true;
-    l.onFinal(_last);
+    l.onFinal(_last, _confidence);
   }
 
   void _fail(VoiceFailure f) {

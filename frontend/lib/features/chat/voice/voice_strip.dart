@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/voice.dart';
+import '../../../core/constants/voice_fix.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -51,7 +52,9 @@ class VoiceStrip extends StatelessWidget {
     final p = context.palette;
     final t = context.text;
     final working = voice.phase == VoicePhase.transcribing;
-    final label = working
+    final label = voice.fixing
+        ? VoiceFixStrings.fixing
+        : working
         ? VoiceStrings.transcribing
         : holding
         ? VoiceStrings.slideToCancel

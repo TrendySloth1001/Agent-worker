@@ -24,6 +24,7 @@ import '../autocomplete/autocomplete_controller.dart';
 import '../autocomplete/local_words.dart';
 import '../voice/voice_controller.dart';
 import '../voice/voice_permission.dart';
+import '../voice/voice_fix_field.dart';
 import '../voice/voice_strip.dart';
 import 'attachment_bar.dart';
 import 'smart_chip.dart';
@@ -110,7 +111,7 @@ class ChatInput extends StatefulWidget {
 }
 
 class _ChatInputState extends State<ChatInput> {
-  final _controller = TextEditingController();
+  final _controller = VoiceFixTextController();
   final _files = AttachmentsController();
   final _picker = AttachPicker();
   bool _waiting = false;
@@ -306,6 +307,7 @@ class _ChatInputState extends State<ChatInput> {
       selection: TextSelection.collapsed(offset: all.length),
     );
     if (!isFinal) return;
+    _controller.showFix(widget.voice?.lastFix, offset: _voiceBase.length);
     _onText();
     if (widget.sendVoiceAutomatically) _submit();
   }
@@ -523,6 +525,7 @@ class _ChatInputState extends State<ChatInput> {
               onRetry: _startVoice,
               onSettings: widget.voice!.openSettings,
             ),
+          if (widget.voice != null) VoiceFixChip(controller: _controller),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [

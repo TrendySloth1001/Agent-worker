@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/voice.dart';
+import '../../../core/constants/voice_fix.dart';
 import '../../../core/haptics.dart';
+import 'transcript_fixer.dart';
+import 'transcript_normalizer.dart';
 import 'voice_engine.dart';
 import 'voice_permission.dart';
 
@@ -23,6 +26,7 @@ class VoiceController extends ChangeNotifier {
     this.locale = _defaultLocale,
     this.highAccuracy = _never,
     this.maxDuration = VoiceConfig.maxDuration,
+    this.fixer,
   });
 
   static String _defaultLocale() => 'en-US';
@@ -36,6 +40,9 @@ class VoiceController extends ChangeNotifier {
   final String Function() locale;
   final bool Function() highAccuracy;
   final Duration maxDuration;
+
+  /// Corrects each finished segment before it is delivered as final.
+  final TranscriptFixer? fixer;
 
   VoicePhase _phase = VoicePhase.idle;
   VoiceFailure? _failure;
@@ -52,6 +59,13 @@ class VoiceController extends ChangeNotifier {
   int _session = 0;
   Timer? _tick, _limit, _finishTimer;
   VoiceTextSink? _sink;
+  bool _fixing = false;
+  VoiceFix? _lastFix;
+
+  /// Pauses in speech, as indices of the word they followed.
+  final Set<int> _pauses = {};
+  final Stopwatch _sincePartial = Stopwatch();
+  int _partialWords = 0;
 
   VoicePhase get phase => _phase;
   VoiceFailure? get failure => _failure;
@@ -69,6 +83,12 @@ class VoiceController extends ChangeNotifier {
   String? get engineId => _engine?.id;
   bool get listening => _phase == VoicePhase.listening;
 
+  /// The finished text is being corrected (local text already shown).
+  bool get fixing => _fixing;
+
+  /// The last delivered correction: what was heard and what changed.
+  VoiceFix? get lastFix => _lastFix;
+
   /// Listening or waiting for the transcript.
   bool get active =>
       _phase == VoicePhase.listening || _phase == VoicePhase.transcribing;
@@ -83,6 +103,7 @@ class VoiceController extends ChangeNotifier {
     final session = ++_session;
     _sink = sink;
     _reset();
+    if (fixer?.enabled() ?? false) fixer!.warm();
     var state = await permission.check();
     if (state != VoicePermissionState.granted) {
       state = await permission.request();
@@ -128,14 +149,15 @@ class VoiceController extends ChangeNotifier {
       VoiceListener(
         onPartial: (t) => _partial(session, t),
         onLevel: (l) => _level(session, l),
-        onFinal: (t) => _final(session, t),
+        onFinal: (t, [confidence]) => _final(session, t, confidence),
         onError: (f, [m]) => _error(session, f, m),
       ),
     );
   }
 
   void _partial(int session, String t) {
-    if (session != _session || !active) return;
+    if (session != _session || !active || _fixing) return;
+    _notePause(t);
     _text = t;
     _sink?.call(t, false);
     notifyListeners();
@@ -149,11 +171,64 @@ class VoiceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _final(int session, String t) {
-    if (session != _session || !active) return;
+  /// A gap between partial results marks a pause after the last word heard.
+  void _notePause(String t) {
+    final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    if (_sincePartial.isRunning &&
+        _sincePartial.elapsed >= VoiceFixConfig.pauseGap &&
+        _partialWords > 0 &&
+        words > _partialWords) {
+      _pauses.add(_partialWords - 1);
+    }
+    _partialWords = words;
+    _sincePartial
+      ..reset()
+      ..start();
+  }
+
+  void _final(int session, String t, [double? confidence]) {
+    if (session != _session || !active || _fixing) return;
     final text = t.trim().isEmpty ? _text.trim() : t.trim();
     _stopTimers();
     if (text.isEmpty) return _fail(VoiceFailure.noSpeech);
+    final fixer = this.fixer;
+    if (fixer == null || !fixer.enabled()) {
+      _lastFix = null;
+      return _deliver(text);
+    }
+    // The local pass shows at once; the model pass replaces it within its timeout.
+    final local = fixer.local(
+      text,
+      pauses: {..._pauses},
+      confidence: confidence,
+    );
+    _fixing = true;
+    _phase = VoicePhase.transcribing;
+    _text = local.text;
+    _sink?.call(local.text, false);
+    notifyListeners();
+    unawaited(_refine(session, fixer, text, local));
+  }
+
+  Future<void> _refine(
+    int session,
+    TranscriptFixer fixer,
+    String raw,
+    LocalFix local,
+  ) async {
+    VoiceFix fix;
+    try {
+      fix = await fixer.refine(raw, local, language: locale());
+    } catch (_) {
+      fix = TranscriptFixer.result(raw, local.text);
+    }
+    if (session != _session || !_fixing) return;
+    _fixing = false;
+    _lastFix = fix;
+    _deliver(fix.text);
+  }
+
+  void _deliver(String text) {
     _text = text;
     _phase = VoicePhase.idle;
     _sink?.call(text, true);
@@ -161,7 +236,7 @@ class VoiceController extends ChangeNotifier {
   }
 
   void _error(int session, VoiceFailure f, String? message) {
-    if (session != _session || !active) return;
+    if (session != _session || !active || _fixing) return;
     // On-device recognition broke: record and send to the server instead.
     final fallback = server;
     final recoverable =
@@ -214,6 +289,7 @@ class VoiceController extends ChangeNotifier {
     ++_session;
     final engine = _engine;
     _stopTimers();
+    _fixing = false;
     _phase = VoicePhase.idle;
     _text = '';
     Haptics.recordStop();
@@ -236,6 +312,13 @@ class VoiceController extends ChangeNotifier {
     _message = null;
     _text = '';
     _fellBack = false;
+    _fixing = false;
+    _lastFix = null;
+    _pauses.clear();
+    _partialWords = 0;
+    _sincePartial
+      ..stop()
+      ..reset();
     _levels.fillRange(0, _levels.length, 0);
   }
 
