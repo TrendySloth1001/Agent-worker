@@ -36,7 +36,8 @@ abstract final class CircleStrings {
   static const needsSession =
       'Circle to search works over other apps: hold the power button, then '
       'tap Circle to search or long-press the pill.';
-  static const cropFailed = 'Could not cut out that part. Try again.';
+  static const cropFailed = "Couldn't cut that out — try again";
+  static const screenFailed = "Couldn't read the screen — try again";
   static const nothingSelected = 'Draw around something to search it.';
 }
 
@@ -91,11 +92,25 @@ abstract final class CircleSizes {
 
   /// Points closer than this (logical px) are merged while drawing.
   static const minPointGap = 2.0;
+
+  /// A selection is at least this wide and tall (logical px), so a straight
+  /// line or a thin underline still selects a sensible region.
+  static const minSelection = 96.0;
 }
 
 abstract final class CircleConfig {
   static const cropName = 'selection.jpg';
   static const cropPrefix = 'circle-';
+
+  /// Strokes drawn within this pause (after lifting the finger) are one
+  /// selection; the cut-out starts once the user pauses this long.
+  static const strokeMerge = Duration(milliseconds: 600);
+
+  /// The longest the cut-out may take before a friendly retry.
+  static const cropTimeout = Duration(seconds: 4);
+
+  /// The longest reading the frozen screen may take.
+  static const screenTimeout = Duration(seconds: 4);
 }
 
 abstract final class CircleIcons {

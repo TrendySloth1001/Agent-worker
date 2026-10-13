@@ -36,6 +36,38 @@ Rect? selectionOf(
   return clamped.isEmpty ? null : clamped;
 }
 
+/// The selection of several strokes drawn as one (the finger lifted between
+/// them): the union of each stroke's box ([selectionOf]), grown to at least
+/// [minSide] each way so a straight line still selects a sensible region.
+/// Null when no stroke selects anything.
+Rect? selectionOfStrokes(
+  List<List<Offset>> strokes, {
+  required Size view,
+  double minSide = CircleSizes.minSelection,
+}) {
+  Rect? union;
+  for (final s in strokes) {
+    final box = selectionOf(s, view: view);
+    if (box == null) continue;
+    union = union?.expandToInclude(box) ?? box;
+  }
+  return union == null ? null : padToMin(union, view: view, minSide: minSide);
+}
+
+/// [box] grown around its centre to at least [minSide] wide and tall (no
+/// more than the [view]), shifted back inside the view where it overflows.
+Rect padToMin(
+  Rect box, {
+  required Size view,
+  double minSide = CircleSizes.minSelection,
+}) {
+  final w = math.max(box.width, math.min(minSide, view.width));
+  final h = math.max(box.height, math.min(minSide, view.height));
+  final left = (box.center.dx - w / 2).clamp(0.0, view.width - w);
+  final top = (box.center.dy - h / 2).clamp(0.0, view.height - h);
+  return Rect.fromLTWH(left, top, w, h);
+}
+
 /// Scales [rect] from a [from]-sized space to a [to]-sized one.
 Rect mapRect(Rect rect, Size from, Size to) {
   final sx = to.width / from.width;

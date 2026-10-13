@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_icons.dart';
@@ -24,6 +26,8 @@ class CircleView extends StatefulWidget {
     this.selecting = true,
     this.busy = false,
     this.onEmpty,
+    this.onDrawStart,
+    this.mergeWindow = CircleConfig.strokeMerge,
   });
 
   /// The screenshot (a [FileImage] on the phone).
@@ -44,6 +48,13 @@ class CircleView extends StatefulWidget {
   /// A stroke that selected nothing.
   final VoidCallback? onEmpty;
 
+  /// A new selection started (not a stroke merged into the current one):
+  /// any cut-out or answer of the previous one is cancelled.
+  final VoidCallback? onDrawStart;
+
+  /// Strokes within this pause merge into one selection.
+  final Duration mergeWindow;
+
   /// The view for a screenshot file.
   static ImageProvider fileImage(String path) => FileImage(File(path));
 
@@ -52,29 +63,63 @@ class CircleView extends StatefulWidget {
 }
 
 class _CircleViewState extends State<CircleView> {
-  final _points = <Offset>[];
+  /// The strokes of the selection being drawn (the finger may lift between
+  /// them); they become one selection once the user pauses.
+  final _strokes = <List<Offset>>[];
   bool _drawing = false;
+
+  /// Bumped on every change to [_strokes], so the painter repaints.
+  int _version = 0;
+
+  /// Runs out [CircleView.mergeWindow] after the last stroke: then the
+  /// strokes are selected. Active while another stroke would still merge.
+  Timer? _pause;
+
+  bool get _pending => _pause?.isActive ?? false;
+
+  @override
+  void dispose() {
+    _pause?.cancel();
+    super.dispose();
+  }
 
   void _start(Offset p) {
     Haptics.tick();
+    final merge = _pending;
+    _pause?.cancel();
+    // A new selection: whatever is being cut out or answered is dropped.
+    if (!merge) widget.onDrawStart?.call();
     setState(() {
       _drawing = true;
-      _points
-        ..clear()
-        ..add(p);
+      if (!merge) _strokes.clear();
+      _strokes.add([p]);
+      _version++;
     });
   }
 
   void _move(Offset p) {
-    if (!_drawing) return;
-    if ((p - _points.last).distance < CircleSizes.minPointGap) return;
-    setState(() => _points.add(p));
+    if (!_drawing || _strokes.isEmpty) return;
+    final stroke = _strokes.last;
+    if ((p - stroke.last).distance < CircleSizes.minPointGap) return;
+    setState(() {
+      stroke.add(p);
+      _version++;
+    });
   }
 
   void _end(Size view) {
     if (!_drawing) return;
+    _pause?.cancel();
+    _pause = Timer(widget.mergeWindow, () => _commit(view));
     setState(() => _drawing = false);
-    final box = selectionOf(_points, view: view);
+  }
+
+  /// The user paused: the strokes so far are the selection.
+  void _commit(Size view) {
+    if (!mounted) return;
+    final box = selectionOfStrokes(_strokes, view: view);
+    // Repaint without the "still drawing" state.
+    setState(() => _version++);
     if (box == null) {
       widget.onEmpty?.call();
       return;
@@ -84,7 +129,6 @@ class _CircleViewState extends State<CircleView> {
   }
 
   void _tap(Offset p, Size view) {
-    if (widget.busy) return;
     _start(p);
     _end(view);
   }
@@ -111,9 +155,12 @@ class _CircleViewState extends State<CircleView> {
               duration: reduce ? Duration.zero : AppDurations.normal,
               builder: (context, t, _) => CustomPaint(
                 painter: CirclePainter(
-                  // The stroke while drawing and cutting out; then the lit box.
-                  points: _drawing || widget.busy ? List.of(_points) : const [],
-                  selection: _drawing ? null : widget.selection,
+                  // The strokes while drawing and cutting out; then the lit box.
+                  strokes: _drawing || _pending || widget.busy
+                      ? _strokes
+                      : const [],
+                  version: _version,
+                  selection: _drawing || _pending ? null : widget.selection,
                   accent: p.accent,
                   dim: Colors.black.withValues(
                     alpha:
@@ -126,9 +173,12 @@ class _CircleViewState extends State<CircleView> {
             ),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanStart: widget.busy ? null : (d) => _start(d.localPosition),
-              onPanUpdate: widget.busy ? null : (d) => _move(d.localPosition),
-              onPanEnd: widget.busy ? null : (_) => _end(view),
+              // Strokes start where the finger touched, not past the slop.
+              dragStartBehavior: DragStartBehavior.down,
+              // Always drawable: a stroke while cutting out starts anew.
+              onPanStart: (d) => _start(d.localPosition),
+              onPanUpdate: (d) => _move(d.localPosition),
+              onPanEnd: (_) => _end(view),
               onTapUp: (d) => _tap(d.localPosition, view),
             ),
             if (widget.selecting)
@@ -235,14 +285,18 @@ class _Hint extends StatelessWidget {
 /// and the stroke as a red line with a soft glow.
 class CirclePainter extends CustomPainter {
   CirclePainter({
-    required this.points,
+    required this.strokes,
+    this.version = 0,
     required this.selection,
     required this.accent,
     required this.dim,
     required this.dot,
   });
 
-  final List<Offset> points;
+  final List<List<Offset>> strokes;
+
+  /// Changes whenever [strokes] do (they are mutated in place).
+  final int version;
   final Rect? selection;
   final Color accent, dim, dot;
 
@@ -302,6 +356,12 @@ class CirclePainter extends CustomPainter {
           ..color = accent,
       );
     }
+    for (final points in strokes) {
+      _stroke(canvas, points);
+    }
+  }
+
+  void _stroke(Canvas canvas, List<Offset> points) {
     if (points.isEmpty) return;
     final path = smoothPath(points);
     canvas.drawPath(
@@ -337,7 +397,8 @@ class CirclePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CirclePainter old) =>
-      old.points.length != points.length ||
+      old.version != version ||
+      old.strokes.length != strokes.length ||
       old.selection != selection ||
       old.accent != accent ||
       old.dim != dim ||

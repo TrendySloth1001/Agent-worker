@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:app/assist/assist_bridge.dart';
 import 'package:app/assist/assist_controller.dart';
 import 'package:app/assist/assist_overlay.dart';
 import 'package:app/assist/circle/circle_crop.dart';
+import 'package:app/assist/circle/circle_geometry.dart';
 import 'package:app/assist/circle/circle_view.dart';
 import 'package:app/assist/screen_text.dart';
 import 'package:app/assist/share_payload.dart';
@@ -43,6 +45,31 @@ class FakeCropper implements CircleCropper {
   Future<String?> crop(String screenshot, Rect selection, Size view) async {
     calls.add((selection, view));
     return path;
+  }
+}
+
+/// A cropper whose cut-outs finish only when the test says so.
+class GatedCropper implements CircleCropper {
+  final calls = <Rect>[];
+  final gates = <Completer<String?>>[];
+
+  @override
+  Future<String?> crop(String screenshot, Rect selection, Size view) {
+    calls.add(selection);
+    final gate = Completer<String?>();
+    gates.add(gate);
+    return gate.future;
+  }
+}
+
+/// A cropper that fails like a broken decode in the isolate.
+class ThrowingCropper implements CircleCropper {
+  int calls = 0;
+
+  @override
+  Future<String?> crop(String screenshot, Rect selection, Size view) async {
+    calls++;
+    throw StateError('decode failed');
   }
 }
 
@@ -194,6 +221,12 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+/// Past the pause that ends a selection (strokes merge until then), settled.
+Future<void> _select(WidgetTester tester) async {
+  await tester.pump(CircleConfig.strokeMerge);
+  await _settle(tester);
+}
+
 Future<void> _golden(WidgetTester tester, String file) async {
   debugDisableShadows = false;
   try {
@@ -208,11 +241,12 @@ Future<void> _golden(WidgetTester tester, String file) async {
 }
 
 class _Harness {
-  _Harness(this.settings, this.shot, this.cropPath);
+  _Harness(this.settings, this.shot, this.cropPath, [this.customCropper]);
 
   final SettingsController settings;
   final Uint8List shot;
   final String cropPath;
+  final CircleCropper? customCropper;
   final bridge = FakeBridge();
   final chat = FakeChat();
   late final cropper = FakeCropper(cropPath);
@@ -222,7 +256,7 @@ class _Harness {
     conversations: FakeConversations(),
     settings: settings,
     attachments: AttachmentsController(files: FakeFiles()),
-    cropper: cropper,
+    cropper: customCropper ?? cropper,
   );
   late final image = MemoryImage(shot);
 
@@ -314,9 +348,13 @@ void main() {
     DeviceActionRunner.instance = ChannelDeviceActionRunner();
   });
 
-  Future<_Harness> open(WidgetTester tester, {required bool dark}) async {
+  Future<_Harness> open(
+    WidgetTester tester, {
+    required bool dark,
+    CircleCropper? cropper,
+  }) async {
     _phone(tester);
-    final h = _Harness(settings, shot, cropPath);
+    final h = _Harness(settings, shot, cropPath, cropper);
     h.bridge.screen = _screen(shotPath);
     h.controller.reset(
       const AssistShow(source: AssistSource.session, screen: true),
@@ -347,7 +385,7 @@ void main() {
       }
       await _golden(tester, 'goldens/assist_circle_drawing_$theme.png');
       await g.up();
-      await _settle(tester);
+      await _select(tester);
       expect(h.cropper.calls, hasLength(1));
       h.controller.stop();
     });
@@ -361,7 +399,7 @@ void main() {
         await g.moveTo(p);
       }
       await g.up();
-      await _settle(tester);
+      await _select(tester);
       expect(h.controller.circle, CirclePhase.results);
       h.chat.live!
         ..add(
@@ -578,6 +616,168 @@ void main() {
     testWidgets('an unreadable block shows as code', (tester) async {
       await tester.pumpWidget(card('{"type":"teleport"}'));
       expect(find.text(DeviceActionStrings.confirm), findsNothing);
+    });
+  });
+
+  group('circle: strokes, cancels and failures', () {
+    /// One finger stroke through [points], lifted at the end.
+    Future<void> stroke(WidgetTester tester, List<Offset> points) async {
+      final g = await tester.startGesture(points.first);
+      for (final p in points.skip(1)) {
+        await g.moveTo(p);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await tester.pump();
+    }
+
+    // The phone's three adb swipes, in overlay coordinates.
+    const s1 = [Offset(269, 519), Offset(330, 560), Offset(400, 615)];
+    const s2 = [Offset(400, 615), Offset(380, 660), Offset(365, 704)];
+    const s3 = [Offset(365, 704), Offset(310, 660), Offset(262, 615)];
+    const gap = Duration(milliseconds: 300);
+
+    testWidgets('three quick strokes become one selection, then a search', (
+      tester,
+    ) async {
+      final h = await open(tester, dark: false);
+      await h.controller.startCircle();
+      await tester.pump();
+      await stroke(tester, s1);
+      await tester.pump(gap);
+      await stroke(tester, s2);
+      await tester.pump(gap);
+      await stroke(tester, s3);
+      await tester.pump(gap);
+      // Still within the pause: nothing cut out yet, all strokes kept.
+      expect(h.cropper.calls, isEmpty);
+      expect(h.controller.circle, CirclePhase.selecting);
+      await _select(tester);
+      expect(h.cropper.calls, hasLength(1));
+      final sel = h.cropper.calls.single.$1;
+      // The union of all three strokes.
+      expect(sel, const Rect.fromLTRB(262, 519, 400, 704));
+      expect(h.controller.circle, CirclePhase.results);
+      expect(h.chat.requests, hasLength(1));
+      expect(find.text(CircleStrings.reading), findsNothing);
+      h.controller.stop();
+    });
+
+    testWidgets('a stroke while cutting out cancels it and selects anew', (
+      tester,
+    ) async {
+      final gated = GatedCropper();
+      final h = await open(tester, dark: false, cropper: gated);
+      await h.controller.startCircle();
+      await tester.pump();
+      await stroke(tester, _loop);
+      await _select(tester);
+      expect(h.controller.circle, CirclePhase.cropping);
+      expect(find.text(CircleStrings.reading), findsOneWidget);
+      // Drawing again drops the running cut-out at once.
+      await stroke(tester, s1);
+      expect(h.controller.circle, CirclePhase.selecting);
+      expect(find.text(CircleStrings.reading), findsNothing);
+      await _select(tester);
+      expect(gated.calls, hasLength(2));
+      expect(h.controller.circle, CirclePhase.cropping);
+      // The old cut-out finishing late changes nothing.
+      gated.gates.first.complete(cropPath);
+      await tester.pump();
+      expect(h.controller.circle, CirclePhase.cropping);
+      expect(h.chat.requests, isEmpty);
+      gated.gates.last.complete(cropPath);
+      await _select(tester);
+      expect(h.controller.circle, CirclePhase.results);
+      expect(
+        h.controller.circleSelection,
+        padToMin(
+          const Rect.fromLTRB(269, 519, 400, 615),
+          view: const Size(412, 915),
+        ),
+      );
+      expect(h.chat.requests, hasLength(1));
+      h.controller.stop();
+    });
+
+    testWidgets('drawing again after an answer re-selects and re-asks', (
+      tester,
+    ) async {
+      final h = await open(tester, dark: false);
+      await h.controller.startCircle();
+      await tester.pump();
+      await stroke(tester, _loop);
+      await _select(tester);
+      expect(h.controller.circle, CirclePhase.results);
+      expect(h.controller.sending, isTrue);
+      await stroke(tester, const [
+        Offset(60, 120),
+        Offset(200, 140),
+        Offset(300, 200),
+      ]);
+      await _select(tester);
+      expect(h.cropper.calls, hasLength(2));
+      expect(h.controller.circle, CirclePhase.results);
+      expect(h.chat.requests, hasLength(2));
+      h.controller.stop();
+    });
+
+    testWidgets('a failed cut-out offers a retry, not a spinner', (
+      tester,
+    ) async {
+      final failing = ThrowingCropper();
+      final h = await open(tester, dark: false, cropper: failing);
+      await h.controller.startCircle();
+      await tester.pump();
+      await stroke(tester, _loop);
+      await _select(tester);
+      expect(failing.calls, 1);
+      expect(h.controller.circle, CirclePhase.selecting);
+      expect(find.text(CircleStrings.cropFailed), findsOneWidget);
+      expect(find.text(CircleStrings.reading), findsNothing);
+      expect(h.chat.requests, isEmpty);
+      // Trying again is possible right away.
+      await stroke(tester, s1);
+      await _select(tester);
+      expect(failing.calls, 2);
+    });
+
+    testWidgets('a cut-out that never finishes times out with a retry', (
+      tester,
+    ) async {
+      final gated = GatedCropper();
+      final h = await open(tester, dark: false, cropper: gated);
+      await h.controller.startCircle();
+      await tester.pump();
+      await stroke(tester, _loop);
+      await _select(tester);
+      expect(h.controller.circle, CirclePhase.cropping);
+      await tester.pump(CircleConfig.cropTimeout);
+      await tester.pump();
+      expect(h.controller.circle, CirclePhase.selecting);
+      expect(find.text(CircleStrings.cropFailed), findsOneWidget);
+      expect(find.text(CircleStrings.reading), findsNothing);
+      // Finishing after the deadline is ignored.
+      gated.gates.single.complete(cropPath);
+      await tester.pump();
+      expect(h.controller.circle, CirclePhase.selecting);
+      expect(h.chat.requests, isEmpty);
+    });
+
+    testWidgets('back while cutting out leaves circle mode', (tester) async {
+      final gated = GatedCropper();
+      final h = await open(tester, dark: false, cropper: gated);
+      await h.controller.startCircle();
+      await tester.pump();
+      await stroke(tester, _loop);
+      await _select(tester);
+      expect(h.controller.circle, CirclePhase.cropping);
+      await tester.tap(find.bySemanticsLabel(CircleStrings.cancel));
+      await tester.pump();
+      expect(h.controller.circle, CirclePhase.off);
+      gated.gates.single.complete(cropPath);
+      await tester.pump();
+      expect(h.controller.circle, CirclePhase.off);
     });
   });
 }
