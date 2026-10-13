@@ -35,10 +35,26 @@ export function securityHeaders({ production }: Flags) {
   };
 }
 
-/** Behind the proxy, a request the proxy says arrived over plain HTTP is never served in production (health checks carry no such header). */
+/**
+ * The scheme the visitor used, from Cloudflare's `cf-visitor` header. The
+ * tunnel reaches Traefik over plain HTTP, so `x-forwarded-proto` is always
+ * "http" here and must not be trusted; without `cf-visitor` we don't know.
+ */
+export function visitorScheme(req: Request): string | null {
+  const raw = req.headers["cf-visitor"];
+  if (typeof raw !== "string") return null;
+  try {
+    const scheme = (JSON.parse(raw) as { scheme?: unknown }).scheme;
+    return typeof scheme === "string" ? scheme.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** In production, a request Cloudflare says arrived over plain HTTP is never served (health checks are exempt). */
 export function httpsOnly({ production }: Flags) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!production || req.path === "/health" || req.headers["x-forwarded-proto"] !== "http") return next();
+    if (!production || req.path === "/health" || visitorScheme(req) !== "http") return next();
     if (req.method === "GET" || req.method === "HEAD") {
       res.redirect(308, `https://${req.headers.host ?? ""}${req.originalUrl}`);
       return;

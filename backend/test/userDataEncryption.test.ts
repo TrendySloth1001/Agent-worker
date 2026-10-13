@@ -317,6 +317,7 @@ test("security headers: HSTS and strict defaults on JSON, HTML keeps its own pol
   app.use(securityHeaders({ production: true }));
   app.use(httpsOnly({ production: true }));
   app.get("/api", (_req, res) => void res.json({ ok: true }));
+  app.post("/api", (_req, res) => void res.json({ ok: true }));
   app.get("/page", (_req, res) => void res.type("html").send("<p>hi</p>"));
   app.get("/health", (_req, res) => void res.json({ ok: true }));
   const server = await new Promise<import("node:http").Server>((resolve) => {
@@ -333,13 +334,19 @@ test("security headers: HSTS and strict defaults on JSON, HTML keeps its own pol
     assert.match(api.headers.get("content-security-policy") ?? "", /default-src 'none'/);
     const page = await fetch(`${base}/page`);
     assert.equal(page.headers.get("content-security-policy"), null);
-    // The proxy says the request came in over plain HTTP: GET is redirected to https, writes are refused, /health is exempt.
-    const redirected = await fetch(`${base}/api?x=1`, { headers: { "x-forwarded-proto": "http" }, redirect: "manual" });
+    // Cloudflare says the visitor used plain HTTP: GET is redirected to https, writes are refused, /health is exempt.
+    const http = { "cf-visitor": '{"scheme":"http"}', "x-forwarded-proto": "http" };
+    const redirected = await fetch(`${base}/api?x=1`, { headers: http, redirect: "manual" });
     assert.equal(redirected.status, 308);
     assert.match(redirected.headers.get("location") ?? "", /^https:\/\/127\.0\.0\.1:\d+\/api\?x=1$/);
-    assert.equal((await fetch(`${base}/api`, { method: "POST", headers: { "x-forwarded-proto": "http" } })).status, 426);
-    assert.equal((await fetch(`${base}/health`, { headers: { "x-forwarded-proto": "http" } })).status, 200);
-    assert.equal((await fetch(`${base}/api`, { headers: { "x-forwarded-proto": "https" } })).status, 200);
+    assert.equal((await fetch(`${base}/api`, { method: "POST", headers: http })).status, 426);
+    assert.equal((await fetch(`${base}/health`, { headers: http })).status, 200);
+    // Production: the tunnel reaches Traefik over http, so x-forwarded-proto says "http" for a real HTTPS visit.
+    const viaTunnel = { "cf-visitor": '{"scheme":"https"}', "x-forwarded-proto": "http" };
+    assert.equal((await fetch(`${base}/api`, { method: "POST", headers: viaTunnel })).status, 200);
+    assert.equal((await fetch(`${base}/api`, { headers: viaTunnel, redirect: "manual" })).status, 200);
+    // No cf-visitor (not via Cloudflare): never block on x-forwarded-proto alone.
+    assert.equal((await fetch(`${base}/api`, { method: "POST", headers: { "x-forwarded-proto": "http" } })).status, 200);
   } finally {
     await new Promise((r) => server.close(r));
   }
