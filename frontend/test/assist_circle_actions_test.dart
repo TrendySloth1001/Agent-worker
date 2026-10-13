@@ -13,6 +13,7 @@ import 'package:app/core/app_scope.dart';
 import 'package:app/core/constants/assist.dart';
 import 'package:app/core/constants/circle_search.dart';
 import 'package:app/core/constants/device_actions.dart';
+import 'package:app/core/constants/media_apps.dart';
 import 'package:app/core/constants/smart_toggles.dart';
 import 'package:app/core/haptics.dart';
 import 'package:app/core/theme/app_theme.dart';
@@ -74,14 +75,24 @@ class ThrowingCropper implements CircleCropper {
 }
 
 class FakeRunner implements DeviceActionRunner {
-  FakeRunner([this.outcome = ActionOutcome.done]);
+  FakeRunner([this.outcome = ActionOutcome.done, this.installed = const {}]);
   final ActionOutcome outcome;
+
+  /// Installed packages; any other is reported as not installed.
+  final Set<String> installed;
   final runs = <DeviceAction>[];
+  final checks = <List<String>>[];
 
   @override
   Future<ActionOutcome> run(DeviceAction action) async {
     runs.add(action);
     return outcome;
+  }
+
+  @override
+  Future<Map<String, bool>> appAvailability(List<String> packages) async {
+    checks.add(packages);
+    return {for (final p in packages) p: installed.contains(p)};
   }
 }
 
@@ -483,6 +494,121 @@ void main() {
       h.chat.requests.last.history.last.content,
       CircleStrings.explainPrompt,
     );
+    h.controller.stop();
+  });
+
+  // The real-phone bug: circled album art, then "Open on youtube music".
+  const songSources = [
+    Citation(
+      id: 'W1',
+      title: 'I Met Her Again - Maan Panu - YouTube',
+      url: 'https://www.youtube.com/watch?v=abcDEF12345',
+      site: 'youtube.com',
+    ),
+    Citation(
+      id: 'W2',
+      title: 'I Met Her Again - Apple Music',
+      url: 'https://music.apple.com/in/album/i-met-her-again/1234567',
+      site: 'music.apple.com',
+    ),
+    Citation(
+      id: 'W3',
+      title: 'I Met Her Again - Gaana',
+      url: 'https://gaana.com/song/i-met-her-again',
+      site: 'gaana.com',
+    ),
+  ];
+  const songAnswer =
+      'This is the cover of **I Met Her Again** by **Maan Panu**, a Punjabi '
+      'song released in India [W1]. You can stream it on YouTube, Apple '
+      'Music and Gaana [W2][W3].';
+  const openBlock =
+      'Ready to open in YouTube Music.\n\n'
+      '```sparky-action\n'
+      '{"type":"url","url":"https://music.youtube.com/watch?v=abcDEF12345",'
+      '"app":"YouTube Music","package":"com.google.android.apps.youtube.music"}\n'
+      '```';
+
+  for (final dark in [false, true]) {
+    final theme = dark ? 'dark' : 'light';
+    testWidgets('follow-up sends no selection; open card + chips ($theme)', (
+      tester,
+    ) async {
+      final runner = FakeRunner(ActionOutcome.done, {
+        MediaApps.youtubeMusic.package,
+        MediaApps.youtube.package,
+      });
+      DeviceActionRunner.instance = runner;
+      final h = await open(tester, dark: dark);
+      await h.controller.startCircle();
+      await h.controller.circleSelect(
+        const Rect.fromLTRB(10, 400, 300, 480),
+        const Size(412, 915),
+      );
+      await _settle(tester);
+      h.chat.live!
+        ..add(const SourcesEvent(songSources))
+        ..add(const DeltaEvent(songAnswer))
+        ..add(const DoneEvent());
+      await _settle(tester);
+      expect(find.text(MediaAppStrings.openIn('YouTube')), findsOneWidget);
+      expect(find.text(MediaAppStrings.inBrowser('Gaana')), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Open on youtube music');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await _settle(tester);
+      expect(h.chat.requests, hasLength(2));
+      final follow = h.chat.requests.last;
+      expect(follow.history.last.content, 'Open on youtube music');
+      // History only: the cut-out and its screen text went with the first ask.
+      expect(follow.history.last.attachments, isEmpty);
+      expect(follow.screen, isNull);
+      expect(
+        follow.history.first.attachments.single.name,
+        CircleConfig.cropName,
+      );
+
+      h.chat.live!
+        ..add(const DeltaEvent(openBlock))
+        ..add(const DoneEvent());
+      await _settle(tester);
+      expect(
+        find.text(MediaAppStrings.openIn('YouTube Music')),
+        findsOneWidget,
+      );
+      expect(find.text(MediaAppStrings.open), findsOneWidget);
+      await _golden(tester, 'goldens/assist_open_in_app_$theme.png');
+      await tester.tap(find.text(MediaAppStrings.open));
+      await tester.pump();
+      final run = runner.runs.last;
+      expect(run.type, DeviceActionType.url);
+      expect(
+        run[DeviceActionWire.package],
+        'com.google.android.apps.youtube.music',
+      );
+    });
+  }
+
+  testWidgets('"Ask…" sends the cut-out with the next question', (
+    tester,
+  ) async {
+    final h = await open(tester, dark: false);
+    await h.controller.startCircle();
+    await h.controller.circleSelect(
+      const Rect.fromLTRB(10, 400, 300, 480),
+      const Size(412, 915),
+    );
+    await _settle(tester);
+    h.chat.live!
+      ..add(const DeltaEvent('A shoe.'))
+      ..add(const DoneEvent());
+    await _settle(tester);
+    await h.controller.circleQuick(CircleQuick.ask);
+    await h.controller.send('Is it waterproof?');
+    await _settle(tester);
+    final req = h.chat.requests.last;
+    expect(req.history.last.attachments.single.name, CircleConfig.cropName);
+    expect(req.screen, isNotNull);
     h.controller.stop();
   });
 

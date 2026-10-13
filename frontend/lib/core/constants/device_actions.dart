@@ -36,6 +36,13 @@ abstract final class DeviceActionWire {
   static const destination = 'destination';
   static const travel = 'travel';
 
+  /// url / app actions: the app the link opens in and its Android package.
+  static const app = 'app';
+  static const package = 'package';
+
+  /// url action: open this package's store page (`market://` first).
+  static const store = 'store';
+
   // Channel keys that differ from the model's (normalised in Dart)
   static const hour = 'hour';
   static const minute = 'minute';

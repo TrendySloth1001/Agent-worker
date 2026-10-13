@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../actions/open_in_chips.dart';
 import '../../../core/app_scope.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/knowledge_api.dart';
@@ -244,6 +245,11 @@ class MessageBubble extends StatelessWidget {
         if (message.citations.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
           SourceChips(citations: message.citations, used: message.usedIds),
+        ],
+        if (!message.isStreaming &&
+            OpenInChips.linksOf(message.citations).isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          OpenInChips(citations: message.citations),
         ],
         if (!message.isStreaming && !message.isError)
           SuggestionChips(message: message),

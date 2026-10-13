@@ -335,6 +335,16 @@ class AssistController extends ChangeNotifier {
   ScreenContext? _circleScreen;
   FileInfo? _circleFile;
 
+  /// "Ask…" was tapped: the next question goes with the cut-out. Free-text
+  /// follow-ups otherwise send the history only (the server has the turn
+  /// that carried the selection).
+  bool _askWithSelection = false;
+
+  /// The request being sent carries the cut-out (the first circle search,
+  /// a Search / Explain / Translate chip, or "Ask…"): only then does the
+  /// selection's screen text go with it.
+  bool _sendingSelection = false;
+
   /// Bumped for every new selection (and on cancel): a cut-out that finishes
   /// for an older one is dropped.
   int _cropGen = 0;
@@ -348,6 +358,8 @@ class AssistController extends ChangeNotifier {
     circleView = null;
     circleCrop = null;
     circleText = '';
+    _askWithSelection = false;
+    _sendingSelection = false;
   }
 
   /// Circle to search can start (the session saw a screen).
@@ -500,6 +512,7 @@ class AssistController extends ChangeNotifier {
       case CircleQuick.ask:
         // The overlay focuses the field; the next question takes the cut-out.
         Haptics.tap();
+        _askWithSelection = true;
     }
   }
 
@@ -525,7 +538,7 @@ class AssistController extends ChangeNotifier {
   Map<String, Object>? get _screenJson {
     final c = _circleScreen;
     if (circle != CirclePhase.off && c != null) {
-      return c.withText(circleText).toJson();
+      return _sendingSelection ? c.withText(circleText).toJson() : null;
     }
     return screen?.toJson();
   }
@@ -640,10 +653,14 @@ class AssistController extends ChangeNotifier {
           .lastOrNull;
       if (cut != null) _circleFile = cut;
       final keep = _circleFile;
-      // "Ask…" about the selection: the cut-out goes with the question.
-      if (keep != null && !files.any((f) => f.id == keep.id)) {
+      // "Ask…" about the selection: the cut-out goes with the question. A
+      // plain follow-up ("open it on YouTube Music") does not re-send it.
+      if (_askWithSelection &&
+          keep != null &&
+          !files.any((f) => f.id == keep.id)) {
         sent = [...files, keep];
       }
+      _askWithSelection = false;
     }
     _start(content, sent);
     return true;
@@ -666,6 +683,7 @@ class AssistController extends ChangeNotifier {
 
   void _start(String content, List<FileInfo> files) {
     Haptics.send();
+    _sendingSelection = files.any((f) => f.name == CircleConfig.cropName);
     conversationId ??= ConversationsApi.newId();
     final question = ChatMessage(
       role: Role.user,

@@ -62,6 +62,13 @@ class DeviceActions(
         const val TEXT = "text"
         const val DESTINATION = "destination"
         const val TRAVEL = "travel"
+        const val PACKAGE = "package"
+        const val STORE = "store"
+
+        // App checks ("Open in YouTube Music": installed, or browser / store)
+        const val AVAILABILITY = "appAvailability"
+        const val PACKAGES = "packages"
+        const val MARKET = "market://details?id="
 
         const val WHATSAPP_PACKAGE = "com.whatsapp"
         const val WHATSAPP_LINK = "https://wa.me/"
@@ -77,6 +84,10 @@ class DeviceActions(
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == AVAILABILITY) {
+            val packages = (call.argument<List<*>>(PACKAGES) ?: emptyList<Any>()).filterIsInstance<String>()
+            return result.success(packages.associateWith { installed(it) })
+        }
         if (call.method != AssistProtocol.ACTIONS_RUN) return result.notImplemented()
         val args = call.arguments as? Map<*, *> ?: return result.success(AssistProtocol.RESULT_FAILED)
         result.success(run(args))
@@ -114,12 +125,16 @@ class DeviceActions(
                             s(NOTES)?.let { putExtra(CalendarContract.Events.DESCRIPTION, it) }
                         },
                 )
-                APP -> openApp(s(NAME) ?: return AssistProtocol.RESULT_FAILED)
+                APP -> {
+                    val pkg = s(PACKAGE)
+                    val launch = pkg?.takeIf { installed(it) }?.let { context.packageManager.getLaunchIntentForPackage(it) }
+                    if (launch != null) start(launch) else openApp(s(NAME) ?: return AssistProtocol.RESULT_FAILED)
+                }
                 URL -> {
                     val url = s(ADDRESS) ?: return AssistProtocol.RESULT_FAILED
                     val uri = Uri.parse(url)
                     if (uri.scheme != "https" && uri.scheme != "http") return AssistProtocol.RESULT_FAILED
-                    start(Intent(Intent.ACTION_VIEW, uri))
+                    openLink(uri, s(PACKAGE), s(STORE))
                 }
                 DIAL -> start(Intent(Intent.ACTION_DIAL, Uri.fromParts(TEL, s(NUMBER) ?: "", null)))
                 SMS -> start(
@@ -158,6 +173,31 @@ class DeviceActions(
         AssistProtocol.RESULT_UNAVAILABLE
     } catch (e: SecurityException) {
         AssistProtocol.RESULT_UNAVAILABLE
+    }
+
+    /** Whether [pkg] is installed (visible through the manifest's <queries>). */
+    private fun installed(pkg: String): Boolean = try {
+        context.packageManager.getPackageInfo(pkg, 0)
+        true
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
+    }
+
+    /**
+     * A web link: in [pkg]'s app when it is installed (YouTube Music opens
+     * music.youtube.com links itself), else wherever Android sends it (the
+     * browser). [store]: the app's store page, in the Play Store app first.
+     */
+    private fun openLink(uri: Uri, pkg: String?, store: String?): String {
+        if (store != null) {
+            val market = start(Intent(Intent.ACTION_VIEW, Uri.parse("$MARKET${Uri.encode(store)}")))
+            if (market == AssistProtocol.RESULT_OK) return market
+        }
+        if (pkg != null && installed(pkg)) {
+            val inApp = start(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg))
+            if (inApp == AssistProtocol.RESULT_OK) return inApp
+        }
+        return start(Intent(Intent.ACTION_VIEW, uri))
     }
 
     /** The launcher app whose name best matches [name]: exact, prefix, then contains. */

@@ -151,6 +151,12 @@ class ChatApi {
             'screen': ?screen,
             // Android: the phone can run confirmed actions (alarm, event...).
             'deviceActions': ?deviceActions,
+            // With actions: the recent answers' source links, so "open it
+            // on YouTube Music" opens the link the answer found.
+            if (deviceActions != null)
+              if (recentSourceLinks(history) case final links
+                  when links.isNotEmpty)
+                'sources': links,
           });
 
     // [client] stays the caller's (closing it stops the stream); the
@@ -221,4 +227,32 @@ class ChatApi {
       client.close();
     }
   }
+}
+
+/// Answers whose sources go with a request (the newest first).
+const recentSourceAnswers = 2;
+
+/// Most source links sent with a request (the server caps it at 40).
+const maxSourceLinks = 30;
+
+/// The web links the last [recentSourceAnswers] answers cited, newest first:
+/// `{url, title}` for the `sources` field of POST /chat.
+List<Map<String, String>> recentSourceLinks(List<ChatMessage> history) {
+  final out = <Map<String, String>>[];
+  final seen = <String>{};
+  final answers = history.reversed
+      .where((m) => m.role == Role.assistant && m.citations.isNotEmpty)
+      .take(recentSourceAnswers);
+  for (final m in answers) {
+    for (final c in m.citations) {
+      final uri = Uri.tryParse(c.url);
+      if (uri == null || !(uri.scheme == 'https' || uri.scheme == 'http')) {
+        continue;
+      }
+      if (!seen.add(c.url)) continue;
+      out.add({'url': c.url, if (c.title.isNotEmpty) 'title': c.title});
+      if (out.length >= maxSourceLinks) return out;
+    }
+  }
+  return out;
 }

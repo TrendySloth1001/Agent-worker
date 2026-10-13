@@ -196,6 +196,21 @@
         </intent>
         <!-- "Continue with GitHub" opens in the GitHub app when it handles the authorize URL. -->
         <package android:name="com.github.android" />
+        <!-- "Open in YouTube Music" cards and chips: installed, the link opens in the app; else the browser or the store. -->
+        <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.jio.media.jiobeats" />
+        <package android:name="com.gaana" />
+        <package android:name="com.apple.android.music" />
+        <package android:name="in.amazon.mShop.android.shopping" />
+        <package android:name="com.flipkart.android" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.vending" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
+        </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>

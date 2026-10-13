@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_scope.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/device_actions.dart';
+import '../../core/constants/media_apps.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
@@ -40,10 +41,31 @@ class _ActionCardState extends State<ActionCard> {
   ActionCardState _state = ActionCardState.pending;
   String? _message;
 
+  /// Whether the action's app (YouTube Music, Spotify…) is installed; null
+  /// while checking or when the action is not for a known app.
+  bool? _installed;
+
+  DeviceActionRunner get _runner =>
+      widget.runner ?? DeviceActionRunner.instance;
+
   @override
   void initState() {
     super.initState();
     _restore();
+    _checkApp();
+  }
+
+  /// Asks the phone whether the app is there, so the card never offers a
+  /// button that cannot work: installed, it opens in the app; if not, the
+  /// browser or the store.
+  Future<void> _checkApp() async {
+    final app = _action?.mediaApp;
+    _installed = null;
+    if (app == null || !DeviceActionRunner.supported) return;
+    final source = widget.source;
+    final r = await _runner.appAvailability([app.package]);
+    if (!mounted || widget.source != source) return;
+    setState(() => _installed = r[app.package] ?? false);
   }
 
   @override
@@ -54,6 +76,7 @@ class _ActionCardState extends State<ActionCard> {
       _state = ActionCardState.pending;
       _message = null;
       _restore();
+      _checkApp();
     }
   }
 
@@ -81,13 +104,19 @@ class _ActionCardState extends State<ActionCard> {
     }
   }
 
-  Future<void> _confirm() async {
+  /// Confirm: in the app when it is installed, else as the model wrote it.
+  Future<void> _confirm() {
     final a = _action;
-    if (a == null || _state != ActionCardState.pending) return;
+    if (a == null) return Future.value();
+    return _go(_installed == true ? a.inApp() : a);
+  }
+
+  Future<void> _go(DeviceAction? run) async {
+    final a = _action;
+    if (a == null || run == null || _state != ActionCardState.pending) return;
     Haptics.send();
     setState(() => _state = ActionCardState.running);
-    final runner = widget.runner ?? DeviceActionRunner.instance;
-    final outcome = await runner.run(a);
+    final outcome = await _runner.run(run);
     switch (outcome) {
       case ActionOutcome.done:
         Haptics.received();
@@ -131,6 +160,13 @@ class _ActionCardState extends State<ActionCard> {
         ? DeviceActionStrings.off
         : null;
     final details = a.details;
+    final app = a.mediaApp;
+    final missing = app != null && _installed == false;
+    final hint = missing
+        ? (a.type == DeviceActionType.url
+              ? MediaAppStrings.notInstalled(app.label)
+              : MediaAppStrings.appNotInstalled(app.label))
+        : a.hint;
     return Semantics(
       container: true,
       label: '${a.kicker}. ${a.title}',
@@ -153,12 +189,19 @@ class _ActionCardState extends State<ActionCard> {
                   height: DeviceActionSizes.iconCircle,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: p.accent,
+                    color: app != null ? p.surface : p.accent,
+                    border: app != null
+                        ? Border.all(color: p.border, width: AppBorder.thin)
+                        : null,
                   ),
-                  child: AppIcon(
-                    a.icon,
-                    size: AppIconSize.md,
-                    color: p.textInverse,
+                  child: Center(
+                    child: AppIcon(
+                      app?.logo ?? a.icon,
+                      size: app != null
+                          ? MediaAppSizes.cardLogo
+                          : AppIconSize.md,
+                      color: app != null ? p.textPrimary : p.textInverse,
+                    ),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
@@ -203,13 +246,50 @@ class _ActionCardState extends State<ActionCard> {
                   ),
                 ),
             ],
-            if (a.hint != null) ...[
+            if (hint != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              Text(a.hint!, style: t.bodySmall),
+              Text(hint, style: t.bodySmall),
             ],
             const SizedBox(height: AppSpacing.lg),
             if (_state == ActionCardState.pending && blocked != null)
               Text(blocked, style: t.bodySmall)
+            else if (missing &&
+                (_state == ActionCardState.pending ||
+                    _state == ActionCardState.running))
+              // Not installed: the browser (links) or the store, never a
+              // button that cannot work.
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  // Each button as wide as its label (a Wrap would stretch it).
+                  for (final button in <Widget>[
+                    _CardButton(
+                      label: DeviceActionStrings.cancel,
+                      onTap: _state == ActionCardState.running ? null : _cancel,
+                    ),
+                    _CardButton(
+                      label: MediaAppStrings.getApp,
+                      filled: a.type != DeviceActionType.url,
+                      onTap: _state == ActionCardState.running
+                          ? null
+                          : () => _go(a.storePage()),
+                    ),
+                    if (a.type == DeviceActionType.url)
+                      _CardButton(
+                        label: _state == ActionCardState.running
+                            ? DeviceActionStrings.running
+                            : MediaAppStrings.openInBrowser,
+                        filled: true,
+                        onTap: _state == ActionCardState.running
+                            ? null
+                            : () => _go(a.inBrowser()),
+                      ),
+                  ])
+                    IntrinsicWidth(child: button),
+                ],
+              )
             else if (_state == ActionCardState.pending ||
                 _state == ActionCardState.running)
               Row(
@@ -223,6 +303,8 @@ class _ActionCardState extends State<ActionCard> {
                   _CardButton(
                     label: _state == ActionCardState.running
                         ? DeviceActionStrings.running
+                        : app != null && _installed == true
+                        ? MediaAppStrings.open
                         : DeviceActionStrings.confirm,
                     filled: true,
                     onTap: _state == ActionCardState.running ? null : _confirm,

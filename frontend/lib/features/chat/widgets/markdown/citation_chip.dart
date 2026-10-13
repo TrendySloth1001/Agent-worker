@@ -113,21 +113,41 @@ String prepareCitations(String text, List<Citation> citations) {
       _listed,
       (m) => m[1]!.split(RegExp(r'[,;]')).map((t) => '[${t.trim()}]').join(),
     );
-    out.add(
-      split.replaceAllMapped(_run, (m) {
-        final kept = <String>[];
-        final seen = <String>{};
-        for (final t in _tag.allMatches(m[0]!)) {
-          final c = byId[t[1]];
-          if (c == null) continue;
-          if (seen.add('${c.kind.name}:${citeShortName(c)}')) kept.add(c.id);
-        }
-        return kept.isEmpty ? '' : '[${kept.join(citeGroupSeparator)}]';
-      }),
-    );
+    final grouped = split.replaceAllMapped(_run, (m) {
+      final kept = <String>[];
+      final seen = <String>{};
+      for (final t in _tag.allMatches(m[0]!)) {
+        final c = byId[t[1]];
+        if (c == null) continue;
+        if (seen.add('${c.kind.name}:${citeShortName(c)}')) kept.add(c.id);
+      }
+      return kept.isEmpty
+          ? _droppedMark
+          : '[${kept.join(citeGroupSeparator)}]$_keptMark';
+    });
+    out.add(tidyCitationSpacing(grouped));
   }
   return out.join('\n');
 }
+
+/// Marks a run of tags that cited nothing known (removed below).
+const _droppedMark = '\u0000';
+
+/// Marks the end of a kept tag (removed below).
+const _keptMark = '\u0001';
+
+/// No space before punctuation where tags were: a dropped tag takes the
+/// space before it ("India [W9]." reads "India.", not "India ."), and a
+/// kept chip sits right against the punctuation after it.
+final _droppedBeforePunct = RegExp('[ \\t]*$_droppedMark+[ \\t]*(?=[.,;:!?)])');
+final _keptBeforePunct = RegExp('$_keptMark[ \\t]+(?=[.,;:!?)])');
+final _marks = RegExp('[$_droppedMark$_keptMark]');
+
+@visibleForTesting
+String tidyCitationSpacing(String line) => line
+    .replaceAll(_droppedBeforePunct, '')
+    .replaceAll(_keptBeforePunct, '')
+    .replaceAll(_marks, '');
 
 /// Site logo. While it loads, or when it cannot (offline, no icon), the
 /// site's bundled logo (GitHub, Reddit, Stack Overflow…) or else a monogram
