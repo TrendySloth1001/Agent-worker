@@ -3,7 +3,7 @@ import { z } from "zod";
 import { userOf } from "../auth/context.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
-import { fixTranscript, MAX_FIX_CHARS, noteLocalSamples, type ModelCall } from "../assist/fixTranscript.js";
+import { FIX_TIMEOUT_MS, fixTranscript, MAX_FIX_CHARS, noteLocalSamples, type ModelCall } from "../assist/fixTranscript.js";
 import { slotMemories } from "../memory/store.js";
 import { parseNameCard } from "../memory/slots.js";
 import { allMyRepos } from "../github/service.js";
@@ -18,6 +18,8 @@ const bodySchema = z.object({
   exact: z.boolean().optional(),
   vocab: z.array(z.string().max(60)).max(60).optional(),
   confident: z.boolean().optional(),
+  /** The app's own deadline minus its network allowance; the server never waits longer than its default. */
+  budgetMs: z.number().int().min(200).max(FIX_TIMEOUT_MS).optional(),
   /** On-device pass timings since the last request (ms), for owner telemetry. */
   localMs: z.array(z.number().min(0).max(60_000)).max(50).optional(),
 });
@@ -41,7 +43,7 @@ export function voiceFixRouter(fake?: ModelCall): Router {
     });
     const out = await fixTranscript(
       { text: b.text, context: b.context?.slice(-2), language: b.language, exact: b.exact, vocab: b.vocab, confident: b.confident },
-      { signal: ctl.signal, ...(fake ? { call: fake, models: ["fake:model"] } : {}) },
+      { signal: ctl.signal, timeoutMs: b.budgetMs, ...(fake ? { call: fake, models: ["fake:model"] } : {}) },
     );
     // Lengths and timings only: the transcript itself is never logged.
     log.info("transcript-fix", { source: out.source, ms: out.ms, chars: b.text.length, changes: out.changes.length, ...(out.reason ? { reason: out.reason } : {}) });

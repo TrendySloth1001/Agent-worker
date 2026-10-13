@@ -218,7 +218,7 @@ const stats = {
 };
 const push = (arr: number[], v: number) => {
   if (!Number.isFinite(v) || v < 0) return;
-  arr.push(Math.round(v));
+  arr.push(Math.round(v * 100) / 100);
   if (arr.length > SAMPLES) arr.shift();
 };
 
