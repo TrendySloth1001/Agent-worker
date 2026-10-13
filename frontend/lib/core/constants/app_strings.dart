@@ -152,6 +152,10 @@ abstract final class AppStrings {
   static const stoppedByUser = 'STOPPED';
   static const errorTimeout = 'That took too long — try again.';
   static const errorInterrupted = 'The reply was interrupted.';
+  static const answerInterrupted = 'Answer interrupted';
+  static const answerRetry = 'Retry';
+  static const reconnecting = 'Reconnecting…';
+  static const reconnectingStatus = 'RECONNECTING';
   static const cantOpenLink = 'Could not open link.';
 
   // Knowledge screen

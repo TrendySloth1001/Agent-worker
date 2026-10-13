@@ -29,6 +29,8 @@ import '../features/chat/voice/voice_controller.dart';
 import '../features/chat/voice/voice_locale.dart';
 import '../features/chat/voice/voice_permission.dart';
 import '../features/chat/voice/voice_strip.dart';
+import '../features/chat/widgets/interrupted_note.dart';
+import '../features/docs/doc_text.dart';
 import '../features/chat/widgets/attachment_bar.dart';
 import '../features/chat/widgets/markdown/app_markdown.dart';
 import '../features/chat/widgets/image_strip.dart';
@@ -879,7 +881,13 @@ class _AnswerSheet extends StatelessWidget {
                     if (m.role == Role.user)
                       _Question(message: m)
                     else
-                      _Answer(message: m, onAnswerFast: c.answerFast),
+                      _Answer(
+                        message: m,
+                        onAnswerFast: c.answerFast,
+                        onRetry: identical(m, c.messages.lastOrNull)
+                            ? c.retry
+                            : null,
+                      ),
                 ],
               ),
             ),
@@ -1108,10 +1116,17 @@ String _attachLabel(ChatMessage m) {
 }
 
 class _Answer extends StatelessWidget {
-  const _Answer({required this.message, required this.onAnswerFast});
+  const _Answer({
+    required this.message,
+    required this.onAnswerFast,
+    this.onRetry,
+  });
 
   final ChatMessage message;
   final VoidCallback onAnswerFast;
+
+  /// "Answer interrupted · Retry" (the latest answer only).
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -1134,10 +1149,17 @@ class _Answer extends StatelessWidget {
         ),
       );
     }
+    // A broken stream that could not be resumed: calm, with Retry.
+    if (message.isError && message.interrupted) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: InterruptedNote(message: message, onRetry: onRetry),
+      );
+    }
     if (message.isError) {
       return Text(
         message.content,
-        style: context.text.bodySmall.copyWith(color: p.error),
+        style: context.text.bodySmall.copyWith(color: p.textSecondary),
       );
     }
     return Column(
@@ -1158,7 +1180,15 @@ class _Answer extends StatelessWidget {
             padding: const EdgeInsets.only(top: AppSpacing.xs),
             child: Text(
               message.error!,
-              style: context.text.caption.copyWith(color: p.error),
+              style: context.text.meta.copyWith(color: p.textSecondary),
+            ),
+          ),
+        if (InterruptedNote.shows(message))
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: InterruptedNote(message: message, onRetry: onRetry),
             ),
           ),
         if (message.notice != null) ...[
@@ -1182,9 +1212,15 @@ class _Answer extends StatelessWidget {
           SourceChips(citations: message.citations, used: message.usedIds),
         ],
         if (!message.isStreaming &&
-            OpenInChips.linksOf(message.citations).isNotEmpty) ...[
+            OpenInChips.linksOf(
+              message.citations,
+              content: message.content,
+            ).isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
-          OpenInChips(citations: message.citations),
+          OpenInChips(
+            citations: message.citations,
+            content: message.content,
+          ),
         ],
       ],
     );

@@ -190,9 +190,10 @@ abstract final class MediaAppWire {
   static String youtubeThumb(String id) =>
       'https://${MediaAppSizes.youtubeThumbHost}/vi/$id/hqdefault.jpg';
 
-  /// The video id of a youtube.com / music.youtube.com / youtu.be link.
+  /// The video id of a youtube.com / music.youtube.com / youtu.be link,
+  /// including live streams (`watch?v=` or `/live/<id>`) and embeds.
   static final youtubeId = RegExp(
-    r'(?:[?&]v=|youtu\.be\/|\/shorts\/)([\w-]{6,})',
+    r'(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/|\/live\/)([\w-]{6,})',
   );
 }
 

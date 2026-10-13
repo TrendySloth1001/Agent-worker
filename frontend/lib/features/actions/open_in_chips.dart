@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_sizes.dart';
+import '../../core/constants/device_actions.dart';
 import '../../core/constants/media_apps.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
@@ -12,18 +13,53 @@ import 'device_action_runner.dart';
 /// "Open in YouTube Music" chips under an answer whose sources link to a
 /// known media, shopping or maps app (chat and overlay). A tap opens the
 /// link straight away (no model round trip, no confirm: the user chose the
-/// link): in the app when it is installed, else in the browser.
+/// link): in the app when it is installed, else in the browser. An app the
+/// answer already has an action card for (a ```sparky-action "Open in
+/// YouTube Music") gets no chip: the card is that button.
 class OpenInChips extends StatefulWidget {
-  const OpenInChips({super.key, required this.citations, this.runner});
+  const OpenInChips({
+    super.key,
+    required this.citations,
+    this.content = '',
+    this.runner,
+  });
 
   final List<Citation> citations;
+
+  /// The answer's text, for its action cards' apps.
+  final String content;
 
   /// Defaults to [DeviceActionRunner.instance].
   final DeviceActionRunner? runner;
 
-  /// The links worth a chip, or none (then the widget draws nothing).
-  static List<(MediaApp, String)> linksOf(List<Citation> citations) =>
-      MediaApps.openLinks(citations.map((c) => c.url));
+  /// The links worth a chip, or none (then the widget draws nothing): one
+  /// per app, minus apps an action card in [content] already opens.
+  static List<(MediaApp, String)> linksOf(
+    List<Citation> citations, {
+    String content = '',
+  }) {
+    final links = MediaApps.openLinks(citations.map((c) => c.url));
+    if (links.isEmpty) return links;
+    final carded = cardApps(content);
+    if (carded.isEmpty) return links;
+    return [
+      for (final l in links)
+        if (!carded.contains(l.$1)) l,
+    ];
+  }
+
+  static final _actionBlock = RegExp(
+    '```${RegExp.escape(DeviceActionWire.fence)}[^\\n]*\\n([\\s\\S]*?)```',
+  );
+
+  /// The apps the action cards (```sparky-action blocks) in [content] open.
+  static Set<MediaApp> cardApps(String content) {
+    if (!content.contains(DeviceActionWire.fence)) return const {};
+    return {
+      for (final m in _actionBlock.allMatches(content))
+        ?DeviceAction.parse(m.group(1)!)?.mediaApp,
+    };
+  }
 
   /// The chips to draw once [installed] is known (empty: not yet): installed
   /// apps first, no "{app} in browser" when an installed app of the same
@@ -51,7 +87,10 @@ class OpenInChips extends StatefulWidget {
 }
 
 class _OpenInChipsState extends State<OpenInChips> {
-  late List<(MediaApp, String)> _links = OpenInChips.linksOf(widget.citations);
+  late List<(MediaApp, String)> _links = _linksOf(widget);
+
+  static List<(MediaApp, String)> _linksOf(OpenInChips w) =>
+      OpenInChips.linksOf(w.citations, content: w.content);
 
   /// Installed apps by package; empty until the phone answered.
   Map<String, bool> _installed = const {};
@@ -68,8 +107,8 @@ class _OpenInChipsState extends State<OpenInChips> {
   @override
   void didUpdateWidget(OpenInChips old) {
     super.didUpdateWidget(old);
-    if (old.citations != widget.citations) {
-      _links = OpenInChips.linksOf(widget.citations);
+    if (old.citations != widget.citations || old.content != widget.content) {
+      _links = _linksOf(widget);
       _check();
     }
   }

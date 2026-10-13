@@ -42,6 +42,8 @@ abstract final class AssistStrings {
   static const docInApp = 'Being written. Open in sparky to follow it.';
   static const answerFailed = 'Something went wrong. Try again.';
   static const openFailed = 'Could not open the chat. Try again.';
+  static const openOffline =
+      "You're offline — connect, then tap Open in sparky again.";
   static const attachFailed = 'That photo could not be added.';
   static const uploading = 'Adding the photo first…';
   static String attachLabel(
@@ -201,6 +203,9 @@ abstract final class AssistConfig {
 
   /// A question waits this long for a session that is still loading.
   static const authWait = Duration(seconds: 8);
+
+  /// "Open in sparky": the wait before the one retry of a failed save.
+  static const openRetryDelay = Duration(milliseconds: 800);
 }
 
 abstract final class AssistIcons {

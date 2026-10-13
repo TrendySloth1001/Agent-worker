@@ -21,11 +21,13 @@ import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
 import '../../docs/doc_card.dart';
 import '../../docs/doc_text.dart';
 import '../chat_actions.dart';
+import '../stream_retry.dart';
 import '../share/reply_share.dart';
 import 'markdown/app_markdown.dart';
 import 'message_sheet.dart';
 import 'attachment_views.dart';
 import 'image_strip.dart';
+import 'interrupted_note.dart';
 import 'memory_chip.dart';
 import 'suggest_prompt.dart';
 import 'source_chips.dart';
@@ -136,6 +138,7 @@ class MessageBubble extends StatelessWidget {
     'searching' => AppStrings.searchingWeb,
     'retrieving' => AppStrings.retrieving,
     'round_table' => TableStrings.status,
+    StreamRetry.reconnectingPhase => AppStrings.reconnectingStatus,
     _ => AppStrings.thinking,
   };
 
@@ -161,7 +164,10 @@ class MessageBubble extends StatelessWidget {
                     height: AppSizes.dot,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: message.isError ? p.accent : p.textPrimary,
+                      // An interrupted answer is not an error: no red dot.
+                      color: message.isError && !message.interrupted
+                          ? p.accent
+                          : p.textPrimary,
                     ),
                   ),
                 ),
@@ -184,7 +190,13 @@ class MessageBubble extends StatelessWidget {
           RoundTableHeader(table: message.table!, citations: message.citations),
           const SizedBox(height: AppSpacing.md),
         ],
-        if (message.isError)
+        // The stream broke and could not be resumed: calm, with Retry.
+        if (message.isError && message.interrupted)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: InterruptedNote(message: message, onRetry: onRegenerate),
+          )
+        else if (message.isError)
           Text(
             // Old saved chats may hold raw server text.
             safeOr(message.content, ErrorCopy.generic),
@@ -223,7 +235,14 @@ class MessageBubble extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             safeOr(message.error, ErrorCopy.generic),
-            style: t.caption.copyWith(color: p.accent),
+            style: t.meta.copyWith(color: p.textSecondary),
+          ),
+        ],
+        if (!message.isError && InterruptedNote.shows(message)) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: InterruptedNote(message: message, onRetry: onRegenerate),
           ),
         ],
         if (safeOrNull(message.notice) != null && !message.isError) ...[
@@ -247,9 +266,15 @@ class MessageBubble extends StatelessWidget {
           SourceChips(citations: message.citations, used: message.usedIds),
         ],
         if (!message.isStreaming &&
-            OpenInChips.linksOf(message.citations).isNotEmpty) ...[
+            OpenInChips.linksOf(
+              message.citations,
+              content: message.content,
+            ).isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
-          OpenInChips(citations: message.citations),
+          OpenInChips(
+            citations: message.citations,
+            content: message.content,
+          ),
         ],
         if (!message.isStreaming && !message.isError)
           SuggestionChips(message: message),
@@ -282,7 +307,8 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ],
               ],
-              if (onRegenerate != null)
+              // An interrupted answer offers Retry in its note.
+              if (onRegenerate != null && !message.interrupted)
                 _TextAction(
                   icon: AppIcons.regenerate,
                   label: message.isError

@@ -109,7 +109,7 @@ String prepareCitations(String text, List<Citation> citations) {
       out.add(line);
       continue;
     }
-    final split = line.replaceAllMapped(
+    final split = untickCitations(line).replaceAllMapped(
       _listed,
       (m) => m[1]!.split(RegExp(r'[,;]')).map((t) => '[${t.trim()}]').join(),
     );
@@ -128,6 +128,39 @@ String prepareCitations(String text, List<Citation> citations) {
     out.add(tidyCitationSpacing(grouped));
   }
   return out.join('\n');
+}
+
+/// One citation tag, in any of the forms [prepareCitations] reads.
+const _tagSrc = r'\[[KWDGC]\d{1,3}(?:[ \t]*[,;+][ \t]*[KWDGC]\d{1,3})*\]';
+final _anyTag = RegExp(_tagSrc);
+
+/// A code span holding nothing but tags: `` `[W3]` `` / `` `[W1] [W3]` ``.
+final _tickedTags = RegExp('`[ \\t]*((?:$_tagSrc[ \\t,]*)+?)[ \\t]*`');
+
+/// A single backtick (not part of a ``` `` ``` run).
+final _loneTick = RegExp(r'(?<!`)`(?!`)');
+
+/// The model sometimes wraps a citation in inline code (`` `[W3]` ``) or
+/// leaves an unclosed backtick in a cited line (`Chillhop — ` [W3]`). The
+/// first renders a raw `[W3]` in code font, the second a stray backtick
+/// before the chip. Unwraps the former; drops the unpaired backtick of the
+/// latter (the last single one, as markdown pairs them left to right), so
+/// real code spans are untouched.
+@visibleForTesting
+String untickCitations(String line) {
+  if (!line.contains('`') || !_anyTag.hasMatch(line)) return line;
+  final out = line.replaceAllMapped(_tickedTags, (m) => m[1]!.trim());
+  final ticks = _loneTick.allMatches(out).toList();
+  if (ticks.length.isEven) return out;
+  final at = ticks.last.start;
+  var before = out.substring(0, at);
+  var after = out.substring(at + 1);
+  // `a ` b` → `a b`, never a double space; nothing left at the line's end.
+  if (before.endsWith(' ') && (after.startsWith(' ') || after.trim().isEmpty)) {
+    before = before.trimRight();
+    after = after.trim().isEmpty ? '' : after;
+  }
+  return '$before$after';
 }
 
 /// Marks a run of tags that cited nothing known (removed below).

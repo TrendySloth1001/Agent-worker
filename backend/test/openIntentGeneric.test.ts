@@ -209,6 +209,38 @@ test("YouTube links: thumbnail from the id, title and channel from oEmbed", asyn
   assert.deepEqual(await linkMeta("https://open.spotify.com/track/9", { fetch: slow, timeoutMs: 20 }), {});
 });
 
+test("YouTube live streams and playlists still get a thumbnail", async () => {
+  // A live stream link with its video id (watch?v= or /live/<id>): the id gives the thumbnail.
+  const oembed: MetaFetch = async (url) => ({ url, body: JSON.stringify({ title: "lofi hip hop radio 📚 beats to relax/study to", author_name: "Lofi Girl" }) });
+  assert.equal(youtubeId("https://www.youtube.com/live/jfKfPfyJRdk?si=abc"), "jfKfPfyJRdk");
+  assert.equal(youtubeId("https://www.youtube.com/watch?v=jfKfPfyJRdk&list=PL123&index=2"), "jfKfPfyJRdk");
+  assert.equal((await linkMeta("https://www.youtube.com/live/jfKfPfyJRdk", { fetch: oembed })).image, "https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg");
+
+  // A playlist (no video id): oEmbed's thumbnail is the first video's, normalized to hqdefault.
+  let asked = "";
+  const playlist: MetaFetch = async (url) => {
+    asked = url;
+    return {
+      url,
+      body: JSON.stringify({ title: "Chillhop Essentials", author_name: "Chillhop Music", thumbnail_url: "https://i.ytimg.com/vi/5yx6BWlEVcY/hqdefault.jpg?sqp=x" }),
+    };
+  };
+  const m = await linkMeta("https://music.youtube.com/playlist?list=PLOzDu-MXXLliO9fBNZOQTBDddoA3FzZUo", { fetch: playlist });
+  assert.ok(decodeURIComponent(asked).includes("https://www.youtube.com/playlist?list=PLOzDu-MXXLliO9fBNZOQTBDddoA3FzZUo"), "music host asked as www");
+  assert.deepEqual(m, { title: "Chillhop Essentials", subtitle: "Chillhop Music", image: "https://i.ytimg.com/vi/5yx6BWlEVcY/hqdefault.jpg" });
+
+  // A channel's live page with no oEmbed: the page's og:image.
+  const page: MetaFetch = async (url) => {
+    if (url.includes("/oembed")) throw new Error("404");
+    return { url, body: `<meta property="og:image" content="https://i.ytimg.com/vi/jfKfPfyJRdk/maxresdefault_live.jpg"><meta property="og:title" content="Lofi Girl - live">` };
+  };
+  assert.equal((await linkMeta("https://www.youtube.com/@LofiGirl/live", { fetch: page })).image, "https://i.ytimg.com/vi/jfKfPfyJRdk/maxresdefault_live.jpg");
+
+  // A slow oEmbed never loses a thumbnail the id already gives.
+  const slow: MetaFetch = () => new Promise(() => {});
+  assert.deepEqual(await linkMeta("https://www.youtube.com/watch?v=jfKfPfyJRdk", { fetch: slow, timeoutMs: 20 }), { image: "https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg" });
+});
+
 // ---- GitHub only when the message is about GitHub ------------------------------
 
 test("GitHub rules and grounding stay off for media links and open requests", () => {

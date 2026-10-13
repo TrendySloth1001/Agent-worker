@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +26,7 @@ import '../features/auth/auth_controller.dart';
 import '../features/actions/device_action_runner.dart';
 import '../features/chat/attachments_controller.dart';
 import '../features/chat/chat_turn.dart';
+import '../features/chat/stream_retry.dart';
 import '../features/docs/doc_registry.dart';
 import '../features/settings/settings_controller.dart';
 import 'assist_bridge.dart';
@@ -242,6 +244,9 @@ class AssistController extends ChangeNotifier {
   http.Client? _client;
   StreamSubscription<ChatEvent>? _sub;
   Timer? _throttle;
+
+  /// Waits to re-send a turn whose stream broke.
+  Timer? _retryTimer;
   bool _dirty = false;
 
   bool get hasThread => messages.isNotEmpty;
@@ -757,8 +762,35 @@ class AssistController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _run({bool? roundTableOverride}) {
-    final reply = ChatMessage(role: Role.assistant, isStreaming: true);
+  /// "Answer interrupted · Retry": asks the last question again. A partial
+  /// answer stays on screen until the new one starts.
+  void retry() {
+    final last = messages.lastOrNull;
+    if (sending || last == null || last.role != Role.assistant) return;
+    if (!last.interrupted) return;
+    if (last.isError) {
+      messages.remove(last);
+      _run();
+    } else {
+      _run(into: last);
+    }
+  }
+
+  /// Streams the answer. [into] re-sends the turn for a reply whose stream
+  /// broke (its partial text stays until the new text starts); [attempt]
+  /// counts automatic retries ([StreamRetry]).
+  void _run({bool? roundTableOverride, ChatMessage? into, int attempt = 0}) {
+    if (into != null) messages.remove(into);
+    final reply = into ?? ChatMessage(role: Role.assistant, isStreaming: true);
+    if (into != null) {
+      reply
+        ..isStreaming = true
+        ..interrupted = false
+        ..error = null
+        ..status = StreamRetry.reconnectingPhase;
+    }
+    // Text from the broken stream, replaced when the new answer starts.
+    var stale = into != null && reply.content.isNotEmpty;
     final history = [
       for (final m in messages)
         if (!m.isStreaming &&
@@ -766,6 +798,7 @@ class AssistController extends ChangeNotifier {
             (m.content.trim().isNotEmpty || m.attachments.isNotEmpty))
           m,
     ];
+    // (Computed before [reply] is added back, so a retry never sends it.)
     messages.add(reply);
     sending = true;
     notifyListeners();
@@ -796,6 +829,44 @@ class AssistController extends ChangeNotifier {
         reply.content = text;
       } else {
         reply.error = text;
+      }
+      finish();
+    }
+
+    // The stream broke ([error] null: closed without `done`, e.g. a server
+    // redeploy). Re-sent after a short wait, twice at most, keeping the
+    // partial text; then "Answer interrupted · Retry", never an error line.
+    void broke(Object? error) {
+      if (session != _session) return;
+      final retryable = StreamRetry.retryable(error);
+      final wait = StreamRetry.delay(attempt);
+      if (retryable && wait != null && reply.tablePhase == null) {
+        _throttle?.cancel();
+        _throttle = null;
+        _closeStream();
+        reply.status = StreamRetry.reconnectingPhase;
+        notifyListeners();
+        _retryTimer?.cancel();
+        _retryTimer = Timer(wait, () {
+          _retryTimer = null;
+          if (session != _session) return;
+          _run(
+            roundTableOverride: roundTableOverride,
+            into: reply,
+            attempt: attempt + 1,
+          );
+        });
+        return;
+      }
+      if (!retryable) {
+        fail(_errorText(error!));
+        return;
+      }
+      stale = false;
+      reply.interrupted = true;
+      if (reply.content.isEmpty) {
+        reply.isError = true;
+        reply.content = AppStrings.answerInterrupted;
       }
       finish();
     }
@@ -839,13 +910,22 @@ class AssistController extends ChangeNotifier {
         case ModelEvent(:final model):
           reply.modelId = model;
         case DeltaEvent(:final text):
+          if (stale) {
+            stale = false;
+            reply.content = '';
+          }
           reply.content += text;
           _scheduleNotify();
         case ResetEvent():
+          stale = false;
           reply.content = '';
           reply.notice = null;
           notifyListeners();
         case DoneEvent(:final model, :final used):
+          if (stale) {
+            stale = false;
+            reply.content = '';
+          }
           reply.modelId = model ?? reply.modelId;
           reply.usedIds = used.toSet();
           Haptics.received();
@@ -874,18 +954,10 @@ class AssistController extends ChangeNotifier {
             .stream(api, client, history, screen: _screenJson)
             .listen(
               onEvent,
-              onError: (Object error) {
-                if (session != _session) return;
-                fail(_errorText(error));
-              },
+              onError: broke,
               onDone: () {
                 if (session != _session || !reply.isStreaming) return;
-                if (reply.content.isEmpty) {
-                  fail(AppStrings.errorInterrupted);
-                } else {
-                  reply.error = AppStrings.errorInterrupted;
-                  finish();
-                }
+                broke(null);
               },
               cancelOnError: true,
             );
@@ -947,6 +1019,8 @@ class AssistController extends ChangeNotifier {
 
   void _cancelStream() {
     _session++;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _throttle?.cancel();
     _throttle = null;
     _dirty = false;
@@ -995,9 +1069,22 @@ class AssistController extends ChangeNotifier {
     return _save();
   }
 
+  /// The last save failed for want of a network (not a server refusal).
+  bool _saveOffline = false;
+
+  /// No answer at all ([ConversationsApi] reports that as an
+  /// [ApiException] without a status).
+  static bool _isOffline(Object e) =>
+      (e is ApiException && e.status == null) ||
+      e is SocketException ||
+      e is HandshakeException ||
+      e is http.ClientException ||
+      e is TimeoutException;
+
   /// Saves [_savable] under [conversationId], after any save in flight; true
-  /// when it is stored. Marked as an assistant chat (the sidebar's icon).
-  Future<bool> _save() {
+  /// when it is stored. Marked as an assistant chat (the sidebar's icon)
+  /// unless [origin] is false (the fallback when the server refuses it).
+  Future<bool> _save({bool origin = true}) {
     final saved = _savable;
     if (!saved.any((m) => m.role == Role.assistant && !m.isError)) {
       return Future.value(false);
@@ -1012,11 +1099,13 @@ class AssistController extends ChangeNotifier {
         await conversations.save(
           id,
           saved,
-          origin: ConversationSummary.originAssistant,
+          origin: origin ? ConversationSummary.originAssistant : null,
         );
         if (conversationId == id) _savedKey = key;
+        _saveOffline = false;
         return true;
-      } catch (_) {
+      } catch (e) {
+        _saveOffline = _isOffline(e);
         return false;
       }
     });
@@ -1024,12 +1113,16 @@ class AssistController extends ChangeNotifier {
     return next;
   }
 
-  /// Opens this chat in the app: it is already in the history (autosave);
-  /// otherwise it is saved first. With no chat, just opens the app.
+  /// Opens this chat in the app. It is usually in the history already
+  /// (autosave); if that save failed or is still running, it is saved (or
+  /// waited for) first, and a failed save is retried once: after a short
+  /// wait when the network blipped, without the assistant tag when the
+  /// server refused it. Only a phone that is really offline gets a message.
+  /// With no answer to keep, just opens the app.
   Future<bool> openInSparky() async {
     if (opening) return false;
     Haptics.tap();
-    if (!_savable.any((m) => m.role == Role.assistant)) {
+    if (!_savable.any((m) => m.role == Role.assistant && !m.isError)) {
       return bridge.openApp();
     }
     if (streaming) stop();
@@ -1037,13 +1130,21 @@ class AssistController extends ChangeNotifier {
     notice = null;
     notifyListeners();
     final id = conversationId ??= ConversationsApi.newId();
-    if (!await _save()) {
+    var saved = await _save();
+    if (!saved) {
+      if (_saveOffline) await Future<void>.delayed(AssistConfig.openRetryDelay);
+      saved = await _save(origin: _saveOffline);
+    }
+    if (!saved) {
       opening = false;
       Haptics.error();
-      _setNotice(AssistStrings.openFailed);
+      _setNotice(
+        _saveOffline ? AssistStrings.openOffline : AssistStrings.openFailed,
+      );
       return false;
     }
-    final ok = await bridge.openApp('${AssistConfig.chatLinkPrefix}$id');
+    final link = '${AssistConfig.chatLinkPrefix}$id';
+    final ok = await bridge.openApp(link) || await bridge.openApp(link);
     opening = false;
     if (!ok) _setNotice(AssistStrings.openFailed);
     notifyListeners();
