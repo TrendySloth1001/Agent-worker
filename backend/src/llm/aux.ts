@@ -24,6 +24,7 @@ export const AUX_PURPOSES = new Set([
   "kb-rerank",
   "toggle-suggest",
   "followups",
+  "transcript-fix",
 ]);
 
 export const isAux = (purpose: string | undefined): boolean => !!purpose && AUX_PURPOSES.has(purpose);

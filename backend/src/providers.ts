@@ -70,7 +70,7 @@ export function mapFinish(reason: string): "length" | "content_filter" | "stop" 
 /** `tokens` yields text deltas; `usage` is filled in as the stream progresses. */
 export type StreamHandle = { tokens: AsyncGenerator<string>; usage: StreamUsage };
 
-export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low"; /** Quota re-probe: bypasses the exhausted-quota guard. */ probe?: boolean };
+export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low"; /** Sampling temperature (OpenAI-compatible providers); unset = provider default. */ temperature?: number; /** Quota re-probe: bypasses the exhausted-quota guard. */ probe?: boolean };
 
 /**
  * Streams one model. A provider (or model) whose quota is known to be exhausted

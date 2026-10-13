@@ -12,7 +12,7 @@ export function streamOpenAiCompatible(target: OpenAiCompatible, model: string, 
     const lines = postLines(
       target.url,
       { Authorization: `Bearer ${target.apiKey}` },
-      { model, messages: toOpenAiMessages(messages), stream: true, stream_options: { include_usage: true }, ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}), ...(opts.reasoningEffort && target.provider === "groq" && model.startsWith("openai/gpt-oss") ? { reasoning_effort: opts.reasoningEffort } : {}) },
+      { model, messages: toOpenAiMessages(messages), stream: true, stream_options: { include_usage: true }, ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}), ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}), ...(opts.reasoningEffort && target.provider === "groq" && model.startsWith("openai/gpt-oss") ? { reasoning_effort: opts.reasoningEffort } : {}) },
       { ...opts, onResponse: (res) => recordRateHeaders(`${target.provider}:${model}`, res.headers) },
     );
     for await (const line of lines) {

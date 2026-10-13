@@ -9,6 +9,7 @@ import { quotaSnapshot } from "../llm/quota.js";
 import { webStats } from "../web/stats.js";
 import { breaker as webBreaker, PROVIDERS as WEB_PROVIDERS } from "../web/providers.js";
 import { budgetSnapshot } from "../llm/budget.js";
+import { transcriptFixSnapshot } from "../assist/fixTranscript.js";
 import { slotSnapshot } from "../llm/slots.js";
 import { AppError } from "../util/errors.js";
 import { openSse } from "../util/sse.js";
@@ -68,7 +69,7 @@ telemetryRouter.get("/overview", async (req, res) => {
 
   // Exhausted provider/model quotas, e.g. "Ollama: quota exhausted until 1 Nov".
   // Live budgets: minute/day use per model or account, pre-call skips, waits, aux deferrals and per-user cap hits.
-  res.json({ ...data, models, quota: quotaSnapshot(), budgets: { ...budgetSnapshot(), slots: slotSnapshot() } });
+  res.json({ ...data, models, quota: quotaSnapshot(), budgets: { ...budgetSnapshot(), slots: slotSnapshot() }, voiceFix: transcriptFixSnapshot() });
 });
 
 function emptyModel(provider: string, model: string) {
