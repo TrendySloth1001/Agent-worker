@@ -3,6 +3,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'app_icons.dart';
 import 'app_sizes.dart';
 import 'brand_logos.dart';
+import 'telemetry.dart';
 
 /// Settings → Your API keys: bring-your-own provider keys, the key sheet,
 /// the first-open intro and the "Your usage" view. Provider names, links and
@@ -139,6 +140,68 @@ abstract final class ApiKeysIntroStrings {
   ];
 }
 
+/// The first-open intro to "Your usage" (three swipeable pages).
+abstract final class UsageIntroStrings {
+  static const pages = 3;
+
+  static const skip = ApiKeysIntroStrings.skip;
+  static const next = ApiKeysIntroStrings.next;
+  static const back = ApiKeysIntroStrings.back;
+  static const done = 'See my usage';
+
+  /// The small link on the usage view that reopens the intro.
+  static const howItWorks = 'How it works';
+
+  static const analyticsKicker = 'YOUR ANALYTICS';
+  static const analyticsTitle = 'Your own analytics.';
+  static const analyticsBody =
+      'See how many requests you sent, how many tokens they used and which '
+      'models answered, day by day, for every chat that ran on your keys.';
+
+  static const onlyYoursKicker = 'ONLY YOURS';
+  static const onlyYoursTitle = 'Only yours.';
+  static const onlyYoursBody =
+      'This is your data and nobody else\'s. It stays private to you.';
+  static const onlyYoursPoints = [
+    (
+      icon: ApiKeysIcons.key,
+      title: 'Just your keys',
+      detail: 'Only chats that ran on keys you added.',
+    ),
+    (
+      icon: ApiKeysIcons.lock,
+      title: 'Never other people\'s',
+      detail: 'You never see anyone else\'s numbers, and they never see yours.',
+    ),
+    (
+      icon: ApiKeysIcons.usage,
+      title: 'Never the server\'s',
+      detail: 'sparky\'s own usage is not mixed in.',
+    ),
+  ];
+
+  static const workKicker = 'MAKE IT WORK FOR YOU';
+  static const workTitle = 'Make it work for you.';
+  static const workBody = 'A few quick ways to put your numbers to use.';
+  static const workPoints = [
+    (
+      icon: ApiKeysIcons.day,
+      title: 'Spot heavy days',
+      detail: 'See which days you used the most.',
+    ),
+    (
+      icon: ApiKeysIcons.models,
+      title: 'Compare models',
+      detail: 'See which models answered and how fast.',
+    ),
+    (
+      icon: ApiKeysIcons.warning,
+      title: 'Catch a key running low',
+      detail: 'Notice failures early, before a key runs out.',
+    ),
+  ];
+}
+
 /// "Your usage" view.
 abstract final class KeyUsageStrings {
   static const title = 'Your usage';
@@ -181,6 +244,9 @@ abstract final class ApiKeysIcons {
   static const test = AppIcons.check;
   static const usage = HugeIcons.strokeRoundedAnalytics01;
   static const info = HugeIcons.strokeRoundedInformationCircle;
+  static const day = HugeIcons.strokeRoundedCalendar03;
+  static const models = TelemetryIcons.models;
+  static const warning = AppIcons.alert;
   static const paste = HugeIcons.strokeRoundedClipboard;
   static const show = HugeIcons.strokeRoundedView;
   static const hide = HugeIcons.strokeRoundedViewOff;
@@ -194,4 +260,7 @@ abstract final class ApiKeysIcons {
 /// SharedPreferences key: the intro was seen by this account on this phone.
 abstract final class ApiKeysPrefs {
   static String introSeen(String userId) => 'api_keys_intro_$userId';
+
+  /// The usage intro was seen by this account on this phone.
+  static String usageIntroSeen(String userId) => 'key_usage_intro_$userId';
 }

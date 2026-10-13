@@ -2,26 +2,31 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/api_keys.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/telemetry.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/m3_kit_extras.dart';
 import '../../../core/widgets/model_logo.dart';
 import '../../../data/api_keys_api.dart';
+import '../../auth/auth_controller.dart';
 import '../format.dart';
 import '../telemetry/telemetry_format.dart';
 import '../telemetry/telemetry_widgets.dart';
+import 'usage_intro_screen.dart';
 
 /// "Your usage": the caller's own calls on their own keys, last 7 or 30
 /// days. Same look as the owner telemetry screen, but only their data.
 class KeyUsageScreen extends StatefulWidget {
-  const KeyUsageScreen({super.key, this.api});
+  const KeyUsageScreen({super.key, this.api, this.userId});
 
-  /// Test seam.
+  /// Test seams.
   final ApiKeysApi? api;
+  final String? userId;
 
   static Future<void> open(BuildContext context) {
     Haptics.tap();
@@ -46,6 +51,22 @@ class _KeyUsageScreenState extends State<KeyUsageScreen> {
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _firstOpen());
+  }
+
+  String get _uid => widget.userId ?? AuthController.instance.user?.id ?? '';
+
+  /// The intro shows the first time this view opens (per account).
+  Future<void> _firstOpen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = ApiKeysPrefs.usageIntroSeen(_uid);
+      if (prefs.getBool(key) ?? false) return;
+      await prefs.setBool(key, true);
+    } catch (_) {
+      return; // Can't remember it, so don't nag.
+    }
+    if (mounted) await UsageIntroScreen.open(context);
   }
 
   Future<void> _load() async {
@@ -83,6 +104,14 @@ class _KeyUsageScreenState extends State<KeyUsageScreen> {
     return M3Page(
       title: KeyUsageStrings.title,
       onRefresh: _load,
+      actions: [
+        IconButton(
+          key: const ValueKey('usage-how-it-works'),
+          tooltip: UsageIntroStrings.howItWorks,
+          icon: const AppIcon(ApiKeysIcons.info, size: AppIconSize.md),
+          onPressed: () => UsageIntroScreen.open(context),
+        ),
+      ],
       slivers: [
         M3Body(
           children: [

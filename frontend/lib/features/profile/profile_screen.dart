@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,6 +16,7 @@ import '../../core/platform/google_auth.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/dot_meter.dart';
+import '../../core/widgets/dot_matrix_backdrop.dart';
 import '../../core/widgets/user_avatar.dart';
 import '../../data/account_api.dart';
 import '../../data/auth_models.dart';
@@ -442,7 +444,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// Large avatar over a dot grid, name, email, and tiny mono metadata.
+  static const _ringSize =
+      SettingsSizes.heroAvatar + 2 * SettingsSizes.heroRingWidth;
+
+  /// The badge's centre sits on the avatar's bottom-right edge (45 degrees).
+  static final _badgeInset =
+      _ringSize / 2 -
+      SettingsSizes.heroAvatar / 2 * math.cos(math.pi / 4) -
+      SettingsSizes.heroBadge / 2;
+
+  /// Shapes the dots into a ring: clear under the avatar, soft at both edges.
+  static Shader _ringMask(Rect rect) {
+    const r = _ringSize / 2;
+    const inner = SettingsSizes.heroAvatar / 2;
+    const fade = SettingsSizes.heroRingFade;
+    return RadialGradient(
+      radius: 0.5,
+      colors: const [
+        Color(0x00000000),
+        Color(0x00000000),
+        Color(0xFF000000),
+        Color(0xFF000000),
+        Color(0x00000000),
+      ],
+      stops: const [0, (inner - 2) / r, (inner + fade) / r, (r - fade) / r, 1],
+    ).createShader(rect);
+  }
+
+  /// Large avatar in a ring of dots, name, email, and tiny mono metadata.
   Widget _hero(BuildContext context) {
     final user = _auth.user;
     final tt = Theme.of(context).textTheme;
@@ -458,52 +487,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SizedBox(
             width: SettingsSizes.heroDotField,
             height: SettingsSizes.heroDotField,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                const DotGrid(size: SettingsSizes.heroDotField),
-                Semantics(
-                  button: true,
-                  label: ProfileCopy.changePhoto,
-                  child: GestureDetector(
-                    onTap: _savingPhoto ? null : _pickPhoto,
+            // A thin ring of animated dots around the avatar: ink at rest,
+            // red only where the opening wave or a touch passes. The avatar
+            // and the edit badge sit on top (taps still work).
+            child: Center(
+              child: SizedBox(
+                width: _ringSize,
+                height: _ringSize,
+                child: DotMatrixBackdrop.page(
+                  spacing: SettingsSizes.heroDotSpacing,
+                  glow: false,
+                  mask: _ringMask,
+                  child: SizedBox.square(
+                    dimension: _ringSize,
                     child: Stack(
                       alignment: Alignment.center,
+                      clipBehavior: Clip.none,
                       children: [
-                        _HeroAvatar(user: user),
-                        if (_savingPhoto)
-                          const SizedBox(
-                            width: SettingsSizes.heroAvatar,
-                            height: SettingsSizes.heroAvatar,
-                            child: CircularProgressIndicator(
-                              strokeWidth: AppBorder.thick,
+                        Semantics(
+                          button: true,
+                          label: ProfileCopy.changePhoto,
+                          child: GestureDetector(
+                            onTap: _savingPhoto ? null : _pickPhoto,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                _HeroAvatar(user: user),
+                                if (_savingPhoto)
+                                  const SizedBox(
+                                    width: SettingsSizes.heroAvatar,
+                                    height: SettingsSizes.heroAvatar,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: AppBorder.thick,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
+                        ),
+                        Positioned(
+                          right: _badgeInset,
+                          bottom: _badgeInset,
+                          child: _EditBadge(
+                            onPressed: _savingPhoto ? null : _pickPhoto,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-                Positioned(
-                  right:
-                      (SettingsSizes.heroDotField - SettingsSizes.heroAvatar) /
-                          2 -
-                      AppSpacing.xs,
-                  bottom:
-                      (SettingsSizes.heroDotField - SettingsSizes.heroAvatar) /
-                          2 -
-                      AppSpacing.xs,
-                  child: IconButton.filledTonal(
-                    tooltip: ProfileCopy.changePhoto,
-                    constraints: const BoxConstraints.tightFor(
-                      width: SettingsSizes.badge,
-                      height: SettingsSizes.badge,
-                    ),
-                    padding: EdgeInsets.zero,
-                    icon: const AppIcon(AppIcons.edit, size: AppIconSize.sm),
-                    onPressed: _savingPhoto ? null : _pickPhoto,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           Text(
@@ -645,6 +678,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
+/// The small round "change photo" button on the avatar's edge, with a border
+/// in the page colour so it reads as a separate badge.
+class _EditBadge extends StatelessWidget {
+  const _EditBadge({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: context.palette.background,
+          width: SettingsSizes.heroBadgeBorder,
+        ),
+      ),
+      child: IconButton.filled(
+        tooltip: ProfileCopy.changePhoto,
+        style: IconButton.styleFrom(
+          backgroundColor: context.palette.textPrimary,
+          foregroundColor: context.palette.background,
+        ),
+        constraints: const BoxConstraints.tightFor(
+          width: SettingsSizes.heroBadge,
+          height: SettingsSizes.heroBadge,
+        ),
+        padding: EdgeInsets.zero,
+        icon: const AppIcon(AppIcons.edit, size: AppIconSize.sm),
+        onPressed: onPressed,
+      ),
+    );
+  }
+}
+
 /// Photo, or a dot-matrix monogram of the initials when there is none.
 class _HeroAvatar extends StatelessWidget {
   const _HeroAvatar({required this.user});
@@ -655,9 +723,17 @@ class _HeroAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = user;
     if (u == null || u.avatarBytes != null || u.avatarUrl != null) {
-      return UserAvatar(user: u, size: SettingsSizes.heroAvatar);
+      return UserAvatar(
+        user: u,
+        size: SettingsSizes.heroAvatar,
+        bordered: false,
+      );
     }
-    return DotMonogram(text: u.initials, size: SettingsSizes.heroAvatar);
+    return DotMonogram(
+      text: u.initials,
+      size: SettingsSizes.heroAvatar,
+      bordered: false,
+    );
   }
 }
 

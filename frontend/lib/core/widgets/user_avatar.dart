@@ -6,10 +6,18 @@ import '../theme/app_palette.dart';
 
 /// Round avatar: the account photo, or initials on a bordered circle.
 class UserAvatar extends StatelessWidget {
-  const UserAvatar({super.key, required this.user, required this.size});
+  const UserAvatar({
+    super.key,
+    required this.user,
+    required this.size,
+    this.bordered = true,
+  });
 
   final AuthUser? user;
   final double size;
+
+  /// Draws the thin outline.
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +58,9 @@ class UserAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: p.surfaceRaised,
-        border: Border.all(color: p.borderStrong, width: AppBorder.thin),
+        border: bordered
+            ? Border.all(color: p.borderStrong, width: AppBorder.thin)
+            : null,
       ),
       child: child,
     );

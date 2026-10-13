@@ -45,13 +45,13 @@ enum DotMatrixMode {
 /// are drawn in batched point calls, halos in one atlas call. With reduced
 /// motion it paints one still, settled frame.
 ///
-/// [DotMatrixBackdrop.page] is the calm variant for page backgrounds: the
-/// same engine, but no veil, haze, aurora or halos, and ink dots on the same
-/// grid as `DotGridBackground` (same spacing, radius and colour). It opens
-/// with a soft wave, ripples gently under the finger and breathes faintly
-/// in the accent, then comes to rest: once settled and untouched for a few
-/// seconds its ticker stops completely (the last frame stays painted) and a
-/// touch starts it again. It also pauses while the app is in the background.
+/// [DotMatrixBackdrop.page] is the page-background variant: the same engine
+/// and the very same look as the overlay (red energy, heat, halos, opening
+/// wave, touch ripples), but no veil, no microphone, and ink dots on the
+/// same grid as `DotGridBackground`. It then comes to rest: once settled and
+/// untouched for a few seconds its ticker stops completely (the last frame
+/// stays painted) and a touch starts it again. It also pauses while the app
+/// is in the background.
 class DotMatrixBackdrop extends StatefulWidget {
   const DotMatrixBackdrop({
     super.key,
@@ -59,14 +59,24 @@ class DotMatrixBackdrop extends StatefulWidget {
     this.wave = 0,
     this.level,
     this.interactive = true,
-  }) : page = false;
+  }) : page = false,
+       spacing = null,
+       child = null,
+       mask = null,
+       glow = true;
 
   /// The calm page-background variant (see the class docs).
-  const DotMatrixBackdrop.page({super.key, this.interactive = true})
-    : mode = DotMatrixMode.idle,
-      wave = 0,
-      level = null,
-      page = true;
+  const DotMatrixBackdrop.page({
+    super.key,
+    this.interactive = true,
+    this.spacing,
+    this.child,
+    this.mask,
+    this.glow = true,
+  }) : mode = DotMatrixMode.idle,
+       wave = 0,
+       level = null,
+       page = true;
 
   /// Whether this is the page variant.
   final bool page;
@@ -82,6 +92,22 @@ class DotMatrixBackdrop extends StatefulWidget {
   /// Whether touches on the backdrop make ripples.
   final bool interactive;
 
+  /// Page variant: the distance between dots (dp); defaults to the
+  /// overlay's.
+  final double? spacing;
+
+  /// Page variant: content shown over the dots. Touches on it still make
+  /// ripples (and reach the child's own gestures).
+  final Widget? child;
+
+  /// Page variant: fades the dots (not the child) with this shader, e.g. to
+  /// shape them into a ring.
+  final ShaderCallback? mask;
+
+  /// Page variant: whether a red glow rests along the bottom. Off, the dots
+  /// are plain ink and only light up while a wave or a touch passes.
+  final bool glow;
+
   @override
   State<DotMatrixBackdrop> createState() => _DotMatrixBackdropState();
 }
@@ -89,7 +115,11 @@ class DotMatrixBackdrop extends StatefulWidget {
 class _DotMatrixBackdropState extends State<DotMatrixBackdrop>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final Ticker _ticker = createTicker(_onTick);
-  late final _frame = DotMatrixFrame(page: widget.page);
+  late final _frame = DotMatrixFrame(
+    page: widget.page,
+    spacing: widget.spacing,
+    glow: widget.glow,
+  );
   final _cache = DotMatrixCache();
   bool _still = false;
   bool _restartWave = false;
@@ -226,14 +256,32 @@ class _DotMatrixBackdropState extends State<DotMatrixBackdrop>
         ),
       ),
     );
-    if (!widget.interactive) return paint;
+    final mask = widget.mask;
+    final dots = mask == null
+        ? paint
+        : ShaderMask(
+            shaderCallback: mask,
+            blendMode: BlendMode.dstIn,
+            child: paint,
+          );
+    final child = widget.child;
+    final body = child == null
+        ? dots
+        : Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(child: dots),
+              child,
+            ],
+          );
+    if (!widget.interactive) return body;
     // Only listens: the gesture arena (e.g. the overlay's tap to close)
     // still gets every pointer.
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: _onDown,
       onPointerMove: _onMove,
-      child: paint,
+      child: body,
     );
   }
 }
@@ -260,8 +308,8 @@ class _Blend {
 /// The animated state the painter reads: the spring field (one spring per
 /// dot), the open front, the mode weights and the microphone level.
 class DotMatrixFrame extends ChangeNotifier {
-  DotMatrixFrame({this.page = false})
-    : spacing = page ? AppSizes.dotGridSpacing : DotMatrixSizes.spacing,
+  DotMatrixFrame({this.page = false, this.glow = true, double? spacing})
+    : spacing = spacing ?? DotMatrixSizes.spacing,
       field = SpringField(
         spring: AppSprings.spring(
           period: DotMatrixPhysics.period,
@@ -294,6 +342,10 @@ class DotMatrixFrame extends ChangeNotifier {
   /// The calm page variant: no mic/thinking layers, the grid of
   /// `DotGridBackground` (anchored top-left), gentle forces.
   final bool page;
+
+  /// False: no resting glow, haze or halos (a plain dot ring that lights
+  /// up); the targets are zero.
+  final bool glow;
 
   /// Distance between dot centres, in dp.
   final double spacing;
@@ -361,7 +413,6 @@ class DotMatrixFrame extends ChangeNotifier {
   int _touchCount = 0;
 
   bool _pendingSettle = false;
-  bool _stillPage = false;
   int _seed = 0x2545F491;
 
   bool get _waving => waveStart != null;
@@ -375,7 +426,6 @@ class DotMatrixFrame extends ChangeNotifier {
   /// Replays the open front from time [now].
   void startWave(double now) {
     waveStart = now;
-    _stillPage = false;
     openedAt = now;
     _lastTouch = now;
     _frontR = 0;
@@ -390,7 +440,6 @@ class DotMatrixFrame extends ChangeNotifier {
     _think.snap();
     _stream.snap();
     waveStart = null;
-    _stillPage = true;
     level = 0;
     t = DotMatrixSizes.stillTime;
     openedAt = t;
@@ -407,18 +456,13 @@ class DotMatrixFrame extends ChangeNotifier {
   }
 
   /// A press at [p] (local dp): a round impulse under the finger.
-  void touch(Offset p) => _queue(
-    p,
-    DotMatrixSizes.touchKick * (page ? DotMatrixSizes.pageTouchKick : 1),
-    DotMatrixSizes.touchSigma,
-  );
+  void touch(Offset p) =>
+      _queue(p, DotMatrixSizes.touchKick, DotMatrixSizes.touchSigma);
 
   /// A drag through [p] that moved [distance] dp since the last event.
   void drag(Offset p, double distance) => _queue(
     p,
-    DotMatrixSizes.dragKick *
-        (page ? DotMatrixSizes.pageDragKick : 1) *
-        math.min(1.0, distance / DotMatrixSizes.dragFull),
+    DotMatrixSizes.dragKick * math.min(1.0, distance / DotMatrixSizes.dragFull),
     DotMatrixSizes.dragSigma,
   );
 
@@ -440,7 +484,8 @@ class DotMatrixFrame extends ChangeNotifier {
     _size = size;
     final step = spacing;
     if (page) {
-      // Exactly the static DotGridBackground's grid: from half a step in.
+      // Anchored top-left, from half a step in (like DotGridBackground), at
+      // the overlay's spacing.
       cols = math.max(1, ((size.width - step / 2) / step).ceil());
       rows = math.max(1, ((size.height - step / 2) / step).ceil());
       originX = step / 2;
@@ -588,8 +633,7 @@ class DotMatrixFrame extends ChangeNotifier {
     if (r <= r0) return;
     _frontR = r;
     final dist = _openDist, v = field.v, reach = _frontReach;
-    final kick =
-        DotMatrixSizes.openKick * (page ? DotMatrixSizes.pageOpenKick : 1);
+    const kick = DotMatrixSizes.openKick;
     const top = DotMatrixSizes.openKickTop;
     for (var i = 0; i < dist.length; i++) {
       final d = dist[i];
@@ -645,11 +689,12 @@ class DotMatrixFrame extends ChangeNotifier {
   /// (lifted by the microphone) plus the thinking waves.
   void _computeTargets() {
     final tgt = field.target;
-    final now = t;
-    if (page) {
-      _computePageTargets(tgt, now);
+    if (!glow) {
+      tgt.fillRange(0, tgt.length, 0);
       return;
     }
+    // The page's breathing freezes shortly after opening so it can rest.
+    final now = page ? math.min(t, openedAt + DotMatrixSizes.pageFreeze) : t;
     final busy = math.max(think, stream).clamp(0.0, 1.0);
 
     // The idle glow calms down after opening.
@@ -755,39 +800,6 @@ class DotMatrixFrame extends ChangeNotifier {
           e *= gate;
         }
         tgt[row + c] = e;
-      }
-    }
-  }
-
-  /// Page variant: a faint diagonal swell that fades out after opening
-  /// (the opening wave's front still gates it in).
-  void _computePageTargets(Float32List tgt, double now) {
-    final age = math.max(0.0, now - openedAt);
-    // A still frame (reduced motion) is the plain grid: no breathing.
-    final amp = _stillPage
-        ? 0.0
-        : DotMatrixSizes.pageBreathAmp *
-              math.exp(-age / DotMatrixSizes.pageBreathFade);
-    final gating = _waving;
-    final gateInv = 1 / DotMatrixSizes.openGate;
-    final phase = DotMatrixSizes.pageBreathSpeed * now;
-    for (var r = 0; r < rows; r++) {
-      final y = originY + r * spacing;
-      for (var c = 0; c < cols; c++) {
-        final x = originX + c * spacing;
-        final s =
-            0.5 +
-            0.5 *
-                math.sin(
-                  DotMatrixSizes.pageBreathKx * x +
-                      DotMatrixSizes.pageBreathKy * y -
-                      phase,
-                );
-        var e = amp * s;
-        if (gating) {
-          e *= ((_frontR - _openDist[r * cols + c]) * gateInv).clamp(0.0, 1.0);
-        }
-        tgt[r * cols + c] = e;
       }
     }
   }
@@ -1057,15 +1069,7 @@ class DotMatrixCache {
             1,
             unit,
           )!;
-          return f.page
-              ? _dotPaint(
-                  _ramp(
-                    k,
-                    p,
-                  ).withValues(alpha: alpha * DotMatrixSizes.pageAlphaScale),
-                  radius * DotMatrixSizes.pageRadiusScale,
-                )
-              : _dotPaint(_ramp(k, p).withValues(alpha: alpha), radius);
+          return _dotPaint(_ramp(k, p).withValues(alpha: alpha), radius);
         }),
       );
     for (var i = 0; i < lut.length; i++) {
@@ -1100,8 +1104,9 @@ class DotMatrixPainter extends CustomPainter {
     frame.layout(size);
     final c = _cache..ensure(frame, size, palette);
     final rect = Offset.zero & size;
-    if (!frame.page) {
-      canvas.drawRect(rect, c.veil);
+    // The page variant has no veil (content stays readable) but the same haze.
+    if (!frame.page) canvas.drawRect(rect, c.veil);
+    if (frame.glow) {
       canvas.drawRect(
         Rect.fromLTRB(
           0,
@@ -1124,7 +1129,6 @@ class DotMatrixPainter extends CustomPainter {
     final cols = f.cols, rows = f.rows;
     if (h.length != cols * rows || cols == 0) return;
     final step = f.spacing;
-    final page = f.page;
     const levels = DotMatrixSizes.energyLevels;
     const lo = DotMatrixSizes.energyFloor, hi = DotMatrixSizes.energyMax;
     const levelScale = levels / (hi - lo);
@@ -1138,7 +1142,7 @@ class DotMatrixPainter extends CustomPainter {
     // The aurora first: one big halo per column, behind everything.
     const ar = DotMatrixSizes.auroraRows;
     final auroraScale = DotMatrixSizes.auroraRadius * 2 / sprite;
-    for (var col = 0; col < cols && !page; col++) {
+    for (var col = 0; col < cols && f.glow; col++) {
       var sum = 0.0;
       for (var r = rows - ar; r < rows; r++) {
         final e = f.energy(r * cols + col);
@@ -1173,7 +1177,7 @@ class DotMatrixPainter extends CustomPainter {
         buf[i] = x;
         buf[i + 1] = y;
         counts[b]++;
-        if (!page && e > DotMatrixSizes.bloomFloor) {
+        if (f.glow && e > DotMatrixSizes.bloomFloor) {
           final k = math.min(1.0, (e - lo) / (hi - lo));
           final glow = math.min(
             1.0,

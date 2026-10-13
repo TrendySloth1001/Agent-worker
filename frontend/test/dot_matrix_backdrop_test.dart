@@ -215,17 +215,48 @@ void main() {
       expect(_ticking(tester), isTrue);
     });
 
-    test('same grid as DotGridBackground: no veil, resting frame is ink', () {
+    test('top-left grid at the overlay spacing, no veil, rests on a glow', () {
       final frame = DotMatrixFrame(page: true);
       final painter = DotMatrixPainter(frame: frame, palette: AppPalette.dark);
       painter.paint(Canvas(ui.PictureRecorder()), const Size(412, 915));
-      expect(frame.spacing, 18);
-      expect(frame.originX, 9);
-      expect(frame.originY, 9);
-      expect(frame.cols, 23);
-      expect(frame.rows, 51);
+      expect(frame.spacing, 12);
+      expect(frame.originX, 6);
+      expect(frame.originY, 6);
+      expect(frame.cols, 34);
+      expect(frame.rows, 76);
+      frame.settle();
+      expect(
+        frame.field.h.reduce(math.max),
+        greaterThan(0.5),
+        reason: 'the same red glow as the overlay',
+      );
+    });
+
+    test('without glow it rests on plain ink', () {
+      final frame = DotMatrixFrame(page: true, glow: false, spacing: 8);
+      DotMatrixPainter(
+        frame: frame,
+        palette: AppPalette.dark,
+      ).paint(Canvas(ui.PictureRecorder()), const Size(132, 132));
       frame.settle();
       expect(frame.field.h.reduce(math.max), 0);
+    });
+
+    testWidgets('a ring (no glow) also stops after settling', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: _light,
+          home: const SizedBox.square(
+            dimension: 132,
+            child: DotMatrixBackdrop.page(glow: false, spacing: 8),
+          ),
+        ),
+      );
+      await _run(tester, const Duration(seconds: 1));
+      expect(_ticking(tester), isTrue);
+      await _run(tester, const Duration(seconds: 12));
+      await tester.pump();
+      expect(SchedulerBinding.instance.transientCallbackCount, 0);
     });
 
     for (final dark in [false, true]) {

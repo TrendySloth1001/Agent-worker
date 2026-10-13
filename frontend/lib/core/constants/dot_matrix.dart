@@ -209,25 +209,14 @@ abstract final class DotMatrixSizes {
   /// lively phase of the breathing.
   static const stillTime = 2.6;
 
-  // ---- page variant (calm page background) ---------------------------------
+  // ---- page variant ---------------------------------------------------------
 
-  /// Red dots on a page are a touch smaller and fainter than in the overlay
-  /// (the ink grid there is 1dp, so they must not dwarf it).
-  static const pageRadiusScale = 0.8;
-  static const pageAlphaScale = 0.7;
-
-  /// The opening wave and touches are gentler than in the overlay.
-  static const pageOpenKick = 0.4;
-  static const pageTouchKick = 0.45;
-  static const pageDragKick = 0.4;
-
-  /// The ambient breathing: a slow diagonal swell in the accent, understated
-  /// and fading out so the backdrop can come to rest.
-  static const pageBreathAmp = 0.2;
-  static const pageBreathKx = 0.012;
-  static const pageBreathKy = 0.008;
-  static const pageBreathSpeed = 1.1;
-  static const pageBreathFade = 2.2;
+  /// The page variant uses every constant above (the same red energy, heat,
+  /// halos, opening wave and touches as the assistant overlay). It only
+  /// differs by: no veil, no microphone, the page's ink grid, and it rests.
+  /// The idle glow's breathing freezes this long (s) after opening so the
+  /// field can settle and the ticker stop; the glow stays on screen.
+  static const pageFreeze = 2.4;
 
   /// The page rests (ticker stops, still frame) once the wave is over, it
   /// has been this long (s) since the last touch or the opening, and every
