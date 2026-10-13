@@ -1,23 +1,20 @@
 import { config } from "../config.js";
 import { postLines } from "./http.js";
 import { MODELS } from "../models.js";
+import { OPENROUTER_VISION_FREE } from "./vision.js";
 import { UpstreamError, mapFinish, toOpenAiMessages, type Message, type StreamHandle, type StreamOptions, type StreamUsage } from "../providers.js";
 
 /** OpenRouter accepts at most this many models per request (primary + fallbacks). */
 const MAX_ROUTE_MODELS = 3;
-/** Free upstreams are often briefly saturated ("Provider returned error"); one quick retry usually lands. */
-const UPSTREAM_RETRY_MS = 1_200;
-
 /**
  * Other free OpenRouter models to fall back to server-side when [model]'s
  * upstream is saturated: OpenRouter tries them in order within one request.
+ * A request with images only falls back to other vision models.
  */
-export function fallbackModels(model: string): string[] {
+export function fallbackModels(model: string, vision = false): string[] {
   if (!model.endsWith(":free")) return [];
-  return MODELS.filter((m) => m.provider === "openrouter" && m.id !== `openrouter:${model}`)
-    .map((m) => m.id.slice("openrouter:".length))
-    .filter((id) => id.endsWith(":free"))
-    .slice(0, MAX_ROUTE_MODELS - 1);
+  const pool = vision ? OPENROUTER_VISION_FREE : MODELS.filter((m) => m.provider === "openrouter").map((m) => m.id.slice("openrouter:".length));
+  return pool.filter((id) => id !== model && id.endsWith(":free")).slice(0, MAX_ROUTE_MODELS - 1);
 }
 
 /** A 429/5xx from the free model's upstream provider, not our own key's quota. */
@@ -29,7 +26,7 @@ export function isUpstreamBusy(e: unknown): boolean {
 
 export function streamOpenRouter(model: string, messages: Message[], opts: StreamOptions): StreamHandle {
   const usage: StreamUsage = { promptTokens: null, completionTokens: null, finishReason: null, completed: false };
-  const alternates = fallbackModels(model);
+  const alternates = fallbackModels(model, messages.some((m) => (m.images?.length ?? 0) > 0));
   async function* attempt(): AsyncGenerator<string> {
     const lines = postLines(
       "https://openrouter.ai/api/v1/chat/completions",
@@ -47,18 +44,9 @@ export function streamOpenRouter(model: string, messages: Message[], opts: Strea
   }
   async function* tokens(): AsyncGenerator<string> {
     if (!config.openrouterApiKey) throw new UpstreamError(401, "OPENROUTER_API_KEY missing");
-    let sent = false;
-    try {
-      for await (const t of attempt()) {
-        sent = true;
-        yield t;
-      }
-    } catch (e) {
-      // Retry once only if nothing reached the caller yet.
-      if (sent || !isUpstreamBusy(e) || opts.signal?.aborted) throw e;
-      await new Promise((r) => setTimeout(r, UPSTREAM_RETRY_MS));
-      yield* attempt();
-    }
+    // No local retry on a saturated upstream: the request already carries OpenRouter's
+    // server-side fallbacks, and the router moves on to the next model at once.
+    yield* attempt();
   }
   return { tokens: tokens(), usage };
 }

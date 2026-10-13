@@ -5,7 +5,8 @@ import { MODELS } from "../models.js";
 import { AppError, errorBody } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
-import { pickCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor } from "../llm/router.js";
+import { pickCandidates, pickTextFallback, pickVisionCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor, type RunHooks } from "../llm/router.js";
+import { isVisionModel } from "../llm/vision.js";
 import { researchWeb, webFetch } from "../web/search.js";
 import { computeEvidence } from "../web/evidence.js";
 import { TagStream } from "../web/tagStream.js";
@@ -39,13 +40,11 @@ import { buildTurnContext, imageQuery, renderContext, topicTerms, type Attachmen
 import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
 import { isUuid } from "../docs/store.js";
 
-// Vision-capable models, best first. Auto uses only these when a request has images or video frames.
-const VISION_MODELS = [
-  "groq:qwen/qwen3.8-27b",
-  "ollama:gemma4:31b",
-  "nvidia:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-  "openrouter:google/gemma-4-31b-it:free",
-];
+// Vision-capable models live in llm/vision.ts; Auto uses only those when a request has images or video frames.
+
+/** Said to the model when no vision model could read the attached image, so the turn still gets an answer. */
+const VISION_UNAVAILABLE_NOTE =
+  "The user attached an image, but no image-capable model could read it right now. Say so in one short sentence, then answer the text of the message as well as you can without the image.";
 
 export type Citation = {
   id: string;
@@ -179,9 +178,8 @@ chatRouter.post("/", async (req, res) => {
   const wantsVision = [...fileRows.values()].some((r) => r.kind === "image" || r.kind === "video");
   let candidates = await pickCandidates(requested);
   let visionSwitched = false;
-  if (wantsVision && !(requested && VISION_MODELS.includes(requested))) {
-    const avail = new Set(await pickCandidates(undefined));
-    candidates = VISION_MODELS.filter((id) => avail.has(id));
+  if (wantsVision && !(requested && isVisionModel(requested))) {
+    candidates = await pickVisionCandidates();
     visionSwitched = !!requested;
   }
   const auto = !requested || visionSwitched;
@@ -624,36 +622,47 @@ chatRouter.post("/", async (req, res) => {
     const chairAt = Date.now();
     let firstTokenAt: number | null = null;
     const trivialAuto = auto && smallTalk && !table && !wantsVision;
-    const result = await withTelemetry({ purpose: table ? "table-chair" : "chat" }, () => runChat(
-      table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(candidates) : candidates, promptChars) : candidates,
-      table ? [...prompt, table.chairMessage] : prompt,
-      ctl.signal,
-      {
-        onQueued: () => sse.send("status", { phase: "queued" }),
-        onModel: (model, attempt) => {
-          chairCalls = attempt;
-          sse.send("model", { model, attempt });
-        },
-        onDelta: (chunk) => {
-          const raw = table ? unresolved.push(chunk) : chunk;
-          if (!raw) return;
-          const t = keepValid(tags.push(raw));
-          if (!t) return;
-          firstTokenAt ??= Date.now();
-          text += t;
-          sse.send("delta", { text: t });
-        },
-        onReset: () => {
-          tags.reset();
-          unresolved.reset();
-          text = "";
-          sse.send("reset", { reason: "fallback" });
-        },
-        onFallback: (from, to) => sse.send("notice", { code: "fallback", message: `${from} failed, trying ${to}.` }),
+    const chatHooks: RunHooks = {
+      onQueued: () => sse.send("status", { phase: "queued" }),
+      onModel: (model, attempt) => {
+        chairCalls = attempt;
+        sse.send("model", { model, attempt });
       },
-      auto || !!table,
-      { maxTokens: maxTokensFor({ mode: body.mode, intent: nlp.intent, length: body.profile?.length }) },
-    ));
+      onDelta: (chunk) => {
+        const raw = table ? unresolved.push(chunk) : chunk;
+        if (!raw) return;
+        const t = keepValid(tags.push(raw));
+        if (!t) return;
+        firstTokenAt ??= Date.now();
+        text += t;
+        sse.send("delta", { text: t });
+      },
+      onReset: () => {
+        tags.reset();
+        unresolved.reset();
+        text = "";
+        sse.send("reset", { reason: "fallback" });
+      },
+      onFallback: (from, to) => sse.send("notice", { code: "fallback", message: `${from} failed, trying ${to}.` }),
+    };
+    const maxTokens = maxTokensFor({ mode: body.mode, intent: nlp.intent, length: body.profile?.length });
+    const generate = (models: string[], messages: Message[]) =>
+      withTelemetry({ purpose: table ? "table-chair" : "chat" }, () => runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens }));
+    let result;
+    try {
+      result = await generate(
+        table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(candidates) : candidates, promptChars) : candidates,
+        table ? [...prompt, table.chairMessage] : prompt,
+      );
+    } catch (e) {
+      // No vision model could read the image (none available, all busy or out of quota): answer the text with a text model.
+      if (!(wantsVision && auto && !table && e instanceof ChatFailure && e.code === "all_models_failed") || ctl.signal.aborted) throw e;
+      log.warn("vision unavailable, answering text only", { requestId });
+      sse.send("notice", { code: "vision_unavailable", message: "The image couldn't be read right now, answering the text only." });
+      const textOnly = prompt.map((m) => (m.images?.length ? { ...m, images: undefined } : m));
+      textOnly.splice(Math.max(0, textOnly.length - 1), 0, { role: "system", content: VISION_UNAVAILABLE_NOTE });
+      result = await generate(preferForPrompt(await pickTextFallback(), promptChars), textOnly);
+    }
 
     const held = table ? unresolved.flush() : "";
     if (held) {

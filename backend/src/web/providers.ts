@@ -9,7 +9,8 @@ import { redactForExternal } from "../nlp/pii.js";
 import { CircuitBreaker } from "./breaker.js";
 import { TtlLru } from "./lru.js";
 import { readPersisted, searchCacheKey, writePersisted } from "./cacheStore.js";
-import { clip, isRateLimit, ollamaPost, statusOf } from "./ollama.js";
+import { clip, isRateLimit, OLLAMA_WEB_ID, ollamaPost, statusOf } from "./ollama.js";
+import { isQuotaBlocked } from "../llm/quota.js";
 import { terms } from "./passages.js";
 import type { Candidate, Freshness, Intent, SearchCtx } from "./types.js";
 
@@ -104,7 +105,8 @@ const ollama: Provider = {
   intents: "any",
   timeoutMs: 10_000,
   selfRecorded: true,
-  enabled: () => !!config.ollamaApiKey,
+  // Off while the Ollama account quota is exhausted (the pipeline uses the other providers).
+  enabled: () => !!config.ollamaApiKey && !isQuotaBlocked(OLLAMA_WEB_ID),
   async search(query, ctx) {
     // Ollama's search is the one that rate-limits: cap concurrency, retry a 429 once.
     const call = () => ollamaPost("web_search", { query, max_results: Math.min(ctx.limit, 8) }, ctx.signal, this.timeoutMs);
@@ -113,7 +115,7 @@ const ollama: Provider = {
       try {
         return await call();
       } catch (e) {
-        if (!isRateLimit(e)) throw e;
+        if (!isRateLimit(e) || isQuotaBlocked(OLLAMA_WEB_ID)) throw e;
         await sleep(1200 + Math.random() * 800, ctx.signal);
         return await call();
       }

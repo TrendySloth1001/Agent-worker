@@ -1,10 +1,14 @@
 import { MODELS, setCooldown, clearCooldown, cooldownUntil, type ModelInfo } from "../models.js";
 import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { config } from "../config.js";
-import { recordUsage } from "../db/usage.js";
+import { recordUsage, withTelemetry } from "../db/usage.js";
 import { getOpenRouterKeyInfo, noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
 import { estimateTokens, hasTokenBudget } from "../usage/rateLimits.js";
 import { health } from "./health.js";
+import { classifyError, clearQuota, formatUntil, isQuotaBlocked, markQuota, PROVIDER_NAMES, quotaBlock, QuotaBlockedError, restoreQuota, setQuotaProber, type ErrorClass } from "./quota.js";
+import { VISION_MODELS } from "./vision.js";
+import { ThinkFilter } from "./think.js";
+import { log } from "../util/logger.js";
 
 const FIRST_BYTE_MS = 20_000;
 const IDLE_MS = 30_000;
@@ -53,17 +57,52 @@ export function providerConfigured(provider: ModelInfo["provider"]) {
   return !!keys[provider];
 }
 
+async function openRouterExhausted(): Promise<boolean> {
+  const { info } = await getOpenRouterKeyInfo();
+  return info?.isFreeTier !== false && info?.remaining !== null && info?.remaining !== undefined && info.remaining <= 0;
+}
+
+const providerOf = (id: string) => id.slice(0, id.indexOf(":")) as ModelInfo["provider"];
+
+/**
+ * Models that may be called at all: provider configured, quota not exhausted
+ * (hard limits). Soft cooldowns (rate limits, breaker) are applied by [healthyFirst].
+ */
+function usable(ids: string[], orExhausted: boolean): string[] {
+  return ids.filter((id) => providerConfigured(providerOf(id)) && !isQuotaBlocked(id) && !(providerOf(id) === "openrouter" && orExhausted));
+}
+
+/**
+ * The models outside any cooldown; when every usable model is cooling down
+ * (rate-limit windows, breaker backoff), all of them, soonest-recovering
+ * first, so Auto never ends up with nothing to try while a provider has quota.
+ */
+export function healthyFirst(ids: string[]): string[] {
+  const healthy = ids.filter((id) => cooldownUntil(id) === null);
+  if (healthy.length > 0 || ids.length === 0) return healthy;
+  log.warn("no healthy model, trying the soonest-recovering ones", { models: ids.length });
+  return [...ids].sort((a, b) => (cooldownUntil(a) ?? 0) - (cooldownUntil(b) ?? 0));
+}
+
 /** Ordered list of model ids to try. `requested` undefined/"auto" means Auto. */
 export async function pickCandidates(requested?: string): Promise<string[]> {
+  await restoreQuota();
   if (requested && requested !== "auto") return [requested];
-  const { info } = await getOpenRouterKeyInfo();
-  const orExhausted = info?.isFreeTier !== false && info?.remaining !== null && info?.remaining !== undefined && info.remaining <= 0;
-  return MODELS.filter(
-    (m) =>
-      providerConfigured(m.provider) &&
-      cooldownUntil(m.id) === null &&
-      !(m.provider === "openrouter" && orExhausted),
-  ).map((m) => m.id);
+  return healthyFirst(usable(MODELS.map((m) => m.id), await openRouterExhausted()));
+}
+
+/** Auto for a turn with images or video frames: the vision models, healthiest first. */
+export async function pickVisionCandidates(): Promise<string[]> {
+  await restoreQuota();
+  return healthyFirst(usable(VISION_MODELS, await openRouterExhausted()));
+}
+
+/**
+ * Text-only fallback for a vision turn when no vision model could answer:
+ * every usable text model, healthy first.
+ */
+export async function pickTextFallback(): Promise<string[]> {
+  return pickCandidates(undefined);
 }
 
 const LONG_CONTEXT_CHARS = 40_000;
@@ -77,7 +116,11 @@ const LONG_CONTEXT_MODELS = new Set([
 
 /** Auto: move the 1M-context models to the front when the prompt is very long. */
 export function preferForPrompt(candidates: string[], promptChars: number): string[] {
-  if (promptChars > GROQ_MAX_PROMPT_CHARS) candidates = candidates.filter((id) => !id.startsWith("groq:"));
+  // Soft preferences only: a filter that would leave nothing to try is not applied.
+  if (promptChars > GROQ_MAX_PROMPT_CHARS) {
+    const rest = candidates.filter((id) => !id.startsWith("groq:"));
+    candidates = rest.length > 0 ? rest : candidates;
+  }
   // Skip Groq models whose per-minute token window can't fit this prompt right now.
   const need = estimateTokens(promptChars);
   const fits = candidates.filter((id) => !id.startsWith("groq:") || hasTokenBudget(id, need));
@@ -116,11 +159,37 @@ function describe(e: UpstreamError): string {
   return `${e.status} ${e.message}`.slice(0, 200);
 }
 
-export function applyCooldown(id: string, e: UpstreamError) {
-  if (e.status === 401 || e.status === 402 || e.status === 404) setCooldown(id, 3_600_000);
-  else if (e.status === 429) setCooldown(id, e.retryAfterMs ?? 60_000);
-  // Timeouts, stalls, empty/truncated streams (status 0) and 5xx: circuit breaker with exponential backoff.
-  else if (e.status === 0 || e.status >= 500) setCooldown(id, health.failure(id));
+/**
+ * Cools a failed model down according to what went wrong (see quota.ts):
+ * an exhausted quota blocks its provider (or model) until the window resets,
+ * a rate limit honours Retry-After, a saturated free upstream gets a short
+ * pause, auth/unknown-model an hour, and timeouts/5xx the growing breaker backoff.
+ */
+export function applyCooldown(id: string, e: UpstreamError): ErrorClass {
+  const c = classifyError(id, e);
+  switch (c.kind) {
+    case "quota_exhausted":
+      markQuota(id, c, e.message);
+      break;
+    case "rate_limited":
+    case "upstream_busy":
+    case "auth":
+      setCooldown(id, c.cooldownMs);
+      break;
+    case "transient":
+      setCooldown(id, health.failure(id));
+      break;
+  }
+  return c;
+}
+
+/** What the user reads when Auto ran out of models. The code stays all_models_failed. */
+export const ALL_BUSY_MESSAGE = "All free models are busy right now — try again in a minute.";
+export const ALL_QUOTA_MESSAGE = "The free models have used up their quota for now — try again later.";
+
+function quotaMessage(id: string, until: number): string {
+  const name = PROVIDER_NAMES[providerOf(id)] ?? providerOf(id);
+  return `${name} has used up its quota until ${formatUntil(until)}. Pick another model or use Auto.`;
 }
 
 /** Default output cap for chat per mode. Generous: reasoning models spend part of it thinking. */
@@ -156,26 +225,37 @@ export function preferSmall(candidates: string[]): string[] {
  * if it produced nothing; if it already produced text, Auto resets and moves
  * on, an explicit model fails.
  */
-export async function runChat(candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean, opts: { maxTokens?: number } = {}): Promise<RunResult> {
-  const queue = [...candidates];
+export async function runChat(candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean, opts: { maxTokens?: number; /** Test hook. */ stream?: typeof streamModel } = {}): Promise<RunResult> {
+  const stream = opts.stream ?? streamModel;
+  // Auto never calls a model whose quota is known to be exhausted.
+  const queue = auto ? candidates.filter((id) => !isQuotaBlocked(id)) : [...candidates];
   const deferred = new Set<string>();
   let attempt = 0;
   let lastError: UpstreamError | null = null;
   let tried = 0;
 
-  if (queue.length === 0) throw new ChatFailure("all_models_failed", "No model is available right now. Try again in a minute.", true);
+  if (queue.length === 0) {
+    const anyQuota = candidates.length > 0;
+    throw new ChatFailure("all_models_failed", anyQuota ? ALL_QUOTA_MESSAGE : ALL_BUSY_MESSAGE, true);
+  }
+  if (!auto) {
+    const blocked = quotaBlock(queue[0]);
+    if (blocked) throw new ChatFailure("model_busy", quotaMessage(queue[0], blocked.until), true);
+  }
 
   while (queue.length > 0) {
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
     const id = queue.shift()!;
-    const provider = id.slice(0, id.indexOf(":")) as ModelInfo["provider"];
+    const provider = providerOf(id);
     const sem = semaphores[provider];
 
-    // In Auto, a model whose circuit opened meanwhile (another request) is dead: skip it while others remain.
-    if (auto && queue.length > 0 && cooldownUntil(id) !== null) continue;
+    // In Auto, a model whose quota ran out or whose circuit opened meanwhile (another request) is skipped
+    // while a healthy one remains; when all are cooling down they are tried in order rather than giving up.
+    if (auto && isQuotaBlocked(id)) continue;
+    if (auto && cooldownUntil(id) !== null && queue.some((q) => cooldownUntil(q) === null && !isQuotaBlocked(q))) continue;
 
     // In Auto, prefer a provider that is free right now over waiting in line.
-    if (auto && !sem.available && !deferred.has(id) && queue.length > 0) {
+    if (auto && sem && !sem.available && !deferred.has(id) && queue.length > 0) {
       deferred.add(id);
       queue.push(id);
       continue;
@@ -183,25 +263,31 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     if (auto && tried >= MAX_AUTO_ATTEMPTS) break;
     tried++;
 
-    const release = await sem.acquire(signal, hooks.onQueued);
+    const release = sem ? await sem.acquire(signal, hooks.onQueued) : () => {};
     attempt++;
     const started = Date.now();
     let produced = false;
     let ttft: number | null = null;
     let handle: Awaited<ReturnType<typeof streamModel>> | null = null;
-    try {
-      handle = await streamModel(id, messages, { signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens });
-      for await (const token of handle.tokens) {
-        if (!produced) {
-          produced = true;
-          ttft = Date.now() - started;
-          hooks.onModel(id, attempt);
-        }
-        hooks.onDelta(token);
+    const think = new ThinkFilter();
+    const emit = (visible: string) => {
+      if (!visible) return;
+      if (!produced) {
+        // Only visible text counts: a reply that is all <think> (or whitespace) falls back to the next model.
+        if (!visible.trim()) return;
+        produced = true;
+        ttft = Date.now() - started;
+        hooks.onModel(id, attempt);
       }
+      hooks.onDelta(visible);
+    };
+    try {
+      handle = await stream(id, messages, { signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens });
+      for await (const token of handle.tokens) emit(think.push(token));
+      emit(think.flush());
       const completed = handle.usage.completed;
       // Nothing was sent to the client yet, so a stream that never signalled completion can still fall back.
-      if (!produced) throw new UpstreamError(0, completed ? "empty response" : "stream ended without completion");
+      if (!produced) throw new UpstreamError(0, completed ? "empty response (no visible text)" : "stream ended without completion");
       recordUsage({
         provider,
         model: id.slice(provider.length + 1),
@@ -215,6 +301,7 @@ export async function runChat(candidates: string[], messages: Message[], signal:
         completionTokens: handle.usage.completionTokens,
       });
       if (id.endsWith(":free")) noteOpenRouterFreeRequest();
+      clearQuota(id);
       let finishReason = handle.usage.finishReason ?? "stop";
       if (completed) {
         clearCooldown(id);
@@ -234,36 +321,47 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     } catch (e) {
       if (signal.aborted) throw e;
       const err = e instanceof UpstreamError ? e : new UpstreamError(0, (e as Error).message ?? "unknown error");
-      lastError = err;
-      recordUsage({
-        provider,
-        model: id.slice(provider.length + 1),
-        kind: "chat",
-        ok: false,
-        status: err.status || undefined,
-        latencyMs: Date.now() - started,
-        ttftMs: ttft,
-        attempt,
-        errorMessage: err.message,
-        promptTokens: handle?.usage.promptTokens ?? null,
-        completionTokens: handle?.usage.completionTokens ?? null,
-      });
-      applyCooldown(id, err);
-      console.warn(`[chat] ${id} failed: ${describe(err)}`);
+      // A quota block found at call time (another request just hit it) costs nothing: no usage row, no cooldown.
+      const skipped = err instanceof QuotaBlockedError;
+      if (!skipped) {
+        lastError = err;
+        recordUsage({
+          provider,
+          model: id.slice(provider.length + 1),
+          kind: "chat",
+          ok: false,
+          status: err.status || undefined,
+          latencyMs: Date.now() - started,
+          ttftMs: ttft,
+          attempt,
+          errorMessage: err.message,
+          promptTokens: handle?.usage.promptTokens ?? null,
+          completionTokens: handle?.usage.completionTokens ?? null,
+        });
+      } else {
+        attempt--;
+        tried--;
+      }
+      const cls = applyCooldown(id, err);
+      if (!skipped) console.warn(`[chat] ${id} failed (${cls.kind}): ${describe(err)}`);
 
       if (!auto) {
+        const blocked = quotaBlock(id);
+        if (blocked) throw new ChatFailure("model_busy", quotaMessage(id, blocked.until), true);
         const busy = err.retryable;
         throw new ChatFailure(busy ? "model_busy" : "upstream_failed", busy ? "This model is busy. Try another or use Auto." : `Model rejected the request: ${describe(err)}`, busy);
       }
       if (produced) hooks.onReset();
-      const next = queue[0];
-      if (next) hooks.onFallback(id, next);
+      const next = queue.find((q) => !isQuotaBlocked(q));
+      if (next && !skipped) hooks.onFallback(id, next);
     } finally {
       release();
     }
   }
 
-  throw new ChatFailure("all_models_failed", lastError ? `All models failed. Last error: ${describe(lastError)}` : "All models failed.", true);
+  if (lastError) console.warn(`[chat] all models failed, last error: ${describe(lastError)}`);
+  const allQuota = candidates.length > 0 && candidates.every((id) => isQuotaBlocked(id));
+  throw new ChatFailure("all_models_failed", allQuota ? ALL_QUOTA_MESSAGE : ALL_BUSY_MESSAGE, true);
 }
 
 /** Runs `fn` while holding the model's provider concurrency slot (shared with runChat). */
@@ -276,5 +374,26 @@ export async function withSlot<T>(id: string, signal: AbortSignal, fn: () => Pro
     return await fn();
   } finally {
     release();
+  }
+}
+
+/**
+ * Re-probe of an exhausted quota: one tiny request (a few tokens, bypassing the
+ * quota guard). Resolves when the provider answers, rejects with its error.
+ */
+// Probes run in the background of whichever request noticed them: keep them out of that turn's counters.
+setQuotaProber((id) => withTelemetry({ purpose: "quota-probe", turn: undefined }, () => probeQuota(id)));
+
+async function probeQuota(id: string): Promise<void> {
+  const provider = providerOf(id);
+  const started = Date.now();
+  try {
+    const handle = await streamModel(id, [{ role: "user", content: "Reply with: ok" }], { signal: AbortSignal.timeout(20_000), firstByteMs: 15_000, idleMs: 15_000, maxTokens: 8, probe: true });
+    for await (const _ of handle.tokens) break;
+    recordUsage({ provider, model: id.slice(provider.length + 1), kind: "chat", purpose: "quota-probe", ok: true, status: 200, latencyMs: Date.now() - started });
+  } catch (e) {
+    const err = e instanceof UpstreamError ? e : new UpstreamError(0, (e as Error).message ?? "probe failed");
+    recordUsage({ provider, model: id.slice(provider.length + 1), kind: "chat", purpose: "quota-probe", ok: false, status: err.status || undefined, latencyMs: Date.now() - started, errorMessage: err.message });
+    throw err;
   }
 }

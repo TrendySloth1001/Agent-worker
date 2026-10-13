@@ -5,6 +5,7 @@ import { db, isDbUp } from "../db/prisma.js";
 import { memoryEvents, usageEvents, type TelemetryEvent } from "../db/usage.js";
 import { MODELS, cooldownUntil } from "../models.js";
 import { rateSnapshots } from "../usage/rateLimits.js";
+import { quotaSnapshot } from "../llm/quota.js";
 import { AppError } from "../util/errors.js";
 import { openSse } from "../util/sse.js";
 import { BUCKETS, WINDOWS, bucketFor, events, overview, timeseries, type Bucket, type Filters, type Window } from "../telemetry/queries.js";
@@ -61,7 +62,8 @@ telemetryRouter.get("/overview", async (req, res) => {
     })
     .sort((a, b) => b.requests - a.requests || a.id.localeCompare(b.id));
 
-  res.json({ ...data, models });
+  // Exhausted provider/model quotas, e.g. "Ollama: quota exhausted until 1 Nov".
+  res.json({ ...data, models, quota: quotaSnapshot() });
 });
 
 function emptyModel(provider: string, model: string) {
