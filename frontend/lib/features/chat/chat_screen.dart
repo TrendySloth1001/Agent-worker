@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../about/whats_new_sheet.dart';
+import '../update/update_trigger.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/share_export.dart';
@@ -52,6 +53,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _shell = GlobalKey<DrawerShellState>();
   final _drawer = GlobalKey<AppDrawerState>();
   final _showScrollButton = ValueNotifier(false);
+  late final UpdateSheetTrigger _updateSheet;
 
   /// The user message being edited in place, if any.
   ChatMessage? _editing;
@@ -71,8 +73,15 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.loadModels();
     _voice = createVoiceController(scope.settings);
     // After an app update: a one-time "What's new" sheet (never on first install).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) WhatsNew.maybeShow(context);
+    // A new-version sheet waits for a calm moment, and never shares a launch
+    // with "What's new".
+    _updateSheet = UpdateSheetTrigger(
+      context: () => context,
+      isBusy: () => _controller.isSending,
+    )..start();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (await WhatsNew.maybeShow(context)) _updateSheet.whatsNewShown();
     });
     _controller.addListener(() {
       if (_controller.messages.isEmpty) _showScrollButton.value = false;
@@ -135,6 +144,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _updateSheet.dispose();
     NotificationCenter.instance.target.removeListener(_onNotificationOpened);
     ChatLaunch.instance.prompt.removeListener(_onLaunch);
     ChatLaunch.instance.fresh.removeListener(_onFresh);

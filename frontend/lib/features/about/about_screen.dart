@@ -24,6 +24,7 @@ import '../../data/usage.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../chat/widgets/open_url.dart';
 import '../onboarding/onboarding_screen.dart';
+import '../update/update_settings.dart';
 import 'changelog_screen.dart';
 import '../settings/widgets/section_header.dart';
 import '../settings/widgets/settings_kit.dart';
@@ -197,6 +198,7 @@ class _AboutScreenState extends State<AboutScreen> {
                   onTap: _copyUrl,
                 ),
               ),
+            const UpdateSettingsGroup(),
             const SettingsGroupHeader(AboutCopy.credits),
             const _Credits(),
             const SizedBox(height: AppSpacing.xl),

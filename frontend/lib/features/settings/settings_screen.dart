@@ -5,12 +5,14 @@ import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
+import '../../core/update/update_controller.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/user_avatar.dart';
 import '../auth/auth_controller.dart';
 import '../connections/connections_controller.dart';
 import '../profile/profile_screen.dart';
+import '../update/update_parts.dart';
 import 'settings_pages.dart';
 import 'widgets/settings_kit.dart';
 
@@ -47,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     [
       SettingsCategory.models,
       SettingsCategory.telemetry,
+      SettingsCategory.releases,
       SettingsCategory.server,
     ],
     [SettingsCategory.about],
@@ -81,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         scope.usage,
         AuthController.instance,
         ConnectionsController.instance,
+        UpdateController.instance,
       ]),
       builder: (context, _) => SettingsScaffold(
         title: SettingsStrings.title,
@@ -247,6 +251,12 @@ class _CategoryTile extends StatelessWidget {
       title: category.title,
       summary: categorySummary(category, scope),
       iconColor: category.ownerOnly ? context.palette.accent : null,
+      // An update is waiting: a dot on About.
+      trailing:
+          category == SettingsCategory.about &&
+              UpdateController.instance.hasUpdate
+          ? const UpdateDot()
+          : null,
       onTap: () => openSettingsCategory(context, category),
     );
   }

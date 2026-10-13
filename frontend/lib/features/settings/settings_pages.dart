@@ -17,6 +17,7 @@ import '../../core/constants/settings_copy.dart';
 import '../../core/constants/smart_toggles.dart';
 import '../../core/constants/storage.dart';
 import '../../core/constants/telemetry.dart';
+import '../../core/constants/update.dart';
 import '../../core/constants/voice.dart';
 import '../../core/platform/browsers.dart';
 import '../../core/theme/app_palette.dart';
@@ -29,6 +30,7 @@ import '../connections/connections_controller.dart';
 import '../knowledge/knowledge_screen.dart';
 import '../memory/memory_screen.dart';
 import '../profile/profile_screen.dart';
+import '../update/releases_screen.dart';
 import '../storage/storage_screen.dart';
 import '../storage/widgets/storage_usage_card.dart';
 import 'settings_controller.dart';
@@ -59,6 +61,7 @@ enum SettingsCategory {
   appearance,
   models,
   telemetry,
+  releases,
   server,
   about;
 
@@ -74,6 +77,7 @@ enum SettingsCategory {
     appearance => SettingsStrings.catAppearance,
     models => SettingsStrings.catModels,
     telemetry => SettingsStrings.catTelemetry,
+    releases => UpdateStrings.releasesTitle,
     server => SettingsStrings.catServer,
     about => SettingsStrings.catAbout,
   };
@@ -90,15 +94,20 @@ enum SettingsCategory {
     appearance => AppIcons.appearance,
     models => AppIcons.models,
     telemetry => TelemetryIcons.live,
+    releases => UpdateIcons.releases,
     server => AppIcons.server,
     about => AppIcons.about,
   };
 
   /// Only the owner sees this entry.
-  bool get ownerOnly => this == telemetry;
+  bool get ownerOnly => this == telemetry || this == releases;
 
   /// Opens an existing screen instead of a settings page.
-  bool get isDirect => this == telemetry || this == about || this == assistant;
+  bool get isDirect =>
+      this == telemetry ||
+      this == releases ||
+      this == about ||
+      this == assistant;
 }
 
 /// Opens [c]: a sub-page (optionally scrolled to [focusId]) or, for Telemetry
@@ -111,6 +120,8 @@ Future<void> openSettingsCategory(
   switch (c) {
     case SettingsCategory.telemetry:
       return Navigator.push(context, settingsRoute(const TelemetryScreen()));
+    case SettingsCategory.releases:
+      return Navigator.push(context, settingsRoute(const ReleasesScreen()));
     case SettingsCategory.about:
       return AboutScreen.open(context);
     case SettingsCategory.assistant:
@@ -194,6 +205,8 @@ String categorySummary(SettingsCategory c, AppScope scope) {
           : '$model$sep$n ${SettingsStrings.providersActive}';
     case SettingsCategory.telemetry:
       return SettingsStrings.sumTelemetry;
+    case SettingsCategory.releases:
+      return UpdateStrings.releasesSummary;
     case SettingsCategory.server:
       return serverStatusLabel(
         scope.usage.health,
@@ -736,6 +749,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
     case SettingsCategory.server:
       return _serverSections(scope);
     case SettingsCategory.telemetry:
+    case SettingsCategory.releases:
     case SettingsCategory.about:
     case SettingsCategory.assistant:
       return const [];
