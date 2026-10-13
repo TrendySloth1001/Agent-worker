@@ -5,11 +5,13 @@ import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
+import '../../core/update/update_controller.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/user_avatar.dart';
 import '../auth/auth_controller.dart';
 import '../connections/connections_controller.dart';
 import '../profile/profile_screen.dart';
+import '../update/update_parts.dart';
 import 'settings_pages.dart';
 import 'widgets/connection_notice.dart';
 import 'widgets/developer_section.dart';
@@ -50,6 +52,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Owner-only entries, in the collapsible Developer section.
   static const _developer = [
+    SettingsCategory.releases,
     SettingsCategory.server,
     SettingsCategory.telemetry,
   ];
@@ -83,6 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         scope.usage,
         AuthController.instance,
         ConnectionsController.instance,
+        UpdateController.instance,
       ]),
       builder: (context, _) => SettingsScaffold(
         title: SettingsStrings.title,
@@ -258,6 +262,12 @@ class _CategoryTile extends StatelessWidget {
       icon: category.icon,
       title: category.title,
       summary: categorySummary(category, scope),
+      // An update is waiting: a dot on About.
+      trailing:
+          category == SettingsCategory.about &&
+              UpdateController.instance.hasUpdate
+          ? const UpdateDot()
+          : null,
       onTap: () => openSettingsCategory(context, category),
     );
   }

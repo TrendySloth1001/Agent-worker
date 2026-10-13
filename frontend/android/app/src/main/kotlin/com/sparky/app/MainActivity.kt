@@ -133,6 +133,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(DeviceActions(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, authChannelName)
             .setMethodCallHandler { call, result -> handleAuth(call, result) }
+        // In-app updates: install permission and the PackageInstaller hand-over.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Updater.CHANNEL)
+            .setMethodCallHandler(Updater(this))
     }
 
     // ---- "Continue with Google" (Credential Manager) ----------------------

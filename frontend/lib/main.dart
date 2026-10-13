@@ -7,6 +7,7 @@ import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/notify/notification_center.dart';
 import 'core/platform/google_auth.dart';
+import 'core/update/update_controller.dart';
 import 'core/theme/app_theme.dart';
 import 'data/chat_api.dart';
 import 'data/files_api.dart';
@@ -15,6 +16,7 @@ import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/auth/sso/github_web_auth.dart';
 import 'features/connectors/connector_auth.dart';
+import 'features/update/update_required_screen.dart';
 import 'features/settings/settings_controller.dart';
 import 'features/settings/usage_controller.dart';
 import 'features/connections/connections_controller.dart';
@@ -41,6 +43,13 @@ Future<void> main() async {
   ConnectorAuth.instance.init();
   // "Open in sparky" from the assistant overlay, and its settings gear.
   AssistLinks.init();
+  // App updates: a quiet check shortly after start, and again once signed in.
+  UpdateController.instance.start();
+  AuthController.instance.addListener(() {
+    if (AuthController.instance.signedIn) {
+      UpdateController.instance.onSignedIn();
+    }
+  });
   runApp(App(settings: settings));
 }
 
@@ -123,7 +132,11 @@ class _AppState extends State<App> {
                   media.textScaler.scale(1) * widget.settings.textScaleFactor,
                 ),
               ),
-              child: child!,
+              // The blocking "update to continue" screen covers everything.
+              child: UpdateGate(
+                controller: UpdateController.instance,
+                child: child!,
+              ),
             );
           },
           home: const AuthGate(),

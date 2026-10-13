@@ -26,6 +26,7 @@ import '../auth/auth_controller.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../chat/widgets/open_url.dart';
 import '../onboarding/onboarding_screen.dart';
+import '../update/update_settings.dart';
 import 'changelog_screen.dart';
 import '../settings/widgets/section_header.dart';
 import '../settings/telemetry/telemetry_screen.dart';
@@ -224,6 +225,8 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: SettingsSizes.groupSpacing),
+                const UpdateSettingsGroup(),
                 const SizedBox(height: SettingsSizes.groupSpacing),
                 SettingsGroup(
                   entries: [
