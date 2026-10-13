@@ -51,6 +51,8 @@ env.json
 /android/key.properties
 /android/app/upload-keystore.jks
 test/failures/
-android/app/src/debug/
+android/app/src/debug/*
+# The debug-only network security config (cleartext to the dev machine) is tracked.
+!android/app/src/debug/res/
 android/app/src/profile/
 README.md
