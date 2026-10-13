@@ -28,6 +28,14 @@ const schema = z.object({
   GITHUB_OAUTH_CLIENT_ID: str,
   GITHUB_OAUTH_CLIENT_SECRET: str,
   CONNECTIONS_KEY: str,
+  /**
+   * Master key (32 bytes, base64 or 64 hex chars; `openssl rand -base64 32`) that wraps every user's data key
+   * (src/crypto/userData.ts). Required in production. Losing it makes all stored user content unreadable.
+   */
+  DATA_KEY: str,
+  /** Comma-separated earlier DATA_KEY values, only for unwrapping during a key rotation (`pnpm data:encrypt --rewrap`). */
+  DATA_KEY_PREVIOUS: str,
+  NODE_ENV: str,
   /** Where this server is reachable from phones/browsers (OAuth callback URLs). */
   PUBLIC_BASE_URL: str,
   GOOGLE_WEB_CLIENT_ID: str,
@@ -99,6 +107,9 @@ export const config = {
   /** Per-user GitHub connections (OAuth device flow); see src/connections. */
   githubOAuth: { clientId: env.GITHUB_OAUTH_CLIENT_ID, clientSecret: env.GITHUB_OAUTH_CLIENT_SECRET },
   connectionsKey: env.CONNECTIONS_KEY,
+  dataKey: env.DATA_KEY,
+  dataKeyPrevious: env.DATA_KEY_PREVIOUS,
+  production: env.NODE_ENV === "production",
   /** Public origin, no trailing slash; GitHub's OAuth callback is `${publicBaseUrl}/auth/github/callback`. */
   publicBaseUrl: (env.PUBLIC_BASE_URL?.trim() || "https://sparky.cloudnsofts.com").replace(/\/+$/, ""),
   /**

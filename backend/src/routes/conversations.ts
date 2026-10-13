@@ -10,7 +10,9 @@ import { mergeBriefing, type MergeChat } from "../conversations/merge.js";
 import { conversationIdsFor, deleteConversations } from "../conversations/delete.js";
 import { userOf } from "../auth/context.js";
 import { scheduleIndex } from "../recall/index.js";
-import { searchConversationIds, snippetsFor } from "../conversations/search.js";
+import { searchConversations } from "../conversations/search.js";
+import { userCrypto, type UserCrypto } from "../crypto/userData.js";
+import { CONV, openConversationText, openMessage, sealConversation, sealMessage } from "../conversations/codec.js";
 
 export const conversationsRouter = Router();
 
@@ -103,6 +105,9 @@ async function withParent(r: Conversation): Promise<Row> {
   return { ...r, parent };
 }
 
+/** A conversation row with its sealed text (title, preview, fork parent's title) decrypted; legacy plaintext passes through. */
+const openRow = (c: UserCrypto, r: Row): Row => ({ ...openConversationText(c, r), ...(r.parent ? { parent: openConversationText(c, r.parent) } : {}) });
+
 const summary = (r: Row) => ({
   id: r.id,
   title: r.title,
@@ -134,17 +139,18 @@ conversationsRouter.get("/", async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
   const archived = req.query.archived === "1" || req.query.archived === "true";
   const before = typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before)) ? new Date(req.query.before) : null;
+  const crypto = await userCrypto(uid);
   if (q) {
-    // Stemmed full-text + typo-tolerant search (src/conversations/search.ts); each item carries the matched excerpt.
-    const ids = await searchConversationIds({ uid, q, archived, before, limit });
+    // Titles and messages are encrypted, so search runs in the app on decrypted text of the caller's chats
+    // (src/conversations/search.ts): stemmed + typo-tolerant, each item carries the matched excerpt.
+    const hits = await searchConversations({ uid, q, archived, before, limit, crypto });
+    const ids = hits.map((h) => h.id);
     const found = await db().conversation.findMany({ where: { id: { in: ids }, userId: uid }, include: WITH_PARENT });
     const byId = new Map(found.map((r) => [r.id, r]));
-    const snippets = await snippetsFor(ids, q);
-    const items = ids.flatMap((id) => {
+    const items = hits.flatMap(({ id, snippet: sn }) => {
       const r = byId.get(id);
       if (!r) return [];
-      const sn = snippets.get(id);
-      return [{ ...summary(r), snippet: sn ? sn.text : null, snippetMatch: sn ? { start: sn.start, length: sn.length } : null }];
+      return [{ ...summary(openRow(crypto, r)), snippet: sn ? sn.text : null, snippetMatch: sn ? { start: sn.start, length: sn.length } : null }];
     });
     res.json({ conversations: items });
     return;
@@ -160,7 +166,7 @@ conversationsRouter.get("/", async (req, res) => {
     take: limit,
     include: WITH_PARENT,
   });
-  res.json({ conversations: rows.map(summary) });
+  res.json({ conversations: rows.map((r) => summary(openRow(crypto, r))) });
 });
 
 /** A conversation with its messages, as GET /:id returns it; null when it does not exist. */
@@ -176,9 +182,10 @@ async function loadConversation(id: string, uid: string | null) {
     },
   });
   if (!row) return null;
+  const c = await userCrypto(uid);
   return {
-    ...summary(row),
-    messages: row.messages.map((m) => ({
+    ...summary(openRow(c, row)),
+    messages: row.messages.map((raw) => openMessage(c, raw)).map((m) => ({
       role: m.role,
       content: m.content,
       model: m.model,
@@ -223,17 +230,20 @@ conversationsRouter.post("/merge", async (req, res) => {
     summarySource: briefing.source,
   };
   // One nested create: the chat and its briefing message are written atomically.
+  const c = await userCrypto(uid);
+  const text = sealConversation(c, { title, preview });
+  const first = sealMessage(c, { content: briefing.text, citations: [], images: [], evidence: [], meta, table: undefined });
   const created = await db().conversation.create({
     data: {
       id: randomUUID(),
-      title,
+      title: text.title,
       titleSource: "derived",
       messageCount: 1,
-      preview,
+      preview: text.preview,
       origin: "merge",
       mergedFrom: [a, b],
       userId: uid,
-      messages: { create: { position: 0, role: "context", content: briefing.text, meta: asJson(meta) } },
+      messages: { create: { position: 0, role: "context", content: first.content, meta: asJson(first.meta) } },
     },
     select: { id: true },
   });
@@ -273,6 +283,7 @@ conversationsRouter.post("/:id/fork", async (req, res) => {
   const id = idParam(req.params.id);
   const { at } = forkSchema.parse(req.body);
   const uid = userOf(req).id;
+  const crypto = await userCrypto(uid);
   const newId = await tx(async (c) => {
     // Raw: Prisma has no SELECT ... FOR UPDATE; the lock keeps the parent stable while copying.
     await c.$queryRaw`SELECT 1 FROM conversations WHERE id = ${id}::uuid AND user_id IS NOT DISTINCT FROM ${uid}::uuid FOR UPDATE`;
@@ -280,14 +291,15 @@ conversationsRouter.post("/:id/fork", async (req, res) => {
     if (!parent) throw new AppError(404, "not_found", "Conversation not found");
     const count = await c.conversationMessage.count({ where: { conversationId: id } });
     if (at > count) throw new AppError(400, "bad_request", "That message isn't in this chat anymore.");
-    const base = (parent.title || parent.preview || "Untitled chat").replace(/ · fork$/, "");
+    const open = openConversationText(crypto, parent);
+    const base = (open.title || open.preview || "Untitled chat").replace(/ · fork$/, "");
     const created = await c.conversation.create({
       data: {
         id: randomUUID(),
-        title: `${base.slice(0, 120 - FORK_SUFFIX.length)}${FORK_SUFFIX}`,
+        title: crypto.seal(CONV, "title", `${base.slice(0, 120 - FORK_SUFFIX.length)}${FORK_SUFFIX}`),
         titleSource: "derived",
         messageCount: at,
-        preview: parent.preview,
+        preview: parent.preview, // already sealed (or legacy plaintext): copied as is, same owner
         origin: "fork",
         forkedFrom: id,
         forkPoint: at,
@@ -295,7 +307,7 @@ conversationsRouter.post("/:id/fork", async (req, res) => {
       },
       select: { id: true },
     });
-    // Every message field is copied, so fields added to the model later come along too.
+    // Every message field is copied as stored (sealed values stay valid: same owner, AAD has no row id), so fields added to the model later come along too.
     const prefix = await c.conversationMessage.findMany({ where: { conversationId: id, position: { lt: at } }, orderBy: { position: "asc" } });
     await c.conversationMessage.createMany({
       data: prefix.map(({ conversationId: _from, ...m }) => ({
@@ -329,6 +341,8 @@ conversationsRouter.put("/:id", async (req, res) => {
   const uid = userOf(req).id;
   const firstUser = messages.find((m) => m.role === "user")?.content ?? "";
   const preview = firstUser.replace(/\s+/g, " ").trim().slice(0, 140);
+  const crypto = await userCrypto(uid);
+  const sealedPreview = preview ? crypto.seal(CONV, "preview", preview) : null;
 
   const saved = await tx(async (c) => {
     // Another user's id: nothing is written (and it reads as not found).
@@ -337,31 +351,34 @@ conversationsRouter.put("/:id", async (req, res) => {
     // A plain upsert by primary key runs as INSERT ... ON CONFLICT, so concurrent first saves do not collide.
     const row = await c.conversation.upsert({
       where: { id },
-      create: { id, messageCount: messages.length, preview: preview || null, userId: uid, ...(origin ? { origin } : {}) },
-      update: { messageCount: messages.length, ...(preview ? { preview } : {}), updatedAt: new Date() },
+      create: { id, messageCount: messages.length, preview: sealedPreview, userId: uid, ...(origin ? { origin } : {}) },
+      update: { messageCount: messages.length, ...(sealedPreview ? { preview: sealedPreview } : {}), updatedAt: new Date() },
     });
     if (row.userId !== uid) throw new AppError(404, "not_found", "Conversation not found");
     await c.conversationMessage.deleteMany({ where: { conversationId: id } });
     await c.conversationMessage.createMany({
-      data: messages.map((m, position) => ({
-        conversationId: id,
-        position,
-        role: m.role,
-        content: m.content,
-        model: m.model ?? null,
-        citations: asJson(m.citations),
-        usedIds: m.usedIds,
-        isError: m.isError,
-        images: asJson(m.images),
-        evidence: asJson(m.evidence),
-        attachments: asJson(m.attachments),
-        meta: asJson(m.meta ?? {}),
-        table: m.table == null ? Prisma.DbNull : asJson(m.table),
-      })),
+      data: messages.map((m, position) => {
+        const s = sealMessage(crypto, { content: m.content, citations: m.citations, images: m.images, evidence: m.evidence, meta: m.meta ?? {}, table: m.table });
+        return {
+          conversationId: id,
+          position,
+          role: m.role,
+          content: s.content,
+          model: m.model ?? null,
+          citations: asJson(s.citations),
+          usedIds: m.usedIds,
+          isError: m.isError,
+          images: asJson(s.images),
+          evidence: asJson(s.evidence),
+          attachments: asJson(m.attachments), // file metadata, plaintext (the files table and SQL joins use it)
+          meta: asJson(s.meta),
+          table: s.table == null ? Prisma.DbNull : asJson(s.table),
+        };
+      }),
     });
     return row;
   });
-  const row = await withParent(saved);
+  const row = openRow(crypto, await withParent(saved));
   // Cross-chat recall: index the new messages shortly after the last save (debounced, in the background).
   scheduleIndex(id);
 
@@ -372,10 +389,10 @@ conversationsRouter.put("/:id", async (req, res) => {
     const { title, source } = (await takeAi(userOf(req)))
       ? await generateTitle(firstUser, firstReply.content)
       : { title: fallbackTitle(firstUser), source: "fallback" as const };
-    const named = await db().conversation.updateMany({ where: { id, title: null }, data: { title, titleSource: source } });
+    const named = await db().conversation.updateMany({ where: { id, title: null }, data: { title: crypto.seal(CONV, "title", title), titleSource: source } });
     if (named.count > 0) {
       const fresh = await db().conversation.findUnique({ where: { id }, include: WITH_PARENT });
-      if (fresh) return void res.json(summary(fresh));
+      if (fresh) return void res.json(summary(openRow(crypto, fresh)));
     }
   }
   res.json(summary(row));
@@ -386,19 +403,20 @@ conversationsRouter.patch("/:id", async (req, res) => {
   const id = idParam(req.params.id);
   const { title, pinned, archived } = patchSchema.parse(req.body);
   const uid = userOf(req).id;
+  const crypto = await userCrypto(uid);
   const row = await tx(async (c) => {
     const cur = await c.conversation.findFirst({ where: { id, userId: uid }, select: { pinnedAt: true, archivedAt: true } });
     if (!cur) throw new AppError(404, "not_found", "Conversation not found");
     const now = new Date();
     const data: Prisma.ConversationUpdateInput = {};
-    if (title !== undefined) Object.assign(data, { title, titleSource: "user" });
+    if (title !== undefined) Object.assign(data, { title: crypto.seal(CONV, "title", title), titleSource: "user" });
     // Archiving unpins: an archived chat is out of the main list.
     if (archived === true) data.pinnedAt = null;
     else if (pinned !== undefined) data.pinnedAt = pinned ? (cur.pinnedAt ?? now) : null;
     if (archived !== undefined) data.archivedAt = archived ? (cur.archivedAt ?? now) : null;
     return c.conversation.update({ where: { id }, data, include: WITH_PARENT });
   });
-  res.json(summary(row));
+  res.json(summary(openRow(crypto, row)));
 });
 
 conversationsRouter.delete("/:id", async (req, res) => {

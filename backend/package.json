@@ -13,6 +13,7 @@
     "db:status": "prisma migrate status",
     "db:migrate:create": "prisma migrate dev --create-only",
     "smoke": "tsx scripts/smoke.ts",
+    "data:encrypt": "tsx src/scripts/encryptBackfill.ts",
     "test": "tsx --test test/*.test.ts"
   },
   "devEngines": {

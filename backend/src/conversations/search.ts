@@ -1,68 +1,103 @@
-import { db, Prisma } from "../db/prisma.js";
-import { escapeLike, fuzzyTerms, needsFuzzy, snippetAround, tsQueryText } from "../nlp/text.js";
+import { db } from "../db/prisma.js";
+import type { UserCrypto } from "../crypto/userData.js";
+import { expandQuery, fuzzyScore, fuzzyTerms, needsFuzzy, snippetAround, stem, tokenize } from "../nlp/text.js";
+import { CONV, MSG } from "./codec.js";
 
-export type SearchOpts = { uid: string | null; q: string; archived: boolean; before: Date | null; limit: number };
+export type SearchOpts = { uid: string | null; q: string; archived: boolean; before: Date | null; limit: number; crypto: UserCrypto };
 export type Snippet = { text: string; start: number; length: number; source: "message" | "title" };
-
-// Raw SQL: Postgres full-text search (stemming, via the expression index on
-// conversation_messages) and pg_trgm similarity have no Prisma filter.
-// Indexes: see migration 20261012160000_nlp_search_indexes.
-const MSG_TSV = Prisma.sql`to_tsvector('english', left(m.content, 100000))`;
+export type SearchHit = { id: string; snippet: Snippet | null };
 
 /**
- * Conversation ids matching [q], pinned first then by activity. Stemmed full-text
- * match (with tech-term synonyms) plus a title substring match; when that finds
- * few chats, a trigram typo fallback on titles and messages is merged in.
+ * Chat search runs in the app on decrypted text, scoped to the caller: titles and message bodies are
+ * ciphertext in the database, so SQL (ILIKE, to_tsvector, trigrams) cannot see them any more. Chats are
+ * visited in list order (pinned, then newest) in pages, stopping once [limit] hits are found, and at most
+ * MAX_SCAN_CHATS chats are looked at per query. The matcher mirrors the old SQL behaviour: substring, stemmed
+ * any-term match with tech synonyms, then a typo-tolerant pass when few chats matched.
  */
-export async function searchConversationIds(o: SearchOpts): Promise<string[]> {
-  const scope = Prisma.sql`c.user_id IS NOT DISTINCT FROM ${o.uid}::uuid
-    AND ${o.archived ? Prisma.sql`c.archived_at IS NOT NULL` : Prisma.sql`c.archived_at IS NULL`}
-    ${o.before ? Prisma.sql`AND c.updated_at < ${o.before}` : Prisma.empty}`;
-  const order = Prisma.sql`ORDER BY c.pinned_at DESC NULLS LAST, c.updated_at DESC LIMIT ${o.limit}`;
-  const tsq = tsQueryText(o.q);
-  const fts = tsq
-    ? Prisma.sql`OR to_tsvector('english', coalesce(c.title, '')) @@ websearch_to_tsquery('english', ${tsq})
-        OR EXISTS (SELECT 1 FROM conversation_messages m WHERE m.conversation_id = c.id AND ${MSG_TSV} @@ websearch_to_tsquery('english', ${tsq}))`
-    : Prisma.empty;
-  const rows = await db().$queryRaw<Array<{ id: string }>>`
-    SELECT c.id::text AS id FROM conversations c
-    WHERE ${scope} AND (c.title ILIKE ${"%" + escapeLike(o.q) + "%"} ${fts})
-    ${order}`;
-  const ids = rows.map((r) => r.id);
-  const terms = fuzzyTerms(o.q);
-  if (!needsFuzzy(ids.length) || terms.length === 0) return ids;
+export const MAX_SCAN_CHATS = 1000;
+const PAGE = 25;
+const MAX_CHARS_PER_MESSAGE = 100_000;
 
-  // Typo tolerance: `term <% content` is the indexable word_similarity operator.
-  const anyTerm = Prisma.join(
-    terms.map((t) => Prisma.sql`(word_similarity(${t}, c.title) >= 0.4 OR EXISTS (SELECT 1 FROM conversation_messages m WHERE m.conversation_id = c.id AND ${t} <% m.content))`),
-    " OR ",
+/** Pure matcher for one query; `fuzzy` additionally accepts typos (Damerau) on words of 4+ letters. */
+export function queryMatcher(q: string): (text: string, fuzzy?: boolean) => boolean {
+  const needle = q.trim().toLowerCase();
+  const wanted = new Set(
+    expandQuery(q)
+      .flatMap((t) => tokenize(t))
+      .filter((t) => t.length >= 2)
+      .map(stem),
   );
-  const fuzzy = await db().$queryRaw<Array<{ id: string }>>`
-    SELECT c.id::text AS id FROM conversations c WHERE ${scope} AND (${anyTerm}) ${order}`;
-  const seen = new Set(ids);
-  for (const r of fuzzy) if (!seen.has(r.id)) ids.push(r.id);
-  return ids.slice(0, o.limit);
+  const typoTerms = fuzzyTerms(q);
+  return (text, fuzzy = false) => {
+    if (!text) return false;
+    const hay = text.length > MAX_CHARS_PER_MESSAGE ? text.slice(0, MAX_CHARS_PER_MESSAGE) : text;
+    if (needle && hay.toLowerCase().includes(needle)) return true;
+    const tokens = tokenize(hay);
+    if (tokens.some((t) => wanted.has(stem(t)))) return true;
+    return fuzzy && typoTerms.some((t) => fuzzyScore(t, hay) > 0);
+  };
 }
 
-/** The best matching message (or the title) of each conversation, as a short excerpt around the match. */
-export async function snippetsFor(ids: string[], q: string): Promise<Map<string, Snippet>> {
-  const out = new Map<string, Snippet>();
-  if (ids.length === 0) return out;
-  const tsq = tsQueryText(q);
-  const terms = fuzzyTerms(q);
-  const conds = [
-    tsq ? Prisma.sql`${MSG_TSV} @@ websearch_to_tsquery('english', ${tsq})` : null,
-    Prisma.sql`m.content ILIKE ${"%" + escapeLike(q) + "%"}`,
-    ...terms.map((t) => Prisma.sql`${t} <% m.content`),
-  ].filter((c): c is Prisma.Sql => c !== null);
-  const rows = await db().$queryRaw<Array<{ conversation_id: string; content: string }>>`
-    SELECT DISTINCT ON (m.conversation_id) m.conversation_id::text AS conversation_id, m.content
-    FROM conversation_messages m
-    WHERE m.conversation_id = ANY(${ids}::uuid[]) AND m.role <> 'context' AND (${Prisma.join(conds, " OR ")})
-    ORDER BY m.conversation_id, (${MSG_TSV} @@ websearch_to_tsquery('english', ${tsq || q})) DESC, m.position`;
-  for (const r of rows) {
-    const s = snippetAround(r.content, q);
-    if (s) out.set(r.conversation_id, { text: s.snippet, start: s.start, length: s.length, source: "message" });
+/** Decrypted view of one chat for matching: its title and messages in position order. */
+export type SearchableChat = { id: string; title: string; messages: Array<{ role: string; content: string }> };
+
+/** Pure: does [chat] match, and what is the excerpt? */
+export function matchChat(chat: SearchableChat, q: string, matcher: ReturnType<typeof queryMatcher>, fuzzy: boolean): SearchHit | null {
+  const titleHit = matcher(chat.title, fuzzy);
+  let snippet: Snippet | null = null;
+  let messageHit = false;
+  for (const m of chat.messages) {
+    if (!matcher(m.content, fuzzy)) continue;
+    messageHit = true;
+    if (m.role === "context") continue;
+    const s = snippetAround(m.content, q);
+    if (s) {
+      snippet = { text: s.snippet, start: s.start, length: s.length, source: "message" };
+      break;
+    }
   }
-  return out;
+  return titleHit || messageHit ? { id: chat.id, snippet } : null;
+}
+
+/** Chats matching [q] in list order (pinned first, then by activity), each with the best matching excerpt. */
+export async function searchConversations(o: SearchOpts): Promise<SearchHit[]> {
+  const matcher = queryMatcher(o.q);
+  const scan = async (fuzzy: boolean, skipIds: Set<string>): Promise<SearchHit[]> => {
+    const hits: SearchHit[] = [];
+    for (let skip = 0; skip < MAX_SCAN_CHATS && hits.length < o.limit; skip += PAGE) {
+      const page = await db().conversation.findMany({
+        where: { userId: o.uid, archivedAt: o.archived ? { not: null } : null, ...(o.before ? { updatedAt: { lt: o.before } } : {}) },
+        orderBy: [{ pinnedAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
+        skip,
+        take: PAGE,
+        select: { id: true, title: true },
+      });
+      if (page.length === 0) break;
+      const msgs = await db().conversationMessage.findMany({
+        where: { conversationId: { in: page.map((p) => p.id) } },
+        orderBy: [{ conversationId: "asc" }, { position: "asc" }],
+        select: { conversationId: true, role: true, content: true },
+      });
+      const byChat = new Map<string, Array<{ role: string; content: string }>>();
+      for (const m of msgs) {
+        const list = byChat.get(m.conversationId) ?? [];
+        list.push({ role: m.role, content: o.crypto.open(MSG, "content", m.content) });
+        byChat.set(m.conversationId, list);
+      }
+      for (const p of page) {
+        if (skipIds.has(p.id) || hits.length >= o.limit) continue;
+        const hit = matchChat({ id: p.id, title: p.title ? o.crypto.open(CONV, "title", p.title) : "", messages: byChat.get(p.id) ?? [] }, o.q, matcher, fuzzy);
+        if (hit) hits.push(hit);
+      }
+      if (page.length < PAGE) break;
+    }
+    return hits;
+  };
+
+  const exact = await scan(false, new Set());
+  if (!needsFuzzy(exact.length) || fuzzyTerms(o.q).length === 0) return exact;
+  // Typo tolerance when few chats matched; exact hits keep their place at the front.
+  const seen = new Set(exact.map((h) => h.id));
+  const fuzzy = await scan(true, seen);
+  return [...exact, ...fuzzy].slice(0, o.limit);
 }

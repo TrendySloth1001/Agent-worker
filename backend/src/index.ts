@@ -36,18 +36,27 @@ import { githubGate } from "./auth/githubGate.js";
 import { siteRouter } from "./routes/site.js";
 import { drainGuard, gracefulShutdown } from "./util/lifecycle.js";
 import { appRouter, releaseTokenRouter } from "./routes/app.js";
+import { blobRouter } from "./routes/blob.js";
+import { assertDataKeyConfigured } from "./crypto/userData.js";
+import { corsOptions, httpsOnly, securityHeaders } from "./util/security.js";
+
+// Encryption at rest needs DATA_KEY: production refuses to start without it (development warns and uses a dev-only key).
+assertDataKeyConfigured();
 
 const app = express();
 app.disable("x-powered-by");
 // Behind one reverse proxy (Coolify/Traefik): trust exactly one hop so req.ip is the real client.
 app.set("trust proxy", 1);
+// Transport hardening: HSTS and strict headers, plain-HTTP guard (behind the proxy), CORS that never trusts http origins.
+app.use(securityHeaders({ production: config.production }));
+app.use(httpsOnly({ production: config.production }));
 // During a redeploy: new requests get a friendly 503 and /health reports 503 so the proxy stops routing here.
 app.use(drainGuard());
 // Saved conversations carry the full history, so they get a larger body limit.
 const smallJson = express.json({ limit: "256kb" });
 const largeJson = express.json({ limit: "4mb" });
 app.use((req, res, next) => (req.path.startsWith("/conversations") ? largeJson : smallJson)(req, res, next));
-app.use(cors());
+app.use(cors(corsOptions({ production: config.production })));
 
 // Public: health and the sign-in endpoints. Everything after requireUser
 // needs an access token (Bearer JWT). The static API_TOKEN is still accepted
@@ -55,6 +64,8 @@ app.use(cors());
 // Public pages: home, privacy policy, terms of service.
 app.use(siteRouter);
 app.use("/health", healthRouter);
+// Signed links to decrypted file bytes (the signature is the credential): before requireUser.
+app.use("/files/blob", blobRouter);
 app.use("/auth", authPublicRouter);
 // Connected apps: the OAuth callback and the Drive picker page (state/ticket authenticated).
 app.use("/connect", connectPublicRouter);

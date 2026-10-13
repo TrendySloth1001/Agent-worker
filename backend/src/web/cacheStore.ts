@@ -2,6 +2,7 @@
 // in-memory LRU stays in front; this survives restarts and is shared by
 // round-table seats and every user. Every failure reads as a miss.
 // Also holds read pages ("page|<url>") so a popular page is fetched once.
+import { createHash } from "node:crypto";
 import { db, isDbUp } from "../db/prisma.js";
 import { log } from "../util/logger.js";
 import type { Candidate, Freshness } from "./types.js";
@@ -16,10 +17,16 @@ export function searchCacheKey(provider: string, fresh: Freshness, query: string
 
 let lastPurge = 0;
 
+/**
+ * Rows are stored under a hash of the cache identity: the identity holds what users searched for and which pages they
+ * opened, and this table is shared by everyone. The payload is public web data (results, page text), not user content.
+ */
+export const storedKey = (key: string) => `h:${createHash("sha256").update(key).digest("hex").slice(0, 40)}`;
+
 export async function readPersistedValue<T>(key: string, valid: (v: unknown) => v is T): Promise<T | null> {
   if (!isDbUp()) return null;
   try {
-    const row = await db().webCache.findUnique({ where: { key } });
+    const row = await db().webCache.findUnique({ where: { key: storedKey(key) } });
     if (!row || row.expiresAt.getTime() <= Date.now()) return null;
     return valid(row.payload) ? row.payload : null;
   } catch (e) {
@@ -37,8 +44,9 @@ export function writePersisted(key: string, value: unknown, ttlMs: number): void
   if (!isDbUp()) return;
   const expiresAt = new Date(Date.now() + ttlMs);
   const payload = value as object;
+  const id = storedKey(key);
   void db()
-    .webCache.upsert({ where: { key }, create: { key, payload, expiresAt }, update: { payload, expiresAt } })
+    .webCache.upsert({ where: { key: id }, create: { key: id, payload, expiresAt }, update: { payload, expiresAt } })
     .then(async () => {
       if (Date.now() - lastPurge < 10 * 60_000) return;
       lastPurge = Date.now();

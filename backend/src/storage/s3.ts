@@ -2,6 +2,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, List
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config.js";
 import { AppError } from "../util/errors.js";
+import { isSealedObject, userCrypto } from "../crypto/userData.js";
 
 let client: S3Client | null = null;
 
@@ -25,6 +26,28 @@ export async function getObject(key: string): Promise<Buffer> {
   const res = await s3().send(new GetObjectCommand({ Bucket: config.s3.bucket, Key: key }));
   if (!res.Body) throw new Error("empty object");
   return Buffer.from(await res.Body.transformToByteArray());
+}
+
+/**
+ * User uploads are encrypted before they leave the process: the body is `SPKYENC1 | iv | tag | ciphertext`
+ * (AES-256-GCM, the owner's data key, AAD = object key + user). Objects written before encryption have no
+ * marker and are returned as they are. Shared files (app releases) keep using putObject/presign.
+ */
+export const OBJECT_OVERHEAD = 8 + 12 + 16;
+
+/** The raw object calls behind putUserObject/getUserObject (replaced in tests). */
+export const io: { put: typeof putObject; get: typeof getObject } = { put: (k, b, t) => putObject(k, b, t), get: (k) => getObject(k) };
+
+export async function putUserObject(userId: string | null, key: string, body: Buffer, contentType: string): Promise<void> {
+  const c = await userCrypto(userId);
+  await io.put(key, c.sealBytes(key, body), contentType);
+}
+
+export async function getUserObject(userId: string | null, key: string): Promise<Buffer> {
+  const raw = await io.get(key);
+  if (!isSealedObject(raw)) return raw; // legacy plaintext object
+  if (!userId) throw new AppError(500, "decrypt_failed", "Some saved data couldn't be read. Try again shortly.");
+  return (await userCrypto(userId)).openBytes(key, raw);
 }
 
 export async function deleteObject(key: string): Promise<void> {

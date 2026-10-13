@@ -1,5 +1,6 @@
 // Finds past conversations that matter for this turn and renders them as a
 // short "Related past conversations" block with [C#] tags.
+import { userCrypto } from "../crypto/userData.js";
 import { currentUser } from "../auth/context.js";
 import { getEmbeddingGuardError } from "../db/embeddingGuard.js";
 import { db, isDbUp, tx } from "../db/prisma.js";
@@ -109,6 +110,11 @@ export async function recallPastChats(input: RecallInput): Promise<RecallResult>
       await c.$executeRaw`SET LOCAL hnsw.iterative_scan = relaxed_order`;
       return c.$queryRaw<RecallRow[]>(searchSql({ uid, vec, excludeConversationId: input.excludeConversationId, limit: CANDIDATES }));
     });
+    const crypto = await userCrypto(uid);
+    for (const r of rows) {
+      r.content = crypto.open("conversation_chunks", "content", r.content);
+      if (r.title) r.title = crypto.open("conversations", "title", r.title);
+    }
     const chats = groupRows(rows, { minSim: input.explicit ? EXPLICIT_MIN_SIM : AUTO_MIN_SIM, maxChats: input.explicit ? EXPLICIT_CHATS : AUTO_CHATS });
     const out = formatPastBlock(chats, input.explicit ? EXPLICIT_CHARS : AUTO_CHARS);
     log.info("chat recall", { mode, rows: rows.length, chats: chats.length, top: rows[0] ? Math.round(Number(rows[0].sim) * 100) / 100 : 0 });

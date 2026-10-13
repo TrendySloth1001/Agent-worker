@@ -7,7 +7,8 @@ import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
 import { ownerFilter } from "../auth/context.js";
 import { joinOverlap, mmr, parseVector, rrfFuse } from "./fusion.js";
-import { fuzzyTerms, needsFuzzy, synonymsOf } from "../nlp/text.js";
+import { fuzzyScore, fuzzyTerms, needsFuzzy, synonymsOf } from "../nlp/text.js";
+import { userCrypto } from "../crypto/userData.js";
 import { rerank } from "./rerank.js";
 import { rewriteQueries, type HistoryMsg } from "./rewrite.js";
 import { extractEntities, quotableNames } from "../nlp/entities.js";
@@ -62,11 +63,33 @@ type Row = {
   token_count: number | null;
   type: string;
   meta: Record<string, unknown> | null;
+  /** Owner of the source: whose key seals content / heading_path. */
+  owner_id: string | null;
 };
+
+const openedRows = new WeakSet<Row>();
+
+/** Decrypts content and heading of [rows] in place, each with its owner's key (legacy plaintext passes through). */
+async function openRows(rows: Row[]): Promise<void> {
+  const keys = new Map<string, Awaited<ReturnType<typeof userCrypto>>>();
+  for (const r of rows) {
+    if (openedRows.has(r)) continue;
+    openedRows.add(r);
+    const k = r.owner_id ?? "";
+    let c = keys.get(k);
+    if (!c) keys.set(k, (c = await userCrypto(r.owner_id)));
+    r.content = c.open("chunks", "content", r.content);
+    if (r.heading_path) r.heading_path = c.open("chunks", "heading_path", r.heading_path);
+    if (r.title) r.title = c.open("documents", "title", r.title);
+  }
+}
+
+/** Rows scanned (nearest by vector) when the typo fallback has to match decrypted text in the app. */
+const FUZZY_POOL = 150;
 
 // The similarity and keyword searches stay raw SQL: pgvector's <=> operator
 // (served by the HNSW index) and Postgres full-text search have no Prisma API.
-const COLS = Prisma.sql`c.id, c.document_id AS doc_id, c.ord, c.heading_path, c.content, c.token_count, d.title, d.url, d.meta, s.type`;
+const COLS = Prisma.sql`c.id, c.document_id AS doc_id, c.ord, c.heading_path, c.content, c.token_count, d.title, d.url, d.meta, s.type, s.user_id::text AS owner_id`;
 const JOINS = Prisma.sql`FROM chunks c JOIN documents d ON d.id = c.document_id JOIN sources s ON s.id = c.source_id`;
 
 /** OR-joined keyword terms for websearch_to_tsquery (identifiers like `useState` or `c++` survive), plus tech synonyms (k8s/kubernetes). The 'english' tsvector config does the stemming. */
@@ -161,17 +184,19 @@ export async function retrieve(queryText: string, opts: RetrieveOpts = {}): Prom
         const kr = await c.$queryRaw<Row[]>`
           SELECT ${COLS}, 1 - (c.embedding <=> ${vec}::vector) AS sim ${JOINS}
           WHERE c.tsv @@ websearch_to_tsquery('english', ${kw}) ${inSources} ${mine}
-          ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', ${kw})) DESC LIMIT ${CANDIDATES}`;
+          ORDER BY ts_rank(c.tsv, websearch_to_tsquery('english', ${kw})) DESC LIMIT ${CANDIDATES}`;
         out.push({ rows: kr, weight, kw: true });
-        // Typo tolerance: too few keyword hits -> trigram word_similarity (`term <% content`, GIN-indexed).
+        // Typo tolerance: too few keyword hits -> match the nearest chunks' decrypted text in the app
+        // (content is ciphertext, so the old trigram `term <% content` SQL can no longer see it).
         if (needsFuzzy(kr.length)) {
           const terms = fuzzyTerms(queries[qi], 3);
           if (terms.length) {
-            const anyTerm = Prisma.join(terms.map((t) => Prisma.sql`${t} <% c.content`), " OR ");
-            const fr = await c.$queryRaw<Row[]>`
+            const pool = await c.$queryRaw<Row[]>`
               SELECT ${COLS}, 1 - (c.embedding <=> ${vec}::vector) AS sim ${JOINS}
-              WHERE (${anyTerm}) ${inSources} ${mine}
-              ORDER BY c.embedding <=> ${vec}::vector LIMIT ${CANDIDATES}`;
+              WHERE true ${inSources} ${mine}
+              ORDER BY c.embedding <=> ${vec}::vector LIMIT ${FUZZY_POOL}`;
+            await openRows(pool);
+            const fr = pool.filter((r) => terms.some((t) => fuzzyScore(t, r.content) > 0)).slice(0, CANDIDATES);
             out.push({ rows: fr, weight: weight * 0.7, kw: true });
           }
         }
@@ -180,6 +205,8 @@ export async function retrieve(queryText: string, opts: RetrieveOpts = {}): Prom
     return out;
   });
   const tSearch = Date.now() - t0;
+  // Decrypt the candidates (each with its owner's key). Rows from the typo fallback are already open.
+  for (const leg of legs) await openRows(leg.rows);
 
   // Hybrid fusion (Reciprocal Rank Fusion over every vector and keyword list).
   const rows = new Map<bigint, Row & { simMax: number; kw: boolean }>();
@@ -287,11 +314,13 @@ async function fetchNeighbours(hits: Array<{ doc_id: string; ord: number }>, sel
   if (hits.length === 0) return out;
   try {
     const pairs = hits.flatMap((h) => [h.ord - 1, h.ord + 1].filter((o) => o >= 0).map((o) => Prisma.sql`(${h.doc_id}::uuid, ${o}::int)`));
-    const rows = await db().$queryRaw<Array<{ id: bigint; document_id: string; ord: number; content: string; token_count: number | null }>>`
-      SELECT id, document_id, ord, content, token_count FROM chunks WHERE (document_id, ord) IN (${Prisma.join(pairs)})`;
+    const rows = await db().$queryRaw<Array<{ id: bigint; document_id: string; ord: number; content: string; token_count: number | null; owner_id: string | null }>>`
+      SELECT c.id, c.document_id, c.ord, c.content, c.token_count, s.user_id::text AS owner_id
+      FROM chunks c JOIN sources s ON s.id = c.source_id WHERE (c.document_id, c.ord) IN (${Prisma.join(pairs)})`;
     for (const r of rows) {
       if (selected.has(r.id)) continue; // already returned as a hit of its own
-      out.set(`${r.document_id}:${r.ord}`, { content: r.content, token: r.token_count ?? Math.ceil(r.content.length / 4) });
+      const content = (await userCrypto(r.owner_id)).open("chunks", "content", r.content);
+      out.set(`${r.document_id}:${r.ord}`, { content, token: r.token_count ?? Math.ceil(content.length / 4) });
     }
   } catch (e) {
     log.warn("neighbour expansion failed", { message: (e as Error).message?.slice(0, 100) });

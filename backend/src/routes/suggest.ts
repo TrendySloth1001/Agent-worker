@@ -1,3 +1,5 @@
+import { userCrypto } from "../crypto/userData.js";
+import { CONV, MSG } from "../conversations/codec.js";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { clientIp, slowDown } from "../util/rateLimit.js";
 import { z } from "zod";
@@ -48,9 +50,10 @@ async function recentContext(conversationId: string | undefined, uid: string | n
       take: 4,
       select: { role: true, content: true },
     });
+    const crypto = await userCrypto(uid);
     return rows
       .reverse()
-      .map((r) => `${r.role}: ${r.content.replace(/\s+/g, " ").slice(0, 300)}`)
+      .map((r) => `${r.role}: ${crypto.open(MSG, "content", r.content).replace(/\s+/g, " ").slice(0, 300)}`)
       .join("\n");
   } catch {
     return "";
@@ -93,7 +96,8 @@ suggestRouter.get("/starters", perUser(20), async (req, res) => {
     take: 8,
     select: { title: true },
   });
-  const titles = rows.map((r) => r.title!).filter(Boolean);
+  const crypto = await userCrypto(uid);
+  const titles = rows.map((r) => crypto.open(CONV, "title", r.title!)).filter(Boolean);
   const prompts = titles.length >= 2 ? await generateStarters(titles, 6_000) : [];
   if (prompts.length > 0 || titles.length < 2) starters.set(key, { at: Date.now(), prompts });
   res.json({ prompts });

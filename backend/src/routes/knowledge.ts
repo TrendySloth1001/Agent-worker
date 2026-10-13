@@ -11,6 +11,7 @@ import { retrieve } from "../retrieval/search.js";
 import { AppError } from "../util/errors.js";
 import { USER_MSG, userSafe } from "../util/userMessages.js";
 import { userOf } from "../auth/context.js";
+import { userCrypto, type UserCrypto } from "../crypto/userData.js";
 
 export const knowledgeRouter: Router = Router();
 
@@ -34,13 +35,16 @@ const SOURCE_SELECT = {
 
 type SourceRow = Prisma.SourceGetPayload<{ select: typeof SOURCE_SELECT }>;
 
-function toSource(r: SourceRow) {
+/** Titles of notes and generated docs are user-written text and sealed; other titles (web pages, repos, file names) are plaintext metadata. */
+export const SEALED_TITLE_TYPES = new Set(["note", "doc"]);
+
+function toSource(r: SourceRow, c: UserCrypto) {
   const active = r.status === "queued" || r.status === "running";
   return {
     id: r.id,
     type: r.type,
     uri: r.uri,
-    title: r.title ?? null,
+    title: r.title ? c.open("sources", "title", r.title) : null,
     status: r.status,
     progress: active ? { done: r.progressDone, total: r.progressTotal ?? null } : null,
     docCount: r.docCount,
@@ -66,7 +70,8 @@ async function getSource(idRaw: string, uid: string | null) {
 
 knowledgeRouter.get("/sources", async (req, res) => {
   const rows = await db().source.findMany({ where: { userId: userOf(req).id }, orderBy: { createdAt: "desc" }, take: 200, select: SOURCE_SELECT });
-  res.json({ sources: rows.map(toSource) });
+  const c = await userCrypto(userOf(req).id);
+  res.json({ sources: rows.map((r) => toSource(r, c)) });
 });
 
 const createBody = z.object({
@@ -89,7 +94,7 @@ knowledgeRouter.post("/sources", async (req, res) => {
   });
   void storeIcon(ins.id, type, resolved.uri);
   enqueue(ins.id);
-  res.status(202).json({ source: toSource(ins) });
+  res.status(202).json({ source: toSource(ins, await userCrypto(uid)) });
 });
 
 const noteBody = z.object({
@@ -108,17 +113,26 @@ knowledgeRouter.post("/notes", async (req, res) => {
   const b = noteBody.parse(req.body ?? {});
   await db().$queryRaw`SELECT 1`;
   const content = b.content.replace(/\u0000/g, "");
-  const uri = `note:${createHash("sha256").update(content).digest("hex").slice(0, 24)}`;
   const uid = userOf(req).id;
+  const c = await userCrypto(uid);
+  // The note's id is a keyed hash, so the stored uri cannot be used to confirm a guess of the note's text.
+  const uri = `note:${c.blindIndex("sources", "uri", createHash("sha256").update(content).digest("hex").slice(0, 24)).replace(/^h1:/, "")}`;
   const dup = await db().source.findFirst({ where: { type: "note", uri, userId: uid }, select: { id: true } });
   if (dup) throw new AppError(409, "conflict", "You've already saved this note.");
   const title = (b.title || noteTitle(content)).slice(0, 200);
   const ins = await db().source.create({
-    data: { type: "note", uri, title, options: json({ content, title, question: b.question || undefined, conversationId: b.conversationId }), userId: uid },
+    data: {
+      type: "note",
+      uri,
+      title: c.seal("sources", "title", title),
+      // The note text lives in options: sealed field by field.
+      options: json({ content: c.seal("sources", "options.content", content), title: c.seal("sources", "options.title", title), question: b.question ? c.seal("sources", "options.question", b.question) : undefined, conversationId: b.conversationId }),
+      userId: uid,
+    },
     select: SOURCE_SELECT,
   });
   enqueue(ins.id);
-  res.status(202).json({ source: toSource(ins) });
+  res.status(202).json({ source: toSource(ins, c) });
 });
 
 knowledgeRouter.get("/stats", async (req, res) => {
@@ -159,7 +173,8 @@ knowledgeRouter.post("/search", async (req, res) => {
 knowledgeRouter.post("/reindex", async (req, res) => {
   const uid = userOf(req).id;
   const have = new Set((await db().source.findMany({ where: { userId: uid, type: { in: ["doc", "file"] } }, select: { uri: true } })).map((s) => s.uri));
-  const docs = uid ? await db().doc.findMany({ where: { userId: uid, status: { in: ["done", "partial", "interrupted"] } }, select: { id: true, title: true }, take: 500 }) : [];
+  const c = await userCrypto(uid);
+  const docs = (uid ? await db().doc.findMany({ where: { userId: uid, status: { in: ["done", "partial", "interrupted"] } }, select: { id: true, title: true }, take: 500 }) : []).map((d) => ({ ...d, title: c.open("docs", "title", d.title) }));
   const files = await db().storedFile.findMany({ where: { userId: uid, kind: "document", status: "ready", text: { not: null } }, select: { id: true, name: true }, take: 500 });
   let queued = 0;
   for (const d of docs) if (!have.has(`doc:${d.id}`)) (await indexNow("doc", uid, d.id, d.title), queued++);
@@ -168,7 +183,7 @@ knowledgeRouter.post("/reindex", async (req, res) => {
 });
 
 knowledgeRouter.get("/sources/:id", async (req, res) => {
-  res.json({ source: toSource(await getSource(String(req.params.id), userOf(req).id)) });
+  res.json({ source: toSource(await getSource(String(req.params.id), userOf(req).id), await userCrypto(userOf(req).id)) });
 });
 
 knowledgeRouter.post("/sources/:id/refresh", async (req, res) => {
@@ -181,10 +196,10 @@ knowledgeRouter.post("/sources/:id/refresh", async (req, res) => {
       select: SOURCE_SELECT,
     });
     enqueue(src.id);
-    res.status(202).json({ source: toSource(row) });
+    res.status(202).json({ source: toSource(row, await userCrypto(userOf(req).id)) });
     return;
   }
-  res.status(202).json({ source: toSource(src) });
+  res.status(202).json({ source: toSource(src, await userCrypto(userOf(req).id)) });
 });
 
 knowledgeRouter.delete("/sources/:id", async (req, res) => {

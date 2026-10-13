@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { db, Prisma } from "../db/prisma.js";
 import { unindex } from "../ingest/indexer.js";
+import { userCrypto, type UserCrypto } from "../crypto/userData.js";
 import type { DocSection, DocState, DocStatus, DocSummary, Highlight, QaEntry, Revision, RevisionReason } from "./types.js";
 
 export const MAX_REVISIONS = 10;
@@ -44,59 +45,77 @@ const iso = (d: Date) => d.toISOString();
 type DocRow = Awaited<ReturnType<ReturnType<typeof db>["doc"]["findFirst"]>> & {};
 type SectionRow = Awaited<ReturnType<ReturnType<typeof db>["docSection"]["findFirst"]>> & {};
 
-function toSection(r: SectionRow): DocSection {
+// Encryption at rest (src/crypto/userData.ts). Sealed: doc title, prompt, summary, outline, glossary, sources,
+// options.profile; section heading, markdown, summary, evidence, images; revision markdown; highlight quote,
+// prefix, suffix, note and Q&A thread. Plain: ids, status, counts, models, colours, timestamps, and the rest of
+// `options` (settings; its conversationId is filtered on in SQL).
+const D = "docs";
+const S = "doc_sections";
+const R = "doc_revisions";
+const H = "doc_highlights";
+
+function sealOptions(c: UserCrypto, options: unknown): unknown {
+  const o = options as Record<string, unknown> | null;
+  return o && typeof o === "object" && "profile" in o ? { ...o, profile: c.sealJson(D, "options.profile", o.profile) } : options;
+}
+function openOptions(c: UserCrypto, options: unknown): unknown {
+  const o = options as Record<string, unknown> | null;
+  return o && typeof o === "object" && "profile" in o ? { ...o, profile: c.openJson(D, "options.profile", o.profile) } : options;
+}
+
+function toSection(c: UserCrypto, r: SectionRow): DocSection {
   return {
     sectionId: r.sectionId,
     ord: r.ord,
-    heading: r.heading,
+    heading: c.open(S, "heading", r.heading),
     level: r.level,
-    markdown: r.markdown,
-    summary: r.summary,
+    markdown: c.open(S, "markdown", r.markdown),
+    summary: c.open(S, "summary", r.summary),
     status: r.status as DocSection["status"],
     sourceIds: r.sourceIds ?? [],
     usedIds: r.usedIds ?? [],
-    evidence: (r.evidence ?? []) as DocSection["evidence"],
-    images: (r.images ?? []) as DocSection["images"],
+    evidence: c.openJson(S, "evidence", r.evidence ?? []) as DocSection["evidence"],
+    images: c.openJson(S, "images", r.images ?? []) as DocSection["images"],
     model: r.model,
     words: r.words,
     updatedAt: iso(r.updatedAt),
   };
 }
 
-function toDoc(r: DocRow, sections: SectionRow[]): DocState {
-  const outline = r.outline as DocState["outline"] | Record<string, never>;
+function toDoc(c: UserCrypto, r: DocRow, sections: SectionRow[]): DocState {
+  const outline = c.openJson(D, "outline", r.outline) as DocState["outline"] | Record<string, never>;
   return {
     id: r.id,
     userId: r.userId,
     conversationId: r.conversationId,
-    title: r.title,
-    prompt: r.prompt,
-    options: r.options as DocState["options"],
+    title: c.open(D, "title", r.title),
+    prompt: c.open(D, "prompt", r.prompt),
+    options: openOptions(c, r.options) as DocState["options"],
     status: r.status as DocStatus,
     outline: outline && "sections" in outline ? (outline as DocState["outline"]) : null,
-    glossary: (r.glossary ?? []) as DocState["glossary"],
-    sources: (r.sources ?? []) as DocState["sources"],
-    summary: r.summary,
+    glossary: c.openJson(D, "glossary", r.glossary ?? []) as DocState["glossary"],
+    sources: c.openJson(D, "sources", r.sources ?? []) as DocState["sources"],
+    summary: c.open(D, "summary", r.summary),
     words: r.words,
     version: r.version,
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
-    sections: sections.sort((a, b) => a.ord - b.ord).map(toSection),
+    sections: sections.sort((a, b) => a.ord - b.ord).map((s) => toSection(c, s)),
   };
 }
 
-function sectionData(s: DocSection) {
+function sectionData(c: UserCrypto, s: DocSection) {
   return {
     ord: s.ord,
-    heading: s.heading,
+    heading: c.seal(S, "heading", s.heading),
     level: s.level,
-    markdown: s.markdown,
-    summary: s.summary,
+    markdown: c.seal(S, "markdown", s.markdown),
+    summary: c.seal(S, "summary", s.summary),
     status: s.status,
     sourceIds: s.sourceIds,
     usedIds: s.usedIds,
-    evidence: json(s.evidence),
-    images: json(s.images),
+    evidence: json(c.sealJson(S, "evidence", s.evidence)),
+    images: json(c.sealJson(S, "images", s.images)),
     model: s.model,
     words: s.words,
   };
@@ -109,22 +128,34 @@ function toThread(v: unknown): QaEntry[] {
   return v.filter((e): e is QaEntry => !!e && typeof e.id === "string" && typeof e.q === "string" && typeof e.a === "string").map((e) => ({ id: e.id, q: e.q, a: e.a, at: String(e.at ?? "") }));
 }
 
-function toHighlight(r: { id: string; docId: string; sectionId: string; quote: string; prefix: string; suffix: string; color: string; note: string | null; thread?: unknown; createdAt: Date }): Highlight {
-  return { id: r.id, docId: r.docId, sectionId: r.sectionId, quote: r.quote, prefix: r.prefix, suffix: r.suffix, color: r.color, note: r.note, thread: toThread(r.thread), createdAt: iso(r.createdAt) };
+function toHighlight(c: UserCrypto, r: { id: string; docId: string; sectionId: string; quote: string; prefix: string; suffix: string; color: string; note: string | null; thread?: unknown; createdAt: Date }): Highlight {
+  return {
+    id: r.id,
+    docId: r.docId,
+    sectionId: r.sectionId,
+    quote: c.open(H, "quote", r.quote),
+    prefix: c.open(H, "prefix", r.prefix),
+    suffix: c.open(H, "suffix", r.suffix),
+    color: r.color,
+    note: c.openNullable(H, "note", r.note),
+    thread: toThread(c.openJson(H, "thread", r.thread)),
+    createdAt: iso(r.createdAt),
+  };
 }
 
 export const prismaStore: DocStore = {
   async create(input) {
+    const c = await userCrypto(input.userId);
     const row = await db().doc.create({
-      data: { userId: input.userId, conversationId: input.conversationId, prompt: input.prompt, title: input.title ?? "", options: json(input.options), status: "planning" },
+      data: { userId: input.userId, conversationId: input.conversationId, prompt: c.seal(D, "prompt", input.prompt), title: c.seal(D, "title", input.title ?? ""), options: json(sealOptions(c, input.options)), status: "planning" },
     });
-    return toDoc(row, []);
+    return toDoc(c, row, []);
   },
 
   async get(userId, id) {
     if (!isUuid(id)) return null;
     const row = await db().doc.findFirst({ where: { id, userId }, include: { sections: true } });
-    return row ? toDoc(row, row.sections) : null;
+    return row ? toDoc(await userCrypto(userId), row, row.sections) : null;
   },
 
   async list(userId, conversationId) {
@@ -141,9 +172,10 @@ export const prismaStore: DocStore = {
       take: 200,
       select: { id: true, title: true, status: true, words: true, conversationId: true, createdAt: true, updatedAt: true, options: true, _count: { select: { sections: true } } },
     });
+    const c = await userCrypto(userId);
     return rows.map((r) => ({
       id: r.id,
-      title: r.title,
+      title: c.open(D, "title", r.title),
       status: r.status as DocStatus,
       words: r.words,
       sections: r._count.sections,
@@ -154,36 +186,39 @@ export const prismaStore: DocStore = {
   },
 
   async update(userId, id, patch) {
+    const c = await userCrypto(userId);
     const data: Prisma.DocUpdateManyMutationInput = {};
-    if (patch.title !== undefined) data.title = patch.title;
+    if (patch.title !== undefined) data.title = c.seal(D, "title", patch.title);
     if (patch.status !== undefined) data.status = patch.status;
-    if (patch.outline !== undefined) data.outline = json(patch.outline ?? {});
-    if (patch.glossary !== undefined) data.glossary = json(patch.glossary);
-    if (patch.sources !== undefined) data.sources = json(patch.sources);
-    if (patch.summary !== undefined) data.summary = patch.summary;
+    if (patch.outline !== undefined) data.outline = json(c.sealJson(D, "outline", patch.outline ?? {}));
+    if (patch.glossary !== undefined) data.glossary = json(c.sealJson(D, "glossary", patch.glossary));
+    if (patch.sources !== undefined) data.sources = json(c.sealJson(D, "sources", patch.sources));
+    if (patch.summary !== undefined) data.summary = c.seal(D, "summary", patch.summary);
     if (patch.words !== undefined) data.words = patch.words;
     if (patch.version !== undefined) data.version = patch.version;
-    if (patch.options !== undefined) data.options = json(patch.options);
+    if (patch.options !== undefined) data.options = json(sealOptions(c, patch.options));
     data.updatedAt = new Date();
     await db().doc.updateMany({ where: { id, userId }, data });
   },
 
   async setSections(userId, id, sections) {
+    const c = await userCrypto(userId);
     await db().$transaction(async (t) => {
       const owned = await t.doc.count({ where: { id, userId } });
       if (!owned) return;
       await t.docSection.deleteMany({ where: { docId: id } });
-      if (sections.length) await t.docSection.createMany({ data: sections.map((s) => ({ docId: id, sectionId: s.sectionId, ...sectionData(s) })) });
+      if (sections.length) await t.docSection.createMany({ data: sections.map((s) => ({ docId: id, sectionId: s.sectionId, ...sectionData(c, s) })) });
     });
   },
 
   async saveSection(userId, id, s) {
     const owned = await db().doc.count({ where: { id, userId } });
     if (!owned) return;
+    const c = await userCrypto(userId);
     await db().docSection.upsert({
       where: { docId_sectionId: { docId: id, sectionId: s.sectionId } },
-      create: { docId: id, sectionId: s.sectionId, ...sectionData(s) },
-      update: sectionData(s),
+      create: { docId: id, sectionId: s.sectionId, ...sectionData(c, s) },
+      update: sectionData(c, s),
     });
   },
 
@@ -197,7 +232,8 @@ export const prismaStore: DocStore = {
   async addRevision(userId, id, sectionId, version, markdown, reason) {
     const owned = await db().doc.count({ where: { id, userId } });
     if (!owned) return;
-    await db().docRevision.create({ data: { docId: id, sectionId, version, markdown, reason } });
+    const c = await userCrypto(userId);
+    await db().docRevision.create({ data: { docId: id, sectionId, version, markdown: c.seal(R, "markdown", markdown), reason } });
     const keep = await db().docRevision.findMany({
       where: { docId: id, sectionId },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -214,35 +250,51 @@ export const prismaStore: DocStore = {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: MAX_REVISIONS,
     });
-    return rows.map((r) => ({ version: r.version, markdown: r.markdown, reason: r.reason as RevisionReason, createdAt: iso(r.createdAt) }));
+    const c = await userCrypto(userId);
+    return rows.map((r) => ({ version: r.version, markdown: c.open(R, "markdown", r.markdown), reason: r.reason as RevisionReason, createdAt: iso(r.createdAt) }));
   },
 
   async highlights(userId, id) {
     if (!isUuid(id)) return [];
     const rows = await db().docHighlight.findMany({ where: { docId: id, userId, doc: { userId } }, orderBy: { createdAt: "asc" } });
-    return rows.map(toHighlight);
+    const c = await userCrypto(userId);
+    return rows.map((r) => toHighlight(c, r));
   },
 
   async addHighlight(userId, id, h) {
     const owned = await db().doc.count({ where: { id, userId } });
     if (!owned) return null;
-    const row = await db().docHighlight.create({ data: { docId: id, userId, sectionId: h.sectionId, quote: h.quote, prefix: h.prefix, suffix: h.suffix, color: h.color, note: h.note, thread: json(h.thread ?? []) } });
-    return toHighlight(row);
+    const c = await userCrypto(userId);
+    const row = await db().docHighlight.create({
+      data: {
+        docId: id,
+        userId,
+        sectionId: h.sectionId,
+        quote: c.seal(H, "quote", h.quote),
+        prefix: c.seal(H, "prefix", h.prefix),
+        suffix: c.seal(H, "suffix", h.suffix),
+        color: h.color,
+        note: c.sealNullable(H, "note", h.note),
+        thread: json(c.sealJson(H, "thread", h.thread ?? [])),
+      },
+    });
+    return toHighlight(c, row);
   },
 
   async highlight(userId, id, highlightId) {
     if (!isUuid(highlightId) || !isUuid(id)) return null;
     const row = await db().docHighlight.findFirst({ where: { id: highlightId, docId: id, userId } });
-    return row ? toHighlight(row) : null;
+    return row ? toHighlight(await userCrypto(userId), row) : null;
   },
 
   async appendThread(userId, id, highlightId, entry) {
     if (!isUuid(highlightId) || !isUuid(id)) return null;
     const row = await db().docHighlight.findFirst({ where: { id: highlightId, docId: id, userId } });
     if (!row) return null;
-    const thread = [...toThread(row.thread), entry].slice(-MAX_THREAD);
-    const saved = await db().docHighlight.update({ where: { id: highlightId }, data: { thread: json(thread) } });
-    return toHighlight(saved);
+    const c = await userCrypto(userId);
+    const thread = [...toThread(c.openJson(H, "thread", row.thread)), entry].slice(-MAX_THREAD);
+    const saved = await db().docHighlight.update({ where: { id: highlightId }, data: { thread: json(c.sealJson(H, "thread", thread)) } });
+    return toHighlight(c, saved);
   },
 
   async removeHighlight(userId, id, highlightId) {

@@ -3,6 +3,7 @@ import { markEmbeddingsCurrent, needsReembed } from "../db/embeddingGuard.js";
 import { toVector } from "../db/vector.js";
 import { embeddingInput } from "../ingest/chunk.js";
 import { log } from "../util/logger.js";
+import { userCrypto } from "../crypto/userData.js";
 import { embedTexts } from "./index.js";
 import { dropAllIndexes } from "../recall/index.js";
 
@@ -22,11 +23,17 @@ export async function reembedAll(): Promise<void> {
         where: { id: { gt: lastId } },
         orderBy: { id: "asc" },
         take: BATCH,
-        select: { id: true, headingPath: true, content: true },
+        select: { id: true, headingPath: true, content: true, source: { select: { userId: true } } },
       });
+      // Chunk text is sealed with the owner's key: open it just long enough to embed it.
+      const opened = [];
+      for (const r of rows) {
+        const c = await userCrypto(r.source.userId);
+        opened.push({ headingPath: r.headingPath === null ? null : c.open("chunks", "heading_path", r.headingPath), content: c.open("chunks", "content", r.content) });
+      }
       if (rows.length === 0) break;
       const vectors = await embedTexts(
-        rows.map((r) => embeddingInput({ headingPath: r.headingPath, content: r.content })),
+        opened.map((r) => embeddingInput(r)),
         "document",
         { reembed: true },
       );
