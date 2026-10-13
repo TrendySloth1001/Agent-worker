@@ -21,10 +21,14 @@ class TourPage extends StatelessWidget {
     required this.body,
     this.children = const [],
     this.hero = false,
+    this.total = OnboardingSizes.pages,
   });
 
   /// The welcome page: a bigger illustration.
   final bool hero;
+
+  /// Pages in the tour this page belongs to (the first-run tour has six).
+  final int total;
 
   final int index;
   final IllustrationKind art;
@@ -54,7 +58,7 @@ class TourPage extends StatelessWidget {
         TextSpan(
           children: [
             TextSpan(
-              text: OnboardingStrings.step(index, OnboardingSizes.pages),
+              text: OnboardingStrings.step(index, total),
               style: TextStyle(color: p.accent),
             ),
             const TextSpan(text: '  '),
