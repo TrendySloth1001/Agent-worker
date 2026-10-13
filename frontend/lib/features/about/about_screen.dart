@@ -128,6 +128,9 @@ class _AboutScreenState extends State<AboutScreen> {
           AboutStrings.licenseDoodles,
         ], AboutStrings.licenseDoodlesText),
         LicenseEntryWithLineBreaks([
+          AboutStrings.licenseLobeIcons,
+        ], AboutStrings.licenseLobeIconsText),
+        LicenseEntryWithLineBreaks([
           AboutStrings.licenseFonts,
         ], AboutStrings.licenseFontsText),
       ]),

@@ -13,6 +13,7 @@ abstract final class BrandLogos {
   static const _asset = 'asset';
   static const _tint = 'tint';
   static const _dir = 'assets/brand/logos';
+  static const _models = '$_dir/models';
 
   // Accounts and apps.
   static const AppIconData github = [
@@ -67,6 +68,36 @@ abstract final class BrandLogos {
   ];
   static const AppIconData openrouterColor = [
     [tag, {_asset: '$_dir/openrouter_color.svg'}],
+  ];
+
+  // Model families (who made the model, whichever provider serves it).
+  // NVIDIA Nemotron uses [nvidia]. Pick one with `ModelLogos.forModelId`.
+  static const AppIconData openai = [
+    [tag, {_asset: '$_models/openai.svg', _tint: true}],
+  ];
+  static const AppIconData gemma = [
+    [tag, {_asset: '$_models/gemma.svg', _tint: true}],
+  ];
+  static const AppIconData meta = [
+    [tag, {_asset: '$_models/meta.svg'}],
+  ];
+  static const AppIconData qwen = [
+    [tag, {_asset: '$_models/qwen.svg'}],
+  ];
+  static const AppIconData glm = [
+    [tag, {_asset: '$_models/glm.svg'}],
+  ];
+  static const AppIconData deepseek = [
+    [tag, {_asset: '$_models/deepseek.svg'}],
+  ];
+  static const AppIconData kimi = [
+    [tag, {_asset: '$_models/kimi.svg', _tint: true}],
+  ];
+  static const AppIconData mistral = [
+    [tag, {_asset: '$_models/mistral.svg'}],
+  ];
+  static const AppIconData microsoft = [
+    [tag, {_asset: '$_models/microsoft.svg'}],
   ];
 
   // Knowledge and web sources.
@@ -160,6 +191,15 @@ abstract final class BrandLogos {
     ollama,
     openrouter,
     openrouterColor,
+    openai,
+    gemma,
+    meta,
+    qwen,
+    glm,
+    deepseek,
+    kimi,
+    mistral,
+    microsoft,
     reddit,
     redditMono,
     stackoverflow,
