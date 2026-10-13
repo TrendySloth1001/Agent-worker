@@ -566,7 +566,7 @@ chatRouter.post("/", async (req, res) => {
     prompt.push({
       role: "system",
       content: toolsNote({
-        web: searching && webItems.length > 0 ? "searched" : webMode === "off" ? "off" : "auto-none",
+        web: searching && webItems.length > 0 ? "searched" : searching ? "unavailable" : webMode === "off" ? "off" : "auto-none",
         kb: body.knowledge ? "on" : "off",
         kbSuggested: suggestion?.kind === "kb",
         docSuggested: suggestion?.kind === "doc",

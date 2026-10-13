@@ -6,6 +6,8 @@ import { memoryEvents, usageEvents, type TelemetryEvent } from "../db/usage.js";
 import { MODELS, cooldownUntil } from "../models.js";
 import { rateSnapshots } from "../usage/rateLimits.js";
 import { quotaSnapshot } from "../llm/quota.js";
+import { webStats } from "../web/stats.js";
+import { breaker as webBreaker, PROVIDERS as WEB_PROVIDERS } from "../web/providers.js";
 import { budgetSnapshot } from "../llm/budget.js";
 import { slotSnapshot } from "../llm/slots.js";
 import { AppError } from "../util/errors.js";
@@ -92,6 +94,20 @@ function emptyModel(provider: string, model: string) {
     lastError: null,
   };
 }
+
+/** Web search health since the process started: per-provider latency, cache hit, empty and error rates, and circuit state. */
+telemetryRouter.get("/web", (_req, res) => {
+  const stats = webStats();
+  const circuits = webBreaker.snapshot();
+  const providers = WEB_PROVIDERS.map((p) => ({
+    provider: p.name,
+    role: p.role,
+    enabled: p.enabled(),
+    circuit: circuits[p.breakerKey ?? p.name]?.state ?? "closed",
+    ...(stats.providers.find((s) => s.provider === p.name) ?? {}),
+  }));
+  res.json({ providers, research: stats.research });
+});
 
 telemetryRouter.get("/timeseries", async (req, res) => {
   const q = z

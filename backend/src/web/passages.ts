@@ -8,10 +8,12 @@ const STOP = new Set(
   ),
 );
 
+/** Light suffix stripping so "computer", "computing" and "computation" meet; short words and numbers are kept as they are. */
 export function stem(t: string): string {
-  if (/\d/.test(t) || t.length < 5) return t;
-  const r = t.replace(/(ings?|edly|ed|es|s|ly)$/, "");
-  return r.length >= 4 ? r.replace(/e$/, "") : r;
+  if (/\d/.test(t) || t.length < 5 || !/^[a-z]/.test(t)) return t;
+  const r = t.replace(/(ations?|ions?|ings?|ers?|edly|ed|es|s|ly)$/, "");
+  if (r.length < 4) return t;
+  return r.replace(/e$/, "");
 }
 
 export function terms(s: string): string[] {
@@ -31,12 +33,14 @@ export function splitPassages(text: string, maxLen = 700): string[] {
     .filter(Boolean);
   const out: string[] = [];
   let heading = "";
-  for (const b of blocks) {
+  for (let b of blocks) {
     if (/^#{1,6}\s/.test(b) && !b.includes("\n")) {
       heading = b.replace(/^#+\s*/, "");
       continue;
     }
     if (isNoise(b)) continue;
+    b = stripMarkup(b);
+    if (b.length < 3) continue;
     const pieces: string[] = [];
     if (b.length <= maxLen) pieces.push(b);
     else {
@@ -67,7 +71,27 @@ function isNoise(b: string): boolean {
   if (/^(\[[^\]]*\]\([^)]*\)\s*[|·•\-*]?\s*){3,}$/.test(b)) return true; // row of links
   const linkChars = [...b.matchAll(/\]\([^)]*\)/g)].reduce((n, m) => n + m[0].length, 0);
   if (b.length > 0 && linkChars / b.length > 0.5) return true;
-  return /\b(cookies?|privacy policy|subscribe to our newsletter|all rights reserved|sign up for)\b/i.test(b) && b.length < 220;
+  if (/\b(cookies?|privacy policy|subscribe to our newsletter|all rights reserved|sign up for)\b/i.test(b) && b.length < 220) return true;
+  if (b.length < 90 && BOILERPLATE.test(b.replace(/[[\]*_#>]/g, "").trim())) return true;
+  // A menu: several short lines without sentence punctuation.
+  if (!b.startsWith("```")) {
+    const lines = b.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length >= 4 && lines.reduce((n, l) => n + l.length, 0) / lines.length < 28 && !lines.some((l) => /[.!?:;]\s*$/.test(l) || /\d/.test(l))) return true;
+  }
+  return false;
+}
+
+const BOILERPLATE = /^(skip to (main )?content|share( this( article| post)?)?|advertisement|sponsored|read more|continue reading|sign in|log ?in|sign up|subscribe|follow us|related (posts|articles|stories)|table of contents|contents|menu|search|loading\.*|back to top|print|email|tweet|copy link|image( credit| source)?:.*|photo:.*|getty images|you may also like|recommended( for you)?|most popular|trending)\b/i;
+
+/** Markdown to plain prose: images dropped, links reduced to their text, emphasis markers removed. */
+export function stripMarkup(b: string): string {
+  if (b.startsWith("```")) return b;
+  return b
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)/g, "$1")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/[ \t]+/g, " ")
+    .trim();
 }
 
 export type ScoredPassage = { text: string; score: number; index: number };

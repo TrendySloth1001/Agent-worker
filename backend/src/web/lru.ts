@@ -24,6 +24,10 @@ export class TtlLru<V> {
     while (this.map.size > this.max) this.map.delete(this.map.keys().next().value as string);
   }
 
+  clear(): void {
+    this.map.clear();
+  }
+
   get size(): number {
     return this.map.size;
   }

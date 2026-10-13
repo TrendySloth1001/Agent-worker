@@ -63,8 +63,8 @@ function* tsFiles(dir: string): Generator<string> {
   }
 }
 
-/** Owner-only surfaces, where technical detail is wanted; web/ is owned by the web-search work (errorBody still sanitizes it). */
-const OWNER_ONLY = [/routes\/telemetry\.ts$/, /routes\/usage\.ts$/, /\/web\//];
+/** Owner-only surfaces, where technical detail is wanted. */
+const OWNER_ONLY = [/routes\/telemetry\.ts$/, /routes\/usage\.ts$/];
 
 test("user messages: AppError and notice literals in src are user-safe", () => {
   const offenders: string[] = [];
