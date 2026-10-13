@@ -141,7 +141,10 @@ sealed class ChatEvent {
     if (json is! Map<String, dynamic>) return null;
     switch (name) {
       case 'start':
-        return StartEvent();
+        return StartEvent([
+          for (final c in json['candidates'] as List? ?? const [])
+            if (c is String) c,
+        ]);
       case 'status':
         return StatusEvent(json['phase'] as String? ?? '');
       case 'notice':
@@ -171,7 +174,10 @@ sealed class ChatEvent {
             if (s is String && s.trim().isNotEmpty) s.trim(),
         ]);
       case 'model':
-        return ModelEvent(json['model'] as String? ?? '');
+        return ModelEvent(
+          json['model'] as String? ?? '',
+          attempt: (json['attempt'] as num?)?.toInt() ?? 1,
+        );
       case 'delta':
         return DeltaEvent(json['text'] as String? ?? '');
       case 'reset':
@@ -235,7 +241,12 @@ sealed class ChatEvent {
   }
 }
 
-class StartEvent extends ChatEvent {}
+class StartEvent extends ChatEvent {
+  const StartEvent([this.candidates = const []]);
+
+  /// Model ids the server may try, best first.
+  final List<String> candidates;
+}
 
 class StatusEvent extends ChatEvent {
   const StatusEvent(this.phase);
@@ -273,8 +284,11 @@ class SuggestionsEvent extends ChatEvent {
 }
 
 class ModelEvent extends ChatEvent {
-  const ModelEvent(this.model);
+  const ModelEvent(this.model, {this.attempt = 1});
   final String model;
+
+  /// 1 for the first model tried, higher after a silent switch.
+  final int attempt;
 }
 
 class DeltaEvent extends ChatEvent {

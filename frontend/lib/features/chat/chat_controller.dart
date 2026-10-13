@@ -824,6 +824,7 @@ class ChatController extends ChangeNotifier {
       switch (event) {
         case StatusEvent(:final phase):
           message.status = phase;
+          message.waitLast = 'status';
           notifyListeners();
         case final NoticeEvent n:
           // Silent notices (model switches) never show.
@@ -854,8 +855,10 @@ class ChatController extends ChangeNotifier {
           }
         case SuggestionsEvent(:final items):
           message.meta = {...message.meta, SuggestConfig.followUpKey: items};
-        case ModelEvent(:final model):
+        case ModelEvent(:final model, :final attempt):
           message.modelId = model;
+          message.waitAttempt = attempt;
+          message.waitLast = 'model';
           notifyListeners();
         case DeltaEvent(:final text):
           if (stale) {
@@ -892,7 +895,11 @@ class ChatController extends ChangeNotifier {
         case TableEvent():
           _onTable(message, event);
           notifyListeners();
-        case StartEvent() || UsageEvent():
+        case StartEvent(:final candidates):
+          message.waitCandidates = candidates;
+          message.waitLast = 'start';
+          notifyListeners();
+        case UsageEvent():
           break;
       }
     }

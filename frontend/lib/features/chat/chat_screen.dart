@@ -375,6 +375,7 @@ class _ChatScreenState extends State<ChatScreen> {
             key: ObjectKey(message),
             message: message,
             label: _controller.modelName(message.modelId),
+            models: _controller.models,
             question: _questionFor(messages, count - 1 - index),
             conversationId: _controller.conversationId,
             onFork: canFork
