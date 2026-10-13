@@ -117,6 +117,43 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.8.0',
+      date: '14 Oct 2026',
+      headline: 'See sparky think',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Live progress',
+          detail:
+              'While you wait, sparky shows what it is doing: picking a '
+              'model, searching the web, reading your files.',
+          icon: HugeIcons.strokeRoundedLoading03,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Meet the models',
+          detail:
+              'Tap the model name under any answer to see who made it and '
+              'what it is good at.',
+          icon: HugeIcons.strokeRoundedInformationCircle,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Living backgrounds',
+          detail:
+              'The dot grid on sign-in, onboarding and the home screen '
+              'ripples when you touch it, then rests to save battery.',
+          icon: HugeIcons.strokeRoundedGridView,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Cleaner About page',
+          detail: 'Your version and update status, at a glance.',
+          icon: HugeIcons.strokeRoundedInformationSquare,
+        ),
+      ],
+    ),
+    (
       version: '1.7.0',
       date: '13 Oct 2026',
       headline: 'Updates, built in',
