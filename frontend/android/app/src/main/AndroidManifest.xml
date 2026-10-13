@@ -11,6 +11,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Action cards: "Set an alarm" (AlarmClock intents), only after Confirm. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- In-app updates: installs the downloaded sparky APK (the user allows
+         "Install unknown apps" for sparky once). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="sparky"
@@ -166,6 +169,10 @@
         </receiver>
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
+            android:exported="false" />
+        <!-- Install status of an in-app update (PackageInstaller callback). -->
+        <receiver
+            android:name=".UpdaterReceiver"
             android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"

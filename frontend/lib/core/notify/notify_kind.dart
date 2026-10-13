@@ -2,6 +2,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart'
     show Importance;
 
 import '../constants/notify_copy.dart';
+import '../constants/update.dart';
 
 /// One Android notification channel: what the system settings list.
 class NotifyChannel {
@@ -237,6 +238,22 @@ enum NotifyKind {
       name: NotifyCopy.reminderChannel,
       description: NotifyCopy.reminderChannelInfo,
       importance: Importance.high,
+    ),
+  ),
+
+  /// "A new sparky is ready": once per version, quietly.
+  appUpdate(
+    key: 'app_update',
+    label: UpdateStrings.notifyLabel,
+    help: UpdateStrings.notifyHelp,
+    group: NotifyGroup.account,
+    channel: NotifyChannel(
+      id: 'app_update',
+      name: UpdateStrings.channelName,
+      description: UpdateStrings.channelInfo,
+      importance: Importance.low,
+      sound: false,
+      vibrate: false,
     ),
   );
 
