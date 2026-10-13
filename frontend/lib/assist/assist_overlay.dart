@@ -47,6 +47,9 @@ import 'circle/circle_view.dart';
 import 'live/live_bar.dart';
 import 'live/live_voice.dart';
 import 'live/speaker.dart';
+import '../core/widgets/confirm_sheet.dart';
+import '../core/widgets/illustration.dart';
+import '../core/constants/confirm_copy.dart';
 
 /// Card colour of the overlay: white on light, raised black on dark.
 Color _card(AppPalette p) => p.isDark ? p.surfaceRaised : p.surface;
@@ -187,24 +190,16 @@ class _AssistOverlayState extends State<AssistOverlay> {
   Future<bool> _micRationale(VoiceController voice) async {
     final state = await voice.permissionState();
     if (state == VoicePermissionState.granted || !mounted) return true;
-    final open = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(AssistStrings.micTitle),
-        content: const Text(AssistStrings.micBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(AssistStrings.micNotNow),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(AssistStrings.micOpen),
-          ),
-        ],
-      ),
+    final open = await ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.homeChat,
+      kicker: ConfirmCopy.kickerMic,
+      title: AssistStrings.micTitle,
+      body: AssistStrings.micBody,
+      confirmLabel: AssistStrings.micOpen,
+      cancelLabel: AssistStrings.micNotNow,
     );
-    if (open == true) await _c.bridge.allowMicInApp();
+    if (open) await _c.bridge.allowMicInApp();
     return false;
   }
 
@@ -312,7 +307,9 @@ class _AssistOverlayState extends State<AssistOverlay> {
                   }
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: _c.close,
+                    // A tap outside first closes the keyboard, then the overlay.
+                    onTap: () =>
+                        _focus.hasFocus ? _focus.unfocus() : _c.close(),
                     child: ListenableBuilder(
                       listenable: Listenable.merge([_c, ?widget.voice]),
                       builder: (context, _) => DotMatrixBackdrop(

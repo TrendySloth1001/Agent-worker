@@ -134,7 +134,7 @@ void main() {
     );
   });
 
-  testWidgets('tone, length and mode dialogs apply the pick', (tester) async {
+  testWidgets('tone, length and mode sheets apply the pick', (tester) async {
     final s = await _pump(tester);
     await _open(tester, SettingsStrings.catReplies);
 
@@ -168,11 +168,12 @@ void main() {
       findsOneWidget,
     );
 
-    // The dialog opens with the saved pick selected.
+    // The sheet opens with the saved pick selected.
     await _tap(tester, find.text(SettingsStrings.toneLabel));
     await _settle(tester);
     expect(_modelGroup(tester), 'casual');
-    await tester.tap(find.text(SettingsStrings.cancel));
+    // Tapping outside the sheet dismisses it.
+    await tester.tapAt(const Offset(10, 10));
     await _settle(tester);
   });
 

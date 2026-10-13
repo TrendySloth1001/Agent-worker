@@ -89,6 +89,8 @@ abstract final class NotifyCopy {
   static const quietHelp = 'Notifications arrive without sound or vibration.';
   static const quietFrom = 'From';
   static const quietTo = 'Until';
+  static const quietKicker = 'QUIET HOURS';
+  static const quietSet = 'Set time';
   static const testLabel = 'Send a test notification';
   static const testHelp = 'Check how a notification looks and sounds.';
   static const testSent = 'Test notification sent.';
@@ -200,4 +202,9 @@ abstract final class NotifyConfig {
 
   /// A permission request faster than this did not show a system dialog.
   static const dialogMin = Duration(milliseconds: 300);
+}
+
+abstract final class NotifySizes {
+  /// Height of the time wheel in the quiet-hours sheet.
+  static const timeWheel = 180.0;
 }

@@ -90,14 +90,14 @@ void main() {
 
     final done = showDeleteAllChats(_ctx(tester), api: api);
     await tester.pumpAndSettle();
-    final delete = find.widgetWithText(TextButton, ChatCleanupStrings.delete);
-    expect(tester.widget<TextButton>(delete).onPressed, isNull);
+    final delete = find.byKey(const ValueKey('delete-all-ok'));
+    expect(tester.widget<FilledButton>(delete).onPressed, isNull);
 
     await tester.tap(find.text(ChatCleanupStrings.keepPinned));
     await tester.tap(find.text(ChatCleanupStrings.includeArchived));
     await tester.enterText(find.byType(TextField), 'delete');
     await tester.pump();
-    expect(tester.widget<TextButton>(delete).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(delete).onPressed, isNotNull);
     await tester.tap(delete);
     await tester.pumpAndSettle();
 
@@ -116,11 +116,11 @@ void main() {
     await tester.enterText(find.byType(TextField), 'DELETE');
     await tester.pump();
     await tester.tap(
-      find.widgetWithText(TextButton, ChatCleanupStrings.delete),
+      find.byKey(const ValueKey('delete-all-ok')),
     );
     await tester.pumpAndSettle();
     expect(find.text(ChatCleanupStrings.deleteAllFailed), findsOneWidget);
-    expect(find.byType(DeleteAllChatsDialog), findsOneWidget);
+    expect(find.byType(DeleteAllChatsSheet), findsOneWidget);
   });
 
   for (final (name, theme) in [

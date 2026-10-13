@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/storage.dart';
 import '../../core/haptics.dart';
@@ -17,6 +16,10 @@ import '../chat/preview/file_preview.dart';
 import '../settings/widgets/settings_kit.dart';
 import '../chat/widgets/attachment_views.dart';
 import 'storage_controller.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
+import '../../core/widgets/input_sheet.dart';
 
 enum StorageAction { open, share, download, openChat, select, rename, delete }
 
@@ -167,26 +170,26 @@ Future<void> renameStorageFile(
   final dot = file.name.lastIndexOf('.');
   final base = dot > 0 ? file.name.substring(0, dot) : file.name;
   final field = TextEditingController(text: base);
-  final name = await showDialog<String>(
-    context: context,
-    builder: (dialog) => StorageDialog(
-      title: StorageStrings.rename,
-      confirm: AppStrings.save,
-      onConfirm: () => Navigator.pop(dialog, field.text.trim()),
-      child: TextField(
-        controller: field,
-        autofocus: true,
-        maxLength: 200,
-        style: dialog.text.body,
-        decoration: const InputDecoration(
-          hintText: StorageStrings.renameHint,
-          counterText: '',
-        ),
-        onSubmitted: (v) => Navigator.pop(dialog, v.trim()),
+  final accepted = await InputSheet.show(
+    context,
+    kicker: ConfirmCopy.kickerRename,
+    title: StorageStrings.rename,
+    confirmLabel: AppStrings.save,
+    field: (sheet, submit) => TextField(
+      controller: field,
+      autofocus: true,
+      maxLength: 200,
+      style: sheet.text.body,
+      decoration: const InputDecoration(
+        hintText: StorageStrings.renameHint,
+        counterText: '',
       ),
+      onSubmitted: (_) => submit(),
     ),
   );
-  field.dispose();
+  // The controller is left to the garbage collector: the sheet is still
+  // animating out when this resumes.
+  final name = accepted ? field.text.trim() : null;
   if (name == null || name.isEmpty || name == base || !context.mounted) return;
   final ok = await controller.rename(file, name);
   if (!context.mounted) return;
@@ -204,17 +207,16 @@ Future<bool> confirmStorageDelete(
   List<String> ids,
 ) async {
   if (ids.isEmpty) return false;
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (dialog) => StorageDialog(
-      title: StorageStrings.deleteTitle(ids.length),
-      confirm: StorageStrings.delete,
-      destructive: true,
-      onConfirm: () => Navigator.pop(dialog, true),
-      child: Text(StorageStrings.deleteBody, style: dialog.text.bodySmall),
-    ),
+  final ok = await ConfirmSheet.show(
+    context,
+    illustration: IllustrationKind.emptyKnowledge,
+    kicker: ConfirmCopy.kickerDelete,
+    title: StorageStrings.deleteTitle(ids.length),
+    body: StorageStrings.deleteBody,
+    confirmLabel: StorageStrings.delete,
+    destructive: true,
   );
-  if (ok != true || !context.mounted) return false;
+  if (!ok || !context.mounted) return false;
   final n = await controller.delete(ids);
   if (!context.mounted) return n != null;
   storageNotice(
@@ -231,58 +233,4 @@ String storageSubtitle(FileInfo f) {
   if (f.status == FileStatus.processing) parts.add(StorageStrings.processing);
   if (f.status == FileStatus.failed) parts.add(StorageStrings.failed);
   return parts.where((s) => s.isNotEmpty).join(StorageStrings.separator);
-}
-
-class StorageDialog extends StatelessWidget {
-  const StorageDialog({
-    super.key,
-    required this.title,
-    required this.confirm,
-    required this.onConfirm,
-    required this.child,
-    this.destructive = false,
-  });
-
-  final String title;
-  final String confirm;
-  final VoidCallback onConfirm;
-  final Widget child;
-  final bool destructive;
-
-  @override
-  Widget build(BuildContext context) {
-    return M3Themed(
-      child: Builder(
-        builder: (context) {
-          final p = context.palette;
-          return AlertDialog(
-            title: Text(title),
-            content: child,
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Haptics.tap();
-                  Navigator.pop(context);
-                },
-                child: const Text(AppStrings.cancel),
-              ),
-              FilledButton(
-                style: destructive
-                    ? FilledButton.styleFrom(
-                        backgroundColor: p.accent,
-                        foregroundColor: AppColors.white,
-                      )
-                    : null,
-                onPressed: () {
-                  Haptics.tap();
-                  onConfirm();
-                },
-                child: Text(confirm),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
 }

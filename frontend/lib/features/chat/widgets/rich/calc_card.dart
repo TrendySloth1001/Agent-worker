@@ -9,6 +9,8 @@ import '../../../../core/theme/app_palette.dart';
 import 'calc_eval.dart';
 import 'playful_common.dart';
 import 'rich_frame.dart';
+import '../../../../core/widgets/input_sheet.dart';
+import '../../../../core/constants/confirm_copy.dart';
 
 class CalcInput {
   const CalcInput(
@@ -211,44 +213,35 @@ class _CalcCardState extends State<CalcCard> {
     final ctl = TextEditingController(text: _fmtInput(i, _vals[i.id]!));
     final p = context.palette;
     final t = context.text;
-    final res = await showDialog<double>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(i.label),
-        content: TextField(
-          controller: ctl,
-          autofocus: true,
-          maxLength: PlayfulSizes.inputMaxLength,
-          keyboardType: const TextInputType.numberWithOptions(
-            decimal: true,
-            signed: true,
-          ),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]')),
-          ],
-          style: t.body,
-          cursorColor: p.accent,
-          decoration: InputDecoration(
-            counterText: '',
-            helperText: '${_fmtInput(i, i.min)} .. ${_fmtInput(i, i.max)}',
-            helperStyle: t.caption,
-            suffixText: i.suffix,
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
+    final ok = await InputSheet.show(
+      context,
+      kicker: ConfirmCopy.kickerEdit,
+      title: i.label,
+      confirmLabel: PlayfulStrings.ok,
+      cancelLabel: PlayfulStrings.cancel,
+      field: (sheet, submit) => TextField(
+        controller: ctl,
+        autofocus: true,
+        maxLength: PlayfulSizes.inputMaxLength,
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: true,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(PlayfulStrings.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, double.tryParse(ctl.text)),
-            child: const Text(PlayfulStrings.ok),
-          ),
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]')),
         ],
+        style: t.body,
+        cursorColor: p.accent,
+        decoration: InputDecoration(
+          counterText: '',
+          helperText: '${_fmtInput(i, i.min)} .. ${_fmtInput(i, i.max)}',
+          helperStyle: t.caption,
+          suffixText: i.suffix,
+        ),
+        onSubmitted: (_) => submit(),
       ),
     );
-    ctl.dispose();
+    final res = ok ? double.tryParse(ctl.text) : null;
     if (res != null && mounted) {
       setState(() => _vals[i.id] = res.clamp(i.min, i.max).toDouble());
     }

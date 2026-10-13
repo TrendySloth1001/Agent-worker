@@ -1,8 +1,17 @@
+import 'package:flutter/cupertino.dart'
+    show
+        CupertinoDatePicker,
+        CupertinoDatePickerMode,
+        CupertinoTextThemeData,
+        CupertinoTheme,
+        CupertinoThemeData;
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/notify_copy.dart';
 import '../../../core/haptics.dart';
+import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/input_sheet.dart';
 import '../../../core/notify/notification_center.dart';
 import '../../../core/notify/notify_policy.dart';
 import '../../../core/notify/notify_prefs.dart';
@@ -85,14 +94,38 @@ class QuietHoursTiles extends StatelessWidget {
 
   Future<void> _pick(
     BuildContext context,
+    String title,
     int minute,
     ValueChanged<int> set,
   ) async {
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: minute ~/ 60, minute: minute % 60),
+    var picked = minute;
+    final p = context.palette;
+    final ok = await InputSheet.show(
+      context,
+      kicker: NotifyCopy.quietKicker,
+      title: title,
+      confirmLabel: NotifyCopy.quietSet,
+      field: (sheet, submit) => SizedBox(
+        height: NotifySizes.timeWheel,
+        child: CupertinoTheme(
+          data: CupertinoThemeData(
+            brightness: p.isDark ? Brightness.dark : Brightness.light,
+            textTheme: CupertinoTextThemeData(
+              dateTimePickerTextStyle: sheet.text.body.copyWith(
+                color: p.textPrimary,
+              ),
+            ),
+          ),
+          child: CupertinoDatePicker(
+            mode: CupertinoDatePickerMode.time,
+            use24hFormat: MediaQuery.alwaysUse24HourFormatOf(sheet),
+            initialDateTime: DateTime(2000, 1, 1, minute ~/ 60, minute % 60),
+            onDateTimeChanged: (d) => picked = d.hour * 60 + d.minute,
+          ),
+        ),
+      ),
     );
-    if (t != null) set(t.hour * 60 + t.minute);
+    if (ok) set(picked);
   }
 
   @override
@@ -112,13 +145,23 @@ class QuietHoursTiles extends StatelessWidget {
             icon: AppIcons.history,
             title: NotifyCopy.quietFrom,
             trailing: Text(QuietHours.format(prefs.quietStart)),
-            onTap: () => _pick(context, prefs.quietStart, prefs.setQuietStart),
+            onTap: () => _pick(
+              context,
+              NotifyCopy.quietFrom,
+              prefs.quietStart,
+              prefs.setQuietStart,
+            ),
           ),
           SettingsTile(
             icon: AppIcons.history,
             title: NotifyCopy.quietTo,
             trailing: Text(QuietHours.format(prefs.quietEnd)),
-            onTap: () => _pick(context, prefs.quietEnd, prefs.setQuietEnd),
+            onTap: () => _pick(
+              context,
+              NotifyCopy.quietTo,
+              prefs.quietEnd,
+              prefs.setQuietEnd,
+            ),
           ),
         ],
       ],

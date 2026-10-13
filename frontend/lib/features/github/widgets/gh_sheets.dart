@@ -11,6 +11,9 @@ import '../../chat/widgets/github/github_review_card.dart';
 import '../../settings/widgets/settings_kit.dart';
 import '../gh_actions.dart';
 import '../gh_item_controller.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/confirm_copy.dart';
 
 /// Sheets of the pull request / issue actions. Each runs the action through
 /// the controller and explains a refusal inline (with Reconnect when the
@@ -350,26 +353,16 @@ Future<void> showCloseSheet(BuildContext context, GhItemController c) async {
   if (d == null) return;
   String? reason;
   if (d.isPr) {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => M3Themed(
-        child: AlertDialog(
-          title: const Text(GhDetailStrings.closePr),
-          content: const Text(GhDetailStrings.closePrBody),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(GhDetailStrings.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(GhDetailStrings.close),
-            ),
-          ],
-        ),
-      ),
+    final ok = await ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.githubBranches,
+      kicker: ConfirmCopy.kickerClose,
+      title: GhDetailStrings.closePr,
+      body: GhDetailStrings.closePrBody,
+      confirmLabel: GhDetailStrings.close,
+      cancelLabel: GhDetailStrings.cancel,
     );
-    if (ok != true) return;
+    if (!ok) return;
   } else {
     reason = await showM3Sheet<String>(
       context,

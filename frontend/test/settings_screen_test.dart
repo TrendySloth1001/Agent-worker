@@ -226,7 +226,7 @@ void main() {
     await tester.tap(find.text(SettingsStrings.reset));
     await _settle(tester);
     expect(find.text(SettingsStrings.resetConfirmTitle), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, SettingsStrings.reset));
+    await tester.tap(find.byKey(const ValueKey('confirm-ok')));
     await _settle(tester);
     expect(settings.tone, '');
     expect(settings.length, 'detailed');

@@ -21,6 +21,7 @@ import 'features/settings/settings_controller.dart';
 import 'features/settings/usage_controller.dart';
 import 'features/connections/connections_controller.dart';
 import 'features/docs/doc_registry.dart';
+import 'core/widgets/tap_outside_unfocus.dart';
 
 // The assistant overlay's entrypoint: exported so it is compiled into the
 // app (AssistEngine.kt starts it by name in its own engine).
@@ -133,9 +134,11 @@ class _AppState extends State<App> {
                 ),
               ),
               // The blocking "update to continue" screen covers everything.
-              child: UpdateGate(
-                controller: UpdateController.instance,
-                child: child!,
+              child: TapOutsideUnfocus(
+                child: UpdateGate(
+                  controller: UpdateController.instance,
+                  child: child!,
+                ),
               ),
             );
           },

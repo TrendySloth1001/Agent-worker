@@ -16,6 +16,9 @@ import 'key_copy.dart';
 import 'key_sheet.dart';
 import 'key_usage_screen.dart';
 import 'keys_intro_screen.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/confirm_copy.dart';
 
 /// Settings → Your API keys. Open to every signed-in user (not owner-only).
 class ApiKeysScreen extends StatefulWidget {
@@ -94,20 +97,16 @@ class _ApiKeysScreenState extends State<ApiKeysScreen> {
 
   Future<void> _remove(KeyProviderInfo p) async {
     Haptics.tap();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => StorageDialog(
-        title: ApiKeysStrings.removeTitle,
-        confirm: ApiKeysStrings.remove,
-        destructive: true,
-        onConfirm: () => Navigator.pop(dialog, true),
-        child: Text(
-          ApiKeysStrings.removeBody(p.name),
-          style: Theme.of(dialog).textTheme.bodyMedium,
-        ),
-      ),
+    final ok = await ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.homeThink,
+      kicker: ConfirmCopy.kickerRemove,
+      title: ApiKeysStrings.removeTitle,
+      body: ApiKeysStrings.removeBody(p.name),
+      confirmLabel: ApiKeysStrings.remove,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     final done = await _c.remove(p.id);
     if (!mounted) return;
     storageNotice(

@@ -16,6 +16,9 @@ import 'settings_pages.dart';
 import 'widgets/connection_notice.dart';
 import 'widgets/developer_section.dart';
 import 'widgets/settings_kit.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
 
 /// Settings root in the Android 16 style: a collapsing large title, a search
 /// bar that finds items on every page, an account card and grouped category
@@ -163,32 +166,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _confirmReset() async {
     Haptics.tap();
     final scope = AppScope.of(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: AppIcon(
-          SettingsIcons.reset,
-          size: AppIconSize.lg,
-          color: Theme.of(ctx).colorScheme.error,
-        ),
-        title: const Text(SettingsStrings.resetConfirmTitle),
-        content: const Text(SettingsStrings.resetConfirmBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(SettingsStrings.cancel),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(SettingsStrings.reset),
-          ),
-        ],
-      ),
+    final ok = await ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.homeThink,
+      kicker: ConfirmCopy.kickerReset,
+      title: SettingsStrings.resetConfirmTitle,
+      body: SettingsStrings.resetConfirmBody,
+      confirmLabel: SettingsStrings.reset,
+      cancelLabel: SettingsStrings.cancel,
+      destructive: true,
     );
-    if (ok != true) return;
+    if (!ok) return;
     scope.settings.resetToDefaults();
     if (!mounted) return;
     ScaffoldMessenger.of(

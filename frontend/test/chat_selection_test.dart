@@ -300,7 +300,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(ChatCleanupStrings.deleteTitle(2)), findsOneWidget);
     expect(find.text(ChatCleanupStrings.deleteBody), findsOneWidget);
-    // The dialog's red confirm button.
+    // The sheet's red confirm button.
     await tester.tap(find.widgetWithText(FilledButton, 'Delete').last);
     await tester.pumpAndSettle();
     expect(r.api.deletes.single.toSet(), {'a', 'c'});

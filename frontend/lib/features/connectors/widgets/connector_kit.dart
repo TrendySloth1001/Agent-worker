@@ -12,6 +12,9 @@ import '../../apps/apps_screen.dart';
 import '../../../core/constants/brand_logos.dart';
 import '../../settings/widgets/settings_kit.dart';
 import '../connector_auth.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/confirm_copy.dart';
 
 /// Shared pieces of the Google Drive and Notion screens, in the GitHub
 /// screen's design: profile card, permission card, account actions.
@@ -458,26 +461,16 @@ Future<bool> confirmConnector(
   required String body,
   required String go,
 }) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (context) => M3Themed(
-      child: AlertDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(ConnectorStrings.disconnectKeep),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(go),
-          ),
-        ],
-      ),
-    ),
+  return ConfirmSheet.show(
+    context,
+    illustration: IllustrationKind.homeRead,
+    kicker: ConfirmCopy.kickerDisconnect,
+    title: title,
+    body: body,
+    confirmLabel: go,
+    cancelLabel: ConnectorStrings.disconnectKeep,
+    destructive: true,
   );
-  return ok == true;
 }
 
 void connectorToast(BuildContext context, String text) {
