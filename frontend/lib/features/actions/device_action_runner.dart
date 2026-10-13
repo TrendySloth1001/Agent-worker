@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/constants/device_actions.dart';
+import '../../core/constants/media_apps.dart';
 import '../../core/notify/notification_center.dart';
 import 'device_action.dart';
 
@@ -22,8 +23,13 @@ abstract class DeviceActionRunner {
   static bool get supported =>
       debugSupported ?? (!kIsWeb && Platform.isAndroid);
 
-  /// Runs [action]. Only ever called from the card's Confirm button.
+  /// Runs [action]. Called from a card's Confirm button, or from an
+  /// "Open in {app}" chip the user tapped (opening a link needs no confirm).
   Future<ActionOutcome> run(DeviceAction action);
+
+  /// Which of [packages] are installed (and can open links), by package.
+  /// Unknown (no bridge) is reported as not installed.
+  Future<Map<String, bool>> appAvailability(List<String> packages);
 }
 
 class ChannelDeviceActionRunner implements DeviceActionRunner {
@@ -54,6 +60,20 @@ class ChannelDeviceActionRunner implements DeviceActionRunner {
       return outcomeOf(r);
     } catch (_) {
       return ActionOutcome.failed;
+    }
+  }
+
+  @override
+  Future<Map<String, bool>> appAvailability(List<String> packages) async {
+    if (packages.isEmpty) return const {};
+    try {
+      final r = await _channel.invokeMapMethod<String, bool>(
+        MediaAppWire.availability,
+        {MediaAppWire.packages: packages},
+      );
+      return {for (final p in packages) p: r?[p] ?? false};
+    } catch (_) {
+      return {for (final p in packages) p: false};
     }
   }
 }

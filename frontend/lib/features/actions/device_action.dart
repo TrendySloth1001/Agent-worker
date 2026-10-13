@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../core/constants/device_actions.dart';
 import '../../core/constants/app_icons.dart';
+import '../../core/constants/media_apps.dart';
 
 /// What a proposed action does on the phone.
 enum DeviceActionType {
@@ -47,6 +48,54 @@ class DeviceAction {
   final DateTime? until;
 
   String? operator [](String key) => fields[key];
+
+  /// Opens [url], in [app] when it is installed (the "Open in {app}" chips).
+  factory DeviceAction.link(String url, {MediaApp? app}) =>
+      DeviceAction._(DeviceActionType.url, {
+        DeviceActionWire.url: url,
+        if (app != null) DeviceActionWire.app: app.label,
+        if (app != null) DeviceActionWire.package: app.package,
+      });
+
+  /// The media / shopping / maps app a url or app action is for, if known:
+  /// by package, by the name the model wrote, else by the link's host.
+  MediaApp? get mediaApp => switch (type) {
+    DeviceActionType.url =>
+      MediaApps.forPackage(fields[DeviceActionWire.package]) ??
+          MediaApps.forName(fields[DeviceActionWire.app]) ??
+          MediaApps.forUrl(fields[DeviceActionWire.url]!),
+    DeviceActionType.app =>
+      MediaApps.forPackage(fields[DeviceActionWire.package]) ??
+          MediaApps.forName(fields[DeviceActionWire.name]),
+    _ => null,
+  };
+
+  /// The same link with the app's package (opened in the app). Model
+  /// actions name the app at most; the package comes from [mediaApp].
+  DeviceAction inApp() {
+    final app = mediaApp;
+    if (app == null) return this;
+    return DeviceAction._(type, {
+      ...fields,
+      DeviceActionWire.package: app.package,
+    });
+  }
+
+  /// The same link without a package: Android opens it in the browser.
+  DeviceAction inBrowser() => DeviceAction._(type, {
+    for (final e in fields.entries)
+      if (e.key != DeviceActionWire.package) e.key: e.value,
+  });
+
+  /// The app's store page ("Get the app"), or null when the app is unknown.
+  DeviceAction? storePage() {
+    final app = mediaApp;
+    if (app == null) return null;
+    return DeviceAction._(DeviceActionType.url, {
+      DeviceActionWire.url: MediaAppWire.storePage(app.package),
+      DeviceActionWire.store: app.package,
+    });
+  }
 
   bool get allDay => fields[DeviceActionWire.allDay] == 'true';
 
@@ -151,6 +200,8 @@ class DeviceAction {
   // ---- what the card shows -------------------------------------------------
 
   String get kicker => switch (type) {
+    DeviceActionType.url ||
+    DeviceActionType.app when mediaApp != null => MediaAppStrings.kicker,
     DeviceActionType.alarm => DeviceActionStrings.alarm,
     DeviceActionType.timer => DeviceActionStrings.timer,
     DeviceActionType.reminder => DeviceActionStrings.reminder,
@@ -181,6 +232,9 @@ class DeviceAction {
   };
 
   String get title => switch (type) {
+    DeviceActionType.url when mediaApp != null => MediaAppStrings.openIn(
+      mediaApp!.label,
+    ),
     DeviceActionType.alarm => DeviceActionStrings.alarmTitle(clock(when!)),
     DeviceActionType.timer => DeviceActionStrings.timerTitle(
       DeviceActionStrings.duration(seconds),

@@ -17,101 +17,191 @@ abstract final class BrandLogos {
 
   // Accounts and apps.
   static const AppIconData github = [
-    [tag, {_asset: '$_dir/github.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/github.svg', _tint: true},
+    ],
   ];
   static const AppIconData googleDrive = [
-    [tag, {_asset: '$_dir/google_drive.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_drive.svg'},
+    ],
   ];
   static const AppIconData googleDriveMono = [
-    [tag, {_asset: '$_dir/google_drive_mono.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/google_drive_mono.svg', _tint: true},
+    ],
   ];
   static const AppIconData googlePhotos = [
-    [tag, {_asset: '$_dir/google_photos.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_photos.svg'},
+    ],
   ];
   static const AppIconData gmail = [
-    [tag, {_asset: '$_dir/gmail.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/gmail.svg'},
+    ],
   ];
   static const AppIconData googleCalendar = [
-    [tag, {_asset: '$_dir/google_calendar.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_calendar.svg'},
+    ],
   ];
   static const AppIconData notion = [
-    [tag, {_asset: '$_dir/notion.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/notion.svg'},
+    ],
   ];
   static const AppIconData notionMono = [
-    [tag, {_asset: '$_dir/notion_mono.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/notion_mono.svg', _tint: true},
+    ],
   ];
   static const AppIconData slack = [
-    [tag, {_asset: '$_dir/slack.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/slack.svg'},
+    ],
   ];
 
   // Model providers.
   static const AppIconData groq = [
-    [tag, {_asset: '$_dir/groq.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/groq.svg'},
+    ],
   ];
   static const AppIconData groqMono = [
-    [tag, {_asset: '$_dir/groq_mono.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/groq_mono.svg', _tint: true},
+    ],
   ];
   static const AppIconData groqWordmark = [
-    [tag, {_asset: '$_dir/groq_wordmark.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/groq_wordmark.svg'},
+    ],
   ];
   static const AppIconData nvidia = [
-    [tag, {_asset: '$_dir/nvidia.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/nvidia.svg'},
+    ],
   ];
   static const AppIconData nvidiaWordmark = [
-    [tag, {_asset: '$_dir/nvidia_wordmark.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/nvidia_wordmark.svg'},
+    ],
   ];
   static const AppIconData ollama = [
-    [tag, {_asset: '$_dir/ollama.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/ollama.svg', _tint: true},
+    ],
   ];
   static const AppIconData openrouter = [
-    [tag, {_asset: '$_dir/openrouter.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/openrouter.svg', _tint: true},
+    ],
   ];
   static const AppIconData openrouterColor = [
-    [tag, {_asset: '$_dir/openrouter_color.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/openrouter_color.svg'},
+    ],
   ];
 
   // Model families (who made the model, whichever provider serves it).
   // NVIDIA Nemotron uses [nvidia]. Pick one with `ModelLogos.forModelId`.
   static const AppIconData openai = [
-    [tag, {_asset: '$_models/openai.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_models/openai.svg', _tint: true},
+    ],
   ];
   static const AppIconData gemma = [
-    [tag, {_asset: '$_models/gemma.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_models/gemma.svg', _tint: true},
+    ],
   ];
   static const AppIconData meta = [
-    [tag, {_asset: '$_models/meta.svg'}],
+    [
+      tag,
+      {_asset: '$_models/meta.svg'},
+    ],
   ];
   static const AppIconData qwen = [
-    [tag, {_asset: '$_models/qwen.svg'}],
+    [
+      tag,
+      {_asset: '$_models/qwen.svg'},
+    ],
   ];
   static const AppIconData glm = [
-    [tag, {_asset: '$_models/glm.svg'}],
+    [
+      tag,
+      {_asset: '$_models/glm.svg'},
+    ],
   ];
   static const AppIconData deepseek = [
-    [tag, {_asset: '$_models/deepseek.svg'}],
+    [
+      tag,
+      {_asset: '$_models/deepseek.svg'},
+    ],
   ];
   static const AppIconData kimi = [
-    [tag, {_asset: '$_models/kimi.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_models/kimi.svg', _tint: true},
+    ],
   ];
   static const AppIconData mistral = [
-    [tag, {_asset: '$_models/mistral.svg'}],
+    [
+      tag,
+      {_asset: '$_models/mistral.svg'},
+    ],
   ];
   static const AppIconData microsoft = [
-    [tag, {_asset: '$_models/microsoft.svg'}],
+    [
+      tag,
+      {_asset: '$_models/microsoft.svg'},
+    ],
   ];
 
   // Knowledge and web sources.
   static const AppIconData reddit = [
-    [tag, {_asset: '$_dir/reddit.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/reddit.svg'},
+    ],
   ];
   static const AppIconData redditMono = [
-    [tag, {_asset: '$_dir/reddit_mono.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/reddit_mono.svg', _tint: true},
+    ],
   ];
   static const AppIconData stackoverflow = [
-    [tag, {_asset: '$_dir/stackoverflow.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/stackoverflow.svg'},
+    ],
   ];
   static const AppIconData hackernews = [
-    [tag, {_asset: '$_dir/hackernews.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/hackernews.svg'},
+    ],
   ];
 
   // File types. Drive rows show the icon Google serves per file; these are
@@ -119,57 +209,164 @@ abstract final class BrandLogos {
   // filters flutter_svg cannot draw (Docs comes out washed out), so the
   // faithful file-shaped ones are used and the 2026 set is kept for later.
   static const AppIconData googleDocs = [
-    [tag, {_asset: '$_dir/google_docs.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_docs.svg'},
+    ],
   ];
   static const AppIconData googleSheets = [
-    [tag, {_asset: '$_dir/google_sheets.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_sheets.svg'},
+    ],
   ];
   static const AppIconData googleSlides = [
-    [tag, {_asset: '$_dir/google_slides.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_slides.svg'},
+    ],
   ];
   static const AppIconData googleDocs2026 = [
-    [tag, {_asset: '$_dir/google_docs_2026.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_docs_2026.svg'},
+    ],
   ];
   static const AppIconData googleSheets2026 = [
-    [tag, {_asset: '$_dir/google_sheets_2026.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_sheets_2026.svg'},
+    ],
   ];
   static const AppIconData googleSlides2026 = [
-    [tag, {_asset: '$_dir/google_slides_2026.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_slides_2026.svg'},
+    ],
   ];
   static const AppIconData googleDocsFlat = [
-    [tag, {_asset: '$_dir/google_docs_selfhst.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_docs_selfhst.svg'},
+    ],
   ];
   static const AppIconData googleSheetsFlat = [
-    [tag, {_asset: '$_dir/google_sheets_selfhst.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_sheets_selfhst.svg'},
+    ],
   ];
   static const AppIconData googleSlidesFlat = [
-    [tag, {_asset: '$_dir/google_slides_selfhst.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/google_slides_selfhst.svg'},
+    ],
   ];
   static const AppIconData pdf = [
-    [tag, {_asset: '$_dir/pdf.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/pdf.svg'},
+    ],
   ];
   static const AppIconData word = [
-    [tag, {_asset: '$_dir/word.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/word.svg'},
+    ],
   ];
   static const AppIconData excel = [
-    [tag, {_asset: '$_dir/excel.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/excel.svg'},
+    ],
   ];
   static const AppIconData powerpoint = [
-    [tag, {_asset: '$_dir/powerpoint.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/powerpoint.svg'},
+    ],
   ];
   static const AppIconData text = [
-    [tag, {_asset: '$_dir/text_file.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/text_file.svg'},
+    ],
   ];
   static const AppIconData markdownFile = [
-    [tag, {_asset: '$_dir/markdown_file.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/markdown_file.svg'},
+    ],
   ];
   static const AppIconData markdown = [
-    [tag, {_asset: '$_dir/markdown.svg', _tint: true}],
+    [
+      tag,
+      {_asset: '$_dir/markdown.svg', _tint: true},
+    ],
+  ];
+
+  // Media, shopping and maps apps ("Open in YouTube Music" chips and cards).
+  static const AppIconData youtube = [
+    [
+      tag,
+      {_asset: '$_dir/youtube.svg'},
+    ],
+  ];
+  static const AppIconData youtubeMusic = [
+    [
+      tag,
+      {_asset: '$_dir/youtube_music.svg'},
+    ],
+  ];
+  static const AppIconData spotify = [
+    [
+      tag,
+      {_asset: '$_dir/spotify.svg'},
+    ],
+  ];
+  static const AppIconData jiosaavn = [
+    [
+      tag,
+      {_asset: '$_dir/jiosaavn.svg', _tint: true},
+    ],
+  ];
+  static const AppIconData gaana = [
+    [
+      tag,
+      {_asset: '$_dir/gaana.svg', _tint: true},
+    ],
+  ];
+  static const AppIconData appleMusic = [
+    [
+      tag,
+      {_asset: '$_dir/apple_music.svg'},
+    ],
+  ];
+  static const AppIconData amazon = [
+    [
+      tag,
+      {_asset: '$_dir/amazon.svg'},
+    ],
+  ];
+  static const AppIconData flipkart = [
+    [
+      tag,
+      {_asset: '$_dir/flipkart.svg'},
+    ],
+  ];
+  static const AppIconData googleMaps = [
+    [
+      tag,
+      {_asset: '$_dir/google_maps.svg'},
+    ],
   ];
 
   // Credits.
   static const AppIconData flutter = [
-    [tag, {_asset: '$_dir/flutter.svg'}],
+    [
+      tag,
+      {_asset: '$_dir/flutter.svg'},
+    ],
   ];
 
   /// Every bundled logo (the gallery test renders them all).
@@ -220,6 +417,15 @@ abstract final class BrandLogos {
     text,
     markdownFile,
     markdown,
+    youtube,
+    youtubeMusic,
+    spotify,
+    jiosaavn,
+    gaana,
+    appleMusic,
+    amazon,
+    flipkart,
+    googleMaps,
     flutter,
   ];
 

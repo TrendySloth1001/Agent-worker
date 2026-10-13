@@ -6,8 +6,14 @@
  * "]" arrives, so a tag split across chunks is still rewritten.
  * Reasoning blocks (<think>...</think>, as Qwen/DeepSeek-style models stream
  * them inline) are removed, also when a tag is split across chunks.
+ * With [valid] ids, tags that cite nothing of this turn are dropped together
+ * with the space before them, so "India [W9]." reads "India." (not "India .").
+ * Trailing spaces of a chunk are held until the next one for the same reason.
  */
 export class TagStream {
+  /** [valid]: the turn's citation ids (may grow while streaming); omitted, every tag is kept. */
+  constructor(private readonly valid?: ReadonlySet<string>) {}
+
   private pending = "";
   private thinkTail = "";
   private inThink = false;
@@ -19,10 +25,19 @@ export class TagStream {
     this.pending = "";
     const open = s.lastIndexOf("[");
     if (open >= 0 && s.indexOf("]", open) < 0 && s.length - open <= 24) {
-      this.pending = s.slice(open);
-      s = s.slice(0, open);
+      // The spaces before the open tag go with it (dropped with it if it cites nothing).
+      let cut = open;
+      while (cut > 0 && (s[cut - 1] === " " || s[cut - 1] === "\t")) cut--;
+      this.pending = s.slice(cut);
+      s = s.slice(0, cut);
+    } else {
+      const ws = /[ \t]+$/.exec(s);
+      if (ws) {
+        this.pending = ws[0];
+        s = s.slice(0, ws.index);
+      }
     }
-    const out = normalize(s);
+    const out = normalize(s, this.valid);
     if (out.trim()) this.emitted = true;
     return out;
   }
@@ -31,7 +46,7 @@ export class TagStream {
   flush(): string {
     // A dangling partial "<thi" that never became a tag is ordinary text; an open <think> is dropped.
     const tail = this.inThink ? "" : this.thinkTail;
-    const rest = normalize(this.pending + tail);
+    const rest = normalize(this.pending + tail, this.valid);
     this.pending = "";
     this.thinkTail = "";
     this.inThink = false;
@@ -87,11 +102,28 @@ function partialTail(s: string, tag: string): string {
   return "";
 }
 
-function normalize(s: string): string {
-  return s.replace(/\[([KWDGC]\d+(?:\s*[,;]\s*[KWDGC]\d+)+)\]/g, (_m, list: string) =>
+function normalize(s: string, valid?: ReadonlySet<string>): string {
+  const split = s.replace(/\[([KWDGC]\d+(?:\s*[,;]\s*[KWDGC]\d+)+)\]/g, (_m, list: string) =>
     list
       .split(/\s*[,;]\s*/)
       .map((t) => `[${t}]`)
       .join(""),
   );
+  return tidyCitations(split, valid);
+}
+
+const DROPPED = "\u0000";
+
+/**
+ * Drops tags whose id is not in [valid] (with the spaces before them) and
+ * removes spaces between a tag or a dropped tag and the punctuation after it:
+ * "Music [W3] ." -> "Music [W3].", "India [W9]." -> "India.".
+ */
+export function tidyCitations(s: string, valid?: ReadonlySet<string>): string {
+  if (!s.includes("[")) return s;
+  return s
+    .replace(/[ \t]*\[([KWDGC]\d+)\](?!\()/g, (m, id: string) => (valid && !valid.has(id) ? DROPPED : m))
+    .replace(/\u0000+[ \t]*(?=[.,;:!?)])/g, "")
+    .replace(/\u0000+/g, "")
+    .replace(/(\[[KWDGC]\d+\])[ \t]+(?=[.,;:!?)])/g, "$1");
 }

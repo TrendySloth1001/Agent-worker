@@ -3,7 +3,7 @@
 Official logos, fetched once from the Iconify API
 (`https://api.iconify.design/<set>/<name>.svg`) and bundled so they draw
 offline and before sign-in. Only the root `width`/`height` (`1em`, which
-flutter_svg cannot resolve) were removed; two monochrome marks got their
+flutter_svg cannot resolve) were removed; three monochrome marks got their
 official brand color baked in (noted below). Nothing else was redrawn or
 recolored. All names and logos are trademarks of their respective owners
 and are used only to identify those products.
@@ -50,6 +50,15 @@ Use: `BrandLogos` in `lib/core/constants/brand_logos.dart`.
 | markdown_file.svg | vscode-icons:file-type-markdown | MIT (VSCode Icons) |
 | markdown.svg | simple-icons:markdown | CC0 1.0 (Simple Icons) |
 | flutter.svg | logos:flutter-icon | CC0 (SVG Logos) |
+| youtube.svg | logos:youtube-icon | CC0 (SVG Logos) |
+| youtube_music.svg | thesvg-color:youtube-music | MIT (theSVG) |
+| spotify.svg | logos:spotify-icon | CC0 (SVG Logos) |
+| jiosaavn.svg | arcticons:jiosaavn | CC BY-SA 4.0 (Arcticons, Donnnno/Arcticons) |
+| gaana.svg | arcticons:gaana | CC BY-SA 4.0 (Arcticons) |
+| apple_music.svg | thesvg-color:apple-music | MIT (theSVG) |
+| amazon.svg | selfhst:amazon | CC BY 4.0 (selfh.st/icons) |
+| flipkart.svg | simple-icons:flipkart, filled with Flipkart blue #2874F0 | CC0 1.0 (Simple Icons) |
+| google_maps.svg | logos:google-maps | CC0 (SVG Logos) |
 
 ## Model family logos (`logos/models/`)
 

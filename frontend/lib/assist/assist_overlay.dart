@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../features/actions/open_in_chips.dart';
 import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
@@ -1176,6 +1177,11 @@ class _Answer extends StatelessWidget {
         if (message.citations.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
           SourceChips(citations: message.citations, used: message.usedIds),
+        ],
+        if (!message.isStreaming &&
+            OpenInChips.linksOf(message.citations).isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          OpenInChips(citations: message.citations),
         ],
       ],
     );
