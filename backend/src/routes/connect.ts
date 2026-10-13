@@ -78,7 +78,10 @@ connectPublicRouter.get("/google_drive/picker", async (req, res) => {
   const view = await picker.view(q(req, "ticket", 200) ?? "");
   const nonce = randomBytes(16).toString("base64");
   noStore(res);
-  res.setHeader("Referrer-Policy", "no-referrer");
+  // Google checks the picker API key against the page's origin (an HTTP
+  // referrer restriction), so send the origin only: never the path or the
+  // one-time ticket in the query.
+  res.setHeader("Referrer-Policy", "strict-origin");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Content-Security-Policy", pickerCsp(nonce));
   res.type("html").send(pickerPage(view, nonce));
