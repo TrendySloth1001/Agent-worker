@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_icons.dart';
-import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/chat_cleanup.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/history.dart';
@@ -15,6 +14,9 @@ import '../../settings/widgets/settings_kit.dart';
 import '../../../data/conversation.dart';
 import '../history_controller.dart';
 import 'merge_picker.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/confirm_copy.dart';
 
 /// Long-press menu for a conversation: rename (inline in the list), pin,
 /// archive, fork, merge, export or delete. Calls [onDeleted] after the server
@@ -157,23 +159,22 @@ Future<void> _merge(
     search: controller.find,
   );
   if (other == null || !context.mounted) return;
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (dialog) => ChatConfirmDialog(
-      title: LineageStrings.mergeTitle,
-      confirm: LineageStrings.merge,
-      onConfirm: () => Navigator.pop(dialog, true),
-      child: Text(LineageStrings.mergeBody, style: dialog.text.bodySmall),
-    ),
+  final ok = await ConfirmSheet.show(
+    context,
+    illustration: IllustrationKind.homeRead,
+    kicker: ConfirmCopy.kickerMerge,
+    title: sentenceCase(LineageStrings.mergeTitle),
+    body: LineageStrings.mergeBody,
+    confirmLabel: sentenceCase(LineageStrings.merge),
+    cancelLabel: sentenceCase(AppStrings.cancel),
   );
-  if (ok != true || !context.mounted) return;
+  if (!ok || !context.mounted) return;
   final navigator = Navigator.of(context, rootNavigator: true);
   unawaited(
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (_) => const PopScope(canPop: false, child: _Progress()),
+    ProgressSheet.open(
+      context,
+      illustration: IllustrationKind.homeRead,
+      label: sentenceCase(LineageStrings.merging),
     ),
   );
   final merged = await onMerge(chat.id, other.id);
@@ -187,17 +188,17 @@ Future<void> _delete(
   HistoryController controller,
   ValueChanged<String> onDeleted,
 ) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (dialog) => ChatConfirmDialog(
-      title: AppStrings.deleteChatTitle,
-      confirm: AppStrings.deleteChat,
-      destructive: true,
-      onConfirm: () => Navigator.pop(dialog, true),
-      child: Text(AppStrings.deleteChatBody, style: dialog.text.bodySmall),
-    ),
+  final ok = await ConfirmSheet.show(
+    context,
+    illustration: IllustrationKind.emptyHistory,
+    kicker: ConfirmCopy.kickerDelete,
+    title: sentenceCase(AppStrings.deleteChatTitle),
+    body: AppStrings.deleteChatBody,
+    confirmLabel: sentenceCase(AppStrings.deleteChat),
+    cancelLabel: sentenceCase(AppStrings.cancel),
+    destructive: true,
   );
-  if (ok != true) return;
+  if (!ok) return;
   if (await controller.delete(chat.id)) {
     Haptics.received();
     onDeleted(chat.id);
@@ -207,18 +208,17 @@ Future<void> _delete(
 }
 
 /// Asks before deleting [count] picked chats (and their files).
-Future<bool> confirmDeleteChats(BuildContext context, int count) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (dialog) => ChatConfirmDialog(
-      title: ChatCleanupStrings.deleteTitle(count),
-      confirm: ChatCleanupStrings.delete,
-      destructive: true,
-      onConfirm: () => Navigator.pop(dialog, true),
-      child: Text(ChatCleanupStrings.deleteBody, style: dialog.text.bodySmall),
-    ),
+Future<bool> confirmDeleteChats(BuildContext context, int count) {
+  return ConfirmSheet.show(
+    context,
+    illustration: IllustrationKind.emptyHistory,
+    kicker: ConfirmCopy.kickerDelete,
+    title: ChatCleanupStrings.deleteTitle(count),
+    body: ChatCleanupStrings.deleteBody,
+    confirmLabel: ChatCleanupStrings.delete,
+    cancelLabel: ChatCleanupStrings.cancel,
+    destructive: true,
   );
-  return ok == true;
 }
 
 class _SheetRow extends StatelessWidget {
@@ -242,91 +242,4 @@ class _SheetRow extends StatelessWidget {
     titleColor: color,
     onTap: onTap,
   );
-}
-
-/// MERGING with a spinner, shown while the briefing is written.
-class _Progress extends StatelessWidget {
-  const _Progress();
-
-  @override
-  Widget build(BuildContext context) {
-    return M3Themed(
-      child: Builder(
-        builder: (context) => AlertDialog(
-          content: Row(
-            children: [
-              SizedBox.square(
-                dimension: LineageSizes.progress,
-                child: CircularProgressIndicator(
-                  strokeWidth: AppBorder.thick,
-                  color: context.palette.accent,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              Text(
-                sentenceCase(LineageStrings.merging),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Material 3 confirm dialog with CANCEL and a (red, when [destructive])
-/// confirm button.
-class ChatConfirmDialog extends StatelessWidget {
-  const ChatConfirmDialog({
-    super.key,
-    required this.title,
-    required this.confirm,
-    required this.onConfirm,
-    required this.child,
-    this.destructive = false,
-  });
-
-  final String title;
-  final String confirm;
-  final VoidCallback onConfirm;
-  final Widget child;
-  final bool destructive;
-
-  @override
-  Widget build(BuildContext context) {
-    return M3Themed(
-      child: Builder(
-        builder: (context) {
-          final p = context.palette;
-          return AlertDialog(
-            title: Text(sentenceCase(title)),
-            content: child,
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Haptics.tap();
-                  Navigator.pop(context);
-                },
-                child: Text(sentenceCase(AppStrings.cancel)),
-              ),
-              FilledButton(
-                // The theme's buttons are full-width; dialog actions hug.
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, ChatCleanupSizes.dialogAction),
-                  backgroundColor: destructive ? p.accent : null,
-                  foregroundColor: destructive ? Colors.white : null,
-                ),
-                onPressed: () {
-                  Haptics.tap();
-                  onConfirm();
-                },
-                child: Text(sentenceCase(confirm)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
 }

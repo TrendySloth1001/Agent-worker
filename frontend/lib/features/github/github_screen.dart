@@ -19,6 +19,9 @@ import 'github_repo_screen.dart';
 import 'github_search_screen.dart';
 import 'widgets/gh_activity.dart';
 import 'widgets/gh_rows.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
 
 /// The connected GitHub account: who is linked, their repositories, pull
 /// requests, issues and recent commits. Not connected, it offers to connect.
@@ -105,27 +108,20 @@ class _GithubScreenState extends State<GithubScreen>
     required String body,
     required String keep,
     required String go,
-  }) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => M3Themed(
-        child: AlertDialog(
-          title: Text(title),
-          content: Text(body),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(keep),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(go),
-            ),
-          ],
-        ),
-      ),
+    bool destructive = false,
+  }) {
+    return ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.github,
+      kicker: destructive
+          ? ConfirmCopy.kickerDisconnect
+          : ConfirmCopy.kickerConfirm,
+      title: title,
+      body: body,
+      confirmLabel: go,
+      cancelLabel: keep,
+      destructive: destructive,
     );
-    return ok == true;
   }
 
   Future<void> _disconnect() async {
@@ -135,6 +131,7 @@ class _GithubScreenState extends State<GithubScreen>
       body: ConnectStrings.disconnectBody,
       keep: ConnectStrings.disconnectKeep,
       go: ConnectStrings.disconnect,
+      destructive: true,
     );
     if (!ok) return;
     try {

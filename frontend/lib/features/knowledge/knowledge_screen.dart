@@ -17,6 +17,9 @@ import '../settings/widgets/settings_kit.dart';
 import 'knowledge_controller.dart';
 import 'widgets/add_source_sheet.dart';
 import 'widgets/source_tile.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
 
 class KnowledgeScreen extends StatefulWidget {
   const KnowledgeScreen({super.key, this.controller, this.imageFor});
@@ -55,38 +58,16 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
 
   Future<bool> _confirmDelete() async {
     Haptics.tap();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => M3Themed(
-        child: Builder(
-          builder: (context) => AlertDialog(
-            title: const Text(KnowledgeCopy.deleteTitle),
-            content: const Text(AppStrings.deleteSourceBody),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Haptics.tap();
-                  Navigator.pop(context, false);
-                },
-                child: const Text(AppStrings.cancel),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: context.palette.accent,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  Haptics.tap();
-                  Navigator.pop(context, true);
-                },
-                child: const Text(KnowledgeCopy.deleteSource),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.emptyKnowledge,
+      kicker: ConfirmCopy.kickerDelete,
+      title: KnowledgeCopy.deleteTitle,
+      body: AppStrings.deleteSourceBody,
+      confirmLabel: KnowledgeCopy.deleteSource,
+      cancelLabel: AppStrings.cancel,
+      destructive: true,
     );
-    return ok ?? false;
   }
 
   @override

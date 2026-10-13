@@ -20,6 +20,8 @@ import '../rich/playful_common.dart';
 import '../rich/rich_frame.dart';
 import 'github_common.dart';
 import '../../../../core/widgets/m3_kit_extras.dart';
+import '../../../../core/widgets/confirm_sheet.dart';
+import '../../../../core/constants/confirm_copy.dart';
 
 /// ```github-connect block: links the user's own GitHub account with the
 /// OAuth device flow (code on screen, approve on github.com).
@@ -98,24 +100,17 @@ class _GithubConnectPanelState extends State<GithubConnectPanel> {
   }
 
   Future<void> _disconnect() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(ConnectStrings.disconnectTitle),
-        content: const Text(ConnectStrings.disconnectBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(ConnectStrings.disconnectKeep),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(ConnectStrings.disconnect),
-          ),
-        ],
-      ),
+    final ok = await ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.github,
+      kicker: ConfirmCopy.kickerDisconnect,
+      title: ConnectStrings.disconnectTitle,
+      body: ConnectStrings.disconnectBody,
+      confirmLabel: ConnectStrings.disconnect,
+      cancelLabel: ConnectStrings.disconnectKeep,
+      destructive: true,
     );
-    if (ok != true) return;
+    if (!ok) return;
     Haptics.tap();
     try {
       await _c.disconnectGithub();

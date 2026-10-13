@@ -4,11 +4,14 @@ import '../../../core/app_scope.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/chat_cleanup.dart';
 import '../../../core/haptics.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/conversation_events.dart';
 import '../../../data/conversations_api.dart';
 import 'settings_kit.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/confirm_copy.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 
 /// Destructive Settings row that deletes every chat, after a typed confirm.
 class DeleteAllChatsTile extends StatelessWidget {
@@ -39,10 +42,10 @@ Future<int?> showDeleteAllChats(
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final server = api ?? ConversationsApi(AppScope.of(context).baseUrl);
-  final result = await showDialog<ChatsWiped>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => DeleteAllChatsDialog(api: server),
+  final result = await showM3Sheet<ChatsWiped>(
+    context,
+    dismissible: false,
+    builder: (_) => DeleteAllChatsSheet(api: server),
   );
   if (result == null) return null;
   Haptics.received();
@@ -55,18 +58,18 @@ Future<int?> showDeleteAllChats(
   return result.deleted;
 }
 
-/// The confirm dialog: what to include, the typed word, then progress or
+/// The confirm sheet: what to include, the typed word, then progress or
 /// the error in place. Pops with the outcome once the server answered.
-class DeleteAllChatsDialog extends StatefulWidget {
-  const DeleteAllChatsDialog({super.key, required this.api});
+class DeleteAllChatsSheet extends StatefulWidget {
+  const DeleteAllChatsSheet({super.key, required this.api});
 
   final ConversationsApi api;
 
   @override
-  State<DeleteAllChatsDialog> createState() => _DeleteAllChatsDialogState();
+  State<DeleteAllChatsSheet> createState() => _DeleteAllChatsSheetState();
 }
 
-class _DeleteAllChatsDialogState extends State<DeleteAllChatsDialog> {
+class _DeleteAllChatsSheetState extends State<DeleteAllChatsSheet> {
   final _word = TextEditingController();
   bool _archived = true;
   bool _keepPinned = false;
@@ -117,34 +120,66 @@ class _DeleteAllChatsDialogState extends State<DeleteAllChatsDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final pill = sheetPillStyle(context);
     return PopScope(
       canPop: !_busy,
-      child: AlertDialog(
-        icon: AppIcon(
-          ChatCleanupIcons.delete,
-          size: AppIconSize.lg,
-          color: scheme.error,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
         ),
-        title: const Text(ChatCleanupStrings.deleteAllTitle),
-        content: SingleChildScrollView(
-          child: _busy ? _progress(text) : _form(scheme, text),
-        ),
-        actions: _busy
-            ? const []
-            : [
-                TextButton(
-                  onPressed: () {
-                    Haptics.tap();
-                    Navigator.pop(context);
-                  },
-                  child: const Text(ChatCleanupStrings.cancel),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.screenPadding,
+              0,
+              AppSpacing.screenPadding,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SheetIllustration(
+                  kind: IllustrationKind.emptyHistory,
+                  height: ConfirmSizes.formIllustration,
                 ),
-                TextButton(
-                  style: TextButton.styleFrom(foregroundColor: scheme.error),
-                  onPressed: _confirmed ? _delete : null,
-                  child: const Text(ChatCleanupStrings.delete),
+                const SheetHeadline(
+                  kicker: ConfirmCopy.kickerDelete,
+                  title: ChatCleanupStrings.deleteAllTitle,
                 ),
+                const SizedBox(height: AppSpacing.lg),
+                if (_busy) _progress(text) else _form(scheme, text),
+                if (!_busy) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: pill,
+                          onPressed: () {
+                            Haptics.tap();
+                            Navigator.pop(context);
+                          },
+                          child: const Text(ChatCleanupStrings.cancel),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: FilledButton(
+                          key: const ValueKey('delete-all-ok'),
+                          style: sheetDestructiveStyle(context),
+                          onPressed: _confirmed ? _delete : null,
+                          child: const Text(ChatCleanupStrings.delete),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -153,6 +188,7 @@ class _DeleteAllChatsDialogState extends State<DeleteAllChatsDialog> {
     return Semantics(
       liveRegion: true,
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const SizedBox.square(
             dimension: ChatCleanupSizes.progress,
@@ -174,6 +210,7 @@ class _DeleteAllChatsDialogState extends State<DeleteAllChatsDialog> {
       children: [
         Text(
           ChatCleanupStrings.deleteAllBody,
+          textAlign: TextAlign.center,
           style: text.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: AppSpacing.sm),

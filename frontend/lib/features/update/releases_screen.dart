@@ -16,6 +16,9 @@ import '../settings/widgets/usage_states.dart';
 import 'release_form_sheet.dart';
 import 'release_labels.dart';
 import 'releases_controller.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
 
 /// Owner-only control centre for app updates: every release with its status,
 /// how many people run each build, and the actions to ship, pull, edit and
@@ -59,26 +62,25 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
     _say(ok ? done : UpdateStrings.actionFailed);
   }
 
-  Future<bool> _confirm(String title, String body, String yes) async {
+  Future<bool> _confirm(
+    String title,
+    String body,
+    String yes, {
+    bool destructive = false,
+  }) {
     Haptics.tap();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(UpdateStrings.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(yes),
-          ),
-        ],
-      ),
+    return ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.homeCode,
+      kicker: destructive
+          ? ConfirmCopy.kickerDelete
+          : ConfirmCopy.kickerConfirm,
+      title: title,
+      body: body,
+      confirmLabel: yes,
+      cancelLabel: UpdateStrings.cancel,
+      destructive: destructive,
     );
-    return ok == true;
   }
 
   Future<void> _edit(OwnerRelease r) async {
@@ -180,6 +182,7 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
               UpdateStrings.confirmDeleteTitle,
               UpdateStrings.confirmDeleteBody,
               UpdateStrings.delete,
+              destructive: true,
             )) {
               return;
             }

@@ -356,11 +356,16 @@ class M3Empty extends StatelessWidget {
 Future<T?> showM3Sheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
+  bool dismissible = true,
+  bool useRootNavigator = false,
 }) {
   final base = AppTheme.settings(Theme.of(context));
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
+    isDismissible: dismissible,
+    enableDrag: dismissible,
+    useRootNavigator: useRootNavigator,
     useSafeArea: true,
     showDragHandle: true,
     backgroundColor: base.colorScheme.surfaceContainerLow,

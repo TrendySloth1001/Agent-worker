@@ -4,6 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/api_keys.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/confirm_copy.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -142,6 +145,11 @@ class _KeySheetState extends State<KeySheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const SheetIllustration(
+                kind: IllustrationKind.login,
+                height: ConfirmSizes.formIllustration,
+                gap: AppSpacing.sm,
+              ),
               M3SheetTitle(
                 widget.initial == null || info == null
                     ? ApiKeysStrings.sheetTitleAdd

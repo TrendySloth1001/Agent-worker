@@ -1,4 +1,3 @@
-import 'package:app/core/constants/app_strings.dart';
 import 'package:app/core/constants/api_keys.dart';
 import 'package:app/core/haptics.dart';
 import 'package:app/core/theme/app_theme.dart';
@@ -290,14 +289,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text(ApiKeysStrings.removeTitle), findsOneWidget);
       // Cancel keeps it.
-      await tester.tap(find.text(AppStrings.cancel));
+      await tester.tap(find.byKey(const ValueKey('confirm-cancel')));
       await tester.pump(const Duration(milliseconds: 400));
       expect(api.removed, isEmpty);
       await tester.tap(find.byKey(const ValueKey('remove-groq')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(
-        find.widgetWithText(FilledButton, ApiKeysStrings.remove),
+        find.byKey(const ValueKey('confirm-ok')),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));

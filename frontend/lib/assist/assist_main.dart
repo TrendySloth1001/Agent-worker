@@ -20,6 +20,7 @@ import 'assist_bridge.dart';
 import 'assist_controller.dart';
 import 'assist_overlay.dart';
 import 'share_payload.dart';
+import '../core/widgets/tap_outside_unfocus.dart';
 
 /// Entry point of the assistant overlay's engine (AssistEngine.kt starts it
 /// ahead of time, so the overlay is ready when the power button is held).
@@ -126,7 +127,7 @@ class _AssistAppState extends State<AssistApp> {
                   media.textScaler.scale(1) * _settings.textScaleFactor,
                 ),
               ),
-              child: child!,
+              child: TapOutsideUnfocus(child: child!),
             );
           },
           home: AssistOverlay(controller: _controller, voice: _voice),

@@ -375,7 +375,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(VoiceStrings.rationaleTitle), findsOneWidget);
       expect(perm.requests, 0);
-      await tester.tap(find.text(VoiceStrings.rationaleAllow));
+      await tester.tap(find.byKey(const ValueKey('confirm-ok')));
       await tester.pumpAndSettle();
       expect(perm.requests, 1);
       expect(c.phase, VoicePhase.listening);

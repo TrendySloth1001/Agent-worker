@@ -15,6 +15,9 @@ import '../settings/widgets/settings_kit.dart';
 import '../storage/storage_actions.dart';
 import '../storage/widgets/storage_tiles.dart';
 import 'memory_controller.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
 
 /// What the assistant remembers about the user: switch, search, add, edit,
 /// pin, delete and clear all.
@@ -105,17 +108,16 @@ class _MemoryScreenState extends State<MemoryScreen> {
   }
 
   Future<void> _clear() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => StorageDialog(
-        title: MemoryStrings.clearTitle,
-        confirm: MemoryStrings.clearAll,
-        destructive: true,
-        onConfirm: () => Navigator.pop(dialog, true),
-        child: Text(MemoryStrings.clearBody, style: dialog.text.bodySmall),
-      ),
+    final ok = await ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.homeThink,
+      kicker: ConfirmCopy.kickerDelete,
+      title: MemoryStrings.clearTitle,
+      body: MemoryStrings.clearBody,
+      confirmLabel: MemoryStrings.clearAll,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     final done = await _c.clearAll();
     if (!mounted) return;
     storageNotice(

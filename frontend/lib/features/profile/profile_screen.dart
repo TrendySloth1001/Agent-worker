@@ -35,6 +35,9 @@ import '../storage/storage_screen.dart';
 import '../../core/constants/storage.dart';
 import 'widgets/sign_in_methods.dart';
 import 'widgets/log_out_sheet.dart';
+import '../../core/widgets/confirm_sheet.dart';
+import '../../core/widgets/illustration.dart';
+import '../../core/constants/confirm_copy.dart';
 
 /// Account: name and photo, today's usage, sign-in methods, password,
 /// devices, log out.
@@ -158,39 +161,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = i.provider == SsoProviderIds.github
         ? SsoStrings.githubLabel
         : SsoStrings.googleLabel;
-    final p = context.palette;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: p.surface,
-        title: Text(SsoStrings.unlinkTitle(name), style: context.text.title),
-        content: Text(
-          SsoStrings.unlinkBody(name),
-          style: context.text.bodySmall,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              SsoStrings.keep,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              SsoStrings.unlink,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge!.copyWith(color: p.error),
-            ),
-          ),
-        ],
-      ),
+    final ok = await ConfirmSheet.show(
+      context,
+      illustration: i.provider == SsoProviderIds.github
+          ? IllustrationKind.github
+          : IllustrationKind.login,
+      kicker: ConfirmCopy.kickerUnlink,
+      title: SsoStrings.unlinkTitle(name),
+      body: SsoStrings.unlinkBody(name),
+      confirmLabel: SsoStrings.unlink,
+      cancelLabel: SsoStrings.keep,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => _methodBusy = i.id);
     try {
       await SsoApi.instance.unlink(i.id);
@@ -909,10 +892,17 @@ class _LoadError extends StatelessWidget {
 
 /// Bottom-sheet body that stays above the keyboard.
 class _SheetBody extends StatelessWidget {
-  const _SheetBody({required this.title, required this.children});
+  const _SheetBody({
+    required this.title,
+    required this.children,
+    this.illustration,
+  });
 
   final String title;
   final List<Widget> children;
+
+  /// Shown above the title; folds away while the keyboard is open.
+  final IllustrationKind? illustration;
 
   @override
   Widget build(BuildContext context) {
@@ -925,6 +915,11 @@ class _SheetBody extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (illustration != null)
+                SheetIllustration(
+                  kind: illustration!,
+                  height: ConfirmSizes.formIllustration,
+                ),
               Text(title, style: context.text.label),
               const SizedBox(height: AppSpacing.xl),
               ...children,
@@ -1005,6 +1000,7 @@ class _PasswordSheetState extends State<_PasswordSheet> {
     final title = set ? SsoStrings.setPassword : ProfileStrings.changePassword;
     return _SheetBody(
       title: title,
+      illustration: IllustrationKind.login,
       children: [
         if (set) ...[
           Text(SsoStrings.setPasswordHint, style: context.text.bodySmall),
@@ -1097,6 +1093,7 @@ class _DeleteSheetState extends State<_DeleteSheet> {
     final p = context.palette;
     return _SheetBody(
       title: ProfileStrings.deleteAccount,
+      illustration: IllustrationKind.homeDream,
       children: [
         Text(
           ProfileStrings.deleteWarning,

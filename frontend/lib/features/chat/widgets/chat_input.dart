@@ -29,6 +29,9 @@ import '../voice/voice_strip.dart';
 import 'attachment_bar.dart';
 import 'smart_chip.dart';
 import 'suggest_prompt.dart';
+import '../../../core/widgets/confirm_sheet.dart';
+import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/confirm_copy.dart';
 
 /// Floating capsule with the text field and send button.
 class ChatInput extends StatefulWidget {
@@ -279,24 +282,15 @@ class _ChatInputState extends State<ChatInput> {
   Future<bool> _micRationale(VoiceController voice) async {
     final state = await voice.permissionState();
     if (state != VoicePermissionState.denied || !mounted) return true;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(VoiceStrings.rationaleTitle),
-        content: Text(VoiceStrings.rationaleBody),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(VoiceStrings.rationaleNotNow),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(VoiceStrings.rationaleAllow),
-          ),
-        ],
-      ),
+    return ConfirmSheet.show(
+      context,
+      illustration: IllustrationKind.homeChat,
+      kicker: ConfirmCopy.kickerMic,
+      title: VoiceStrings.rationaleTitle,
+      body: VoiceStrings.rationaleBody,
+      confirmLabel: sentenceCase(VoiceStrings.rationaleAllow),
+      cancelLabel: sentenceCase(VoiceStrings.rationaleNotNow),
     );
-    return ok ?? false;
   }
 
   void _onVoiceText(String text, bool isFinal) {

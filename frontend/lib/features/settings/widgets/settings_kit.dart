@@ -27,6 +27,7 @@ import '../../../core/theme/system_chrome.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'dot_matrix.dart';
 import 'section_header.dart';
+import '../../../core/widgets/m3_kit_extras.dart';
 
 export 'dot_matrix.dart';
 
@@ -255,7 +256,7 @@ class SettingsSwitchTile extends StatelessWidget {
   }
 }
 
-/// One option of [showChoiceDialog].
+/// One option of [showChoiceSheet].
 class ChoiceOption<T> {
   const ChoiceOption(this.value, this.label, [this.help]);
 
@@ -264,47 +265,48 @@ class ChoiceOption<T> {
   final String? help;
 }
 
-/// Android style chooser: a dialog with radio rows; the row picked is
-/// returned straight away.
-Future<T?> showChoiceDialog<T>(
+/// Chooser sheet with radio rows; the row picked is returned straight away
+/// (null when the sheet is dismissed).
+Future<T?> showChoiceSheet<T>(
   BuildContext context, {
   required String title,
   required List<ChoiceOption<T>> options,
   required T current,
 }) {
   Haptics.tap();
-  return showDialog<T>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      content: SingleChildScrollView(
-        child: RadioGroup<T>(
-          groupValue: current,
-          onChanged: (v) {
-            if (v == null) return;
-            Haptics.tap();
-            Navigator.pop(ctx, v);
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final o in options)
-                RadioListTile<T>(
-                  value: o.value,
-                  title: Text(o.label),
-                  subtitle: o.help == null ? null : Text(o.help!),
-                ),
-            ],
-          ),
+  return showM3Sheet<T>(
+    context,
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            M3SheetTitle(title),
+            RadioGroup<T>(
+              groupValue: current,
+              onChanged: (v) {
+                if (v == null) return;
+                Haptics.tap();
+                Navigator.pop(ctx, v);
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final o in options)
+                    RadioListTile<T>(
+                      value: o.value,
+                      title: Text(o.label),
+                      subtitle: o.help == null ? null : Text(o.help!),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text(SettingsStrings.cancel),
-        ),
-      ],
     ),
   );
 }

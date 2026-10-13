@@ -340,7 +340,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 title: SettingsStrings.toneLabel,
                 summary: _toneLabel(s.tone),
                 onTap: () async {
-                  final v = await showChoiceDialog<String>(
+                  final v = await showChoiceSheet<String>(
                     c,
                     title: SettingsStrings.toneLabel,
                     current: s.tone,
@@ -365,7 +365,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 title: SettingsStrings.lengthLabel,
                 summary: lengthLabels[s.length] ?? s.length,
                 onTap: () async {
-                  final v = await showChoiceDialog<String>(
+                  final v = await showChoiceSheet<String>(
                     c,
                     title: SettingsStrings.lengthLabel,
                     current: s.length,
@@ -387,7 +387,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 title: SettingsStrings.modeTitle,
                 summary: _modeLabel(s.mode),
                 onTap: () async {
-                  final v = await showChoiceDialog<String>(
+                  final v = await showChoiceSheet<String>(
                     c,
                     title: SettingsStrings.modeTitle,
                     current: s.mode,
