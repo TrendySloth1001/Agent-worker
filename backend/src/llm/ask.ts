@@ -3,6 +3,8 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { recordUsage } from "../db/usage.js";
 import { noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
 import { applyCooldown, withSlot } from "./router.js";
+import { clearQuota, quotaGuard, QuotaBlockedError } from "./quota.js";
+import { stripThink } from "./think.js";
 import { health } from "./health.js";
 
 export type AskOptions = {
@@ -25,6 +27,8 @@ type Provider = "ollama" | "openrouter" | "groq" | "nvidia";
  * limits used by runChat. Throws UpstreamError (status 0 on timeout/empty).
  */
 export async function ask(modelId: string, messages: Message[], opts: AskOptions): Promise<string> {
+  // An exhausted quota fails at once: no slot, no network, no usage row; the caller tries its next model.
+  quotaGuard(modelId);
   const ctl = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -53,10 +57,11 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
             break;
           }
         }
-        if (!text.trim()) throw new UpstreamError(0, "empty response");
+        if (!stripThink(text).trim()) throw new UpstreamError(0, "empty response");
         recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: true, status: 200, latencyMs: Date.now() - started, ttftMs: ttft, promptTokens: handle.usage.promptTokens, completionTokens: handle.usage.completionTokens });
         if (modelId.endsWith(":free")) noteOpenRouterFreeRequest();
         clearCooldown(modelId);
+        clearQuota(modelId);
         health.success(modelId);
         return text;
       } catch (e) {
@@ -67,7 +72,7 @@ export async function ask(modelId: string, messages: Message[], opts: AskOptions
             : opts.signal?.aborted
               ? e
               : new UpstreamError(0, (e as Error).message ?? "unknown error");
-        if (err instanceof UpstreamError) {
+        if (err instanceof UpstreamError && !(err instanceof QuotaBlockedError)) {
           recordUsage({ provider, model, kind: "chat", purpose: opts.purpose, ok: false, status: err.status || undefined, latencyMs: Date.now() - started, ttftMs: ttft, errorMessage: err.message });
           // A caller-imposed (short) timeout says nothing about the model's health.
           if (!timedOut) applyCooldown(modelId, err);

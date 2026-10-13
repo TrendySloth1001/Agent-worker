@@ -18,6 +18,13 @@ export function capImages(messages: Message[], max: number): Message[] {
   });
 }
 
+/** Only the newest image survives (models limited to one image per prompt). */
+export function keepLatestImage(messages: Message[]): Message[] {
+  const last = messages.map((m) => (m.images?.length ?? 0) > 0).lastIndexOf(true);
+  if (last < 0) return messages;
+  return messages.map((m, i) => (!m.images?.length ? m : i === last ? { ...m, images: m.images.slice(-1) } : { ...m, images: undefined }));
+}
+
 /** OpenAI-style chat messages: images become image_url parts. */
 export function toOpenAiMessages(messages: Message[]): unknown[] {
   return messages.map((m) =>
@@ -63,9 +70,37 @@ export function mapFinish(reason: string): "length" | "content_filter" | "stop" 
 /** `tokens` yields text deltas; `usage` is filled in as the stream progresses. */
 export type StreamHandle = { tokens: AsyncGenerator<string>; usage: StreamUsage };
 
-export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low" };
+export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low"; /** Quota re-probe: bypasses the exhausted-quota guard. */ probe?: boolean };
 
+/**
+ * Streams one model. A provider (or model) whose quota is known to be exhausted
+ * fails at once with a QuotaBlockedError instead of costing a network round
+ * trip; every upstream error is classified so a fresh quota exhaustion is
+ * remembered for all callers (chat, aux calls, probes).
+ */
 export async function streamModel(id: string, messages: Message[], opts: StreamOptions): Promise<StreamHandle> {
+  const quota = await import("./llm/quota.js");
+  if (!opts.probe) quota.quotaGuard(id);
+  const handle = await openStream(id, messages, opts);
+  return { tokens: watchQuota(id, handle.tokens, quota), usage: handle.usage };
+}
+
+async function* watchQuota(id: string, tokens: AsyncGenerator<string>, quota: typeof import("./llm/quota.js")): AsyncGenerator<string> {
+  try {
+    yield* tokens;
+  } catch (e) {
+    if (e instanceof UpstreamError) {
+      const c = quota.classifyError(id, e);
+      if (c.kind === "quota_exhausted") quota.markQuota(id, c, e.message);
+    }
+    throw e;
+  }
+}
+
+/** Llama 3.2 Vision on NVIDIA accepts one image per prompt. */
+const ONE_IMAGE_MODELS = /^meta\/llama-3\.2-\d+b-vision/;
+
+async function openStream(id: string, messages: Message[], opts: StreamOptions): Promise<StreamHandle> {
   const separator = id.indexOf(":");
   const provider = id.slice(0, separator);
   const model = id.slice(separator + 1);
@@ -78,7 +113,7 @@ export async function streamModel(id: string, messages: Message[], opts: StreamO
       provider === "groq"
         ? { provider, url: "https://api.groq.com/openai/v1/chat/completions", apiKey: config.groqApiKey }
         : { provider, url: "https://integrate.api.nvidia.com/v1/chat/completions", apiKey: config.nvidiaApiKey };
-    return streamOpenAiCompatible(target, model, provider === "groq" ? capImages(messages, 5) : messages, opts);
+    return streamOpenAiCompatible(target, model, provider === "groq" ? capImages(messages, 5) : ONE_IMAGE_MODELS.test(model) ? keepLatestImage(messages) : messages, opts);
   }
   throw new UpstreamError(400, `Unknown provider in ${id}`);
 }

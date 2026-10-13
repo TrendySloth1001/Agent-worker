@@ -7,6 +7,7 @@ import { getGithubInfo } from "../usage/github.js";
 import { keyHint } from "../usage/keyHint.js";
 import { getOpenRouterKeyInfo } from "../usage/openrouterKey.js";
 import { rateSnapshots } from "../usage/rateLimits.js";
+import { quotaSnapshot } from "../llm/quota.js";
 import { limitsFor, usageFor } from "../auth/limits.js";
 
 export const usageRouter = Router();
@@ -157,7 +158,9 @@ usageRouter.get("/", async (req, res) => {
     const snap = rateSnapshots(`${p.id}:`).sort((a, b) => b[1].at.localeCompare(a[1].at))[0]?.[1];
     const tokensWindow = snap && snap.limitTokens !== null ? { limit: snap.limitTokens, remaining: snap.remainingTokens, per: "minute" as const } : null;
 
-    const exhausted = quota?.remaining === 0;
+    // A provider-wide quota block (e.g. Ollama's monthly usage limit) seen on a real call.
+    const block = quotaSnapshot().find((q) => q.provider === p.id && q.model === null) ?? null;
+    const exhausted = quota?.remaining === 0 || block !== null;
     const status = !key ? "missing" : exhausted ? "exhausted" : cooling === models.length && models.length > 0 ? "limited" : "ok";
     return {
       id: p.id,
@@ -172,6 +175,8 @@ usageRouter.get("/", async (req, res) => {
       models: models.map((m) => m.name),
       coolingModels: cooling,
       quota,
+      quotaExhaustedUntil: block?.until ?? null,
+      quotaNote: block?.label ?? null,
       tokensWindow,
       today: { requests: usage?.todayRequests ?? 0, tokens: usage?.todayTokens ?? 0, failures: usage?.todayFailures ?? 0 },
       month: { requests: usage?.monthRequests ?? 0, tokens: usage?.monthTokens ?? 0 },
