@@ -79,6 +79,9 @@ abstract final class AppSizes {
   static const inputHeight = 52.0;
   static const appBarHeight = 56.0;
   static const dot = 6.0;
+
+  /// Model family logo in the label above a reply.
+  static const modelLabelLogo = 16.0;
   static const sendButton = 34.0;
   static const thinkingDot = 5.0;
 
@@ -222,6 +225,9 @@ abstract final class LineageSizes {
 abstract final class TableSizes {
   static const statusDot = 6.0;
   static const statusIcon = 14.0;
+
+  /// Model family logo before a seat's name.
+  static const seatLogo = 14.0;
   static const draftPeekLines = 4;
   static const summaryLines = 1;
   static const pulse = Duration(milliseconds: 900);

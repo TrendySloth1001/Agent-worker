@@ -9,6 +9,7 @@ import { indexNow, isKnowledgeDoc } from "../ingest/indexer.js";
 import { enqueue } from "../ingest/queue.js";
 import { retrieve } from "../retrieval/search.js";
 import { AppError } from "../util/errors.js";
+import { USER_MSG, userSafe } from "../util/userMessages.js";
 import { userOf } from "../auth/context.js";
 
 export const knowledgeRouter: Router = Router();
@@ -44,7 +45,7 @@ function toSource(r: SourceRow) {
     progress: active ? { done: r.progressDone, total: r.progressTotal ?? null } : null,
     docCount: r.docCount,
     chunkCount: r.chunkCount,
-    error: r.error ?? null,
+    error: userSafe(r.error, USER_MSG.knowledgeFailed),
     iconUrl: r.iconUrl ?? null,
     lastIngestedAt: r.lastIngestedAt ? r.lastIngestedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
@@ -81,7 +82,7 @@ knowledgeRouter.post("/sources", async (req, res) => {
   const resolved = await connectors[type].resolve(body.input, body.limit);
   const uid = userOf(req).id;
   const dup = await db().source.findFirst({ where: { type, uri: resolved.uri, userId: uid }, select: { id: true } });
-  if (dup) throw new AppError(409, "conflict", `Source already exists (id ${dup.id}). Use refresh to re-ingest.`);
+  if (dup) throw new AppError(409, "conflict", "You've already added this source. Refresh it to update it.");
   const ins = await db().source.create({
     data: { type, uri: resolved.uri, title: resolved.title ?? null, options: json({ ...(resolved.options ?? {}), limit: body.limit }), userId: uid },
     select: SOURCE_SELECT,
@@ -110,7 +111,7 @@ knowledgeRouter.post("/notes", async (req, res) => {
   const uri = `note:${createHash("sha256").update(content).digest("hex").slice(0, 24)}`;
   const uid = userOf(req).id;
   const dup = await db().source.findFirst({ where: { type: "note", uri, userId: uid }, select: { id: true } });
-  if (dup) throw new AppError(409, "conflict", `Note already saved (id ${dup.id}).`);
+  if (dup) throw new AppError(409, "conflict", "You've already saved this note.");
   const title = (b.title || noteTitle(content)).slice(0, 200);
   const ins = await db().source.create({
     data: { type: "note", uri, title, options: json({ content, title, question: b.question || undefined, conversationId: b.conversationId }), userId: uid },

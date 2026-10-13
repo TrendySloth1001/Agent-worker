@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -293,7 +294,9 @@ class _GhCommitsPagedState extends State<GhCommitsPaged> {
       return Align(
         alignment: Alignment.topCenter,
         child: GhError(
-          message: e is ApiException ? e.message : GithubStrings.loadFailed,
+          message: e is ApiException
+              ? friendlyException(e)
+              : GithubStrings.loadFailed,
           onRetry: _reload,
         ),
       );
@@ -319,7 +322,7 @@ class _GhCommitsPagedState extends State<GhCommitsPaged> {
             if (err != null) {
               return GhError(
                 message: err is ApiException
-                    ? err.message
+                    ? friendlyException(err)
                     : GithubStrings.loadFailed,
                 onRetry: () {
                   setState(() => _moreError = null);

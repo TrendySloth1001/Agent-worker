@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/apps.dart';
 import '../../data/chat_api.dart';
 import '../../data/github_api.dart';
@@ -22,8 +23,8 @@ class Loadable<T> {
   /// A message for the error state.
   String get message {
     final e = error;
-    return e is ApiException && e.message.isNotEmpty
-        ? e.message
+    return e is ApiException
+        ? friendlyException(e)
         : GithubHubStrings.loadFailed;
   }
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { MODELS } from "../models.js";
 import { AppError, errorBody } from "../util/errors.js";
+import { USER_MSG } from "../util/userMessages.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
 import { pickCandidates, pickTextFallback, pickVisionCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor, type RunHooks } from "../llm/router.js";
@@ -158,17 +159,17 @@ export const chatRouter = Router();
 chatRouter.post("/", async (req, res) => {
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) {
-    throw new AppError(400, "bad_request", parsed.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; "));
+    throw new AppError(400, "bad_request", USER_MSG.badRequest);
   }
   const body = parsed.data;
   // Long chats: older turns become a rolling summary, only recent turns are sent as messages.
   const compacted = await compactHistory(body.messages, body.conversationId);
   if (compacted) body.messages = compacted.recent;
   if (body.messages.reduce((n, m) => n + m.content.length, 0) + (body.context?.length ?? 0) + (body.screen?.text.length ?? 0) > 60_000) {
-    throw new AppError(413, "payload_too_large", "Conversation is too long (limit 60k characters).");
+    throw new AppError(413, "payload_too_large", USER_MSG.tooLong);
   }
   const requested = body.model && body.model !== "auto" ? body.model : undefined;
-  if (requested && !MODELS.some((m) => m.id === requested)) throw new AppError(400, "bad_request", "Unknown model");
+  if (requested && !MODELS.some((m) => m.id === requested)) throw new AppError(400, "bad_request", USER_MSG.unknownModel);
 
   const attachmentIds = [...new Set(body.messages.flatMap((m) => (m.role === "user" ? (m.attachments ?? []).map((a) => a.toLowerCase()) : [])))];
   for (const m of body.messages) m.attachments = m.attachments?.map((a) => a.toLowerCase());
@@ -228,7 +229,8 @@ chatRouter.post("/", async (req, res) => {
 
   try {
     sse.send("start", { requestId, candidates });
-    if (visionSwitched) sse.send("notice", { code: "vision_model", message: "The selected model cannot see images, using a vision model instead." });
+    // Model switches are silent for the user (logs and owner telemetry keep them).
+    if (visionSwitched) log.info("vision model switch", { requestId });
 
     // ---- attachments: wait for processing, then resolve ---------------------
     if ([...fileRows.values()].some((r) => r.status === "processing")) {
@@ -237,7 +239,7 @@ chatRouter.post("/", async (req, res) => {
     }
     const prepared = await prepareMessages(body.messages, fileRows, retrievalQuery(body.messages.map((m) => ({ role: m.role, content: m.content }))));
     if (prepared.failed.length > 0) {
-      sse.send("notice", { code: "attachment_failed", message: `Could not read: ${prepared.failed.join(", ")}` });
+      sse.send("notice", { code: "attachment_failed", message: `Couldn't read ${prepared.failed.join(", ")}.` });
     }
     const docItems: ContextItem[] = prepared.docs;
     docItems.forEach((d) =>
@@ -323,7 +325,7 @@ chatRouter.post("/", async (req, res) => {
         const down = embeddingsHealthy() === "down";
         sse.send("notice", {
           code: down ? "embeddings_down" : "kb_unavailable",
-          message: down ? "Embeddings are unavailable, answering without the knowledge base." : "Knowledge base is unavailable, answering without it.",
+          message: USER_MSG.kbUnavailable,
         });
         log.warn("kb retrieval failed", { requestId, message: (e as Error).message?.slice(0, 120) });
         return;
@@ -404,7 +406,7 @@ chatRouter.post("/", async (req, res) => {
       const results = search.status === "fulfilled" ? [...search.value] : [];
       if (fetched.status === "fulfilled" && fetched.value) results.unshift(fetched.value);
       if (searching && search.status === "rejected") {
-        sse.send("notice", { code: "web_search_failed", message: "Web search failed, answering without it." });
+        sse.send("notice", { code: "web_search_failed", message: USER_MSG.webSearchFailed });
         log.warn("web search failed", { requestId });
       }
       results.forEach((r, i) => {
@@ -585,7 +587,7 @@ chatRouter.post("/", async (req, res) => {
     let table: TableRun | null = null;
     if (body.roundTable) {
       if (!tableWanted) {
-        sse.send("notice", { code: "round_table_skipped", message: "Short message, answering without the round table." });
+        sse.send("notice", { code: "round_table_skipped", message: USER_MSG.roundTableSkipped });
       } else {
         sse.send("status", { phase: "round_table" });
         // With seat research, seats share only the main sources; each adds its own.
@@ -607,7 +609,7 @@ chatRouter.post("/", async (req, res) => {
           signal: ctl.signal,
           emit: (e) => sse.send("table", e),
         });
-        if (!table) sse.send("notice", { code: "round_table_degraded", message: "Not enough models answered, using a single model instead." });
+        if (!table) sse.send("notice", { code: "round_table_degraded", message: USER_MSG.roundTableDegraded });
       }
     }
     const unresolved = new UnresolvedFilter();
@@ -643,7 +645,8 @@ chatRouter.post("/", async (req, res) => {
         text = "";
         sse.send("reset", { reason: "fallback" });
       },
-      onFallback: (from, to) => sse.send("notice", { code: "fallback", message: `${from} failed, trying ${to}.` }),
+      // Fallbacks are silent for the user: only the logs and owner telemetry see them.
+      onFallback: (from, to) => log.info("chat fallback", { requestId, from, to }),
     };
     const maxTokens = maxTokensFor({ mode: body.mode, intent: nlp.intent, length: body.profile?.length });
     const generate = (models: string[], messages: Message[]) =>
@@ -658,7 +661,7 @@ chatRouter.post("/", async (req, res) => {
       // No vision model could read the image (none available, all busy or out of quota): answer the text with a text model.
       if (!(wantsVision && auto && !table && e instanceof ChatFailure && e.code === "all_models_failed") || ctl.signal.aborted) throw e;
       log.warn("vision unavailable, answering text only", { requestId });
-      sse.send("notice", { code: "vision_unavailable", message: "The image couldn't be read right now, answering the text only." });
+      sse.send("notice", { code: "vision_unavailable", message: USER_MSG.visionUnavailable });
       const textOnly = prompt.map((m) => (m.images?.length ? { ...m, images: undefined } : m));
       textOnly.splice(Math.max(0, textOnly.length - 1), 0, { role: "system", content: VISION_UNAVAILABLE_NOTE });
       result = await generate(preferForPrompt(await pickTextFallback(), promptChars), textOnly);
@@ -715,7 +718,7 @@ chatRouter.post("/", async (req, res) => {
     let payload;
     if (e instanceof ChatFailure) payload = errorBody(e.code, e.message, e.retryable);
     else if (e instanceof AppError) payload = errorBody(e.code, e.message, e.retryable);
-    else payload = errorBody("internal", "Something went wrong while generating the answer.", true);
+    else payload = errorBody("internal", USER_MSG.generating, true);
     sse.send("error", payload);
     log.warn("chat failed", { requestId, latencyMs: Date.now() - started, code: payload.error.code });
   } finally {

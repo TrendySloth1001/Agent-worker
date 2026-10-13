@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../about/whats_new_sheet.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/share_export.dart';
@@ -69,6 +70,10 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     _controller.loadModels();
     _voice = createVoiceController(scope.settings);
+    // After an app update: a one-time "What's new" sheet (never on first install).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) WhatsNew.maybeShow(context);
+    });
     _controller.addListener(() {
       if (_controller.messages.isEmpty) _showScrollButton.value = false;
       // Another chat opened, or the message was replaced.

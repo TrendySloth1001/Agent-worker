@@ -14,8 +14,7 @@ export 'connections_api.dart' show DeviceStart;
 
 /// A failed sign-in call, with the backend's error code when it sent one.
 class SsoException extends ApiException {
-  const SsoException(super.message, {super.status, this.code});
-  final String? code;
+  const SsoException(super.message, {super.status, super.code});
 }
 
 /// `GET /auth/providers`: which "Continue with ..." buttons to show.

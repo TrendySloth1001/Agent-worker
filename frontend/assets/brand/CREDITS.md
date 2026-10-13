@@ -51,6 +51,28 @@ Use: `BrandLogos` in `lib/core/constants/brand_logos.dart`.
 | markdown.svg | simple-icons:markdown | CC0 1.0 (Simple Icons) |
 | flutter.svg | logos:flutter-icon | CC0 (SVG Logos) |
 
+## Model family logos (`logos/models/`)
+
+The maker of each model family, shown next to a model wherever the app
+names one (`ModelLogos.forModelId` in `lib/core/constants/model_logos.dart`).
+Fetched once from LobeHub Icons, pinned
+(`https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/<name>.svg`,
+MIT, <https://github.com/lobehub/lobe-icons>), except Microsoft (Iconify, as
+above). Only the root `width`/`height` (`1em`) and inline `style` were
+removed. NVIDIA Nemotron uses `nvidia.svg` above.
+
+| File | Source | License | Families |
+| --- | --- | --- | --- |
+| openai.svg | lobehub openai (mono) | MIT (LobeHub Icons) | gpt-oss, GPT, o-series |
+| gemma.svg | lobehub gemma (mono) | MIT (LobeHub Icons) | Google Gemma |
+| meta.svg | lobehub meta-color | MIT (LobeHub Icons) | Meta Llama |
+| qwen.svg | lobehub qwen-color | MIT (LobeHub Icons) | Alibaba Qwen, QwQ |
+| glm.svg | lobehub chatglm-color | MIT (LobeHub Icons) | Z.ai / Zhipu GLM |
+| deepseek.svg | lobehub deepseek-color | MIT (LobeHub Icons) | DeepSeek |
+| kimi.svg | lobehub kimi (mono) | MIT (LobeHub Icons) | Moonshot Kimi |
+| mistral.svg | lobehub mistral-color | MIT (LobeHub Icons) | Mistral, Mixtral, Codestral… |
+| microsoft.svg | Iconify logos:microsoft-icon | CC0 (SVG Logos) | Microsoft Phi |
+
 Attribution for the CC BY 4.0 files: icons by selfh.st
 (https://github.com/selfhst/icons), licensed CC BY 4.0. The About screen
 credits these sets too.

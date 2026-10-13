@@ -7,7 +7,7 @@ let client: S3Client | null = null;
 
 function s3(): S3Client {
   const c = config.s3;
-  if (!c.endpoint || !c.accessKeyId || !c.secretAccessKey) throw new AppError(503, "unavailable", "File storage is not configured", true);
+  if (!c.endpoint || !c.accessKeyId || !c.secretAccessKey) throw new AppError(503, "unavailable", "File uploads aren't available right now.", true);
   client ??= new S3Client({
     endpoint: c.endpoint,
     region: c.region,

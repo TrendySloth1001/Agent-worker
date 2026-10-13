@@ -15,7 +15,7 @@ import { redactForExternal } from "../nlp/pii.js";
 import { CircuitBreaker } from "./breaker.js";
 import { TtlLru } from "./lru.js";
 import { readPersisted, searchCacheKey, writePersisted } from "./cacheStore.js";
-import { clip, OLLAMA_WEB_ID, ollamaPost, statusOf, isRateLimit } from "./ollama.js";
+import { clip, OLLAMA_WEB_ID, OllamaWebError, ollamaPost, statusOf, isRateLimit } from "./ollama.js";
 import { isQuotaBlocked } from "../llm/quota.js";
 import { terms } from "./passages.js";
 import { htmlToText } from "./html.js";
@@ -193,7 +193,7 @@ const ollama: Provider = {
     // No retry on 429: the next engine in the chain answers instead.
     const data = await ollamaPost("web_search", { query, max_results: Math.min(ctx.limit, 8) }, ctx.signal, this.timeoutMs).catch((e) => {
       const rateLimited = isRateLimit(e);
-      throw new ProviderError((e as Error).message, statusOf(e) || (rateLimited ? 429 : 502), rateLimited ? BLOCKED_COOLDOWN_MS : 0);
+      throw new ProviderError(e instanceof OllamaWebError ? e.detail : (e as Error).message, statusOf(e) || (rateLimited ? 429 : 502), rateLimited ? BLOCKED_COOLDOWN_MS : 0);
     });
     return (Array.isArray(data?.results) ? data.results : [])
       .filter((r: any) => typeof r?.url === "string")

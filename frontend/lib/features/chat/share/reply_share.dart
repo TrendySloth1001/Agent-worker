@@ -10,6 +10,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/model_logo.dart';
 import '../../../core/widgets/size_reporter.dart';
 import '../../../data/chat_message.dart';
 import '../chat_actions.dart';
@@ -148,14 +149,17 @@ class _ShareCardState extends State<_ShareCard> {
           children: [
             Row(
               children: [
-                Container(
-                  width: AppSizes.dot,
-                  height: AppSizes.dot,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: p.textPrimary,
-                  ),
-                ),
+                if (m.modelId == null)
+                  Container(
+                    width: AppSizes.dot,
+                    height: AppSizes.dot,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: p.textPrimary,
+                    ),
+                  )
+                else
+                  ModelLogo(m.modelId, size: AppSizes.modelLabelLogo),
                 const SizedBox(width: AppSpacing.sm),
                 Text(widget.model.toUpperCase(), style: t.caption),
               ],

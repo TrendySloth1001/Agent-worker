@@ -10,6 +10,7 @@ import { extractHtml, looksLikeHtml } from "../ingest/extract.js";
 import { recordUsage } from "../db/usage.js";
 import { embedQueries, embedTexts, embeddingsHealthy } from "../embeddings/index.js";
 import { AppError } from "../util/errors.js";
+import { USER_MSG } from "../util/userMessages.js";
 import { log } from "../util/logger.js";
 import { TtlLru } from "./lru.js";
 import { selectPassages, terms } from "./passages.js";
@@ -298,7 +299,8 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   log.info("web research", { via: plan.via, fresh: plan.fresh, intents: plan.intents.join(","), queries: plan.queries.length, providers: summarize(outcomes), merged: merged.length, early });
   if (!served.length) {
     if (opts.signal?.aborted) return [];
-    throw new AppError(502, "upstream_failed", "All web search providers failed", true);
+    log.warn("web research failed", { reason: "every web search provider failed or was unavailable", providers: summarize(outcomes) });
+    throw new AppError(502, "upstream_failed", USER_MSG.webUnavailable, true);
   }
 
   const focusText = [...plan.queries, opts.question].join(" ");

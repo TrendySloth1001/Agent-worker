@@ -22,7 +22,7 @@ export function parseKey(raw: string | undefined): Buffer | null {
 let cachedKey: Buffer | null | undefined;
 function serverKey(): Buffer {
   if (cachedKey === undefined) cachedKey = parseKey(config.connectionsKey);
-  if (!cachedKey) throw new AppError(503, "connections_key_missing", "CONNECTIONS_KEY is missing or not 32 bytes");
+  if (!cachedKey) throw new AppError(503, "connections_key_missing", "Connected apps aren't available right now.");
   return cachedKey;
 }
 

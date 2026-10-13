@@ -35,7 +35,7 @@ async function askModels(deps: DocDeps, st: DocState, messages: Parameters<DocDe
     }
   }
   log.warn("doc followup failed", { doc: st.id, purpose, message: String((last as Error)?.message ?? "no model").slice(0, 160) });
-  throw new AppError(502, "upstream_failed", "The model could not answer right now. Try again.", true);
+  throw new AppError(502, "upstream_failed", "sparky couldn't answer right now — try again.", true);
 }
 
 function sectionSources(st: DocState, sec: DocSection): DocSource[] {
@@ -67,7 +67,7 @@ export async function answerQuestion(deps: DocDeps, st: DocState, sec: DocSectio
   });
   const raw = await askModels(deps, st, messages, "doc-ask", 1800, signal);
   const answer = clip(keepValidTags(stripFence(raw), new Set(sources.map((s) => s.id))).trim(), MAX_ANSWER);
-  if (!answer) throw new AppError(502, "upstream_failed", "The model returned an empty answer. Try again.", true);
+  if (!answer) throw new AppError(502, "upstream_failed", "sparky came back empty — try again.", true);
   return { id: randomUUID(), q: input.question.trim(), a: answer, at: new Date().toISOString() };
 }
 
@@ -124,7 +124,7 @@ export async function editSelection(deps: DocDeps, st: DocState, sec: DocSection
   });
   const raw = await askModels(deps, st, messages, `doc-selection-${op}`, 1600, signal);
   const out = keepValidTags(stripFence(raw), valid).trim();
-  if (!out) throw new AppError(502, "upstream_failed", "The model returned nothing. Try again.", true);
+  if (!out) throw new AppError(502, "upstream_failed", "sparky came back empty — try again.", true);
 
   if (op === "explain") {
     // A NOTE callout after the paragraph that holds the passage.
@@ -138,7 +138,7 @@ export async function editSelection(deps: DocDeps, st: DocState, sec: DocSection
     return { op, original: "", replacement: out, markdown, version: st.version };
   }
   if (out.replace(/\s+/g, " ") === passage.replace(/\s+/g, " ")) throw new AppError(422, "no_change", "Nothing to change in that passage.");
-  if (out.length > Math.max(passage.length * 6, 600) + 400) throw new AppError(502, "upstream_failed", "The model's answer was too long. Try again.", true);
+  if (out.length > Math.max(passage.length * 6, 600) + 400) throw new AppError(502, "upstream_failed", "That answer came out too long — try again.", true);
   const markdown = sec.markdown.slice(0, span.start) + out + sec.markdown.slice(span.end);
   return { op, original: passage, replacement: out, markdown, version: st.version };
 }

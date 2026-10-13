@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/constants/app_config.dart';
+import '../core/constants/error_copy.dart';
 import '../features/chat/widgets/rich/rich_parsers.dart';
 import 'chat_api.dart';
 import 'api_client.dart';
@@ -28,15 +29,12 @@ class AssistApi {
           )
           .timeout(_timeout);
     } on TimeoutException {
-      throw const ApiException('Formatting timed out.');
-    } on http.ClientException catch (e) {
-      throw ApiException(e.message);
+      throw const ApiException(ErrorCopy.timeout);
+    } on http.ClientException {
+      throw const ApiException(ErrorCopy.offline);
     }
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     final j = jsonDecode(response.body);
     return j is Map && j['text'] is String ? j['text'] as String : '';
@@ -70,15 +68,12 @@ class AssistApi {
           )
           .timeout(_timeout);
     } on TimeoutException {
-      throw const ApiException('The rewrite timed out.');
-    } on http.ClientException catch (e) {
-      throw ApiException(e.message);
+      throw const ApiException(ErrorCopy.timeout);
+    } on http.ClientException {
+      throw const ApiException(ErrorCopy.offline);
     }
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     final d = (jsonDecode(response.body) as Map<String, dynamic>)['draft'];
     String s(String k) => (d is Map && d[k] is String) ? d[k] as String : '';

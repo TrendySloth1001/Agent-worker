@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 import '../core/constants/app_config.dart';
+import '../core/constants/error_copy.dart';
 import '../core/constants/voice.dart';
 import 'api_client.dart';
 import 'chat_api.dart';
@@ -48,16 +49,12 @@ class TranscribeApi {
           .timeout(VoiceConfig.requestTimeout);
       final body = await streamed.stream.bytesToString();
       if (streamed.statusCode >= 400) {
-        final message = errorMessage(body, streamed.statusCode);
-        throw ApiException(
-          streamed.statusCode == 429 && errorCode(body) == 'daily_limit'
-              ? dailyLimitMessage(message)
-              : message,
-          status: streamed.statusCode,
-        );
+        throw ApiException.fromResponse(body, streamed.statusCode);
       }
       final json = jsonDecode(body);
-      if (json is! Map<String, dynamic>) throw const ApiException('Bad reply');
+      if (json is! Map<String, dynamic>) {
+        throw const ApiException(ErrorCopy.generic);
+      }
       return Transcript(
         (json['text'] as String? ?? '').trim(),
         json['language'] as String? ?? '',
@@ -65,7 +62,7 @@ class TranscribeApi {
     } on ApiException {
       rethrow;
     } catch (_) {
-      throw const ApiException('Transcription failed');
+      throw const ApiException(ErrorCopy.transcribeFailed);
     } finally {
       client.close();
     }

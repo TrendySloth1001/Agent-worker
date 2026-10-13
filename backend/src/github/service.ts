@@ -20,7 +20,7 @@ const TEXT_MAX = 120_000;
 const TREE_MAX = 800;
 
 export function checkName(owner: string, repo: string) {
-  if (!NAME_RE.test(owner) || !NAME_RE.test(repo)) throw new AppError(400, "bad_request", "Invalid owner/repo");
+  if (!NAME_RE.test(owner) || !NAME_RE.test(repo)) throw new AppError(400, "bad_request", "Couldn't find that repository.");
 }
 
 const enc = encodeURIComponent;
@@ -341,9 +341,9 @@ export async function commitsPage(owner: string, repo: string, q: CommitsQuery, 
         },
         { signal },
       );
-      if (!d?.repository) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+      if (!d?.repository) throw new AppError(404, "not_found", "Couldn't find that on GitHub — it may be private.");
       const h = d.repository.object?.history;
-      if (!h) throw new AppError(404, "not_found", "GitHub: no such branch or commit");
+      if (!h) throw new AppError(404, "not_found", "Couldn't find that branch or commit.");
       return {
         items: (h.nodes ?? []).map(fromGqlCommit),
         totalCount: typeof h.totalCount === "number" ? h.totalCount : null,
@@ -450,7 +450,7 @@ export async function tree(owner: string, repo: string, ref: string, path = "", 
     return { ref, path: clean, recursive: true, truncated: !!d.truncated || all.length > TREE_MAX, entries: all.slice(0, TREE_MAX) };
   }
   const d = await gh(`/repos/${owner}/${repo}/contents/${encPath(clean)}?ref=${enc(ref)}`);
-  if (!Array.isArray(d)) throw new AppError(400, "bad_request", "That path is a file; use /contents");
+  if (!Array.isArray(d)) throw new AppError(400, "bad_request", "That's a file, not a folder.");
   const entries: Entry[] = d.map((e: any) => ({ name: e.name, path: e.path, type: e.type, size: e.size ?? 0 }));
   entries.sort(sortEntries);
   return { ref, path: clean, recursive: false, truncated: entries.length > TREE_MAX, entries: entries.slice(0, TREE_MAX) };
@@ -461,7 +461,7 @@ export async function contents(owner: string, repo: string, ref: string, path: s
   const clean = path.replace(/^\/+|\/+$/g, "");
   if (!clean) throw new AppError(400, "bad_request", "path is required");
   const d = await gh(`/repos/${owner}/${repo}/contents/${encPath(clean)}?ref=${enc(ref)}`);
-  if (Array.isArray(d)) throw new AppError(400, "bad_request", "That path is a directory; use /tree");
+  if (Array.isArray(d)) throw new AppError(400, "bad_request", "That's a folder, not a file.");
   let text = "";
   let binary = false;
   if (d.encoding === "base64" && d.content) {
@@ -521,7 +521,7 @@ const REFS_QUERY = `query($owner: String!, $name: String!, $after: String) {
 async function allBranchesGql(owner: string, repo: string, signal?: AbortSignal) {
   const first = await ghGraphql<{ repository: any }>(REFS_QUERY, { owner, name: repo, after: null }, { signal });
   const r = first?.repository;
-  if (!r) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+  if (!r) throw new AppError(404, "not_found", "Couldn't find that on GitHub — it may be private.");
   const def: string = r.defaultBranchRef?.name ?? "";
   const total: number = r.refs?.totalCount ?? 0;
   const pages: any[][] = [r.refs?.nodes ?? []];

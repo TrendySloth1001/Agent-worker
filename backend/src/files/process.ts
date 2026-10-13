@@ -111,7 +111,7 @@ async function processMedia(t: Target, buf: Buffer) {
         meta.transcriptError = (e as Error).message.slice(0, 160);
         log.warn("transcription failed", { id: t.id, message: (e as Error).message.slice(0, 120) });
         if (t.kind === "audio") {
-          await setResult(t.id, { status: "failed", error: `Transcription failed: ${(e as Error).message.slice(0, 140)}`, meta });
+          await setResult(t.id, { status: "failed", error: "Couldn't transcribe this file.", meta });
           return;
         }
       }

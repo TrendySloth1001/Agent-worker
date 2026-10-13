@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/app_scope.dart';
 import '../../../../core/haptics.dart';
 import '../../../../data/assist_api.dart';
@@ -155,7 +156,9 @@ class _EmailCardState extends State<EmailCard> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            e is ApiException ? e.message : RichStrings.rewriteFailed,
+            e is ApiException
+                ? friendlyException(e)
+                : RichStrings.rewriteFailed,
           ),
         ),
       );

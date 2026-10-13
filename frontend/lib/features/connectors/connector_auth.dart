@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/app_messenger.dart';
 import '../../core/constants/connectors.dart';
 import '../../core/haptics.dart';
@@ -142,7 +143,7 @@ class ConnectorAuth extends ChangeNotifier {
       notifyListeners();
       return true;
     } on ConnectException catch (e) {
-      if (provider == p) _fail(e.message);
+      if (provider == p) _fail(friendlyException(e));
       return false;
     }
   }
@@ -224,7 +225,7 @@ class ConnectorAuth extends ChangeNotifier {
           provider: pending.provider,
           flow: pending.flow,
           code: err,
-          message: q[ConnectorLink.message] ?? ConnectorStrings.failed,
+          message: safeOr(q[ConnectorLink.message], ConnectorStrings.failed),
         ),
         cold,
       );
@@ -244,7 +245,7 @@ class ConnectorAuth extends ChangeNotifier {
           provider: pending.provider,
           flow: pending.flow,
           code: e.code,
-          message: e.message,
+          message: friendlyException(e),
         ),
         cold,
       );
@@ -270,10 +271,9 @@ class ConnectorAuth extends ChangeNotifier {
     } else {
       Haptics.error();
       phase = ConnectorPhase.failed;
-      error = o.message;
-      if (cold || o.flow == ConnectorFlow.picker) {
-        AppMessenger.show(o.message ?? ConnectorStrings.failed);
-      }
+      final text = safeOr(o.message, ConnectorStrings.failed);
+      error = text;
+      if (cold || o.flow == ConnectorFlow.picker) AppMessenger.show(text);
     }
     notifyListeners();
     _outcomes.add(o);

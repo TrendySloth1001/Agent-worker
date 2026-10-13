@@ -232,7 +232,7 @@ async function run(owner: string, repo: string, n: number, p: any, headSha: stri
 
   const avail = new Set(await pickCandidates(undefined));
   const models = preferForPrompt(REVIEW_MODELS.filter((id) => avail.has(id)), PROMPT.length + user.length);
-  if (models.length === 0) throw new AppError(503, "unavailable", "No review model is available right now", true);
+  if (models.length === 0) throw new AppError(503, "unavailable", "sparky is busy right now — try again in a minute.", true);
   const names = new Set(files.map((f) => f.filename));
   let lastError = "";
   for (const model of models) {
@@ -269,5 +269,5 @@ async function run(owner: string, repo: string, n: number, p: any, headSha: stri
       log.warn("github review failed", { model, message: lastError.slice(0, 120) });
     }
   }
-  throw new AppError(502, "upstream_failed", "The review models did not answer, try again", true);
+  throw new AppError(502, "upstream_failed", "Couldn't finish the review — try again.", true);
 }

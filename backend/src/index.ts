@@ -3,7 +3,7 @@ import cors from "cors";
 import { config } from "./config.js";
 import { log } from "./util/logger.js";
 import { AppError, errorMiddleware } from "./util/errors.js";
-import { failedAuthGuard, rateLimit } from "./util/rateLimit.js";
+import { failedAuthGuard, inFlightLimit, rateLimit } from "./util/rateLimit.js";
 import { initDb, closeDb, onDbUp } from "./db/prisma.js";
 import { reembedAll } from "./embeddings/reembed.js";
 import { backfillRecall } from "./recall/index.js";
@@ -59,23 +59,29 @@ app.use(requireUser);
 app.use(telemetryScope);
 app.use("/auth", authRouter);
 
-app.post("/chat", rateLimit(20), chatLimit);
-app.post("/docs", rateLimit(5), docLimit);
-app.post("/docs/:id/sections/:sid/rewrite", rateLimit(20));
-app.post("/docs/:id/ask", rateLimit(30), aiBudget());
-app.post("/docs/:id/sections/:sid/selection", rateLimit(30), aiBudget());
-app.post("/docs/:id/continue", rateLimit(10), aiBudget());
+// Per-user fair use: per-minute caps plus a cap on requests in flight at once (a short burst waits a
+// few seconds for the user's own earlier request instead of failing). Daily caps live in auth/limits.ts.
+// Every refusal is the friendly 429 "You're going fast — give it a few seconds."
+const chatInFlight = inFlightLimit(2, 4_000, "chat");
+const aiInFlight = inFlightLimit(2, 4_000, "ai");
+app.post("/chat", rateLimit(12, 60_000, "auto", { name: "chat" }), rateLimit(3, 60_000, "auto", { name: "round-table", when: (req) => req.body?.roundTable === true }), chatInFlight, chatLimit);
+app.post("/docs", rateLimit(3, 60_000, "auto", { name: "docs" }), docLimit);
+app.post("/docs/:id/sections/:sid/rewrite", rateLimit(12), aiInFlight);
+app.post("/docs/:id/ask", rateLimit(20), aiInFlight, aiBudget());
+app.post("/docs/:id/sections/:sid/selection", rateLimit(20), aiInFlight, aiBudget());
+app.post("/docs/:id/continue", rateLimit(6), aiInFlight, aiBudget());
 app.post("/knowledge/sources", rateLimit(10), aiBudget());
 // Other LLM/embedding work is metered per user per day (the owner is unlimited).
 app.post("/knowledge/notes", rateLimit(20), aiBudget());
 app.post("/knowledge/sources/:id/refresh", rateLimit(10), aiBudget());
 app.post("/knowledge/search", rateLimit(30), aiBudget());
-app.post("/assist/email", rateLimit(20), aiBudget());
-app.post("/assist/profile", rateLimit(20), aiBudget());
+app.post("/assist/email", rateLimit(12), aiInFlight, aiBudget());
+app.post("/assist/profile", rateLimit(12), aiInFlight, aiBudget());
 app.post("/assist/transcribe", rateLimit(20), aiBudget());
-app.post("/conversations/merge", rateLimit(10), aiBudget());
+app.post("/conversations/merge", rateLimit(6), aiInFlight, aiBudget());
 app.post("/conversations/bulk-delete", rateLimit(10));
-app.post("/github/repos/:owner/:repo/pulls/:n/review", rateLimit(10), aiBudget());
+app.post("/github/repos/:owner/:repo/pulls/:n/review", rateLimit(6), aiInFlight, aiBudget());
+app.post("/files", rateLimit(20, 60_000, "auto", { name: "upload" }), inFlightLimit(3, 4_000, "upload"));
 app.get("/images/search", rateLimit(30), aiBudget());
 app.post("/connections/github/device", rateLimit(10));
 

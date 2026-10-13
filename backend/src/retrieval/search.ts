@@ -11,6 +11,7 @@ import { fuzzyTerms, needsFuzzy, synonymsOf } from "../nlp/text.js";
 import { rerank } from "./rerank.js";
 import { rewriteQueries, type HistoryMsg } from "./rewrite.js";
 import { extractEntities, quotableNames } from "../nlp/entities.js";
+import { USER_MSG, userMessage } from "../util/userMessages.js";
 
 export type KbHit = {
   chunkId: number;
@@ -117,9 +118,9 @@ export async function retrieve(queryText: string, opts: RetrieveOpts = {}): Prom
   const k = Math.min(Math.max(opts.k ?? config.ragTopK, 1), 20);
   const text = queryText.trim().slice(0, 2000);
   if (!text) return [];
-  if (!isDbUp()) throw new AppError(503, "unavailable", "Knowledge base unavailable (database down)", true);
+  if (!isDbUp()) throw new AppError(503, "unavailable", USER_MSG.knowledgeUnavailable, true);
   const guard = getEmbeddingGuardError();
-  if (guard) throw new AppError(503, "unavailable", guard);
+  if (guard) throw new AppError(503, "unavailable", userMessage("unavailable", guard, USER_MSG.knowledgeUnavailable));
 
   const filter = opts.sourceIds?.length ? opts.sourceIds : null;
   // Only the caller's own knowledge base.

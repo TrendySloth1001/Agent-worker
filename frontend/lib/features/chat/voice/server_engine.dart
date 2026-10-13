@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/voice.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/transcribe_api.dart';
@@ -80,7 +81,7 @@ class ServerVoiceEngine implements VoiceEngine {
       if (!identical(listener, _listener)) return;
       listener.onError(
         e.status == null ? VoiceFailure.network : VoiceFailure.failed,
-        e.message,
+        friendlyException(e),
       );
     } finally {
       try {

@@ -126,7 +126,7 @@ export async function gh<T = any>(path: string, opts: GhOptions = {}): Promise<T
   } catch (e) {
     if (opts.signal?.aborted) throw e;
     recordUsage({ provider: "github", model: "rest", kind: "github", ok: false, latencyMs: Date.now() - t0, errorCode: "timeout", errorMessage: "GitHub did not answer in time" });
-    throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
+    throw new AppError(504, "upstream_timeout", "GitHub took too long to answer — try again.", true);
   }
   recordUsage({ provider: "github", model: "rest", kind: "github", ok: res.ok || (res.status === 404 && !!opts.allow404), status: res.status, latencyMs: Date.now() - t0, errorMessage: res.ok ? undefined : `GET ${path.split("?")[0].slice(0, 80)}` });
   const rate = readRate(res, auth.key);
@@ -153,17 +153,18 @@ export async function gh<T = any>(path: string, opts: GhOptions = {}): Promise<T
 }
 
 function mapError(status: number, message: string, rate: RateInfo | null): AppError {
-  if (status === 404) return new AppError(404, "not_found", "GitHub: not found (or private)");
-  if (status === 401) return new AppError(502, "upstream_failed", "GitHub rejected the token");
+  if (status === 404) return new AppError(404, "not_found", "Couldn't find that on GitHub — it may be private.");
+  if (status === 401) return new AppError(502, "upstream_failed", "GitHub didn't accept sparky's access — reconnect GitHub and try again.");
   if ((status === 403 || status === 429) && (rate?.remaining === 0 || /rate limit/i.test(message))) {
-    const when = rate?.resetsAt ? ` until ${rate.resetsAt.slice(11, 16)} UTC` : "";
-    return new AppError(429, "rate_limited", `GitHub rate limit reached${when}`, true);
+    log.info("github rate limit", { resetsAt: rate?.resetsAt ?? null });
+    return new AppError(429, "rate_limited", "GitHub needs a short break — try again in a few minutes.", true);
   }
-  if (status === 403) return new AppError(403, "forbidden", `GitHub: ${message || "forbidden"}`.slice(0, 160));
-  if (status === 409) return new AppError(404, "not_found", "GitHub: the repository is empty");
-  if (status === 422) return new AppError(400, "bad_request", `GitHub: ${message || "invalid request"}`.slice(0, 160));
+  if (status === 403 || status === 422) log.info("github refused", { status, message: message.slice(0, 160) });
+  if (status === 403) return new AppError(403, "forbidden", "GitHub didn't allow that.");
+  if (status === 409) return new AppError(404, "not_found", "This repository is empty.");
+  if (status === 422) return new AppError(400, "bad_request", "GitHub couldn't do that — check the details and try again.");
   log.warn("github upstream error", { status, message: message.slice(0, 120) });
-  return new AppError(502, "upstream_failed", `GitHub error ${status}`, true);
+  return new AppError(502, "upstream_failed", "GitHub isn't responding right now — try again shortly.", true);
 }
 
 /**
@@ -217,7 +218,7 @@ export async function ghSend<T = any>(
   } catch (e) {
     if (opts.signal?.aborted) throw e;
     recordUsage({ provider: "github", model: "rest", kind: "github", ok: false, latencyMs: Date.now() - t0, errorCode: "timeout", errorMessage: "GitHub did not answer in time" });
-    throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
+    throw new AppError(504, "upstream_timeout", "GitHub took too long to answer — try again.", true);
   }
   recordUsage({ provider: "github", model: "rest", kind: "github", ok: res.ok, status: res.status, latencyMs: Date.now() - t0, errorMessage: res.ok ? undefined : `${method} ${path.split("?")[0].slice(0, 80)}` });
   const rate = readRate(res, auth.key);
@@ -251,17 +252,15 @@ export function mapWriteError(status: number, message: string, rate: RateInfo | 
     const need = (accepted ?? "").split(",").map((x) => x.trim()).filter(Boolean);
     const lacksScope = scopes != null && need.length > 0 && !need.some((s) => scopes.includes(s));
     if (lacksScope || /scope|not accessible by (integration|personal access token)/i.test(message)) {
-      return new AppError(403, "github_scope_missing", "Your GitHub token can't do this here. Reconnect GitHub with repo access.");
+      return new AppError(403, "github_scope_missing", "sparky doesn't have permission to do this on GitHub yet. Reconnect GitHub and allow repository access.");
     }
-    return new AppError(
-      403,
-      "github_no_permission",
-      status === 404 ? "You don't have access to change this on GitHub." : `GitHub: ${message || "you don't have permission to do this"}`.slice(0, 160),
-    );
+    log.info("github write refused", { status, message: message.slice(0, 160) });
+    return new AppError(403, "github_no_permission", "You don't have access to change this on GitHub.");
   }
-  if (status === 405 || status === 409) return new AppError(409, "github_not_mergeable", `GitHub: ${message || "this pull request can't be merged right now"}`.slice(0, 160));
-  if (status === 410) return new AppError(409, "github_invalid", "GitHub: this is turned off for the repository");
-  if (status === 422) return new AppError(422, "github_invalid", `GitHub: ${message || "the change was rejected"}`.slice(0, 160));
+  if (status === 405 || status === 409 || status === 422) log.info("github write rejected", { status, message: message.slice(0, 160) });
+  if (status === 405 || status === 409) return new AppError(409, "github_not_mergeable", "This pull request can't be merged right now.");
+  if (status === 410) return new AppError(409, "github_invalid", "That's turned off for this repository.");
+  if (status === 422) return new AppError(422, "github_invalid", "GitHub couldn't make that change — check the details and try again.");
   return mapError(status, message, rate);
 }
 
@@ -281,7 +280,7 @@ export type GqlOptions = {
  */
 export async function ghGraphql<T = any>(query: string, variables: Record<string, unknown>, opts: GqlOptions = {}): Promise<T> {
   const auth = await ghAuth();
-  if (!auth.token) throw new AppError(503, "github_disabled", "GitHub GraphQL needs a token");
+  if (!auth.token) throw new AppError(503, "github_disabled", "Connect GitHub to see this.");
   const signals = [AbortSignal.timeout(TIMEOUT_MS * 2), ...(opts.signal ? [opts.signal] : [])];
   let res: Response;
   const t0 = Date.now();
@@ -295,7 +294,7 @@ export async function ghGraphql<T = any>(query: string, variables: Record<string
   } catch (e) {
     if (opts.signal?.aborted) throw e;
     recordUsage({ provider: "github", model: "graphql", kind: "github", ok: false, latencyMs: Date.now() - t0, errorCode: "timeout", errorMessage: "GitHub did not answer in time" });
-    throw new AppError(504, "upstream_timeout", "GitHub did not answer in time", true);
+    throw new AppError(504, "upstream_timeout", "GitHub took too long to answer — try again.", true);
   }
   recordUsage({ provider: "github", model: "graphql", kind: "github", ok: res.ok, status: res.status, latencyMs: Date.now() - t0 });
   const rate = readRate(res, auth.key);
@@ -318,10 +317,10 @@ export async function ghGraphql<T = any>(query: string, variables: Record<string
   if (errors.some((e) => e.type === "FORBIDDEN")) throw mapWriteError(403, String(errors[0]?.message ?? ""), rate);
   // Partial: a missing alias (deleted branch) is fine; the caller checks for a null repository.
   if (errors.length && opts.partial && body.data) return body.data as T;
-  if (errors.some((e) => e.type === "NOT_FOUND")) throw new AppError(404, "not_found", "GitHub: not found (or private)");
+  if (errors.some((e) => e.type === "NOT_FOUND")) throw new AppError(404, "not_found", "Couldn't find that on GitHub — it may be private.");
   if (errors.length) {
     log.warn("github graphql error", { message: String(errors[0]?.message ?? "").slice(0, 120) });
-    throw new AppError(502, "upstream_failed", "GitHub GraphQL error", true);
+    throw new AppError(502, "upstream_failed", "GitHub isn't responding right now — try again shortly.", true);
   }
   return body.data as T;
 }

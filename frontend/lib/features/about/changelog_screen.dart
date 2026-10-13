@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/changelog.dart';
+import '../../core/constants/settings_copy.dart';
 import '../../core/theme/app_palette.dart';
-import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/m3_kit_extras.dart';
-import '../settings/widgets/settings_kit.dart';
+import 'widgets/changelog_parts.dart';
 
-/// About → What's new: every release, newest first.
+/// About → What's new: the latest release as a hero with its highlights
+/// grouped New / Improved / Fixed, then earlier releases on a collapsible
+/// timeline.
 class ChangelogScreen extends StatelessWidget {
-  const ChangelogScreen({super.key});
+  const ChangelogScreen({super.key, this.releases = Changelog.releases});
+
+  /// Newest first. Overridable for tests.
+  final List<Release> releases;
 
   static Future<void> open(BuildContext context) => Navigator.of(
     context,
@@ -17,63 +22,59 @@ class ChangelogScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final latest = releases.first;
+    final earlier = releases.skip(1).toList();
     return M3Page(
       title: ChangelogStrings.title,
       slivers: [
-        M3Body(
-          children: [
-            for (final (i, r) in Changelog.releases.indexed) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: SettingsGroupHeader(
-                      ChangelogStrings.heading(r.version, r.date),
-                    ),
-                  ),
-                  if (i == 0)
-                    const M3Tag(ChangelogStrings.latest, accent: true),
-                ],
-              ),
-              M3Card(
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.screenPadding,
+            vertical: AppSpacing.sm,
+          ),
+          sliver: SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: ChangelogSizes.maxWidth,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final c in r.changes)
+                    ReleaseHero(release: latest),
+                    for (final (kind, items) in groupByKind(latest))
+                      ChangeSection(kind: kind, items: items),
+                    if (earlier.isNotEmpty) ...[
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.xs,
+                        padding: const EdgeInsets.fromLTRB(
+                          SettingsSizes.headerInset,
+                          AppSpacing.xxl,
+                          SettingsSizes.headerInset,
+                          AppSpacing.md,
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                top: AppSpacing.xxs,
-                              ),
-                              child: AppIcon(
-                                ChangelogIcons.bullet,
-                                size: AppIconSize.sm,
-                                color: i == 0
-                                    ? context.palette.accent
-                                    : context.palette.textTertiary,
-                              ),
+                        child: Semantics(
+                          header: true,
+                          child: Text(
+                            ChangelogStrings.earlier,
+                            style: changelogMono(
+                              context.palette.textSecondary,
                             ),
-                            const SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: Text(
-                                c,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
+                      for (final (i, r) in earlier.indexed)
+                        ReleaseTimelineItem(
+                          key: ValueKey(r.version),
+                          release: r,
+                          isFirst: i == 0,
+                          isLast: i == earlier.length - 1,
+                        ),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-          ],
+            ),
+          ),
         ),
       ],
     );

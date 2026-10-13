@@ -26,11 +26,10 @@ class GhApiException extends ApiException {
   const GhApiException(
     super.message, {
     super.status,
-    this.code,
+    super.code,
     this.retryable = false,
   });
 
-  final String? code;
   final bool retryable;
 
   /// The token lacks access: reconnecting GitHub may fix it.

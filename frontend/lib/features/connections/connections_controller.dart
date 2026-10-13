@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/connections.dart';
 import '../../core/constants/sso_constants.dart';
 import '../auth/sso/github_web_auth.dart';
@@ -149,7 +150,7 @@ class ConnectionsController extends ChangeNotifier {
         _notConfigured = true;
       } else {
         _flowEnd = 'failed';
-        flowError = e.message;
+        flowError = friendlyException(e);
       }
       return null;
     } finally {
@@ -274,7 +275,7 @@ class ConnectionsController extends ChangeNotifier {
       if (flow != f) return;
       // 404: the server forgot the flow (restart): start over.
       if (e.status == 404) {
-        _end('failed', e.message);
+        _end('failed', friendlyException(e));
       } else {
         _schedulePoll(f.interval);
       }
@@ -292,7 +293,7 @@ class ConnectionsController extends ChangeNotifier {
       case ConnectFlowStatus.expired || ConnectFlowStatus.denied:
         _end(r.status);
       default:
-        _end('failed', r.error);
+        _end('failed', safeOrNull(r.error));
     }
   }
 

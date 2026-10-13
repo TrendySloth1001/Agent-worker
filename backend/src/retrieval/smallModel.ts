@@ -1,11 +1,20 @@
 import { recordUsage } from "../db/usage.js";
 import { streamModel, UpstreamError, type Message } from "../providers.js";
+import { auxGate, auxOnce } from "../llm/aux.js";
+import { estimateRequestTokens } from "../llm/budget.js";
+import { withSlot } from "../llm/router.js";
 
 /** Cheap, fast models for query rewriting and reranking. First one that answers wins. */
 export const SMALL_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
 
 /** One short completion under a hard deadline. Throws on timeout or upstream failure. */
 export async function askSmall(model: string, messages: Message[], purpose: string, timeoutMs: number, opts: { maxTokens?: number; reasoningEffort?: "low" } = {}): Promise<string> {
+  // Query rewriting, reranking and preflight are aux work: skipped while budgets are tight, shared when identical.
+  auxGate(model, estimateRequestTokens(messages, opts.maxTokens), purpose);
+  return auxOnce(purpose, messages, () => withSlot(model, AbortSignal.timeout(timeoutMs), () => askSmallOnce(model, messages, purpose, timeoutMs, opts), { priority: "aux", purpose }), String(opts.maxTokens ?? ""));
+}
+
+async function askSmallOnce(model: string, messages: Message[], purpose: string, timeoutMs: number, opts: { maxTokens?: number; reasoningEffort?: "low" }): Promise<string> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   const started = Date.now();

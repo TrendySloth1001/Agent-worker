@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/app_scope.dart';
 import '../../../data/chat_api.dart';
 import '../../../data/knowledge_api.dart';
+import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
@@ -12,6 +13,7 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/appear.dart';
 import '../../../core/widgets/copy_action.dart';
+import '../../../core/widgets/model_logo.dart';
 import '../../../data/chat_message.dart';
 import '../../../data/doc_models.dart';
 import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
@@ -147,16 +149,33 @@ class MessageBubble extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              width: AppSizes.dot,
-              height: AppSizes.dot,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: message.isError ? p.accent : p.textPrimary,
+            // Who answered: the model family's real logo; a plain dot for
+            // errors and replies with no known model.
+            if (message.isError || message.modelId == null)
+              SizedBox.square(
+                dimension: AppSizes.modelLabelLogo,
+                child: Center(
+                  child: Container(
+                    width: AppSizes.dot,
+                    height: AppSizes.dot,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: message.isError ? p.accent : p.textPrimary,
+                    ),
+                  ),
+                ),
+              )
+            else
+              ModelLogo(message.modelId, size: AppSizes.modelLabelLogo),
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.meta,
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(label, style: t.meta),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -165,7 +184,11 @@ class MessageBubble extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
         ],
         if (message.isError)
-          Text(message.content, style: t.body.copyWith(color: p.accent))
+          Text(
+            // Old saved chats may hold raw server text.
+            safeOr(message.content, ErrorCopy.generic),
+            style: t.body.copyWith(color: p.accent),
+          )
         else if (waiting && message.tablePhase != null)
           RoundTablePanel(
             message: message,
@@ -197,11 +220,14 @@ class MessageBubble extends StatelessWidget {
           ),
         if (message.error != null) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(message.error!, style: t.caption.copyWith(color: p.accent)),
+          Text(
+            safeOr(message.error, ErrorCopy.generic),
+            style: t.caption.copyWith(color: p.accent),
+          ),
         ],
-        if (message.notice != null && !message.isError) ...[
+        if (safeOrNull(message.notice) != null && !message.isError) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(message.notice!, style: t.caption),
+          Text(safeOrNull(message.notice)!, style: t.caption),
         ],
         if (message.memoryOps.isNotEmpty && !message.isError) ...[
           const SizedBox(height: AppSpacing.sm),
@@ -372,7 +398,7 @@ class _SaveActionState extends State<_SaveAction> {
         if (mounted) setState(() => _state = _SaveState.saved);
         return;
       }
-      _fail(e.message);
+      _fail(friendlyException(e));
     } catch (_) {
       _fail(AppStrings.errorGeneric);
     }

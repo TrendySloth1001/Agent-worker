@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/constants/app_icons.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/app_strings.dart';
@@ -404,7 +405,9 @@ class _GhFutureState<T> extends State<GhFuture<T>> {
             return GithubConnectPanel(paper: context.palette.codeBackground);
           }
           return GhError(
-            message: e is ApiException ? e.message : GithubStrings.loadFailed,
+            message: e is ApiException
+                ? friendlyException(e)
+                : GithubStrings.loadFailed,
             onRetry: () => setState(() => _future = widget.load()),
           );
         }

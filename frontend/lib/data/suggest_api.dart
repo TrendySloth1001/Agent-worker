@@ -48,10 +48,7 @@ class SuggestApi {
         )
         .timeout(SuggestConfig.requestTimeout);
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     final json = jsonDecode(response.body);
     if (json is! Map<String, dynamic>) return const Completion();

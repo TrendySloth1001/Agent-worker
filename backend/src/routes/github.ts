@@ -7,7 +7,7 @@ import { graph } from "../github/graph.js";
 import * as detail from "../github/detail.js";
 import * as actions from "../github/actions.js";
 import { myEvents } from "../github/events.js";
-import { rateLimit } from "../util/rateLimit.js";
+import { inFlightLimit, limits, rateLimit } from "../util/rateLimit.js";
 
 export const githubRouter = Router();
 
@@ -32,7 +32,7 @@ async function send(res: Response, data: unknown, resource = "core") {
 
 // Works with the server token (GITHUB_TOKEN) or the caller's connected account.
 githubRouter.use(async (_req, _res, next) => {
-  if ((await ghAuth()).kind === "none") return next(new AppError(503, "github_disabled", "GitHub is not configured (GITHUB_TOKEN)"));
+  if ((await ghAuth()).kind === "none") return next(new AppError(503, "github_disabled", "GitHub isn't available right now."));
   next();
 });
 
@@ -116,7 +116,7 @@ githubRouter.get("/repos/:owner/:repo/commits/:sha", async (req, res) => {
 // `base...head` (two dots also accepted).
 githubRouter.get("/repos/:owner/:repo/compare/:spec", async (req, res) => {
   const m = req.params.spec.match(/^(.+?)\.{2,3}(.+)$/);
-  if (!m) throw new AppError(400, "bad_request", "Expected base...head");
+  if (!m) throw new AppError(400, "bad_request", "Pick two branches to compare.");
   await send(res, await svc.compare(req.params.owner, req.params.repo, m[1], m[2]));
 });
 
@@ -164,7 +164,8 @@ githubRouter.post("/repos/:owner/:repo/pulls/:n/review", async (req, res) => {
 // ---- pull request / issue detail (in-app screens) -------------------------
 const num = (req: Request) => Number(req.params.n);
 type P = { owner: string; repo: string; n: string };
-const writeLimit = rateLimit(30);
+// GitHub writes (comments, merges, reviews, edits): 10 a minute, 200 a day, 2 at once per user.
+const writeLimit = limits(rateLimit(10, 60_000, "auto", { name: "github-write" }), rateLimit(200, 24 * 3_600_000, "auto", { name: "github-write-day" }), inFlightLimit(2, 3_000, "github-write"));
 
 /** Writes answer fresh data and are never cached by the client. */
 function sendWrite(res: Response, data: unknown) {

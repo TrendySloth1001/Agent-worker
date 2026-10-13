@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/constants/app_config.dart';
 import '../core/constants/app_sizes.dart';
+import '../core/constants/error_copy.dart';
 import '../core/constants/smart_toggles.dart';
 import '../features/auth/auth_controller.dart';
 import 'api_client.dart';
@@ -12,11 +13,21 @@ import 'ai_model.dart';
 import 'chat_event.dart';
 import 'chat_message.dart';
 
-/// Carries a user-readable message from the server or the network layer.
+/// Carries a user-readable message from the server or the network layer,
+/// plus the backend's machine [code] when it sent one.
 class ApiException implements Exception {
-  const ApiException(this.message, {this.status});
+  const ApiException(this.message, {this.status, this.code});
+
+  /// A failed response, with a friendly [message] (see [friendlyError]).
+  factory ApiException.fromResponse(String body, int status) => ApiException(
+    errorMessage(body, status),
+    status: status,
+    code: errorCode(body),
+  );
+
   final String message;
   final int? status;
+  final String? code;
 
   @override
   String toString() => message;
@@ -57,16 +68,25 @@ String dailyLimitMessage(String serverMessage) {
   return 'Daily limit reached. $base Resets at $hh:$mm.';
 }
 
-/// Reads `{"error":{"message":...}}` from a failed response.
-String errorMessage(String body, int status) {
+/// The raw `{"error":{"message":...}}` of a failed response, or null.
+/// For logs and owner-only telemetry; users see [errorMessage].
+String? rawErrorMessage(String body) {
   try {
     final e = (jsonDecode(body) as Map<String, dynamic>)['error'];
     if (e is Map<String, dynamic> && e['message'] is String) {
       return e['message'] as String;
     }
   } catch (_) {}
-  return 'HTTP $status';
+  return null;
 }
+
+/// A friendly, user-facing line for a failed response (never a status code
+/// or raw server text that looks technical).
+String errorMessage(String body, int status) => friendlyError(
+  code: errorCode(body),
+  message: rawErrorMessage(body),
+  status: status,
+);
 
 class ChatApi {
   final _client = AuthClient();
@@ -77,7 +97,7 @@ class ChatApi {
       headers: apiHeaders(),
     );
     if (response.statusCode >= 400) {
-      throw ApiException(errorMessage(response.body, response.statusCode));
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     final list = jsonDecode(response.body)['models'] as List;
     return [
@@ -137,13 +157,7 @@ class ChatApi {
     ).send(request).timeout(AppDurations.streamIdle);
     if (response.statusCode != 200) {
       final body = await response.stream.bytesToString();
-      final message = errorMessage(body, response.statusCode);
-      throw ApiException(
-        response.statusCode == 429 && errorCode(body) == 'daily_limit'
-            ? dailyLimitMessage(message)
-            : message,
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(body, response.statusCode);
     }
 
     final lines = response.stream

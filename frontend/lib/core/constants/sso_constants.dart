@@ -47,15 +47,16 @@ abstract final class SsoStrings {
 
   // Google.
   static const googleFailed = 'Could not sign in with Google.';
-  static const googleNoToken = 'Google did not return an ID token.';
+  static const googleNoToken =
+      "Google sign-in didn't finish. Please try again.";
   static const googleMisconfigured =
-      'Google sign-in is not set up correctly for this app build '
-      '(Android OAuth client: package name and SHA-1).';
+      "Google sign-in isn't available in this version of the app. "
+      'Use another way to sign in.';
   static const googleUnavailable =
       'Google sign-in is not available on this device.';
   static const googleNoAccount =
-      'No Google account is available. Add one in Android settings, '
-      'or check the app\'s Google Cloud setup (package name and SHA-1).';
+      'No Google account is on this phone. Add one in Android settings '
+      'and try again.';
 
   // Profile.
   static const methods = 'SIGN-IN METHODS';

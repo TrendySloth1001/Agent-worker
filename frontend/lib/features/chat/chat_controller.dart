@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/docs.dart';
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/smart_toggles.dart';
 import '../../core/constants/suggest.dart';
 import '../../core/haptics.dart';
@@ -374,7 +375,9 @@ class ChatController extends ChangeNotifier {
         ..isStreaming = false
         ..status = null
         ..isError = true
-        ..content = e is ApiException ? e.message : DocStrings.startFailed;
+        ..content = e is ApiException
+            ? friendlyException(e)
+            : DocStrings.startFailed;
       isSending = false;
       notifyListeners();
     }
@@ -755,9 +758,13 @@ class ChatController extends ChangeNotifier {
         case StatusEvent(:final phase):
           message.status = phase;
           notifyListeners();
-        case NoticeEvent(message: final text):
-          message.notice = text;
-          notifyListeners();
+        case final NoticeEvent n:
+          // Silent notices (model switches) never show.
+          final text = n.text;
+          if (text != null) {
+            message.notice = text;
+            notifyListeners();
+          }
         case SourcesEvent(:final citations):
           message.citations = citations;
           notifyListeners();
@@ -804,8 +811,8 @@ class ChatController extends ChangeNotifier {
           } else {
             finish();
           }
-        case ErrorEvent(message: final text):
-          fail(text.isEmpty ? AppStrings.errorGeneric : text);
+        case ErrorEvent(:final code, message: final text):
+          fail(friendlyError(code: code, message: text));
         case TableEvent():
           _onTable(message, event);
           notifyListeners();
@@ -1176,7 +1183,7 @@ class ChatController extends ChangeNotifier {
   }
 
   String _errorText(Object error) {
-    if (error is ApiException) return error.message;
+    if (error is ApiException) return friendlyException(error);
     if (error is TimeoutException) return AppStrings.errorTimeout;
     return AppStrings.errorNetwork;
   }

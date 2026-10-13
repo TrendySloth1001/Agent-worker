@@ -144,7 +144,7 @@ authPublicRouter.post("/github/device/:flowId/poll", async (req, res) => {
   const view = pollView(r);
   if (view) return void res.json(view);
   const out = r.result;
-  if (out?.kind !== "session") throw new AppError(500, "internal", "Unexpected sign-in result");
+  if (out?.kind !== "session") throw new AppError(500, "internal", "Sign-in didn't finish — please try again.");
   log.info("signed in with github", { outcome: out.outcome, role: out.user.role });
   res.json({ status: "ok", outcome: out.outcome, session: session(out.user, out.tokens) });
 });
@@ -157,7 +157,7 @@ const webStartBody = z.object({ mode: z.enum(WEB_MODES as [string, ...string[]])
 const ticketBody = z.object({ ticket: z.string().min(20).max(200) });
 const webStart = (req: Request) => {
   const parsed = webStartBody.safeParse(req.body ?? {});
-  if (!parsed.success) throw new AppError(400, "bad_request", "mode must be signin, connect or link");
+  if (!parsed.success) throw new AppError(400, "bad_request", "Something about that request wasn't right — please try again.");
   return parsed.data as { mode: "signin" | "connect" | "link"; device?: string };
 };
 const ticketOf = (req: Request) => {
@@ -195,7 +195,7 @@ authPublicRouter.post("/github/web/redeem", async (req, res, next) => {
   if (mode && mode !== "signin") return next();
   res.setHeader("Cache-Control", "no-store");
   const r = await githubWeb.redeem(ticket, null);
-  if (r.mode !== "signin") throw new AppError(500, "internal", "Unexpected sign-in result");
+  if (r.mode !== "signin") throw new AppError(500, "internal", "Sign-in didn't finish — please try again.");
   log.info("signed in with github (web)", { outcome: r.outcome, role: r.user.role });
   res.json({ ...session(r.user, r.tokens), outcome: r.outcome, mode: "signin" });
 });
@@ -203,9 +203,9 @@ authPublicRouter.post("/github/web/redeem", async (req, res, next) => {
 const googleBody = z.object({ idToken: z.string().min(20).max(8000), device });
 
 authPublicRouter.post("/google", async (req, res) => {
-  if (!config.google.webClientId) throw new AppError(503, "google_not_configured", "Google sign-in is not set up on this server (GOOGLE_WEB_CLIENT_ID)");
+  if (!config.google.webClientId) throw new AppError(503, "google_not_configured", "Google sign-in isn't available right now.");
   const parsed = googleBody.safeParse(req.body ?? {});
-  if (!parsed.success) throw new AppError(400, "bad_request", "Missing Google ID token");
+  if (!parsed.success) throw new AppError(400, "bad_request", "Google sign-in didn't finish — please try again.");
   const profile = await verifyGoogleIdToken(parsed.data.idToken);
   const { user, tokens, outcome } = await ssoSignIn(profile, deviceLabel(req, parsed.data));
   log.info("signed in with google", { outcome, role: user.role });
@@ -312,7 +312,7 @@ authRouter.post("/identities/github/device/:flowId/poll", async (req, res) => {
   const r = await githubSso.poll(user.id, flowId(req));
   const view = pollView(r);
   if (view) return void res.json(view);
-  if (r.result?.kind !== "linked") throw new AppError(500, "internal", "Unexpected link result");
+  if (r.result?.kind !== "linked") throw new AppError(500, "internal", "Linking didn't finish — please try again.");
   res.json({ status: "ok", identity: r.result.identity });
 });
 
@@ -328,7 +328,7 @@ authRouter.post("/github/web/redeem", async (req, res) => {
   const user = await me(req);
   const r = await githubWeb.redeem(ticketOf(req), user.id);
   res.setHeader("Cache-Control", "no-store");
-  if (r.mode === "signin") throw new AppError(500, "internal", "Unexpected sign-in result");
+  if (r.mode === "signin") throw new AppError(500, "internal", "Sign-in didn't finish — please try again.");
   res.json({ ok: true, mode: r.mode, connection: r.connection, ...(r.mode === "link" ? { identity: r.identity } : {}) });
 });
 
@@ -337,7 +337,7 @@ authRouter.post("/identities/google", rateLimit(10, 60_000));
 authRouter.post("/identities/google", async (req, res) => {
   const user = await me(req);
   const parsed = googleBody.safeParse(req.body ?? {});
-  if (!parsed.success) throw new AppError(400, "bad_request", "Missing Google ID token");
+  if (!parsed.success) throw new AppError(400, "bad_request", "Google sign-in didn't finish — please try again.");
   const profile = await verifyGoogleIdToken(parsed.data.idToken);
   res.json({ identity: await linkIdentity(user.id, profile) });
 });

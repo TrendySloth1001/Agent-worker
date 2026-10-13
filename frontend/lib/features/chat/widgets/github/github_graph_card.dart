@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/constants/app_icons.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/widget_github.dart';
@@ -556,7 +557,9 @@ class _GhGraphViewState extends State<GhGraphView>
         alignment: Alignment.topCenter,
         child: GhError(
           message: e is ApiException
-              ? (e.status == 404 ? GithubGraphStrings.notFound : e.message)
+              ? (e.status == 404
+                    ? GithubGraphStrings.notFound
+                    : friendlyException(e))
               : GithubStrings.loadFailed,
           onRetry: _load,
         ),
@@ -628,7 +631,7 @@ class _GhGraphViewState extends State<GhGraphView>
                     if (err != null) {
                       return GhError(
                         message: err is ApiException
-                            ? err.message
+                            ? friendlyException(err)
                             : GithubStrings.loadFailed,
                         onRetry: _more,
                       );

@@ -268,6 +268,73 @@ class TopError {
   final DateTime? lastAt;
 }
 
+/// One budget scope (a model, or a whole provider account): this minute and today.
+class BudgetScope {
+  const BudgetScope({
+    required this.scope,
+    required this.minuteRequests,
+    required this.minuteTokens,
+    required this.dayRequests,
+    required this.dayTokens,
+    this.rpm,
+    this.tpm,
+    this.rpd,
+    this.tpd,
+  });
+
+  factory BudgetScope.fromJson(Map<String, dynamic> j) {
+    final m = _m(j['minute']);
+    final d = _m(j['day']);
+    return BudgetScope(
+      scope: _s(j['scope']) ?? '',
+      minuteRequests: _i(m['requests']),
+      minuteTokens: _i(m['tokens']),
+      dayRequests: _i(d['requests']),
+      dayTokens: _i(d['tokens']),
+      rpm: _ni(m['rpm']),
+      tpm: _ni(m['tpm']),
+      rpd: _ni(d['rpd']),
+      tpd: _ni(d['tpd']),
+    );
+  }
+
+  final String scope;
+  final int minuteRequests, minuteTokens, dayRequests, dayTokens;
+  final int? rpm, tpm, rpd, tpd;
+}
+
+/// Live provider budgets: use per scope plus how often the server skipped,
+/// waited, deferred aux work or capped a user instead of collecting a 429.
+class TelemetryBudgets {
+  const TelemetryBudgets({
+    required this.scopes,
+    required this.skips,
+    required this.waits,
+    required this.auxDeferred,
+    required this.auxCacheHits,
+    required this.userCaps,
+  });
+
+  static int _sum(Object? v) => v is Map
+      ? v.values.fold<int>(0, (n, x) => n + (x is num ? x.toInt() : 0))
+      : 0;
+
+  static TelemetryBudgets? fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    return TelemetryBudgets(
+      scopes: [for (final s in _l(raw['scopes'])) BudgetScope.fromJson(s)],
+      skips: _l(raw['skips']).fold<int>(0, (n, s) => n + _i(s['count'])),
+      waits: _i(_m(raw['waits'])['count']),
+      auxDeferred: _sum(raw['auxDeferred']),
+      auxCacheHits: _sum(raw['auxCacheHits']),
+      userCaps: _sum(raw['userCaps']),
+    );
+  }
+
+  final List<BudgetScope> scopes;
+  final int skips, waits, auxDeferred, auxCacheHits, userCaps;
+}
+
 class TelemetryOverview {
   const TelemetryOverview({
     required this.window,
@@ -278,6 +345,7 @@ class TelemetryOverview {
     required this.users,
     required this.topErrors,
     this.turns,
+    this.budgets,
   });
 
   factory TelemetryOverview.fromJson(Map<String, dynamic> j) {
@@ -303,6 +371,7 @@ class TelemetryOverview {
       users: [for (final u in _l(j['users'])) UserTelemetry.fromJson(u)],
       topErrors: [for (final e in _l(j['topErrors'])) TopError.fromJson(e)],
       turns: TurnTelemetry.fromJson(j['turns']),
+      budgets: TelemetryBudgets.fromJson(j['budgets']),
     );
   }
 
@@ -313,6 +382,7 @@ class TelemetryOverview {
   final List<UserTelemetry> users;
   final List<TopError> topErrors;
   final TurnTelemetry? turns;
+  final TelemetryBudgets? budgets;
 }
 
 class SeriesPoint {

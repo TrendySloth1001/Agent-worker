@@ -24,7 +24,7 @@ async function se<T>(path: string, params: Record<string, string | number>): Pro
     return data.items ?? [];
   } catch (e) {
     const st = (e as { status?: number }).status;
-    if (st === 400 || st === 502 || st === 429) throw new AppError(502, "upstream_failed", "Stack Exchange API throttled this server. Try again later");
+    if (st === 400 || st === 502 || st === 429) throw new AppError(502, "upstream_failed", "Stack Overflow is busy right now — try again later.");
     throw e;
   }
 }

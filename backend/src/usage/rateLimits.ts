@@ -46,6 +46,9 @@ export function recordRateHeaders(id: string, headers: Headers): void {
   });
 }
 
+/** The latest headers seen for one "provider:model", or null. */
+export const rateSnapshot = (id: string): RateSnapshot | null => snapshots.get(id) ?? null;
+
 export function rateSnapshots(prefix: string): Array<[string, RateSnapshot]> {
   return [...snapshots].filter(([id]) => id.startsWith(prefix));
 }
@@ -63,6 +66,11 @@ export function hasTokenBudget(id: string, tokens: number, now = Date.now()): bo
   if (!s || s.remainingTokens === null) return true;
   if (s.tokensResetAt && Date.parse(s.tokensResetAt) <= now) return true;
   return s.remainingTokens >= tokens;
+}
+
+/** Test hook. */
+export function clearRateSnapshots(): void {
+  snapshots.clear();
 }
 
 /** Test hook. */

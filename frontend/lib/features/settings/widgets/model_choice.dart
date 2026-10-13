@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import '../../../core/app_scope.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
+import '../../../core/constants/model_logos.dart';
 import '../../../core/constants/settings_copy.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/icon_label.dart';
 import '../../../data/ai_model.dart';
+import '../telemetry/telemetry_format.dart' show providerLabel;
 import 'settings_kit.dart';
 
 /// One of the Auto / Fastest / Smartest radio rows. Must sit under a
@@ -66,7 +69,9 @@ class SpecificModelTile extends StatelessWidget {
       builder: (context, _) {
         final raw = !_presets.contains(s.modelChoice);
         return SettingsTile(
-          icon: SettingsIcons.listModels,
+          icon: raw
+              ? ModelLogos.forModelId(s.modelChoice)
+              : SettingsIcons.listModels,
           title: SettingsStrings.allModels,
           summary: raw ? s.modelChoice : SettingsStrings.allModelsHelp,
           trailing: raw
@@ -144,8 +149,25 @@ class _ModelSheetState extends State<_ModelSheet> {
                 for (final m in snap.data!)
                   RadioListTile<String>(
                     value: m.id,
+                    controlAffinity: ListTileControlAffinity.trailing,
+                    secondary: SettingsIconCircle(
+                      ModelLogos.forModelId(m.id, provider: m.provider),
+                    ),
                     title: Text(m.name),
-                    subtitle: Text(m.provider),
+                    subtitle: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: IconLabel(
+                        icon: AppIcons.provider(m.provider),
+                        text: providerLabel(m.provider),
+                        style: tt.bodyMedium!.copyWith(
+                          color: p.textSecondary,
+                        ),
+                        iconSize: AppIconSize.sm,
+                      ),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
                   ),
               ],
             ),

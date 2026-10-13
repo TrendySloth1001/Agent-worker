@@ -80,12 +80,28 @@ export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: 
  */
 export async function streamModel(id: string, messages: Message[], opts: StreamOptions): Promise<StreamHandle> {
   const quota = await import("./llm/quota.js");
+  const budget = await import("./llm/budget.js");
   if (!opts.probe) quota.quotaGuard(id);
-  const handle = await openStream(id, messages, opts);
-  return { tokens: watchQuota(id, handle.tokens, quota), usage: handle.usage };
+  // Proactive: a call that would not fit the model's minute/day budget is skipped before it costs a 429.
+  const need = budget.estimateRequestTokens(messages, opts.maxTokens);
+  if (!opts.probe) budget.guard(id, need);
+  const reservation = budget.reserve(id, need);
+  let handle: StreamHandle;
+  try {
+    handle = await openStream(id, messages, opts);
+  } catch (e) {
+    reservation.settle(0);
+    throw e;
+  }
+  return { tokens: watchQuota(id, handle.tokens, quota, () => settleFrom(reservation, handle.usage)), usage: handle.usage };
 }
 
-async function* watchQuota(id: string, tokens: AsyncGenerator<string>, quota: typeof import("./llm/quota.js")): AsyncGenerator<string> {
+/** Replaces the estimate with what the provider reported (prompt + completion), when it did. */
+function settleFrom(r: { settle(n: number | null): void }, u: StreamUsage): void {
+  r.settle(u.promptTokens === null && u.completionTokens === null ? null : (u.promptTokens ?? 0) + (u.completionTokens ?? 0));
+}
+
+async function* watchQuota(id: string, tokens: AsyncGenerator<string>, quota: typeof import("./llm/quota.js"), onEnd: () => void): AsyncGenerator<string> {
   try {
     yield* tokens;
   } catch (e) {
@@ -94,6 +110,8 @@ async function* watchQuota(id: string, tokens: AsyncGenerator<string>, quota: ty
       if (c.kind === "quota_exhausted") quota.markQuota(id, c, e.message);
     }
     throw e;
+  } finally {
+    onEnd();
   }
 }
 

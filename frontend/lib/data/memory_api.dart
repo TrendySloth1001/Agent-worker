@@ -67,10 +67,7 @@ class MemoryApi {
       await _client.send(request).timeout(MemoryConfig.requestTimeout),
     );
     if (response.statusCode >= 400) {
-      throw ApiException(
-        errorMessage(response.body, response.statusCode),
-        status: response.statusCode,
-      );
+      throw ApiException.fromResponse(response.body, response.statusCode);
     }
     return response;
   }

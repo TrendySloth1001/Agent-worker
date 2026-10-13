@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/constants/error_copy.dart';
 import '../../../core/app_messenger.dart';
 import '../../../core/constants/app_prefs.dart';
 import '../../../core/constants/sso_constants.dart';
@@ -126,7 +127,7 @@ class GithubWebAuth extends ChangeNotifier {
       notifyListeners();
       return true;
     } on SsoException catch (e) {
-      if (mode == m) _fail(e.message);
+      if (mode == m) _fail(friendlyException(e));
       return false;
     }
   }
@@ -189,7 +190,7 @@ class GithubWebAuth extends ChangeNotifier {
     if (err != null || ticket == null || ticket.isEmpty) {
       final message = err == GithubWeb.errDenied
           ? GithubWebStrings.denied
-          : (q[GithubWeb.message] ?? GithubWebStrings.failed);
+          : safeOr(q[GithubWeb.message], GithubWebStrings.failed);
       return _finish(
         GithubWebOutcome.failed(pending.mode, message, code: err),
         cold,
@@ -217,7 +218,11 @@ class GithubWebAuth extends ChangeNotifier {
       _finish(GithubWebOutcome.ok(pending.mode), cold);
     } on SsoException catch (e) {
       _finish(
-        GithubWebOutcome.failed(pending.mode, e.message, code: e.code),
+        GithubWebOutcome.failed(
+          pending.mode,
+          friendlyException(e),
+          code: e.code,
+        ),
         cold,
       );
     }
@@ -236,8 +241,9 @@ class GithubWebAuth extends ChangeNotifier {
     } else {
       Haptics.error();
       phase = GithubWebPhase.failed;
-      error = o.message;
-      if (cold) AppMessenger.show(o.message ?? GithubWebStrings.failed);
+      final text = safeOr(o.message, GithubWebStrings.failed);
+      error = text;
+      if (cold) AppMessenger.show(text);
     }
     notifyListeners();
     _outcomes.add(o);
