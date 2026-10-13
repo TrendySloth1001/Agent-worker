@@ -219,6 +219,7 @@ abstract final class TelemetrySizes {
   static const loadMoreThreshold = 600.0;
   static const topErrorsShown = 8;
   static const usersShown = 20;
+  static const budgetsShown = 12;
   static const kindsShown = 16;
 }
 

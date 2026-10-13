@@ -1,6 +1,7 @@
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/m3_copy.dart';
 import '../../../core/constants/telemetry.dart';
+import '../../../data/telemetry.dart';
 import '../format.dart';
 
 const _msPerSecond = 1000;
@@ -41,6 +42,27 @@ String countdown(Duration d) {
 /// Tokens in / out: 1.2K / 340.
 String inOut(int a, int b) =>
     '${compact(a)}${TelemetryStrings.slash}${compact(b)}';
+
+/// A budget scope: "groq:openai/gpt-oss-120b" -> "Groq gpt-oss-120b", "nvidia" -> "NVIDIA".
+String budgetScopeLabel(String scope) {
+  final i = scope.indexOf(':');
+  if (i < 0) return providerLabel(scope);
+  final model = scope.substring(i + 1);
+  return '${providerLabel(scope.substring(0, i))} ${model.split('/').last}';
+}
+
+String _of(int used, int? limit) =>
+    limit == null ? compact(used) : '${compact(used)}/${compact(limit)}';
+
+/// "3/30 req · 2.1K/8K tok min · 120/1K today".
+String budgetLine(BudgetScope s) {
+  final minute = [
+    '${_of(s.minuteRequests, s.rpm)} ${TelemetryCopy.budgetReq}',
+    if (s.tpm != null || s.minuteTokens > 0)
+      '${_of(s.minuteTokens, s.tpm)} ${TelemetryCopy.budgetTok}',
+  ].join(' · ');
+  return '$minute ${TelemetryCopy.budgetMinute} · ${_of(s.dayRequests, s.rpd)} ${TelemetryCopy.budgetToday}';
+}
 
 /// Display name of a provider id: groq -> Groq, nvidia -> NVIDIA.
 String providerLabel(String id) =>

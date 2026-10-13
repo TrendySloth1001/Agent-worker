@@ -221,6 +221,38 @@ class _FakeTelemetry implements TelemetryApi {
               .toIso8601String(),
         },
       ],
+      'budgets': {
+        'scopes': [
+          {
+            'scope': 'groq:openai/gpt-oss-120b',
+            'minute': {'requests': 4, 'tokens': 5120, 'rpm': 30, 'tpm': 8000},
+            'day': {
+              'requests': 212,
+              'tokens': 90000,
+              'rpd': 1000,
+              'tpd': 200000,
+            },
+          },
+          {
+            'scope': 'nvidia',
+            'minute': {'requests': 7, 'tokens': 2300, 'rpm': 40, 'tpm': null},
+            'day': {
+              'requests': 388,
+              'tokens': 410000,
+              'rpd': null,
+              'tpd': null,
+            },
+          },
+        ],
+        'skips': [
+          {'model': 'groq:openai/gpt-oss-120b', 'reason': 'tpm', 'count': 6},
+          {'model': 'groq:qwen/qwen3.8-27b', 'reason': 'rpd', 'count': 1},
+        ],
+        'waits': {'count': 2, 'totalMs': 3100},
+        'auxDeferred': {'suggestions': 3, 'title': 1},
+        'auxCacheHits': {'title': 5},
+        'userCaps': {'chat': 1},
+      },
       'turns': f.provider != null
           ? null
           : {
@@ -420,6 +452,22 @@ void main() {
     );
     expect(find.text(TelemetryCopy.perTurn), findsOneWidget);
     expect(find.text('2.5'), findsOneWidget);
+  });
+
+  testWidgets('budgets show use per scope and pre-call skips', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsController.load();
+    await pumpScreen(
+      tester,
+      TelemetryScreen(api: _FakeTelemetry()),
+      height: 3200,
+      wrap: (app) => _scope(app, settings),
+    );
+    expect(find.text(TelemetryCopy.budgets), findsOneWidget);
+    expect(find.text('Groq gpt-oss-120b'), findsOneWidget);
+    expect(find.textContaining('4/30 req'), findsOneWidget);
+    // 6 + 1 skips before calling.
+    expect(find.text('7'), findsWidgets);
   });
 
   test('grouping merges providers and names model-less rows', () {
