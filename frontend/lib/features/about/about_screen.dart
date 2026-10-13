@@ -33,6 +33,8 @@ import '../settings/telemetry/telemetry_screen.dart';
 import '../settings/widgets/developer_section.dart';
 import '../settings/widgets/settings_kit.dart';
 import '../../core/constants/settings_copy.dart';
+import '../../core/update/update_controller.dart';
+import '../../core/update/update_policy.dart';
 
 /// About sparky. Everyone gets the logo, version, what's new, the tour,
 /// privacy and terms, licenses and feedback. The owner also sees what it
@@ -87,7 +89,12 @@ class _AboutScreenState extends State<AboutScreen> {
       if (!mounted) return;
       setState(() {
         if (info.version.isNotEmpty) _version = info.version;
-        if (info.buildNumber.isNotEmpty) _build = info.buildNumber;
+        final code = int.tryParse(info.buildNumber);
+        if (code != null) {
+          _build = '${UpdatePolicy.buildFromVersionCode(code)}';
+        } else if (info.buildNumber.isNotEmpty) {
+          _build = info.buildNumber;
+        }
       });
     } catch (_) {
       // Keep the fallback from pubspec.
@@ -314,46 +321,137 @@ class _AboutScreenState extends State<AboutScreen> {
 
   /// Hero card: dot-matrix field with the illustration, wordmark, tagline and
   /// a tiny mono version tag.
-  Widget _hero(BuildContext context) {
+  Widget _hero(BuildContext context) => _Hero(version: _version);
+}
+
+/// The About hero: the illustration on a dot grid that fades out before the
+/// text, the wordmark and tagline on a clean surface, and a mono strip with
+/// the version and the live update status.
+class _Hero extends StatelessWidget {
+  const _Hero({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
     return M3Card(
       padding: EdgeInsets.zero,
-      child: Stack(
+      child: Column(
         children: [
-          const Positioned.fill(child: DotGridBackground()),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                children: [
-                  const Illustration(
+          SizedBox(
+            height: AboutSizes.heroArt,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (rect) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.white, Colors.transparent],
+                    stops: AboutSizes.heroFade,
+                  ).createShader(rect),
+                  child: const DotGridBackground(),
+                ),
+                const Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Illustration(
                     kind: IllustrationKind.hello,
                     height: AboutSizes.illustration,
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                  const Wordmark(size: AboutSizes.wordmark),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    AboutStrings.tagline,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyLarge!.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.lg,
+              AppSpacing.xl,
+              AppSpacing.xl,
+            ),
+            child: Column(
+              children: [
+                const Wordmark(size: AboutSizes.wordmark),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  AboutStrings.tagline,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                  M3Tag(
-                    _owner
-                        ? AboutStrings.versionLine(_version, _build, _platform)
-                        : AboutStrings.versionPlain(_version),
-                    mono: false,
-                  ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, thickness: 1, color: palette.border),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.md,
+            ),
+            child: ListenableBuilder(
+              listenable: UpdateController.instance,
+              builder: (context, _) => _HeroStrip(
+                version: version,
+                controller: UpdateController.instance,
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _HeroStrip extends StatelessWidget {
+  const _HeroStrip({required this.version, required this.controller});
+
+  final String version;
+  final UpdateController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final label = AppTextStyles.caption;
+    final hasUpdate = controller.hasUpdate;
+    final status = hasUpdate
+        ? AboutStrings.heroUpdate
+        : controller.everChecked
+        ? AboutStrings.heroLatest
+        : null;
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            AboutStrings.heroVersion(version),
+            style: label.copyWith(color: palette.textPrimary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (status != null) ...[
+          const SizedBox(width: AppSpacing.md),
+          Container(
+            width: AboutSizes.statusDot,
+            height: AboutSizes.statusDot,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: hasUpdate ? palette.accent : palette.textTertiary,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            status,
+            style: label.copyWith(
+              color: hasUpdate ? palette.accent : palette.textSecondary,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

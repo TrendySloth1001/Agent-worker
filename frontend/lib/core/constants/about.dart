@@ -28,13 +28,15 @@ abstract final class AboutStrings {
   static const fallbackVersion = '1.0.0';
   static const fallbackBuild = '1';
   static const fallbackPlatform = 'Android';
-  static String versionLine(String version, String build, String platform) =>
-      'Version $version ($build) · $platform';
   static String versionShort(String version, String build) =>
       '$version ($build)';
 
   /// What people who are not the owner see under the logo.
-  static String versionPlain(String version) => 'Version $version';
+
+  // Hero strip (mono caps).
+  static String heroVersion(String version) => 'V$version';
+  static const heroLatest = 'UP TO DATE';
+  static const heroUpdate = 'UPDATE READY';
 
   // Sections.
   static const whatItDoes = 'WHAT IT DOES';
@@ -303,6 +305,11 @@ abstract final class AboutIcons {
 
 abstract final class AboutSizes {
   static const illustration = 140.0;
+
+  /// The dotted art area of the hero; the grid fades out over [heroFade].
+  static const heroArt = 176.0;
+  static const heroFade = [0.25, 1.0];
+  static const statusDot = 6.0;
   static const wordmark = AppFontSize.displayLarge;
 
   /// Wordmark on the licenses page header.

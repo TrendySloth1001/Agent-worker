@@ -29,7 +29,7 @@ String updateStatusText(UpdateController c) {
       : UpdateStrings.statusUnknown;
 }
 
-/// Settings → About → APP UPDATES: status (with a dot when there is an
+/// Settings → About → Updates: status (with a dot when there is an
 /// update), "Check for updates" and the Wi-Fi-only switch.
 class UpdateSettingsGroup extends StatelessWidget {
   const UpdateSettingsGroup({super.key, this.controller});

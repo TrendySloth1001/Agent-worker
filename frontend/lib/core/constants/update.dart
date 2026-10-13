@@ -142,8 +142,8 @@ abstract final class UpdateStrings {
   static const notifyHelp = 'Tell me once when a new version of sparky is out.';
 
   // ---- Settings → About --------------------------------------------------------
-  static const section = 'APP UPDATES';
-  static const rowTitle = 'App updates';
+  static const section = 'Updates';
+  static const rowTitle = 'Status';
   static const statusUnknown = 'Not checked yet';
   static const statusUpToDate = "You're up to date";
   static const statusChecking = 'Checking…';
@@ -165,8 +165,8 @@ abstract final class UpdateStrings {
   static const releasesError = "Couldn't load releases.";
   static const retry = 'Retry';
   static const uploadApk = 'Upload APK';
-  static const adoptionHeader = 'IN USE';
-  static const releasesHeader = 'RELEASES';
+  static const adoptionHeader = 'In use';
+  static const releasesHeader = 'Releases';
   static String users(int n) => n == 1 ? '1 user' : '$n users';
   static String buildLine(String version, int build) =>
       'v$version · build $build';

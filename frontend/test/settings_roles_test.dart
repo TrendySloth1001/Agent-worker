@@ -282,7 +282,7 @@ void main() {
   group('About', () {
     testWidgets('a user sees the simple page', (tester) async {
       await _pump(tester, const AboutScreen(), user: _user);
-      expect(find.text(AboutStrings.versionPlain('1.5.3')), findsOneWidget);
+      expect(find.text(AboutStrings.heroVersion('1.5.3')), findsOneWidget);
       for (final t in [
         ChangelogStrings.entry,
         OnboardingStrings.takeTour,
@@ -305,10 +305,7 @@ void main() {
 
     testWidgets('the owner gets the Developer section', (tester) async {
       await _pump(tester, const AboutScreen(), user: _owner);
-      expect(
-        find.text(AboutStrings.versionLine('1.5.3', '22', 'Android')),
-        findsOneWidget,
-      );
+      expect(find.text(AboutStrings.heroVersion('1.5.3')), findsOneWidget);
       await _scrollTo(tester, find.text(SettingsStrings.developerShow));
       await tester.tap(find.text(SettingsStrings.developerShow));
       await _settle(tester);
