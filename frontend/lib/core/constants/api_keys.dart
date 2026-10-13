@@ -86,7 +86,7 @@ abstract final class ApiKeysStrings {
 
 /// The first-open intro (three swipeable pages).
 abstract final class ApiKeysIntroStrings {
-  static const pages = 3;
+  static const pages = 4;
 
   static const skip = 'Skip';
   static const next = 'Next';
@@ -121,11 +121,34 @@ abstract final class ApiKeysIntroStrings {
     ),
   ];
 
-  static const usageKicker = 'YOUR USAGE';
-  static const usageTitle = 'See what you use.';
+  static const telemetryKicker = 'TELEMETRY & ANALYTICS';
+  static const telemetryTitle = 'Your own analytics.';
+  static const telemetryBody =
+      'With a working key you unlock telemetry and usage analytics for '
+      'everything that runs on it.';
+  static const telemetryPoints = [
+    (
+      icon: ApiKeysIcons.day,
+      title: 'Requests and tokens',
+      detail: 'Day by day, for the last 7 or 30 days.',
+    ),
+    (
+      icon: ApiKeysIcons.models,
+      title: 'Models and providers',
+      detail: 'Which models answered, and how often.',
+    ),
+    (
+      icon: ApiKeysIcons.lock,
+      title: 'Only yours',
+      detail: 'Never other users\' data, never the server\'s. Just you.',
+    ),
+  ];
+
+  static const usageKicker = 'GET STARTED';
+  static const usageTitle = 'Add it, test it, go.';
   static const usageBody =
-      'Once a key works you get your own usage view: requests, tokens and '
-      'the models you used.';
+      'Paste a key, test it in one tap, and sparky starts using it for your '
+      'chats right away.';
   static const usagePoints = [
     (
       icon: ApiKeysIcons.test,
@@ -134,8 +157,8 @@ abstract final class ApiKeysIntroStrings {
     ),
     (
       icon: ApiKeysIcons.usage,
-      title: 'Just your numbers',
-      detail: 'Only calls made with your keys. Nothing from anyone else.',
+      title: 'Watch it work',
+      detail: 'Your usage view fills in as you chat.',
     ),
   ];
 }

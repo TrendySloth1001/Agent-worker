@@ -222,6 +222,15 @@ class _KeysIntroScreenState extends State<KeysIntroScreen> {
     const TourPage(
       index: 2,
       total: ApiKeysIntroStrings.pages,
+      art: IllustrationKind.homeDream,
+      kicker: ApiKeysIntroStrings.telemetryKicker,
+      title: ApiKeysIntroStrings.telemetryTitle,
+      body: ApiKeysIntroStrings.telemetryBody,
+      children: [TourPoints(ApiKeysIntroStrings.telemetryPoints)],
+    ),
+    const TourPage(
+      index: 3,
+      total: ApiKeysIntroStrings.pages,
       art: IllustrationKind.homeCode,
       kicker: ApiKeysIntroStrings.usageKicker,
       title: ApiKeysIntroStrings.usageTitle,

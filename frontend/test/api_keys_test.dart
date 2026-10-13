@@ -295,9 +295,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('remove-groq')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(
-        find.byKey(const ValueKey('confirm-ok')),
-      );
+      await tester.tap(find.byKey(const ValueKey('confirm-ok')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(api.removed, ['groq']);
@@ -338,12 +336,13 @@ void main() {
       expect(find.byKey(const ValueKey('key-field')), findsNothing);
     });
 
-    testWidgets('Next walks the three pages; Add a key opens the sheet', (
+    testWidgets('Next walks the four pages; Add a key opens the sheet', (
       tester,
     ) async {
       await _open(tester, _FakeApi(), introSeen: false);
       for (final title in [
         ApiKeysIntroStrings.privateTitle,
+        ApiKeysIntroStrings.telemetryTitle,
         ApiKeysIntroStrings.usageTitle,
       ]) {
         await tester.tap(find.text(ApiKeysIntroStrings.next));
@@ -509,7 +508,12 @@ void main() {
       final theme = dark ? 'dark' : 'light';
       final data = dark ? AppTheme.dark : AppTheme.light;
 
-      for (final (i, name) in ['use', 'private', 'usage'].indexed) {
+      for (final (i, name) in [
+        'use',
+        'private',
+        'telemetry',
+        'usage',
+      ].indexed) {
         testWidgets('intro $name ($theme)', (tester) async {
           tester.view.physicalSize = const Size(412 * 2.6, 915 * 2.6);
           tester.view.devicePixelRatio = 2.6;
