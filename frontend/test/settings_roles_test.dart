@@ -1,3 +1,4 @@
+import 'support/backdrop.dart';
 import 'package:app/core/app_scope.dart';
 import 'package:app/core/constants/about.dart';
 import 'package:app/core/constants/changelog.dart';
@@ -357,6 +358,7 @@ void main() {
 
       testWidgets('about, user ($theme)', (tester) async {
         await _pump(tester, const AboutScreen(), user: _user, dark: dark);
+        await settleBackdrop(tester);
         await expectLater(
           find.byType(MaterialApp),
           matchesGoldenFile('goldens/about_user_$theme.png'),
@@ -369,6 +371,7 @@ void main() {
         await tester.tap(find.text(SettingsStrings.developerShow));
         await _settle(tester);
         await _scrollTo(tester, find.text(AboutStrings.madeWith));
+        await settleBackdrop(tester);
         await expectLater(
           find.byType(MaterialApp),
           matchesGoldenFile('goldens/about_owner_$theme.png'),

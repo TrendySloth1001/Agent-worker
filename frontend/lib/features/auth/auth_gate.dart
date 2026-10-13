@@ -5,7 +5,7 @@ import '../../core/constants/app_sizes.dart';
 import '../../core/constants/auth_constants.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
-import '../../core/widgets/dot_grid_background.dart';
+import '../../core/widgets/dot_matrix_backdrop.dart';
 import '../chat/chat_screen.dart';
 import '../onboarding/onboarding_gate.dart';
 import 'auth_controller.dart';
@@ -50,7 +50,7 @@ class _Splash extends StatelessWidget {
         backgroundColor: p.background,
         body: Stack(
           children: [
-            const Positioned.fill(child: DotGridBackground()),
+            const Positioned.fill(child: DotMatrixBackdrop.page()),
             Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,

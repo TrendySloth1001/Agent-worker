@@ -12,6 +12,7 @@ import '../../core/theme/app_palette.dart';
 import '../../core/theme/system_chrome.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../core/widgets/dot_grid_background.dart';
+import '../../core/widgets/dot_matrix_backdrop.dart';
 import '../../core/widgets/glass.dart';
 import '../../core/widgets/size_reporter.dart';
 import '../../data/chat_message.dart';
@@ -236,7 +237,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding.bottom + AppSpacing.md + _inputHeight.value;
               return Stack(
                 children: [
-                  const Positioned.fill(child: DotGridBackground()),
+                  Positioned.fill(
+                    child: isEmpty
+                        ? const DotMatrixBackdrop.page()
+                        : const DotGridBackground(),
+                  ),
                   Positioned.fill(
                     child: ChatSwitchTransition(
                       token: _controller.conversationId,

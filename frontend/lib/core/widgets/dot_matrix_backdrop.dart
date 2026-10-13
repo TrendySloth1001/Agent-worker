@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../constants/app_colors.dart';
+import '../constants/app_sizes.dart';
 import '../constants/dot_matrix.dart';
 import '../motion/spring_field.dart';
 import '../motion/springs.dart';
@@ -43,6 +44,14 @@ enum DotMatrixMode {
 /// per dot), capped at 60 fps and dropping to 30 once idle and calm. Dots
 /// are drawn in batched point calls, halos in one atlas call. With reduced
 /// motion it paints one still, settled frame.
+///
+/// [DotMatrixBackdrop.page] is the calm variant for page backgrounds: the
+/// same engine, but no veil, haze, aurora or halos, and ink dots on the same
+/// grid as `DotGridBackground` (same spacing, radius and colour). It opens
+/// with a soft wave, ripples gently under the finger and breathes faintly
+/// in the accent, then comes to rest: once settled and untouched for a few
+/// seconds its ticker stops completely (the last frame stays painted) and a
+/// touch starts it again. It also pauses while the app is in the background.
 class DotMatrixBackdrop extends StatefulWidget {
   const DotMatrixBackdrop({
     super.key,
@@ -50,7 +59,17 @@ class DotMatrixBackdrop extends StatefulWidget {
     this.wave = 0,
     this.level,
     this.interactive = true,
-  });
+  }) : page = false;
+
+  /// The calm page-background variant (see the class docs).
+  const DotMatrixBackdrop.page({super.key, this.interactive = true})
+    : mode = DotMatrixMode.idle,
+      wave = 0,
+      level = null,
+      page = true;
+
+  /// Whether this is the page variant.
+  final bool page;
 
   final DotMatrixMode mode;
 
@@ -68,33 +87,67 @@ class DotMatrixBackdrop extends StatefulWidget {
 }
 
 class _DotMatrixBackdropState extends State<DotMatrixBackdrop>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final Ticker _ticker = createTicker(_onTick);
-  final _frame = DotMatrixFrame();
+  late final _frame = DotMatrixFrame(page: widget.page);
   final _cache = DotMatrixCache();
   bool _still = false;
   bool _restartWave = false;
   Duration _last = Duration.zero;
 
+  /// The ticker's clock restarts at zero every time it starts; the frame's
+  /// time carries on from here.
+  double _offset = 0;
+
+  /// The page variant has come to rest (ticker stopped); a touch wakes it.
+  bool _rested = false;
+
+  /// The app is in the background (page variant only): no ticker.
+  bool _paused = false;
+
   @override
   void initState() {
     super.initState();
     _frame.setTargets(widget.mode);
+    if (widget.page) WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final paused =
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached;
+    if (paused == _paused) return;
+    _paused = paused;
+    if (paused) {
+      _ticker.stop();
+    } else {
+      _start();
+    }
+  }
+
+  /// Starts the ticker (if it should run) carrying on from the frame's time.
+  void _start() {
+    if (_ticker.isActive || _still || _paused || _rested) return;
+    _offset = _frame.t;
+    _last = Duration.zero;
+    _ticker.start();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final still = MediaQuery.disableAnimationsOf(context);
-    if (still == _still && (still || _ticker.isActive)) return;
+    if (still == _still && (still || _ticker.isActive || _rested)) return;
     _still = still;
     if (still) {
       _ticker.stop();
       _frame.settle();
     } else if (!_ticker.isActive) {
       _restartWave = true;
-      _last = Duration.zero;
-      _ticker.start();
+      _rested = false;
+      _start();
     }
   }
 
@@ -119,24 +172,42 @@ class _DotMatrixBackdropState extends State<DotMatrixBackdrop>
       return; // 60 fps at most (30 when calm), whatever the display does.
     }
     _last = elapsed;
-    final t = _seconds(elapsed);
+    final t = _offset + _seconds(elapsed);
     if (_restartWave) {
       _restartWave = false;
       _frame.startWave(t);
     }
     _frame.advance(t, _seconds(gap), widget.level?.call() ?? 0);
+    if (_frame.rested) {
+      // Settled and untouched: stop for good (the frame is already painted
+      // at rest). A touch starts it again.
+      _rested = true;
+      _ticker.stop();
+    }
+  }
+
+  void _wake() {
+    if (!_rested) return;
+    _rested = false;
+    _frame.rested = false;
+    _start();
   }
 
   void _onDown(PointerDownEvent e) {
-    if (!_still) _frame.touch(e.localPosition);
+    if (_still) return;
+    _frame.touch(e.localPosition);
+    _wake();
   }
 
   void _onMove(PointerMoveEvent e) {
-    if (!_still) _frame.drag(e.localPosition, e.localDelta.distance);
+    if (_still) return;
+    _frame.drag(e.localPosition, e.localDelta.distance);
+    _wake();
   }
 
   @override
   void dispose() {
+    if (widget.page) WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _frame.dispose();
     _cache.dispose();
@@ -189,8 +260,9 @@ class _Blend {
 /// The animated state the painter reads: the spring field (one spring per
 /// dot), the open front, the mode weights and the microphone level.
 class DotMatrixFrame extends ChangeNotifier {
-  DotMatrixFrame()
-    : field = SpringField(
+  DotMatrixFrame({this.page = false})
+    : spacing = page ? AppSizes.dotGridSpacing : DotMatrixSizes.spacing,
+      field = SpringField(
         spring: AppSprings.spring(
           period: DotMatrixPhysics.period,
           damping: DotMatrixPhysics.damping,
@@ -218,6 +290,20 @@ class DotMatrixFrame extends ChangeNotifier {
   /// The membrane: loose springs, strongly coupled, so kicks (touches, the
   /// microphone) travel as rings. A dot's energy is `field.h + |ripples.h|`.
   final SpringField ripples;
+
+  /// The calm page variant: no mic/thinking layers, the grid of
+  /// `DotGridBackground` (anchored top-left), gentle forces.
+  final bool page;
+
+  /// Distance between dot centres, in dp.
+  final double spacing;
+
+  /// Page variant only: everything has settled and been quiet for a while,
+  /// so the widget stops its ticker. Cleared by the next touch.
+  bool rested = false;
+
+  /// When the page was last touched (seconds, the frame's clock).
+  double _lastTouch = 0;
 
   /// The energy of dot [i].
   double energy(int i) =>
@@ -275,6 +361,7 @@ class DotMatrixFrame extends ChangeNotifier {
   int _touchCount = 0;
 
   bool _pendingSettle = false;
+  bool _stillPage = false;
   int _seed = 0x2545F491;
 
   bool get _waving => waveStart != null;
@@ -288,7 +375,9 @@ class DotMatrixFrame extends ChangeNotifier {
   /// Replays the open front from time [now].
   void startWave(double now) {
     waveStart = now;
+    _stillPage = false;
     openedAt = now;
+    _lastTouch = now;
     _frontR = 0;
     field.clear();
     ripples.clear();
@@ -301,6 +390,7 @@ class DotMatrixFrame extends ChangeNotifier {
     _think.snap();
     _stream.snap();
     waveStart = null;
+    _stillPage = true;
     level = 0;
     t = DotMatrixSizes.stillTime;
     openedAt = t;
@@ -312,17 +402,23 @@ class DotMatrixFrame extends ChangeNotifier {
       field.settle();
       ripples.clear();
     }
+    rested = false;
     notifyListeners();
   }
 
   /// A press at [p] (local dp): a round impulse under the finger.
-  void touch(Offset p) =>
-      _queue(p, DotMatrixSizes.touchKick, DotMatrixSizes.touchSigma);
+  void touch(Offset p) => _queue(
+    p,
+    DotMatrixSizes.touchKick * (page ? DotMatrixSizes.pageTouchKick : 1),
+    DotMatrixSizes.touchSigma,
+  );
 
   /// A drag through [p] that moved [distance] dp since the last event.
   void drag(Offset p, double distance) => _queue(
     p,
-    DotMatrixSizes.dragKick * math.min(1.0, distance / DotMatrixSizes.dragFull),
+    DotMatrixSizes.dragKick *
+        (page ? DotMatrixSizes.pageDragKick : 1) *
+        math.min(1.0, distance / DotMatrixSizes.dragFull),
     DotMatrixSizes.dragSigma,
   );
 
@@ -334,18 +430,28 @@ class DotMatrixFrame extends ChangeNotifier {
     _touches[i + 2] = strength;
     _touches[i + 3] = sigma;
     calm = false;
+    rested = false;
+    _lastTouch = t;
   }
 
   /// Sizes the grid to [size] (only reallocates when it changes).
   void layout(Size size) {
     if (size == _size) return;
     _size = size;
-    const step = DotMatrixSizes.spacing;
-    cols = (size.width / step).floor();
-    rows = (size.height / step).floor();
-    originX = (size.width - (cols - 1) * step) / 2;
-    // Anchor the grid to the bottom edge, where the energy lives.
-    originY = size.height - step / 2 - (rows - 1) * step;
+    final step = spacing;
+    if (page) {
+      // Exactly the static DotGridBackground's grid: from half a step in.
+      cols = math.max(1, ((size.width - step / 2) / step).ceil());
+      rows = math.max(1, ((size.height - step / 2) / step).ceil());
+      originX = step / 2;
+      originY = step / 2;
+    } else {
+      cols = (size.width / step).floor();
+      rows = (size.height / step).floor();
+      originX = (size.width - (cols - 1) * step) / 2;
+      // Anchor the grid to the bottom edge, where the energy lives.
+      originY = size.height - step / 2 - (rows - 1) * step;
+    }
     field.resize(cols, rows);
     ripples.resize(cols, rows);
 
@@ -430,6 +536,11 @@ class DotMatrixFrame extends ChangeNotifier {
     field.advance(step, _waving ? _frontStep : null);
     ripples.advance(step);
 
+    if (page) {
+      _pageRest(now);
+      notifyListeners();
+      return;
+    }
     final busy = listen + think + stream;
     calm =
         !_waving &&
@@ -437,6 +548,33 @@ class DotMatrixFrame extends ChangeNotifier {
         now - openedAt > 2 * _seconds(DotMatrixDurations.idleSettle) &&
         field.kinetic + ripples.kinetic < DotMatrixPhysics.calmKinetic;
     notifyListeners();
+  }
+
+  /// Page variant: calm frame pacing while only the ambient breathing runs,
+  /// and rest (every spring snapped to its target, the ticker's cue to stop)
+  /// once the wave is over, nothing was touched for [DotMatrixSizes.pageQuiet]
+  /// and every spring is quiet.
+  void _pageRest(double now) {
+    final quiet =
+        !_waving &&
+        _touchCount == 0 &&
+        now - math.max(_lastTouch, openedAt) > DotMatrixSizes.pageQuiet;
+    calm =
+        !_waving &&
+        field.kinetic + ripples.kinetic < DotMatrixPhysics.calmKinetic;
+    if (!quiet) return;
+    final kinetic = field.kinetic + ripples.kinetic;
+    if (kinetic > DotMatrixSizes.pageRestKinetic) return;
+    const limit = DotMatrixSizes.pageRestDisplacement;
+    for (var i = 0; i < field.length; i++) {
+      if ((field.h[i] - field.target[i]).abs() > limit ||
+          ripples.h[i].abs() > limit) {
+        return;
+      }
+    }
+    field.settle();
+    ripples.clear();
+    rested = true;
   }
 
   /// Kicks the dots the front crossed during this sub-step.
@@ -450,18 +588,20 @@ class DotMatrixFrame extends ChangeNotifier {
     if (r <= r0) return;
     _frontR = r;
     final dist = _openDist, v = field.v, reach = _frontReach;
+    final kick =
+        DotMatrixSizes.openKick * (page ? DotMatrixSizes.pageOpenKick : 1);
     const top = DotMatrixSizes.openKickTop;
     for (var i = 0; i < dist.length; i++) {
       final d = dist[i];
       if (d <= r0 || d > r) continue;
       final f = 1 - d / reach;
-      v[i] += DotMatrixSizes.openKick * (top + (1 - top) * f * f);
+      v[i] += kick * (top + (1 - top) * f * f);
     }
   }
 
   void _applyTouches() {
     if (_touchCount == 0) return;
-    const step = DotMatrixSizes.spacing;
+    final step = spacing;
     for (var k = 0; k < _touchCount; k++) {
       final i = k * 4;
       ripples.kickRadial(
@@ -506,6 +646,10 @@ class DotMatrixFrame extends ChangeNotifier {
   void _computeTargets() {
     final tgt = field.target;
     final now = t;
+    if (page) {
+      _computePageTargets(tgt, now);
+      return;
+    }
     final busy = math.max(think, stream).clamp(0.0, 1.0);
 
     // The idle glow calms down after opening.
@@ -615,6 +759,39 @@ class DotMatrixFrame extends ChangeNotifier {
     }
   }
 
+  /// Page variant: a faint diagonal swell that fades out after opening
+  /// (the opening wave's front still gates it in).
+  void _computePageTargets(Float32List tgt, double now) {
+    final age = math.max(0.0, now - openedAt);
+    // A still frame (reduced motion) is the plain grid: no breathing.
+    final amp = _stillPage
+        ? 0.0
+        : DotMatrixSizes.pageBreathAmp *
+              math.exp(-age / DotMatrixSizes.pageBreathFade);
+    final gating = _waving;
+    final gateInv = 1 / DotMatrixSizes.openGate;
+    final phase = DotMatrixSizes.pageBreathSpeed * now;
+    for (var r = 0; r < rows; r++) {
+      final y = originY + r * spacing;
+      for (var c = 0; c < cols; c++) {
+        final x = originX + c * spacing;
+        final s =
+            0.5 +
+            0.5 *
+                math.sin(
+                  DotMatrixSizes.pageBreathKx * x +
+                      DotMatrixSizes.pageBreathKy * y -
+                      phase,
+                );
+        var e = amp * s;
+        if (gating) {
+          e *= ((_frontR - _openDist[r * cols + c]) * gateInv).clamp(0.0, 1.0);
+        }
+        tgt[r * cols + c] = e;
+      }
+    }
+  }
+
   /// e^-x for x >= 0, as a cheap rational approximation (no exp per dot).
   static double _gauss(double x) {
     final x2 = x * x;
@@ -643,7 +820,7 @@ double _seconds(Duration d) =>
 /// colours change.
 class DotMatrixCache {
   Size? size;
-  Color? ink, accent;
+  Color? ink, accent, grid;
   bool? dark;
 
   /// Ink dots grouped by opacity step (one draw call each).
@@ -678,15 +855,21 @@ class DotMatrixCache {
     if (s == size &&
         ink == this.ink &&
         p.accent == accent &&
+        p.dotGrid == grid &&
         p.isDark == dark) {
       return;
     }
     size = s;
     this.ink = ink;
     accent = p.accent;
+    grid = p.dotGrid;
     dark = p.isDark;
 
-    _buildInk(f, s, ink, p.isDark);
+    if (f.page) {
+      _buildPageInk(f, p);
+    } else {
+      _buildInk(f, s, ink, p.isDark);
+    }
     _buildEnergy(f, p);
     final n = f.cols * f.rows + f.cols;
     haloXforms = Float32List(n * 4);
@@ -784,6 +967,25 @@ class DotMatrixCache {
     return Color.lerp(hot, p.textPrimary, mix * (f - w1) / (1 - w1))!;
   }
 
+  /// The page grid: every dot, in the static grid's colour and radius.
+  void _buildPageInk(DotMatrixFrame f, AppPalette p) {
+    final pts = Float32List(f.cols * f.rows * 2);
+    var i = 0;
+    for (var r = 0; r < f.rows; r++) {
+      final y = f.originY + r * f.spacing;
+      for (var c = 0; c < f.cols; c++) {
+        pts[i++] = f.originX + c * f.spacing;
+        pts[i++] = y;
+      }
+    }
+    inkPoints
+      ..clear()
+      ..add(pts);
+    inkPaints
+      ..clear()
+      ..add(_dotPaint(p.dotGrid, AppSizes.dotGridRadius));
+  }
+
   void _buildInk(DotMatrixFrame f, Size s, Color ink, bool isDark) {
     final top = isDark
         ? DotMatrixSizes.inkTopAlphaDark
@@ -855,7 +1057,15 @@ class DotMatrixCache {
             1,
             unit,
           )!;
-          return _dotPaint(_ramp(k, p).withValues(alpha: alpha), radius);
+          return f.page
+              ? _dotPaint(
+                  _ramp(
+                    k,
+                    p,
+                  ).withValues(alpha: alpha * DotMatrixSizes.pageAlphaScale),
+                  radius * DotMatrixSizes.pageRadiusScale,
+                )
+              : _dotPaint(_ramp(k, p).withValues(alpha: alpha), radius);
         }),
       );
     for (var i = 0; i < lut.length; i++) {
@@ -890,16 +1100,18 @@ class DotMatrixPainter extends CustomPainter {
     frame.layout(size);
     final c = _cache..ensure(frame, size, palette);
     final rect = Offset.zero & size;
-    canvas.drawRect(rect, c.veil);
-    canvas.drawRect(
-      Rect.fromLTRB(
-        0,
-        size.height - DotMatrixSizes.hazeHeight,
-        size.width,
-        size.height,
-      ),
-      c.haze,
-    );
+    if (!frame.page) {
+      canvas.drawRect(rect, c.veil);
+      canvas.drawRect(
+        Rect.fromLTRB(
+          0,
+          size.height - DotMatrixSizes.hazeHeight,
+          size.width,
+          size.height,
+        ),
+        c.haze,
+      );
+    }
     for (var i = 0; i < c.inkPoints.length; i++) {
       canvas.drawRawPoints(ui.PointMode.points, c.inkPoints[i], c.inkPaints[i]);
     }
@@ -911,7 +1123,8 @@ class DotMatrixPainter extends CustomPainter {
     final h = f.field.h;
     final cols = f.cols, rows = f.rows;
     if (h.length != cols * rows || cols == 0) return;
-    const step = DotMatrixSizes.spacing;
+    final step = f.spacing;
+    final page = f.page;
     const levels = DotMatrixSizes.energyLevels;
     const lo = DotMatrixSizes.energyFloor, hi = DotMatrixSizes.energyMax;
     const levelScale = levels / (hi - lo);
@@ -925,7 +1138,7 @@ class DotMatrixPainter extends CustomPainter {
     // The aurora first: one big halo per column, behind everything.
     const ar = DotMatrixSizes.auroraRows;
     final auroraScale = DotMatrixSizes.auroraRadius * 2 / sprite;
-    for (var col = 0; col < cols; col++) {
+    for (var col = 0; col < cols && !page; col++) {
       var sum = 0.0;
       for (var r = rows - ar; r < rows; r++) {
         final e = f.energy(r * cols + col);
@@ -960,7 +1173,7 @@ class DotMatrixPainter extends CustomPainter {
         buf[i] = x;
         buf[i + 1] = y;
         counts[b]++;
-        if (e > DotMatrixSizes.bloomFloor) {
+        if (!page && e > DotMatrixSizes.bloomFloor) {
           final k = math.min(1.0, (e - lo) / (hi - lo));
           final glow = math.min(
             1.0,

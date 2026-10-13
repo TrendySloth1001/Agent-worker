@@ -1,3 +1,4 @@
+import 'support/backdrop.dart';
 import 'package:app/assist/assistant_setup.dart';
 import 'package:app/core/app_scope.dart';
 import 'package:app/core/constants/onboarding.dart';
@@ -361,6 +362,7 @@ void main() {
           await _next(tester, i);
           await _settleArt(tester);
           expect(tester.takeException(), isNull);
+          await settleBackdrop(tester);
           await expectLater(
             find.byType(MaterialApp),
             matchesGoldenFile('goldens/onboarding_${name}_$theme.png'),
@@ -391,6 +393,7 @@ void main() {
         await tester.drag(list, const Offset(0, 600));
         await tester.pump(const Duration(milliseconds: 100));
         if (name == 'ask') {
+          await settleBackdrop(tester);
           await expectLater(
             find.byType(MaterialApp),
             matchesGoldenFile('goldens/onboarding_ask_360.png'),
