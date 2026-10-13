@@ -27,6 +27,8 @@ export const ACTION_TYPES = [
 export const deviceActionsSchema = z.object({
   /** The phone's local time with its UTC offset, e.g. 2026-10-13T14:05:00+02:00. */
   localTime: z.string().trim().max(40).optional(),
+  /** Keys of the known media / shopping / maps apps installed on the phone (MEDIA_APPS keys): "play it in my music app" picks one. */
+  installedApps: z.array(z.string().max(40)).max(40).optional().catch(undefined),
 });
 
 export type DeviceActionsClient = z.infer<typeof deviceActionsSchema>;

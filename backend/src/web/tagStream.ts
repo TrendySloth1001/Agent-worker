@@ -18,6 +18,7 @@ export class TagStream {
   private thinkTail = "";
   private inThink = false;
   private emitted = false;
+  private afterTag = false;
 
   push(chunk: string): string {
     const visible = this.stripThink(chunk);
@@ -37,7 +38,11 @@ export class TagStream {
         s = s.slice(0, ws.index);
       }
     }
+    // A kept tag already went out: the space before the punctuation that follows it in a later chunk goes too
+    // ("Spotify [W2]" then " ." reads "Spotify [W2].").
+    if (this.afterTag) s = s.replace(/^[ \t]+(?=[.,;:!?)])/, "");
     const out = normalize(s, this.valid);
+    if (out) this.afterTag = /\[[KWDGC]\d+\]$/.test(out);
     if (out.trim()) this.emitted = true;
     return out;
   }
@@ -46,7 +51,9 @@ export class TagStream {
   flush(): string {
     // A dangling partial "<thi" that never became a tag is ordinary text; an open <think> is dropped.
     const tail = this.inThink ? "" : this.thinkTail;
-    const rest = normalize(this.pending + tail, this.valid);
+    let held = this.pending + tail;
+    if (this.afterTag) held = held.replace(/^[ \t]+(?=[.,;:!?)])/, "");
+    const rest = normalize(held, this.valid);
     this.pending = "";
     this.thinkTail = "";
     this.inThink = false;
@@ -58,6 +65,7 @@ export class TagStream {
     this.thinkTail = "";
     this.inThink = false;
     this.emitted = false;
+    this.afterTag = false;
   }
 
   private stripThink(chunk: string): string {
