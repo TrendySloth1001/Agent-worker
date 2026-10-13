@@ -339,6 +339,8 @@ void main() {
       await _pump(tester, DriveScreen(now: _now), dark: dark);
       await _capture(tester, 'connectors_drive_disconnected_$name');
       expect(find.text(DriveStrings.permTitle), findsOneWidget);
+      expect(find.text(DriveStrings.beta), findsOneWidget);
+      expect(find.text(DriveStrings.betaNote), findsOneWidget);
       expect(find.text(ConnectorStrings.continueTo('Google')), findsOneWidget);
       expect(api.calls, isEmpty);
     });
@@ -431,6 +433,12 @@ void main() {
     await _pump(tester, const NotionScreen());
     expect(find.text(ConnectorStrings.notSetUp), findsOneWidget);
     expect(find.text(ConnectorStrings.continueTo('Notion')), findsNothing);
+  });
+
+  testWidgets('apps hub: only Drive carries the BETA tag', (tester) async {
+    _fakeState();
+    await _pump(tester, AppsScreen(sourceCount: () async => 0));
+    expect(find.text(AppsStrings.beta), findsOneWidget);
   });
 
   testWidgets('apps hub tags an app the server lacks', (tester) async {

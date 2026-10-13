@@ -108,7 +108,7 @@ abstract final class OnboardingStrings {
     (
       icon: BrandLogos.googleDrive,
       title: 'Google Drive',
-      detail: 'Only the files you pick. Nothing else is opened.',
+      detail: 'Beta. Only the files you pick. Nothing else is opened.',
     ),
     (
       icon: BrandLogos.notion,

@@ -870,35 +870,113 @@ class _AnswerSheet extends StatelessWidget {
           if (c.circle == CirclePhase.results && c.circleCrop != null)
             _CircleHeader(controller: c, onAsk: onAsk, thumb: circleThumb),
           Flexible(
-            child: SingleChildScrollView(
-              // Anchored at the bottom: new text stays in view.
-              reverse: true,
-              padding: const EdgeInsets.fromLTRB(
-                AssistSizes.sheetPadding,
-                0,
-                AssistSizes.sheetPadding,
-                AppSpacing.md,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final m in c.messages)
-                    if (m.role == Role.user)
-                      _Question(message: m)
-                    else
-                      _Answer(
-                        message: m,
-                        onAnswerFast: c.answerFast,
-                        onRetry: identical(m, c.messages.lastOrNull)
-                            ? c.retry
-                            : null,
-                      ),
-                ],
+            child: _TopFade(
+              enabled: c.circle == CirclePhase.results && c.circleCrop != null,
+              child: SingleChildScrollView(
+                // Anchored at the bottom: new text stays in view.
+                reverse: true,
+                padding: EdgeInsets.fromLTRB(
+                  AssistSizes.sheetPadding,
+                  // Room for the fade: text at rest starts below it.
+                  c.circle == CirclePhase.results ? CircleSizes.topFade : 0,
+                  AssistSizes.sheetPadding,
+                  AppSpacing.md,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final m in c.messages)
+                      if (m.role == Role.user)
+                        _Question(message: m)
+                      else
+                        _Answer(
+                          message: m,
+                          onAnswerFast: c.answerFast,
+                          onRetry: identical(m, c.messages.lastOrNull)
+                              ? c.retry
+                              : null,
+                        ),
+                  ],
+                ),
               ),
             ),
           ),
           if (c.lastAnswer != null && !c.streaming) _Actions(controller: c),
         ],
+      ),
+    );
+  }
+}
+
+/// Fades the top edge of the answer out, so text scrolling away under the
+/// header dissolves instead of showing as a half-cut line.
+class _TopFade extends StatelessWidget {
+  const _TopFade({required this.child, required this.enabled});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) {
+        final stop = (CircleSizes.topFade / rect.height).clamp(0.0, 1.0);
+        return LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: const [Color(0x00FFFFFF), Color(0xFFFFFFFF)],
+          stops: [0, stop],
+        ).createShader(rect);
+      },
+      child: ClipRect(child: child),
+    );
+  }
+}
+
+/// The selection's picture in the answer sheet, or a quiet placeholder when
+/// there is none (a blank capture, or the file would not load).
+class _SelectionThumb extends StatelessWidget {
+  const _SelectionThumb({required this.image});
+
+  final ImageProvider? image;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final radius = BorderRadius.circular(AppRadius.md);
+    Widget placeholder() => Center(
+      child: AppIcon(
+        AppIcons.image,
+        size: AppIconSize.md,
+        color: p.textTertiary,
+      ),
+    );
+    return SizedBox(
+      width: CircleSizes.thumb,
+      height: CircleSizes.thumb,
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          border: Border.all(color: p.accent, width: AppBorder.thick),
+          borderRadius: radius,
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: ColoredBox(
+            color: _tonal(p),
+            child: image == null
+                ? placeholder()
+                : Image(
+                    image: image!,
+                    fit: BoxFit.cover,
+                    width: CircleSizes.thumb,
+                    height: CircleSizes.thumb,
+                    errorBuilder: (context, _, _) => placeholder(),
+                  ),
+          ),
+        ),
       ),
     );
   }
@@ -934,63 +1012,64 @@ class _CircleHeaderState extends State<_CircleHeader> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.palette;
     final c = widget.controller;
     final crop = c.circleCrop!;
     final text = c.circleText.replaceAll('\n', ' · ');
     const gap = SizedBox(width: AppSpacing.xs);
+    const side = EdgeInsets.symmetric(horizontal: AssistSizes.sheetPadding);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AssistSizes.sheetPadding,
-        AppSpacing.xs,
-        AssistSizes.sheetPadding,
-        AppSpacing.sm,
-      ),
+      padding: const EdgeInsets.fromLTRB(0, AppSpacing.xs, 0, AppSpacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                child: Container(
-                  width: CircleSizes.thumb,
-                  height: CircleSizes.thumb,
-                  decoration: BoxDecoration(
-                    color: _tonal(p),
-                    border: Border.all(color: p.accent, width: AppBorder.thick),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                  child: Image(
-                    image: widget.thumb?.call(crop) ?? FileImage(File(crop)),
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, _, _) => const SizedBox.shrink(),
-                  ),
+          Padding(
+            padding: side,
+            child: Row(
+              children: [
+                _SelectionThumb(
+                  image: c.circleBlank
+                      ? null
+                      : widget.thumb?.call(crop) ?? FileImage(File(crop)),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(CircleStrings.selection, style: context.text.caption),
-                    if (text.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xxs),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        text,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.bodySmall,
+                        CircleStrings.selection,
+                        style: context.text.caption,
                       ),
+                      if (c.circleBlank && text.isEmpty) ...[
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          CircleStrings.blankCaptureNote,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.bodySmall,
+                        ),
+                      ],
+                      if (text.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          text,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.bodySmall,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
+            // Padding inside the scroll view: the first chip starts fully
+            // visible and the row still scrolls edge to edge.
+            padding: side,
             child: Row(
               children: [
                 SmartChip(
@@ -1222,10 +1301,7 @@ class _Answer extends StatelessWidget {
               content: message.content,
             ).isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
-          OpenInChips(
-            citations: message.citations,
-            content: message.content,
-          ),
+          OpenInChips(citations: message.citations, content: message.content),
         ],
       ],
     );

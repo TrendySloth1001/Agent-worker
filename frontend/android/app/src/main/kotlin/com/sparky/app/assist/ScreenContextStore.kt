@@ -3,6 +3,8 @@ package com.sparky.app.assist
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -96,7 +98,7 @@ object ScreenContextStore {
         Thread {
             val file = try {
                 val f = File(dir(context), "${AssistProtocol.SCREENSHOT_PREFIX}${System.currentTimeMillis()}.jpg")
-                FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+                FileOutputStream(f).use { opaque(scaled).compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
                 f
             } catch (e: Exception) {
                 null
@@ -154,6 +156,15 @@ object ScreenContextStore {
         null
     } catch (e: Exception) {
         null
+    }
+
+    /** JPEG has no alpha: transparent pixels would be written black, so flatten onto white first. */
+    private fun opaque(source: Bitmap): Bitmap {
+        val out = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(source, 0f, 0f, null)
+        return out
     }
 
     private fun scale(source: Bitmap): Bitmap {

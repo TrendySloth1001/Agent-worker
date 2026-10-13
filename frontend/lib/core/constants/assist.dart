@@ -319,4 +319,5 @@ abstract final class AssistWire {
   static const package = 'package';
   static const url = 'url';
   static const screenshot = 'screenshot';
+  static const selection = 'selection';
 }

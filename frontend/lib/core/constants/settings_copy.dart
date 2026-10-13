@@ -83,6 +83,7 @@ abstract final class SettingsStrings {
   static const browserTitle = 'Browser';
   static const systemDefault = 'System default';
   static const soon = 'Coming soon';
+  static const driveSummary = 'Files and folders';
   static const connect = 'Tap to connect';
   static const waiting = 'Waiting for approval';
   static const unavailable = 'Unavailable';

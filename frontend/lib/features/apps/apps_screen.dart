@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_scope.dart';
+import '../../core/constants/app_sizes.dart';
 import '../../core/constants/apps.dart';
 import '../../core/constants/connectors.dart';
 import '../../core/constants/settings_copy.dart';
@@ -161,6 +162,21 @@ class _AppsScreenState extends State<AppsScreen> {
     return p != null && _connections.connection(p) != null;
   }
 
+  /// The app's own badge (BETA) before its account tag.
+  Widget? _trailing(AppConnector a) {
+    final tag = _accountTag(a);
+    // A connected row is already tight (the account's address): the screen
+    // itself carries the badge then.
+    if (a.badge == null || _isConnected(a)) return tag;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        M3Tag(a.badge!),
+        if (tag != null) ...[const SizedBox(width: AppSpacing.xs), tag],
+      ],
+    );
+  }
+
   /// The trailing tag of a linkable app.
   Widget? _accountTag(AppConnector a) {
     if (a.section != AppSection.account) return null;
@@ -197,7 +213,7 @@ class _AppsScreenState extends State<AppsScreen> {
         leading: a.brand != null ? AppMark(a.brand!) : null,
         title: a.name,
         summary: _blurb(a),
-        trailing: a.isSoon ? const M3Tag(AppsStrings.soon) : _accountTag(a),
+        trailing: a.isSoon ? const M3Tag(AppsStrings.soon) : _trailing(a),
         onTap: a.open == null
             ? (a.isSoon ? () => _soon(a) : null)
             : () {

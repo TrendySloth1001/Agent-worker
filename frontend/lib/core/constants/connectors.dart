@@ -93,6 +93,10 @@ abstract final class ConnectorStrings {
 
 abstract final class DriveStrings {
   static const title = 'Google Drive';
+  static const beta = 'BETA';
+  static const betaNote =
+      "Google is still reviewing sparky's access, so you may see an "
+      "'unverified app' screen — it's safe to continue.";
   static const vendor = 'Google';
   static const permTitle = 'Let sparky see the files you pick?';
   static const permBody =
@@ -222,6 +226,7 @@ abstract final class NotionStrings {
 }
 
 abstract final class DriveIcons {
+  static const betaNote = HugeIcons.strokeRoundedInformationCircle;
   static const pick = HugeIcons.strokeRoundedFileAdd;
   static const ask = HugeIcons.strokeRoundedBubbleChat;
   static const save = HugeIcons.strokeRoundedCloudUpload;

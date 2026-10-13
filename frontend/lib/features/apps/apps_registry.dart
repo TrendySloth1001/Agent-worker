@@ -40,6 +40,7 @@ class AppConnector {
     this.brand,
     this.icon,
     this.open,
+    this.badge,
   }) : assert(brand != null || icon != null);
 
   final String id;
@@ -57,6 +58,9 @@ class AppConnector {
 
   /// Opens the app's screen; null while it is [AppSection.soon].
   final void Function(BuildContext context)? open;
+
+  /// Small tag beside the name (BETA while the provider reviews our access).
+  final String? badge;
 
   bool get isSoon => section == AppSection.soon;
 }
@@ -81,6 +85,7 @@ abstract final class AppsRegistry {
       blurb: AppsStrings.googleDriveBlurb,
       section: AppSection.account,
       brand: const AppBrand(AppsIcons.googleDrive),
+      badge: AppsStrings.beta,
       open: (c) => _push(c, const DriveScreen()),
     ),
     AppConnector(
