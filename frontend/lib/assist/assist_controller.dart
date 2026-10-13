@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../core/constants/app_sizes.dart';
 import '../core/constants/app_strings.dart';
 import '../core/constants/assist.dart';
+import '../core/constants/circle_search.dart';
 import '../core/constants/docs.dart';
 import '../core/constants/smart_toggles.dart';
 import '../core/constants/suggest.dart';
@@ -18,16 +19,28 @@ import '../data/chat_message.dart';
 import '../data/conversations_api.dart';
 import '../data/doc_models.dart';
 import '../data/docs_api.dart';
+import '../data/files_api.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/chat/attachments_controller.dart';
 import '../features/chat/chat_turn.dart';
 import '../features/docs/doc_registry.dart';
 import '../features/settings/settings_controller.dart';
 import 'assist_bridge.dart';
+import 'circle/circle_crop.dart';
+import 'circle/circle_geometry.dart';
+import 'live/live_voice.dart' show LiveAnswer;
 import 'screen_text.dart';
+import 'share_payload.dart';
 
 /// "Share screen with sparky": nothing yet, reading, shared, or nothing to read.
 enum ScreenShare { none, loading, shared, empty }
+
+/// Circle to search: off, choosing a part of the frozen screen, cutting it
+/// out, or answering about it (the screen stays frozen behind the sheet).
+enum CirclePhase { off, selecting, cropping, results }
+
+/// The chips under a circle answer.
+enum CircleQuick { search, explain, translate, copy, ask }
 
 /// The overlay's state: one short conversation, the shared screen, and the
 /// hand-off to the app. Nothing is saved unless the user opens it in sparky.
@@ -45,6 +58,7 @@ class AssistController extends ChangeNotifier {
     AttachmentsController? attachments,
     AuthController? auth,
     DocsApi? docs,
+    this.cropper = const JpegCircleCropper(),
   }) : _settings = settings,
        _auth = auth ?? AuthController.instance,
        _docsOverride = docs,
@@ -64,6 +78,7 @@ class AssistController extends ChangeNotifier {
   final ChatApi api;
   final ConversationsApi conversations;
   final AttachmentsController attachments;
+  final CircleCropper cropper;
   SettingsController _settings;
 
   SettingsController get settings => _settings;
@@ -254,9 +269,212 @@ class AssistController extends ChangeNotifier {
     for (final a in List.of(attachments.items)) {
       attachments.remove(a);
     }
+    _resetCircle();
+    draft = null;
     _resetToggles();
+    // The launcher shortcut has no screen to circle: say how to get one.
+    if (next.circle && !canShare) notice = CircleStrings.needsSession;
     notifyListeners();
     unawaited(loadModels());
+    if (next.circle && canShare) unawaited(startCircle());
+  }
+
+  // ---- shared to "Ask sparky" ----------------------------------------------
+
+  /// Text for the field (shared text); the overlay takes it once.
+  String? draft;
+
+  /// Files and text another app shared: the files go into the pill like
+  /// picked ones, the text into the field.
+  void receiveShared(SharedPayload payload) {
+    var dropped = payload.skipped > 0;
+    if (payload.files.isNotEmpty) {
+      try {
+        final problem = attachments.add([
+          for (final f in payload.files) pickedFile(f.path, f.name),
+        ]);
+        dropped = dropped || problem != null || attachments.skipped > 0;
+      } catch (_) {
+        dropped = true;
+      }
+    }
+    if (dropped) {
+      notice = AssistStrings.sharedSkipped;
+      noticeOpensSettings = false;
+    }
+    final text = payload.draft;
+    if (text.isNotEmpty) draft = text;
+    Haptics.received();
+    notifyListeners();
+  }
+
+  /// The overlay takes [draft] into its field.
+  String? takeDraft() {
+    final d = draft;
+    draft = null;
+    return d;
+  }
+
+  // ---- circle to search ----------------------------------------------------
+
+  CirclePhase circle = CirclePhase.off;
+
+  /// The frozen screenshot being circled.
+  String? get circleImage => _circleScreen?.screenshotPath;
+
+  /// The latest selection, in the overlay's coordinates.
+  Rect? circleSelection;
+  Size? circleView;
+
+  /// The cut-out of the selection (a JPEG in the cache).
+  String? circleCrop;
+
+  /// The on-screen text inside the selection.
+  String circleText = '';
+
+  ScreenContext? _circleScreen;
+  FileInfo? _circleFile;
+
+  void _resetCircle() {
+    circle = CirclePhase.off;
+    _circleScreen = null;
+    _circleFile = null;
+    circleSelection = null;
+    circleView = null;
+    circleCrop = null;
+    circleText = '';
+  }
+
+  /// Circle to search can start (the session saw a screen).
+  bool get canCircle => canShare;
+
+  /// Freezes the screen the session saw and lets the user circle part of it.
+  /// Needs the screenshot ("Use screenshot" in the assistant settings).
+  Future<void> startCircle() async {
+    if (!canShare) {
+      _setNotice(CircleStrings.needsSession);
+      return;
+    }
+    if (circle == CirclePhase.cropping) return;
+    Haptics.tap();
+    if (_circleScreen != null) {
+      circle = CirclePhase.selecting;
+      notice = null;
+      notifyListeners();
+      return;
+    }
+    final session = _session;
+    final ctx = screen ?? await bridge.screenContext();
+    if (session != _session) return;
+    if (ctx == null || !ctx.hasScreenshot) {
+      Haptics.error();
+      _setNotice(CircleStrings.needsScreenshot, settings: true);
+      return;
+    }
+    // Only the selection goes: the whole-screen picture leaves the pill.
+    final shot = _screenshot;
+    if (shot != null && attachments.items.contains(shot)) {
+      attachments.remove(shot);
+    }
+    _screenshot = null;
+    _circleScreen = ctx;
+    circle = CirclePhase.selecting;
+    notice = null;
+    notifyListeners();
+  }
+
+  /// Back from drawing: to the answer about the last selection, or out.
+  void cancelCircle() {
+    if (circle != CirclePhase.selecting) return;
+    Haptics.tap();
+    if (circleCrop != null && hasThread) {
+      circle = CirclePhase.results;
+    } else {
+      _resetCircle();
+    }
+    notifyListeners();
+  }
+
+  /// The user circled (or tapped) [selection] on a [view]-sized overlay:
+  /// cut it out, find its text, and search for it.
+  Future<void> circleSelect(Rect selection, Size view) async {
+    final image = circleImage;
+    final ctx = _circleScreen;
+    if (image == null || ctx == null || circle == CirclePhase.cropping) {
+      return;
+    }
+    final session = _session;
+    circle = CirclePhase.cropping;
+    circleSelection = selection;
+    circleView = view;
+    notice = null;
+    notifyListeners();
+    final path = await cropper.crop(image, selection, view);
+    if (session != _session || circle != CirclePhase.cropping) return;
+    if (path == null) {
+      circle = CirclePhase.selecting;
+      Haptics.error();
+      _setNotice(CircleStrings.cropFailed);
+      return;
+    }
+    circleCrop = path;
+    circleText = selectionText(selection, view: view, screen: ctx);
+    _circleFile = null;
+    circle = CirclePhase.results;
+    notifyListeners();
+    await circleQuick(CircleQuick.search);
+  }
+
+  /// A chip under the circle answer.
+  Future<void> circleQuick(CircleQuick action) async {
+    if (circle != CirclePhase.results) return;
+    switch (action) {
+      case CircleQuick.search:
+        await _askCircle(CircleStrings.searchPrompt, web: true);
+      case CircleQuick.explain:
+        await _askCircle(CircleStrings.explainPrompt);
+      case CircleQuick.translate:
+        final lang = settings.language.trim();
+        await _askCircle(
+          CircleStrings.translatePrompt(
+            lang.isEmpty ? CircleStrings.translateFallback : lang,
+          ),
+        );
+      case CircleQuick.copy:
+        if (circleText.isEmpty) return;
+        Haptics.tap();
+        await Clipboard.setData(ClipboardData(text: circleText));
+      case CircleQuick.ask:
+        // The overlay focuses the field; the next question takes the cut-out.
+        Haptics.tap();
+    }
+  }
+
+  Future<bool> _askCircle(String prompt, {bool web = false}) async {
+    if (sending) stop();
+    if (web) webMode = WebMode.on;
+    final file = _circleFile;
+    if (file != null) return _ask(prompt, [file]);
+    final crop = circleCrop;
+    if (crop == null) return false;
+    try {
+      attachments.add([pickedFile(crop, CircleConfig.cropName)]);
+    } catch (_) {
+      Haptics.error();
+      _setNotice(CircleStrings.cropFailed);
+      return false;
+    }
+    return send(prompt);
+  }
+
+  /// The screen for a request: in circle mode the app and address with only
+  /// the text inside the selection.
+  Map<String, Object>? get _screenJson {
+    final c = _circleScreen;
+    if (circle != CirclePhase.off && c != null) {
+      return c.withText(circleText).toJson();
+    }
+    return screen?.toJson();
   }
 
   // ---- screen --------------------------------------------------------------
@@ -360,9 +578,41 @@ class AssistController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    Haptics.send();
     attachments.clearSent();
     _screenshot = null;
+    var sent = files;
+    if (circle == CirclePhase.results) {
+      final cut = files
+          .where((f) => f.name == CircleConfig.cropName)
+          .lastOrNull;
+      if (cut != null) _circleFile = cut;
+      final keep = _circleFile;
+      // "Ask…" about the selection: the cut-out goes with the question.
+      if (keep != null && !files.any((f) => f.id == keep.id)) {
+        sent = [...files, keep];
+      }
+    }
+    _start(content, sent);
+    return true;
+  }
+
+  /// Asks [content] with files already uploaded (a circle chip).
+  Future<bool> _ask(String content, List<FileInfo> files) async {
+    final session = _session;
+    sending = true;
+    notice = null;
+    notifyListeners();
+    if (!await _signedIn() || session != _session) {
+      sending = false;
+      notifyListeners();
+      return false;
+    }
+    _start(content, files);
+    return true;
+  }
+
+  void _start(String content, List<FileInfo> files) {
+    Haptics.send();
     conversationId ??= ConversationsApi.newId();
     final question = ChatMessage(
       role: Role.user,
@@ -375,7 +625,6 @@ class AssistController extends ChangeNotifier {
     } else {
       _run();
     }
-    return true;
   }
 
   /// DOC: [question] becomes a document (POST /docs) that keeps being written
@@ -538,7 +787,7 @@ class AssistController extends ChangeNotifier {
               conversationId: conversationId,
               suppressSuggest: _suppressed,
             )
-            .stream(api, client, history, screen: screen?.toJson())
+            .stream(api, client, history, screen: _screenJson)
             .listen(
               onEvent,
               onError: (Object error) {
@@ -626,6 +875,13 @@ class AssistController extends ChangeNotifier {
     _sub = null;
     _client?.close();
     _client = null;
+  }
+
+  /// The latest reply for Live mode (spoken as it streams).
+  LiveAnswer? get liveAnswer {
+    final m = messages.lastOrNull;
+    if (m == null || m.role != Role.assistant) return null;
+    return (text: m.content, done: !m.isStreaming);
   }
 
   // ---- actions -------------------------------------------------------------

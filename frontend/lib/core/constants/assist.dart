@@ -44,7 +44,12 @@ abstract final class AssistStrings {
   static const openFailed = 'Could not open the chat. Try again.';
   static const attachFailed = 'That photo could not be added.';
   static const uploading = 'Adding the photo first…';
-  static String attachLabel(int n, {bool screenshot = false}) {
+  static String attachLabel(
+    int n, {
+    bool screenshot = false,
+    bool selection = false,
+  }) {
+    if (selection && n == 1) return 'SELECTION';
     if (screenshot && n == 1) return 'SCREENSHOT';
     return n == 1 ? '1 PHOTO' : '$n PHOTOS';
   }
@@ -105,6 +110,37 @@ abstract final class AssistStrings {
       'in the overlay. Nothing is sent before that tap.';
   static const openAssistantSettings = 'Assistant settings';
   static const unavailable = 'Only on Android phones.';
+
+  // Shared to "Ask sparky"
+  static const sharedSkipped =
+      'Some of what you shared could not be added (too big or unsupported).';
+
+  // Settings > Assistant: more ways to ask, and what sparky may do.
+  static const secMore = 'More ways to ask';
+  static const circleTitle = 'Circle to search';
+  static const circleBody =
+      'Over any app, long-press the pill or tap Circle to search, then '
+      'circle, scribble or tap what you want. Needs "Use screenshot".';
+  static const tileTitle = 'Quick Settings tile';
+  static const tileBody =
+      'Edit your Quick Settings and add "Ask sparky" to open it from the '
+      'shade.';
+  static const shareTitle = 'Share to sparky';
+  static const shareBody =
+      'Pick "Ask sparky" in any share sheet: text, links, photos and files '
+      'open in the overlay, ready to ask about.';
+  static const shortcutsTitle = 'App shortcuts';
+  static const shortcutsBody =
+      'Long-press the sparky icon for "Ask sparky" and "Circle to search".';
+  static const secDo = 'What sparky can do';
+  static const actionsTitle = 'Phone actions';
+  static const actionsBody =
+      'Alarms, timers, reminders, calendar events, calls, messages, maps and '
+      'apps, as a card you confirm. Nothing runs without your tap.';
+  static const liveTitle = 'Live voice';
+  static const liveBody =
+      'The talk button starts a spoken conversation: sparky answers aloud '
+      'and listens again. Tap or start talking to interrupt.';
 }
 
 abstract final class AssistSizes {
@@ -179,6 +215,12 @@ abstract final class AssistIcons {
   static const screenText = HugeIcons.strokeRoundedTextFont;
   static const screenshot = HugeIcons.strokeRoundedImage01;
   static const privacy = HugeIcons.strokeRoundedShield01;
+  static const circle = HugeIcons.strokeRoundedSearchArea;
+  static const tile = HugeIcons.strokeRoundedDashboardSquare02;
+  static const shareTo = HugeIcons.strokeRoundedShare08;
+  static const shortcuts = HugeIcons.strokeRoundedTouchInteraction01;
+  static const actions = HugeIcons.strokeRoundedAlarmClock;
+  static const liveVoice = HugeIcons.strokeRoundedAiVoice;
 }
 
 /// The overlay engine's channel. Mirrors AssistProtocol in AssistEngine.kt:
@@ -188,6 +230,8 @@ abstract final class AssistChannel {
 
   // Native -> Dart
   static const onShow = 'onShow';
+  static const onShared = 'onShared';
+  static const onHide = 'onHide';
 
   // Dart -> native
   static const ready = 'ready';
@@ -211,11 +255,31 @@ abstract final class AssistChannel {
   static const url = 'url';
   static const screenshot = 'screenshot';
   static const structureArrived = 'structureArrived';
+  static const nodeLeft = 'l';
+  static const nodeTop = 't';
+  static const nodeRight = 'r';
+  static const nodeBottom = 'b';
+  static const screenWidth = 'screenWidth';
+  static const screenHeight = 'screenHeight';
+  static const mode = 'mode';
+  static const modeCircle = 'circle';
+
+  // Shared content ([onShared])
+  static const sharedText = 'text';
+  static const sharedSubject = 'subject';
+  static const sharedFiles = 'files';
+  static const sharedSkipped = 'skipped';
+  static const filePath = 'path';
+  static const fileName = 'name';
+  static const fileSize = 'size';
 
   // Values of [source]
   static const sourceSession = 'session';
   static const sourceAssist = 'assist';
   static const sourceTry = 'try';
+  static const sourceTile = 'tile';
+  static const sourceShare = 'share';
+  static const sourceShortcut = 'shortcut';
 }
 
 /// The app's Settings > Assistant channel. Mirrors AssistantSetup.kt.

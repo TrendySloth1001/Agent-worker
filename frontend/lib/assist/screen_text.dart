@@ -1,13 +1,18 @@
+import 'dart:ui' show Rect, Size;
+
 import '../core/constants/assist.dart';
 
 /// One text node the system reported for the screen behind the overlay.
 class ScreenNode {
-  const ScreenNode(this.text, {this.description = false});
+  const ScreenNode(this.text, {this.description = false, this.bounds});
 
   final String text;
 
   /// A content description (an image or icon label), not visible text.
   final bool description;
+
+  /// Where the node is on screen, in screen pixels (null when unknown).
+  final Rect? bounds;
 
   static List<ScreenNode> fromChannel(Object? raw) => [
     for (final n in raw is List ? raw : const [])
@@ -15,8 +20,24 @@ class ScreenNode {
         ScreenNode(
           n[AssistChannel.nodeText] as String,
           description: n[AssistChannel.nodeDesc] == true,
+          bounds: _bounds(n),
         ),
   ];
+
+  static Rect? _bounds(Map<Object?, Object?> n) {
+    final l = n[AssistChannel.nodeLeft];
+    final t = n[AssistChannel.nodeTop];
+    final r = n[AssistChannel.nodeRight];
+    final b = n[AssistChannel.nodeBottom];
+    if (l is! num || t is! num || r is! num || b is! num) return null;
+    if (r <= l || b <= t) return null;
+    return Rect.fromLTRB(
+      l.toDouble(),
+      t.toDouble(),
+      r.toDouble(),
+      b.toDouble(),
+    );
+  }
 }
 
 /// What the user shared from the screen ("Share screen with sparky").
@@ -28,6 +49,8 @@ class ScreenContext {
     this.url,
     this.screenshotPath,
     this.structureArrived = false,
+    this.nodes = const [],
+    this.screenSize,
   });
 
   /// Trimmed, deduped visible text (see [buildScreenText]).
@@ -41,6 +64,13 @@ class ScreenContext {
 
   /// False when the system sent no view structure (text from screen off).
   final bool structureArrived;
+
+  /// The raw nodes with their bounds ("Circle to search" keeps the ones
+  /// inside the selection).
+  final List<ScreenNode> nodes;
+
+  /// The screen the screenshot shows, in pixels (before it was scaled down).
+  final Size? screenSize;
 
   bool get hasScreenshot => screenshotPath != null;
   bool get isEmpty => text.isEmpty && url == null && !hasScreenshot;
@@ -59,15 +89,35 @@ class ScreenContext {
       return v is String && v.trim().isNotEmpty ? v.trim() : null;
     }
 
+    final nodes = ScreenNode.fromChannel(m[AssistChannel.nodes]);
+    final w = m[AssistChannel.screenWidth];
+    final h = m[AssistChannel.screenHeight];
     return ScreenContext(
-      text: buildScreenText(ScreenNode.fromChannel(m[AssistChannel.nodes])),
+      text: buildScreenText(nodes),
       app: s(AssistChannel.app),
       package: s(AssistChannel.package),
       url: s(AssistChannel.url),
       screenshotPath: s(AssistChannel.screenshot),
       structureArrived: m[AssistChannel.structureArrived] == true,
+      nodes: nodes,
+      screenSize: w is num && h is num && w > 0 && h > 0
+          ? Size(w.toDouble(), h.toDouble())
+          : null,
     );
   }
+
+  /// The same screen with [text] in place of the whole screen's text (a
+  /// circled selection).
+  ScreenContext withText(String text) => ScreenContext(
+    text: text,
+    app: app,
+    package: package,
+    url: url,
+    screenshotPath: screenshotPath,
+    structureArrived: structureArrived,
+    nodes: nodes,
+    screenSize: screenSize,
+  );
 
   /// The `screen` field of a chat request.
   Map<String, Object> toJson() => {

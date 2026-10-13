@@ -10,6 +10,8 @@ abstract final class AppPrefs {
   static const autocomplete = 'autocomplete_on';
   static const voiceAutoSend = 'voice_auto_send';
   static const voiceHighAccuracy = 'voice_high_accuracy';
+  static const assistActions = 'assist_actions';
+  static const assistLive = 'assist_live';
   static const mode = 'chat_mode';
   static const profileName = 'profile_name';
   static const profileRole = 'profile_role';

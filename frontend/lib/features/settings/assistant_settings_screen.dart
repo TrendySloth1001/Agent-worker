@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../assist/assistant_setup.dart';
+import '../../core/app_scope.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/assist.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
+import 'settings_controller.dart';
 import 'widgets/settings_kit.dart';
 
 /// Settings > Assistant: is sparky the default digital assistant, how to
@@ -15,9 +17,13 @@ class AssistantSettingsScreen extends StatefulWidget {
   const AssistantSettingsScreen({
     super.key,
     this.setup = const AssistantSetup(),
+    this.settings,
   });
 
   final AssistantSetup setup;
+
+  /// The app's settings (actions and Live switches); defaults to [AppScope].
+  final SettingsController? settings;
 
   static Future<void> open(BuildContext context) =>
       Navigator.push(context, settingsRoute(const AssistantSettingsScreen()));
@@ -64,6 +70,9 @@ class _AssistantSettingsScreenState extends State<AssistantSettingsScreen>
   @override
   Widget build(BuildContext context) {
     final s = _status;
+    final settings =
+        widget.settings ??
+        context.dependOnInheritedWidgetOfExactType<AppScope>()?.settings;
     return SettingsScaffold(
       title: AssistStrings.catTitle,
       onRefresh: _refresh,
@@ -104,6 +113,67 @@ class _AssistantSettingsScreenState extends State<AssistantSettingsScreen>
                 icon: AssistIcons.gesture,
                 title: AssistStrings.howGestureTitle,
                 summary: AssistStrings.howGestureBody,
+              ),
+            ),
+          ],
+        ),
+        if (settings != null) ...[
+          const SettingsGroupHeader(AssistStrings.secDo),
+          ListenableBuilder(
+            listenable: settings,
+            builder: (context, _) => SettingsGroup(
+              entries: [
+                GroupEntry(
+                  SettingsSwitchTile(
+                    icon: AssistIcons.actions,
+                    title: AssistStrings.actionsTitle,
+                    summary: AssistStrings.actionsBody,
+                    value: settings.assistActions,
+                    onChanged: settings.setAssistActions,
+                  ),
+                ),
+                GroupEntry(
+                  SettingsSwitchTile(
+                    icon: AssistIcons.liveVoice,
+                    title: AssistStrings.liveTitle,
+                    summary: AssistStrings.liveBody,
+                    value: settings.assistLive,
+                    onChanged: settings.setAssistLive,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SettingsGroupHeader(AssistStrings.secMore),
+        const SettingsGroup(
+          entries: [
+            GroupEntry(
+              SettingsTile(
+                icon: AssistIcons.circle,
+                title: AssistStrings.circleTitle,
+                summary: AssistStrings.circleBody,
+              ),
+            ),
+            GroupEntry(
+              SettingsTile(
+                icon: AssistIcons.tile,
+                title: AssistStrings.tileTitle,
+                summary: AssistStrings.tileBody,
+              ),
+            ),
+            GroupEntry(
+              SettingsTile(
+                icon: AssistIcons.shareTo,
+                title: AssistStrings.shareTitle,
+                summary: AssistStrings.shareBody,
+              ),
+            ),
+            GroupEntry(
+              SettingsTile(
+                icon: AssistIcons.shortcuts,
+                title: AssistStrings.shortcutsTitle,
+                summary: AssistStrings.shortcutsBody,
               ),
             ),
           ],

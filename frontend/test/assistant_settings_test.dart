@@ -3,9 +3,11 @@ import 'package:app/core/constants/assist.dart';
 import 'package:app/core/haptics.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/settings/assistant_settings_screen.dart';
+import 'package:app/features/settings/settings_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FakeSetup extends AssistantSetup {
   FakeSetup(this.current);
@@ -60,11 +62,13 @@ void main() {
       final setup = FakeSetup(
         const AssistantStatus(isDefault: false, manufacturer: 'Nothing'),
       );
+      SharedPreferences.setMockInitialValues({});
+      final settings = await SettingsController.load();
       await tester.pumpWidget(
         MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: dark ? AppTheme.dark : AppTheme.light,
-          home: AssistantSettingsScreen(setup: setup),
+          home: AssistantSettingsScreen(setup: setup, settings: settings),
         ),
       );
       await tester.pumpAndSettle();
@@ -81,6 +85,49 @@ void main() {
       expect(find.text(AssistStrings.statusOnTitle), findsOneWidget);
       await tester.tap(find.text(AssistStrings.tryIt));
       expect(setup.tries, 1);
+    });
+  }
+
+  for (final dark in [false, true]) {
+    final theme = dark ? 'dark' : 'light';
+    testWidgets('Settings > Assistant: features and switches ($theme)', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(412, 915) * 2.6;
+      tester.view.devicePixelRatio = 2.6;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      final settings = await SettingsController.load();
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: dark ? AppTheme.dark : AppTheme.light,
+          home: AssistantSettingsScreen(
+            setup: FakeSetup(
+              const AssistantStatus(isDefault: true, manufacturer: 'Nothing'),
+            ),
+            settings: settings,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text(AssistStrings.secDo),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(find.text(AssistStrings.secDo));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/assistant_settings_features_$theme.png'),
+      );
+      await tester.tap(find.text(AssistStrings.actionsTitle));
+      await tester.pumpAndSettle();
+      expect(settings.assistActions, isFalse);
+      await tester.tap(find.text(AssistStrings.liveTitle));
+      await tester.pumpAndSettle();
+      expect(settings.assistLive, isFalse);
     });
   }
 }

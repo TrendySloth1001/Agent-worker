@@ -4,6 +4,7 @@ import 'package:app/assist/assist_bridge.dart';
 import 'package:app/assist/assist_controller.dart';
 import 'package:app/assist/assist_overlay.dart';
 import 'package:app/assist/screen_text.dart';
+import 'package:app/assist/share_payload.dart';
 import 'package:app/core/app_scope.dart';
 import 'package:app/core/constants/assist.dart';
 import 'package:app/core/constants/smart_toggles.dart';
@@ -39,6 +40,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class FakeBridge implements AssistBridge {
   final _shows = StreamController<AssistShow>.broadcast();
+  final sharedCtl = StreamController<SharedPayload>.broadcast();
+  final hidesCtl = StreamController<void>.broadcast();
+
+  @override
+  Stream<SharedPayload> get shared => sharedCtl.stream;
+  @override
+  Stream<void> get hides => hidesCtl.stream;
   ScreenContext? screen;
   int closed = 0, shownCalls = 0, settingsOpened = 0;
   final opened = <String?>[];
@@ -100,6 +108,7 @@ class FakeChat extends ChatApi {
     Set<SuggestKind> suppressSuggest = const {},
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
+    Map<String, Object>? deviceActions,
   }) {
     requests.add((history: List.of(history), screen: screen));
     flags.add((web: webMode, kb: knowledge, table: roundTable));

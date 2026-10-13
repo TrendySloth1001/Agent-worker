@@ -21,6 +21,8 @@ class SettingsController extends ChangeNotifier {
     autocompleteOn = _prefs?.getBool(AppPrefs.autocomplete) ?? true;
     voiceAutoSend = _prefs?.getBool(AppPrefs.voiceAutoSend) ?? false;
     voiceHighAccuracy = _prefs?.getBool(AppPrefs.voiceHighAccuracy) ?? false;
+    assistActions = _prefs?.getBool(AppPrefs.assistActions) ?? true;
+    assistLive = _prefs?.getBool(AppPrefs.assistLive) ?? true;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
     role = _prefs?.getString(AppPrefs.profileRole) ?? '';
@@ -72,6 +74,13 @@ class SettingsController extends ChangeNotifier {
 
   /// Voice input: send when dictation ends / always transcribe on the server.
   late bool voiceAutoSend, voiceHighAccuracy;
+
+  /// Assistant: answers may propose phone actions (alarm, event, call...)
+  /// shown as cards that run only on Confirm.
+  late bool assistActions;
+
+  /// Assistant: the talk button starts Live (spoken answers, keeps listening).
+  late bool assistLive;
 
   /// New chats start with WEB on Auto (true) or Off (false).
   late bool defaultWebSearch;
@@ -142,6 +151,18 @@ class SettingsController extends ChangeNotifier {
   void setVoiceHighAccuracy(bool value) {
     voiceHighAccuracy = value;
     _prefs?.setBool(AppPrefs.voiceHighAccuracy, value);
+    notifyListeners();
+  }
+
+  void setAssistActions(bool value) {
+    assistActions = value;
+    _prefs?.setBool(AppPrefs.assistActions, value);
+    notifyListeners();
+  }
+
+  void setAssistLive(bool value) {
+    assistLive = value;
+    _prefs?.setBool(AppPrefs.assistLive, value);
     notifyListeners();
   }
 
@@ -306,6 +327,8 @@ class SettingsController extends ChangeNotifier {
     autocompleteOn = true;
     voiceAutoSend = false;
     voiceHighAccuracy = false;
+    assistActions = true;
+    assistLive = true;
     for (final key in [
       AppPrefs.themeMode,
       AppPrefs.haptics,
@@ -321,6 +344,8 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.autocomplete,
       AppPrefs.voiceAutoSend,
       AppPrefs.voiceHighAccuracy,
+      AppPrefs.assistActions,
+      AppPrefs.assistLive,
     ]) {
       _prefs?.remove(key);
     }
