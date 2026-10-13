@@ -1,3 +1,4 @@
+import 'support/backdrop.dart';
 import 'dart:async';
 
 import 'package:app/core/theme/app_theme.dart';
@@ -59,10 +60,13 @@ Future<void> _pump(
   await _settleArt(tester);
 }
 
-Future<void> _golden(String name) => expectLater(
-  find.byType(MaterialApp),
-  matchesGoldenFile('goldens/auth_$name.png'),
-);
+Future<void> _golden(WidgetTester tester, String name) async {
+  await settleBackdrop(tester);
+  await expectLater(
+    find.byType(MaterialApp),
+    matchesGoldenFile('goldens/auth_$name.png'),
+  );
+}
 
 void main() {
   setUpAll(() async {
@@ -81,33 +85,33 @@ void main() {
       await _pump(tester, const LoginScreen(), dark: dark);
       expect(find.text('Continue with GitHub'), findsOneWidget);
       expect(find.text('Continue with Google'), findsOneWidget);
-      await _golden('login_$name');
+      await _golden(tester, 'login_$name');
     });
 
     testWidgets('register ($name)', (tester) async {
       _view(tester);
       await _pump(tester, const RegisterScreen(), dark: dark);
-      await _golden('register_$name');
+      await _golden(tester, 'register_$name');
     });
   }
 
   testWidgets('login, keyboard open', (tester) async {
     _view(tester, keyboard: 315);
     await _pump(tester, const LoginScreen(), dark: false);
-    await _golden('login_keyboard');
+    await _golden(tester, 'login_keyboard');
   });
 
   testWidgets('login, short screen (412x600)', (tester) async {
     _view(tester, size: const Size(412, 600));
     await _pump(tester, const LoginScreen(), dark: true);
-    await _golden('login_short');
+    await _golden(tester, 'login_short');
   });
 
   testWidgets('login, small phone (360x740) at 1.3x text', (tester) async {
     _view(tester, size: const Size(360, 740));
     await _pump(tester, const LoginScreen(), dark: false, scale: 1.3);
     expect(tester.takeException(), isNull);
-    await _golden('login_360_text13');
+    await _golden(tester, 'login_360_text13');
   });
 
   testWidgets('login, error then loading', (tester) async {
@@ -128,7 +132,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Signing in…'), findsOneWidget);
-    await _golden('login_loading');
+    await _golden(tester, 'login_loading');
     pending.complete(
       http.Response('{"error":{"message":"Wrong email or password."}}', 401),
     );
@@ -139,7 +143,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Wrong email or password.'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
-    await _golden('login_error');
+    await _golden(tester, 'login_error');
   });
 
   testWidgets('login, field errors (dark)', (tester) async {
@@ -151,7 +155,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Enter a valid email.'), findsOneWidget);
     expect(find.text('Enter your password.'), findsOneWidget);
-    await _golden('login_invalid_dark');
+    await _golden(tester, 'login_invalid_dark');
   });
 
   testWidgets('trouble signing in sheet', (tester) async {
@@ -160,6 +164,6 @@ void main() {
     await tester.tap(find.text('Trouble signing in?'));
     await tester.pumpAndSettle();
     expect(find.text('Email support'), findsOneWidget);
-    await _golden('trouble_sheet');
+    await _golden(tester, 'trouble_sheet');
   });
 }

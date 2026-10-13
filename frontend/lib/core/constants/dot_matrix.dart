@@ -208,6 +208,33 @@ abstract final class DotMatrixSizes {
   /// The still (reduced motion) frame shows the glow at this time (s): a
   /// lively phase of the breathing.
   static const stillTime = 2.6;
+
+  // ---- page variant (calm page background) ---------------------------------
+
+  /// Red dots on a page are a touch smaller and fainter than in the overlay
+  /// (the ink grid there is 1dp, so they must not dwarf it).
+  static const pageRadiusScale = 0.8;
+  static const pageAlphaScale = 0.7;
+
+  /// The opening wave and touches are gentler than in the overlay.
+  static const pageOpenKick = 0.4;
+  static const pageTouchKick = 0.45;
+  static const pageDragKick = 0.4;
+
+  /// The ambient breathing: a slow diagonal swell in the accent, understated
+  /// and fading out so the backdrop can come to rest.
+  static const pageBreathAmp = 0.2;
+  static const pageBreathKx = 0.012;
+  static const pageBreathKy = 0.008;
+  static const pageBreathSpeed = 1.1;
+  static const pageBreathFade = 2.2;
+
+  /// The page rests (ticker stops, still frame) once the wave is over, it
+  /// has been this long (s) since the last touch or the opening, and every
+  /// spring is quiet (velocity and displacement below these).
+  static const pageQuiet = 3.5;
+  static const pageRestKinetic = 0.02;
+  static const pageRestDisplacement = 0.03;
 }
 
 /// The springs of the backdrop's field.

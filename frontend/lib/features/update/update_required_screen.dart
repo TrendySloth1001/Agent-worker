@@ -7,7 +7,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/update/update_controller.dart';
 import '../../core/update/update_models.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/dot_grid_background.dart';
+import '../../core/widgets/dot_matrix_backdrop.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../chat/widgets/attachment_views.dart';
 import 'update_parts.dart';
@@ -40,7 +40,7 @@ class UpdateRequiredScreen extends StatelessWidget {
       backgroundColor: p.background,
       body: Stack(
         children: [
-          const Positioned.fill(child: DotGridBackground()),
+          const Positioned.fill(child: DotMatrixBackdrop.page()),
           SafeArea(
             child: Center(
               child: ConstrainedBox(

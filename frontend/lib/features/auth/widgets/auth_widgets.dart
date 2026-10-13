@@ -14,7 +14,7 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/system_chrome.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/dot_grid_background.dart';
+import '../../../core/widgets/dot_matrix_backdrop.dart';
 import '../../../core/widgets/illustration.dart';
 
 /// Dot-grid auth page: a small brand bar, an optional centered
@@ -68,7 +68,7 @@ class AuthScaffold extends StatelessWidget {
         backgroundColor: p.background,
         body: Stack(
           children: [
-            const Positioned.fill(child: DotGridBackground()),
+            const Positioned.fill(child: DotMatrixBackdrop.page()),
             SafeArea(
               child: Column(
                 children: [

@@ -17,7 +17,7 @@ import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../core/widgets/dot_grid_background.dart';
+import '../../core/widgets/dot_matrix_backdrop.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../core/widgets/illustration.dart';
 import '../../data/usage.dart';
@@ -354,7 +354,7 @@ class _Hero extends StatelessWidget {
                     colors: [Colors.white, Colors.transparent],
                     stops: AboutSizes.heroFade,
                   ).createShader(rect),
-                  child: const DotGridBackground(),
+                  child: const DotMatrixBackdrop.page(),
                 ),
                 const Align(
                   alignment: Alignment.bottomCenter,

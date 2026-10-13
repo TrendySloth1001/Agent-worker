@@ -135,6 +135,116 @@ void main() {
     expect(taps, 1);
   });
 
+  group('page variant', () {
+    Widget page({bool dark = false, bool still = false, VoidCallback? onTap}) =>
+        MaterialApp(
+          theme: dark ? _dark : _light,
+          debugShowCheckedModeBanner: false,
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: still),
+            child: Builder(
+              builder: (context) => ColoredBox(
+                color: context.palette.background,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onTap,
+                  child: const DotMatrixBackdrop.page(),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    for (final dark in [false, true]) {
+      testWidgets('builds and animates (${dark ? 'dark' : 'light'})', (
+        tester,
+      ) async {
+        await tester.pumpWidget(page(dark: dark));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(_ticking(tester), isTrue);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('stops its ticker after settling, a touch restarts it', (
+      tester,
+    ) async {
+      var taps = 0;
+      await tester.pumpWidget(page(onTap: () => taps++));
+      await _run(tester, const Duration(seconds: 1));
+      expect(_ticking(tester), isTrue, reason: 'still opening');
+
+      await _run(tester, const Duration(seconds: 12));
+      await tester.pump();
+      expect(SchedulerBinding.instance.transientCallbackCount, 0);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      // A tap still reaches the widget behind/under and wakes it.
+      await tester.tapAt(const Offset(200, 300));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(taps, 1);
+      expect(_ticking(tester), isTrue);
+
+      // ...and it rests again.
+      await _run(tester, const Duration(seconds: 20));
+      await tester.pump();
+      expect(SchedulerBinding.instance.transientCallbackCount, 0);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
+    testWidgets('reduced motion: one still frame, touches do nothing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(page(still: true));
+      await tester.pump();
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(SchedulerBinding.instance.transientCallbackCount, 0);
+      await tester.tapAt(const Offset(200, 300));
+      await tester.pump();
+      expect(SchedulerBinding.instance.transientCallbackCount, 0);
+    });
+
+    testWidgets('pauses while the app is in the background', (tester) async {
+      await tester.pumpWidget(page());
+      await tester.pump(const Duration(milliseconds: 16));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      expect(SchedulerBinding.instance.transientCallbackCount, 0);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(_ticking(tester), isTrue);
+    });
+
+    test('same grid as DotGridBackground: no veil, resting frame is ink', () {
+      final frame = DotMatrixFrame(page: true);
+      final painter = DotMatrixPainter(frame: frame, palette: AppPalette.dark);
+      painter.paint(Canvas(ui.PictureRecorder()), const Size(412, 915));
+      expect(frame.spacing, 18);
+      expect(frame.originX, 9);
+      expect(frame.originY, 9);
+      expect(frame.cols, 23);
+      expect(frame.rows, 51);
+      frame.settle();
+      expect(frame.field.h.reduce(math.max), 0);
+    });
+
+    for (final dark in [false, true]) {
+      testWidgets('golden settled (${dark ? 'dark' : 'light'})', (
+        tester,
+      ) async {
+        _phone(tester);
+        await tester.pumpWidget(page(dark: dark));
+        await _run(tester, const Duration(seconds: 12));
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile(
+            'goldens/dot_matrix_page_${dark ? 'dark' : 'light'}.png',
+          ),
+        );
+      });
+    }
+  });
+
   group('spring field', () {
     SpringField field() => SpringField(
       spring: AppSprings.spring(period: 1.6, damping: 0.2),
