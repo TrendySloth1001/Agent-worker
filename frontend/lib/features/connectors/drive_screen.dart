@@ -139,6 +139,8 @@ class _DriveScreenState extends State<DriveScreen> {
           slivers: [
             M3Body(
               children: [
+                const _BetaNote(),
+                const SizedBox(height: AppSpacing.md),
                 if (account != null)
                   ..._connected(context, account)
                 else if (configured == null && _conn.state == null)
@@ -262,4 +264,20 @@ class _DriveScreenState extends State<DriveScreen> {
       ),
     ];
   }
+}
+
+/// Google's review of sparky's access is still going: a BETA tag and why the
+/// "unverified app" screen may show.
+class _BetaNote extends StatelessWidget {
+  const _BetaNote();
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const M3Tag(DriveStrings.beta),
+      const SizedBox(height: AppSpacing.sm),
+      ConnectorBanner(icon: DriveIcons.betaNote, text: DriveStrings.betaNote),
+    ],
+  );
 }

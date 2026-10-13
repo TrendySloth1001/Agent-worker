@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/app_scope.dart';
 import '../../core/constants/app_icons.dart';
+import '../../core/constants/apps.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/about.dart';
 import '../../core/constants/assist.dart';
@@ -25,11 +26,13 @@ import '../../core/constants/voice_fix.dart';
 import '../../core/platform/browsers.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/widgets/browser_picker.dart';
+import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/usage.dart';
 import '../about/about_screen.dart';
 import 'assistant_settings_screen.dart';
 import '../auth/auth_controller.dart';
 import '../connections/connections_controller.dart';
+import '../connectors/drive_screen.dart';
 import '../knowledge/knowledge_screen.dart';
 import '../memory/memory_screen.dart';
 import '../profile/profile_screen.dart';
@@ -619,7 +622,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
             const SettingItem(
               id: 'drive',
               title: ConnectStrings.googleDrive,
-              keywords: 'google drive files connections soon',
+              keywords: 'google drive files connections beta',
               build: _driveTile,
             ),
             const SettingItem(
@@ -797,9 +800,12 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
 
 Widget _replyCards(BuildContext _) => const ReplyStyleCards();
 Widget _githubTile(BuildContext _) => const GithubConnectionTile();
-Widget _driveTile(BuildContext _) => const SoonTile(
+Widget _driveTile(BuildContext context) => SettingsTile(
   icon: ConnectIcons.googleDrive,
   title: ConnectStrings.googleDrive,
+  summary: SettingsStrings.driveSummary,
+  trailing: const M3Tag(AppsStrings.beta),
+  onTap: () => Navigator.push(context, settingsRoute(const DriveScreen())),
 );
 Widget _photosTile(BuildContext _) => const SoonTile(
   icon: ConnectIcons.googlePhotos,

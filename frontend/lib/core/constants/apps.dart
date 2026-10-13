@@ -30,6 +30,9 @@ abstract final class AppsStrings {
   static const noSources = 'No sources yet';
 
   static const soon = 'SOON';
+
+  /// Tag on an app whose access is still in the provider's review.
+  static const beta = 'BETA';
   static String soonToast(String app) => '$app is coming soon.';
   static const googleDrive = 'Google Drive';
   static const googleDriveBlurb = 'Files and folders';
