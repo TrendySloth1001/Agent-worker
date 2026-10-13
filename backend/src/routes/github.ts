@@ -7,7 +7,7 @@ import { graph } from "../github/graph.js";
 import * as detail from "../github/detail.js";
 import * as actions from "../github/actions.js";
 import { myEvents } from "../github/events.js";
-import { rateLimit } from "../util/rateLimit.js";
+import { inFlightLimit, limits, rateLimit } from "../util/rateLimit.js";
 
 export const githubRouter = Router();
 
@@ -164,7 +164,8 @@ githubRouter.post("/repos/:owner/:repo/pulls/:n/review", async (req, res) => {
 // ---- pull request / issue detail (in-app screens) -------------------------
 const num = (req: Request) => Number(req.params.n);
 type P = { owner: string; repo: string; n: string };
-const writeLimit = rateLimit(30);
+// GitHub writes (comments, merges, reviews, edits): 10 a minute, 200 a day, 2 at once per user.
+const writeLimit = limits(rateLimit(10, 60_000, "auto", { name: "github-write" }), rateLimit(200, 24 * 3_600_000, "auto", { name: "github-write-day" }), inFlightLimit(2, 3_000, "github-write"));
 
 /** Writes answer fresh data and are never cached by the client. */
 function sendWrite(res: Response, data: unknown) {

@@ -1,5 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { clientIp } from "../util/rateLimit.js";
+import { clientIp, slowDown } from "../util/rateLimit.js";
 import { z } from "zod";
 import { db } from "../db/prisma.js";
 import { userOf } from "../auth/context.js";
@@ -27,7 +27,7 @@ function perUser(max: number, windowMs = 60_000) {
       hits.set(key, { count: 1, resetAt: now + windowMs });
       return next();
     }
-    if (++e.count > max) return next(new AppError(429, "rate_limited", "Too many requests, slow down.", true));
+    if (++e.count > max) return next(slowDown());
     next();
   };
 }

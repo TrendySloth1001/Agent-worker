@@ -3,7 +3,8 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { config } from "../config.js";
 import { recordUsage, withTelemetry } from "../db/usage.js";
 import { getOpenRouterKeyInfo, noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
-import { estimateTokens, hasTokenBudget } from "../usage/rateLimits.js";
+import { BudgetBlockedError, check as budgetCheck, estimateRequestTokens, noteAuxDeferred, noteWait, sleep } from "./budget.js";
+import { slots, type Priority } from "./slots.js";
 import { health } from "./health.js";
 import { classifyError, clearQuota, formatUntil, isQuotaBlocked, markQuota, PROVIDER_NAMES, quotaBlock, QuotaBlockedError, restoreQuota, setQuotaProber, type ErrorClass } from "./quota.js";
 import { VISION_MODELS } from "./vision.js";
@@ -14,44 +15,9 @@ import { USER_MSG } from "../util/userMessages.js";
 const FIRST_BYTE_MS = 20_000;
 const IDLE_MS = 30_000;
 const MAX_AUTO_ATTEMPTS = 6;
+/** The longest a turn waits for a minute window to free up rather than failing. */
+export const BUDGET_WAIT_MAX_MS = 4_000;
 
-class Semaphore {
-  private waiting: Array<() => void> = [];
-  private free: number;
-  constructor(size: number) {
-    this.free = size;
-  }
-  get available() {
-    return this.free > 0;
-  }
-  async acquire(signal: AbortSignal, onWait?: () => void): Promise<() => void> {
-    if (this.free > 0) {
-      this.free--;
-      return () => this.release();
-    }
-    onWait?.();
-    await new Promise<void>((resolve, reject) => {
-      const grant = () => {
-        signal.removeEventListener("abort", abort);
-        resolve();
-      };
-      const abort = () => {
-        this.waiting = this.waiting.filter((w) => w !== grant);
-        reject(new DOMException("aborted", "AbortError"));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      this.waiting.push(grant);
-    });
-    return () => this.release();
-  }
-  private release() {
-    const next = this.waiting.shift();
-    if (next) next();
-    else this.free++;
-  }
-}
-
-const semaphores = { ollama: new Semaphore(1), openrouter: new Semaphore(2), groq: new Semaphore(3), nvidia: new Semaphore(2) };
 
 export function providerConfigured(provider: ModelInfo["provider"]) {
   const keys = { ollama: config.ollamaApiKey, openrouter: config.openrouterApiKey, groq: config.groqApiKey, nvidia: config.nvidiaApiKey };
@@ -122,9 +88,9 @@ export function preferForPrompt(candidates: string[], promptChars: number): stri
     const rest = candidates.filter((id) => !id.startsWith("groq:"));
     candidates = rest.length > 0 ? rest : candidates;
   }
-  // Skip Groq models whose per-minute token window can't fit this prompt right now.
-  const need = estimateTokens(promptChars);
-  const fits = candidates.filter((id) => !id.startsWith("groq:") || hasTokenBudget(id, need));
+  // Skip models whose minute/day budget can't fit this prompt right now (headers + local accounting).
+  const need = Math.ceil(promptChars / 3.5) + 1_500;
+  const fits = candidates.filter((id) => budgetCheck(id, need).ok);
   if (fits.length > 0) candidates = fits;
   if (promptChars < LONG_CONTEXT_CHARS) return candidates;
   return [...candidates.filter((id) => LONG_CONTEXT_MODELS.has(id)), ...candidates.filter((id) => !LONG_CONTEXT_MODELS.has(id))];
@@ -245,11 +211,30 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     if (blocked) throw new ChatFailure("model_busy", quotaMessage(queue[0], blocked.until), true);
   }
 
+  // Budgets: Auto tries the models that fit their minute/day windows first. When none fits (or the
+  // one picked model doesn't) but a window frees within a few seconds, wait briefly instead of failing.
+  const need = estimateRequestTokens(messages, opts.maxTokens);
+  const verdicts = new Map(queue.map((id) => [id, budgetCheck(id, need)] as const));
+  const fitting = queue.filter((id) => verdicts.get(id)!.ok);
+  if (auto && fitting.length > 0 && fitting.length < queue.length) {
+    const rest = queue.filter((id) => !verdicts.get(id)!.ok);
+    queue.splice(0, queue.length, ...fitting, ...rest);
+  }
+  const considered = auto ? queue : queue.slice(0, 1);
+  if (considered.length > 0 && considered.every((id) => !verdicts.get(id)!.ok)) {
+    const waitMs = Math.min(...considered.map((id) => { const v = verdicts.get(id)!; return v.ok ? 0 : v.waitMs; }));
+    if (waitMs <= BUDGET_WAIT_MAX_MS) {
+      hooks.onQueued();
+      noteWait(waitMs);
+      await sleep(waitMs + 50, signal);
+    }
+  }
+
   while (queue.length > 0) {
     if (signal.aborted) throw new DOMException("aborted", "AbortError");
     const id = queue.shift()!;
     const provider = providerOf(id);
-    const sem = semaphores[provider];
+    const sem = slots[provider];
 
     // In Auto, a model whose quota ran out or whose circuit opened meanwhile (another request) is skipped
     // while a healthy one remains; when all are cooling down they are tried in order rather than giving up.
@@ -265,7 +250,7 @@ export async function runChat(candidates: string[], messages: Message[], signal:
     if (auto && tried >= MAX_AUTO_ATTEMPTS) break;
     tried++;
 
-    const release = sem ? await sem.acquire(signal, hooks.onQueued) : () => {};
+    const release = sem ? await sem.acquire(signal, { onWait: hooks.onQueued }) : () => {};
     attempt++;
     const started = Date.now();
     let produced = false;
@@ -366,12 +351,25 @@ export async function runChat(candidates: string[], messages: Message[], signal:
   throw new ChatFailure("all_models_failed", allQuota ? ALL_QUOTA_MESSAGE : ALL_BUSY_MESSAGE, true);
 }
 
-/** Runs `fn` while holding the model's provider concurrency slot (shared with runChat). */
-export async function withSlot<T>(id: string, signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+/** How long an aux call may wait for a spare provider slot before it is skipped. */
+export const AUX_SLOT_WAIT_MS = 1_500;
+
+/**
+ * Runs `fn` while holding the model's provider concurrency slot (shared with runChat).
+ * Aux work only takes a spare slot (never the last one) and is skipped after a short wait.
+ */
+export async function withSlot<T>(id: string, signal: AbortSignal, fn: () => Promise<T>, o: { priority?: Priority; purpose?: string } = {}): Promise<T> {
   const provider = id.slice(0, id.indexOf(":")) as ModelInfo["provider"];
-  const sem = semaphores[provider];
+  const sem = slots[provider];
   if (!sem) return fn();
-  const release = await sem.acquire(signal);
+  let release: () => void;
+  try {
+    release = await sem.acquire(signal, o.priority === "aux" ? { priority: "aux", maxWaitMs: AUX_SLOT_WAIT_MS } : {});
+  } catch (e) {
+    if ((e as Error).message !== "slot_busy") throw e;
+    noteAuxDeferred(o.purpose ?? "aux");
+    throw new BudgetBlockedError(id, "aux_deferred", AUX_SLOT_WAIT_MS);
+  }
   try {
     return await fn();
   } finally {

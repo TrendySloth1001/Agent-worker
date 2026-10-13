@@ -6,6 +6,8 @@ import { memoryEvents, usageEvents, type TelemetryEvent } from "../db/usage.js";
 import { MODELS, cooldownUntil } from "../models.js";
 import { rateSnapshots } from "../usage/rateLimits.js";
 import { quotaSnapshot } from "../llm/quota.js";
+import { budgetSnapshot } from "../llm/budget.js";
+import { slotSnapshot } from "../llm/slots.js";
 import { AppError } from "../util/errors.js";
 import { openSse } from "../util/sse.js";
 import { BUCKETS, WINDOWS, bucketFor, events, overview, timeseries, type Bucket, type Filters, type Window } from "../telemetry/queries.js";
@@ -63,7 +65,8 @@ telemetryRouter.get("/overview", async (req, res) => {
     .sort((a, b) => b.requests - a.requests || a.id.localeCompare(b.id));
 
   // Exhausted provider/model quotas, e.g. "Ollama: quota exhausted until 1 Nov".
-  res.json({ ...data, models, quota: quotaSnapshot() });
+  // Live budgets: minute/day use per model or account, pre-call skips, waits, aux deferrals and per-user cap hits.
+  res.json({ ...data, models, quota: quotaSnapshot(), budgets: { ...budgetSnapshot(), slots: slotSnapshot() } });
 });
 
 function emptyModel(provider: string, model: string) {
