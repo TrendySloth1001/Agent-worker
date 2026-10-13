@@ -48,6 +48,8 @@ const schema = z.object({
   WEB_SEARCH_DISABLE: str,
   OLLAMA_MONTHLY_REQUEST_BUDGET: optInt,
   API_TOKEN: str,
+  /** Bearer token for scripts/publish-apk.sh (POST /app/releases only); unset disables that path. */
+  RELEASE_TOKEN: str,
   S3_ENDPOINT: str,
   S3_REGION: str,
   S3_ACCESS_KEY_ID: str,
@@ -115,6 +117,7 @@ export const config = {
   },
   ollamaMonthlyBudget: env.OLLAMA_MONTHLY_REQUEST_BUDGET,
   apiToken: env.API_TOKEN,
+  releaseToken: env.RELEASE_TOKEN?.trim() || undefined,
   s3: {
     endpoint: env.S3_ENDPOINT,
     region: env.S3_REGION ?? "us-east-1",

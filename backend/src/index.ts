@@ -33,6 +33,7 @@ import { prismaStore as docStore } from "./docs/store.js";
 import { liveIds as liveDocIds } from "./docs/registry.js";
 import { githubGate } from "./auth/githubGate.js";
 import { siteRouter } from "./routes/site.js";
+import { appRouter, releaseTokenRouter } from "./routes/app.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -54,6 +55,8 @@ app.use("/auth", authPublicRouter);
 // Connected apps: the OAuth callback and the Drive picker page (state/ticket authenticated).
 app.use("/connect", connectPublicRouter);
 // Failed sign-ins (bad API_TOKEN / JWT) are counted per IP before anything is compared.
+// OTA release script: POST /app/releases with a valid RELEASE_TOKEN bearer is handled here, before user auth.
+app.use("/app/releases", releaseTokenRouter);
 app.use(failedAuthGuard());
 app.use(requireUser);
 app.use(telemetryScope);
@@ -102,6 +105,7 @@ app.use("/connections", connectionsRouter);
 app.use("/connect", connectRouter);
 app.use("/docs", docsRouter);
 app.use("/memory", memoryRouter);
+app.use("/app", appRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));
 app.use(errorMiddleware);
