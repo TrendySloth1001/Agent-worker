@@ -117,7 +117,7 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
-      version: '1.9.2',
+      version: '1.9.3',
       date: '14 Oct 2026',
       headline: 'Smoother, everywhere',
       items: [
@@ -148,6 +148,14 @@ abstract final class Changelog {
           title: 'One buzz, not two',
           detail: 'Opening the sidebar from the menu vibrates just once.',
           icon: HugeIcons.strokeRoundedSmartPhone01,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Know your numbers',
+          detail:
+              'The API keys intro now shows the telemetry and usage '
+              'analytics your own keys unlock.',
+          icon: HugeIcons.strokeRoundedAnalytics01,
         ),
         (
           kind: ChangeKind.fixed,
