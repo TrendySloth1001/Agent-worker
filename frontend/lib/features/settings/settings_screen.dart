@@ -5,13 +5,14 @@ import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
-import '../../core/theme/app_palette.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/user_avatar.dart';
 import '../auth/auth_controller.dart';
 import '../connections/connections_controller.dart';
 import '../profile/profile_screen.dart';
 import 'settings_pages.dart';
+import 'widgets/connection_notice.dart';
+import 'widgets/developer_section.dart';
 import 'widgets/settings_kit.dart';
 
 /// Settings root in the Android 16 style: a collapsing large title, a search
@@ -44,12 +45,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SettingsCategory.notifications,
       SettingsCategory.appearance,
     ],
-    [
-      SettingsCategory.models,
-      SettingsCategory.telemetry,
-      SettingsCategory.server,
-    ],
-    [SettingsCategory.about],
+    [SettingsCategory.models, SettingsCategory.about],
+  ];
+
+  /// Owner-only entries, in the collapsible Developer section.
+  static const _developer = [
+    SettingsCategory.server,
+    SettingsCategory.telemetry,
   ];
 
   @override
@@ -94,8 +96,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   List<Widget> _home(BuildContext context, AppScope scope) {
-    final owner = isOwner();
     return [
+      // Only shows when sparky can't be reached.
+      ConnectionNotice(
+        usage: scope.usage,
+        leading: const SizedBox(height: SettingsSizes.groupSpacing),
+      ),
       const SizedBox(height: SettingsSizes.groupSpacing),
       SettingsGroup(entries: [GroupEntry(_AccountCard())]),
       for (final group in _groups) ...[
@@ -103,11 +109,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SettingsGroup(
           entries: [
             for (final c in group)
-              if (!c.ownerOnly || owner)
-                GroupEntry(_CategoryTile(category: c, scope: scope)),
+              GroupEntry(_CategoryTile(category: c, scope: scope)),
           ],
         ),
       ],
+      if (isOwner())
+        DeveloperSection(
+          children: [
+            for (final c in _developer)
+              _CategoryTile(category: c, scope: scope),
+          ],
+        ),
       const SizedBox(height: SettingsSizes.groupSpacing),
       SettingsGroup(entries: [GroupEntry(_ResetTile(onTap: _confirmReset))]),
     ];
@@ -246,7 +258,6 @@ class _CategoryTile extends StatelessWidget {
       icon: category.icon,
       title: category.title,
       summary: categorySummary(category, scope),
-      iconColor: category.ownerOnly ? context.palette.accent : null,
       onTap: () => openSettingsCategory(context, category),
     );
   }

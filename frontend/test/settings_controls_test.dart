@@ -258,11 +258,12 @@ void main() {
     await tester.tap(find.text('Model Two'));
     await _settle(tester);
     expect(s.modelChoice, 'x:two');
-    expect(_summary(SettingsStrings.allModels, 'x:two'), findsOneWidget);
+    // People see the model's name; the raw id is for the owner.
+    expect(_summary(SettingsStrings.allModels, 'Model Two'), findsOneWidget);
     expect(_modelGroup(tester), 'x:two');
     await _back(tester);
     expect(
-      _summary(SettingsStrings.catModels, 'x:two', contains: true),
+      _summary(SettingsStrings.catModels, 'Model Two', contains: true),
       findsOneWidget,
     );
   });

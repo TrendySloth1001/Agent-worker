@@ -33,7 +33,9 @@ import '../storage/storage_screen.dart';
 import '../storage/widgets/storage_usage_card.dart';
 import 'settings_controller.dart';
 import 'telemetry/telemetry_screen.dart';
+import 'format.dart';
 import 'widgets/appearance_tiles.dart';
+import 'widgets/connection_notice.dart';
 import 'widgets/connections_section.dart';
 import 'widgets/delete_chats.dart';
 import 'widgets/model_choice.dart';
@@ -94,8 +96,8 @@ enum SettingsCategory {
     about => AppIcons.about,
   };
 
-  /// Only the owner sees this entry.
-  bool get ownerOnly => this == telemetry;
+  /// Only the owner sees this entry (in the Developer section).
+  bool get ownerOnly => this == telemetry || this == server;
 
   /// Opens an existing screen instead of a settings page.
   bool get isDirect => this == telemetry || this == about || this == assistant;
@@ -125,11 +127,14 @@ Future<void> openSettingsCategory(
 
 bool isOwner() => AuthController.instance.user?.isOwner ?? false;
 
-String modelChoiceLabel(String choice) => switch (choice) {
+/// The model pick in words. A specific model shows its friendly [name]; only
+/// the owner sees the raw id.
+String modelChoiceLabel(String choice, {String name = ''}) => switch (choice) {
   'auto' => SettingsStrings.modelAuto,
   'fast' => SettingsStrings.modelFast,
   'smart' => SettingsStrings.modelSmart,
-  final raw => raw,
+  final raw when isOwner() => raw,
+  final raw => name.isNotEmpty ? name : friendlyModelName(raw),
 };
 
 String _toneLabel(String tone) => toneLabels[tone] ?? SettingsStrings.toneNone;
@@ -187,8 +192,8 @@ String categorySummary(SettingsCategory c, AppScope scope) {
       return '${themeLabel(s.themeMode)}$sep'
           '${textSizeLabels[s.textScale] ?? SettingsStrings.textNormal}';
     case SettingsCategory.models:
-      final n = scope.usage.usage?.activeProviders;
-      final model = modelChoiceLabel(s.modelChoice);
+      final n = isOwner() ? scope.usage.usage?.activeProviders : null;
+      final model = modelChoiceLabel(s.modelChoice, name: s.modelChoiceName);
       return n == null
           ? model
           : '$model$sep$n ${SettingsStrings.providersActive}';
@@ -647,21 +652,23 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
           title: NotifyCopy.secKinds,
           items: [
             for (final k in NotifyKind.values)
-              SettingItem(
-                // The round table keeps the id it always had.
-                id: k == NotifyKind.roundTable
-                    ? 'table-notify'
-                    : 'notify-${k.key}',
-                title: k.label,
-                keywords: '${k.key} ${k.help} notify notification',
-                build: (_) => SettingsSwitchTile(
-                  icon: TableIcons.notify,
+              // Provider quota alerts are for the owner who runs the server.
+              if (k != NotifyKind.usage || isOwner())
+                SettingItem(
+                  // The round table keeps the id it always had.
+                  id: k == NotifyKind.roundTable
+                      ? 'table-notify'
+                      : 'notify-${k.key}',
                   title: k.label,
-                  summary: k.help,
-                  value: s.notify.isOn(k),
-                  onChanged: (v) => s.notify.setKind(k, v),
+                  keywords: '${k.key} ${k.help} notify notification',
+                  build: (_) => SettingsSwitchTile(
+                    icon: TableIcons.notify,
+                    title: k.label,
+                    summary: k.help,
+                    value: s.notify.isOn(k),
+                    onChanged: (v) => s.notify.setKind(k, v),
+                  ),
                 ),
-              ),
           ],
         ),
         SettingsSection(
@@ -756,6 +763,38 @@ Widget _themeTile(BuildContext _) => const ThemeTile();
 Widget _textSizeTile(BuildContext _) => const TextSizeTile();
 
 List<SettingsSection> _modelSections(AppScope scope) {
+  final modelPick = SettingsSection(
+    title: SettingsStrings.secModel,
+    wrap: modelChoiceGroup,
+    items: [
+      const SettingItem(
+        id: 'model-auto',
+        title: SettingsStrings.modelAuto,
+        keywords: 'model ai auto choose recommended',
+        build: _modelAuto,
+      ),
+      const SettingItem(
+        id: 'model-fast',
+        title: SettingsStrings.modelFast,
+        keywords: 'model ai fastest fast choose quick',
+        build: _modelFast,
+      ),
+      const SettingItem(
+        id: 'model-smart',
+        title: SettingsStrings.modelSmart,
+        keywords: 'model ai smartest smart choose best',
+        build: _modelSmart,
+      ),
+      const SettingItem(
+        id: 'model-specific',
+        title: SettingsStrings.allModels,
+        keywords: 'model ai specific choose pick list',
+        build: _modelSpecific,
+      ),
+    ],
+  );
+  // Quotas, tokens, providers and service keys are developer details.
+  if (!isOwner()) return [modelPick];
   final c = scope.usage;
   final u = c.usage;
   const usageWords =
@@ -819,36 +858,7 @@ List<SettingsSection> _modelSections(AppScope scope) {
       ),
   ];
   return [
-    SettingsSection(
-      title: SettingsStrings.secModel,
-      wrap: modelChoiceGroup,
-      items: [
-        const SettingItem(
-          id: 'model-auto',
-          title: SettingsStrings.modelAuto,
-          keywords: 'model ai auto choose gpt recommended',
-          build: _modelAuto,
-        ),
-        const SettingItem(
-          id: 'model-fast',
-          title: SettingsStrings.modelFast,
-          keywords: 'model ai fastest fast choose quick',
-          build: _modelFast,
-        ),
-        const SettingItem(
-          id: 'model-smart',
-          title: SettingsStrings.modelSmart,
-          keywords: 'model ai smartest smart choose best',
-          build: _modelSmart,
-        ),
-        const SettingItem(
-          id: 'model-specific',
-          title: SettingsStrings.allModels,
-          keywords: 'model ai specific choose pick list',
-          build: _modelSpecific,
-        ),
-      ],
-    ),
+    modelPick,
     SettingsSection(
       title: SettingsStrings.secUsage,
       items: [
@@ -1083,6 +1093,12 @@ class _SettingsCategoryPageState extends State<SettingsCategoryPage> {
         title: cat.title,
         onRefresh: usageBacked ? scope.usage.refresh : null,
         children: [
+          // People get a plain notice; the owner has the full status strip.
+          if (cat == SettingsCategory.models && !isOwner())
+            ConnectionNotice(
+              usage: scope.usage,
+              leading: const SizedBox(height: SettingsSizes.groupSpacing),
+            ),
           for (final section in sectionsFor(cat, scope))
             _SectionView(
               section: section,

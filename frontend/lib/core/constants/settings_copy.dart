@@ -184,6 +184,20 @@ abstract final class SettingsStrings {
       'Your name and personal notes are kept.';
   static const resetDone = 'Settings reset';
   static const cancel = 'Cancel';
+
+  // Developer (owner only): server, usage numbers and telemetry.
+  static const developer = 'Developer';
+  static const developerHelp = 'Server, usage numbers and telemetry';
+  static const developerShow = 'Show developer tools';
+  static const developerHide = 'Hide developer tools';
+
+  // Plain connection notice, shown to everyone only when there is a problem.
+  static const unreachableTitle = "sparky can't be reached right now";
+  static const unreachableHelp =
+      'Check your internet connection, then try again.';
+  static const troubleTitle = 'sparky is having a little trouble';
+  static const troubleHelp = 'Some answers may be slower than usual.';
+  static const tryAgain = 'Try again';
 }
 
 abstract final class SettingsIcons {
@@ -202,6 +216,9 @@ abstract final class SettingsIcons {
   static const modelSmart = HugeIcons.strokeRoundedBrain02;
   static const presetTeacher = HugeIcons.strokeRoundedTeacher;
   static const presetFun = HugeIcons.strokeRoundedHappy;
+  static const developer = HugeIcons.strokeRoundedSourceCode;
+  static const expand = HugeIcons.strokeRoundedArrowDown01;
+  static const unreachable = HugeIcons.strokeRoundedWifiDisconnected02;
 }
 
 abstract final class SettingsSizes {

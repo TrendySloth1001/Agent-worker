@@ -33,6 +33,9 @@ abstract final class AboutStrings {
   static String versionShort(String version, String build) =>
       '$version ($build)';
 
+  /// What people who are not the owner see under the logo.
+  static String versionPlain(String version) => 'Version $version';
+
   // Sections.
   static const whatItDoes = 'WHAT IT DOES';
   static const privacy = 'PRIVACY';
@@ -183,6 +186,20 @@ abstract final class AboutStrings {
     ),
   ];
 
+  // Developer section (owner only).
+  static const developer = 'Developer';
+  static const developerHelp = 'Server address, status and build';
+  static const buildTitle = 'Build';
+  static String buildLine(String version, String build, String platform) =>
+      '$version ($build) · $platform';
+  static const telemetry = 'Telemetry & analytics';
+  static const telemetryHelp = 'Model calls, tokens and latency';
+
+  // Legal pages, served by the sparky server.
+  static const privacyPolicy = 'Privacy policy';
+  static const terms = 'Terms of service';
+  static const openFailed = 'Could not open the page.';
+
   // Actions.
   static const licenses = 'OPEN-SOURCE LICENSES';
   static const feedback = 'SEND FEEDBACK';
@@ -227,6 +244,15 @@ abstract final class AboutStrings {
       'LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION '
       'OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION '
       'WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.';
+  static const licenseIcons = 'Hugeicons, Iconify (icons)';
+  static const licenseIconsText =
+      'Hugeicons, https://hugeicons.com/. Iconify icon sets, '
+      'https://iconify.design/.';
+  static const licenseLogos = 'Brand logos';
+  static const licenseLogosText =
+      'SVG Logos and Simple Icons (CC0), theSVG, VSCode Icons (MIT) and '
+      'selfh.st/icons (CC BY 4.0, https://selfh.st/icons/). Logos are '
+      'trademarks of their respective owners.';
   static const licenseFonts = 'Space Grotesk, Space Mono (fonts)';
   static const licenseFontsText =
       'Space Grotesk and Space Mono are licensed under the SIL Open Font '
@@ -266,6 +292,10 @@ abstract final class AboutIcons {
   static const copy = AppIcons.copy;
 
   static const licenses = HugeIcons.strokeRoundedLegalDocument01;
+  static const privacyPolicy = HugeIcons.strokeRoundedShield01;
+  static const terms = HugeIcons.strokeRoundedAgreement01;
+  static const build = HugeIcons.strokeRoundedInformationCircle;
+  static const telemetry = HugeIcons.strokeRoundedActivity01;
   static const feedback = HugeIcons.strokeRoundedMail01;
   static const heart = HugeIcons.strokeRoundedFavourite;
   static const chevron = AppIcons.chevronRight;
