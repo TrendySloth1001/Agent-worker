@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { EventEmitter } from "node:events";
 import { db, isDbUp, Prisma } from "./prisma.js";
 import { currentUser } from "../auth/context.js";
+import { activeUserKey } from "../keys/store.js";
 
 export type UsageKind = "chat" | "embed" | "search" | "fetch" | "transcribe" | "github" | "turn";
 type Event = {
@@ -20,6 +21,8 @@ type Event = {
   errorMessage?: string;
   ttftMs?: number | null;
   attempt?: number;
+  /** Whose provider key paid for the call. Default: the caller's own key if a chat call used one, else the server. */
+  keySource?: "user" | "server";
 };
 
 /** A recorded event as the telemetry API returns it. */
@@ -43,6 +46,7 @@ export type TelemetryEvent = {
   userId: string | null;
   requestId: string | null;
   conversationId: string | null;
+  keySource?: "user" | "server" | null;
 };
 
 // ---- ambient context ---------------------------------------------------------
@@ -116,7 +120,8 @@ let queue: Row[] = [];
 let timer: NodeJS.Timeout | null = null;
 
 export function recordUsage(e: Event): void {
-  mem.push({ ...e, ts: Date.now() });
+  const keySource = e.keySource ?? (e.kind === "chat" && activeUserKey(e.provider) ? "user" : "server");
+  mem.push({ ...e, keySource, ts: Date.now() });
   if (mem.length > 5000) mem.splice(0, mem.length - 5000);
   const c = ctx.getStore();
   const user = currentUser();
@@ -141,6 +146,7 @@ export function recordUsage(e: Event): void {
     userId: user?.id ?? null,
     requestId: c?.requestId ?? null,
     conversationId: c?.conversationId ?? null,
+    keySource,
   };
   queue.push(row);
   if (queue.length >= FLUSH_MAX) void flush();
@@ -220,6 +226,7 @@ function fromMemory(): Summary {
     search: { today: 0, month: 0 },
   };
   for (const e of mem) {
+    if (e.keySource === 'user') continue;
     const tokens = (e.promptTokens ?? 0) + (e.completionTokens ?? 0);
     const today = e.ts >= day;
     const thisMonth = e.ts >= month;
@@ -250,7 +257,7 @@ export async function getUsageSummary(): Promise<Summary> {
            count(*)::int AS mr,
            coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)),0)::bigint AS mt,
            max(ts) FILTER (WHERE status IN (402,429)) AS hit
-         FROM usage_events WHERE provider='ollama' AND kind='chat' AND ts >= ${MONTH_START}`,
+         FROM usage_events WHERE provider='ollama' AND kind='chat' AND key_source IS DISTINCT FROM 'user' AND ts >= ${MONTH_START}`,
       db().$queryRaw<Array<{ r: number; t: number }>>`
         SELECT count(*)::int AS r, coalesce(sum(count),0)::int AS t FROM usage_events WHERE kind='embed' AND ts >= ${DAY_START}`,
       db().$queryRaw<Array<{ d: number; m: number }>>`
@@ -299,7 +306,7 @@ export async function getProviderUsage(): Promise<Record<string, ProviderUsage>>
   const month = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   if (!isDbUp()) {
     for (const e of mem) {
-      if (e.kind !== "chat" || e.ts < month) continue;
+      if (e.kind !== "chat" || e.ts < month || e.keySource === 'user') continue;
       const u = (out[e.provider] ??= emptyUsage());
       const tokens = (e.promptTokens ?? 0) + (e.completionTokens ?? 0);
       u.monthRequests++;
@@ -321,7 +328,7 @@ export async function getProviderUsage(): Promise<Record<string, ProviderUsage>>
        coalesce(sum(coalesce(prompt_tokens,0)+coalesce(completion_tokens,0)),0)::bigint AS mt,
        count(*) FILTER (WHERE ts >= ${DAY_START} AND NOT ok)::int AS tf,
        max(ts) FILTER (WHERE status IN (402,429)) AS hit
-     FROM usage_events WHERE kind='chat' AND ts >= ${MONTH_START} GROUP BY provider`;
+     FROM usage_events WHERE kind='chat' AND key_source IS DISTINCT FROM 'user' AND ts >= ${MONTH_START} GROUP BY provider`;
   for (const r of rows) {
     out[r.provider] = {
       todayRequests: r.tr,

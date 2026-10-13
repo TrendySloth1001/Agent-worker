@@ -19,6 +19,7 @@ import { MODELS, clearCooldown, setCooldown, type ProviderId } from "../models.j
 import { UpstreamError } from "../providers.js";
 import { db, isDbUp } from "../db/prisma.js";
 import { log } from "../util/logger.js";
+import { usesUserKey } from "../keys/store.js";
 
 export type QuotaWindow = "month" | "week" | "day" | "hour" | "unknown";
 
@@ -152,6 +153,8 @@ function expire(key: string, b: Block, now: number): boolean {
 /** The exhausted-quota block that covers model [id], or null. May kick off a background re-probe. */
 export function quotaBlock(id: string): { scope: string; provider: string; window: QuotaWindow; until: number } | null {
   const provider = id.slice(0, id.indexOf(":"));
+  // The server's exhausted quota says nothing about a key the caller brought themselves.
+  if (usesUserKey(provider)) return null;
   const now = clock();
   for (const key of [provider, id]) {
     const b = blocks.get(key);

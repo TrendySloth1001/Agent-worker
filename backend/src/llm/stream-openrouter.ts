@@ -30,7 +30,7 @@ export function streamOpenRouter(model: string, messages: Message[], opts: Strea
   async function* attempt(): AsyncGenerator<string> {
     const lines = postLines(
       "https://openrouter.ai/api/v1/chat/completions",
-      { Authorization: `Bearer ${config.openrouterApiKey}`, "X-Title": "sparky", "HTTP-Referer": config.publicBaseUrl },
+      { Authorization: `Bearer ${opts.apiKey ?? config.openrouterApiKey}`, "X-Title": "sparky", "HTTP-Referer": config.publicBaseUrl },
       {
         model,
         ...(alternates.length ? { models: [model, ...alternates] } : {}),
@@ -43,7 +43,7 @@ export function streamOpenRouter(model: string, messages: Message[], opts: Strea
     yield* readLines(lines, usage);
   }
   async function* tokens(): AsyncGenerator<string> {
-    if (!config.openrouterApiKey) throw new UpstreamError(401, "OPENROUTER_API_KEY missing");
+    if (!(opts.apiKey ?? config.openrouterApiKey)) throw new UpstreamError(401, "OPENROUTER_API_KEY missing");
     // No local retry on a saturated upstream: the request already carries OpenRouter's
     // server-side fallbacks, and the router moves on to the next model at once.
     yield* attempt();

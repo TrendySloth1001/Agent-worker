@@ -1,3 +1,5 @@
+import { primeKeysMiddleware } from "./keys/store.js";
+import { keysRouter, myUsageRouter } from "./routes/keys.js";
 import express from "express";
 import cors from "cors";
 import { config } from "./config.js";
@@ -64,6 +66,7 @@ app.use("/app/releases", releaseTokenRouter);
 app.use(failedAuthGuard());
 app.use(requireUser);
 app.use(telemetryScope);
+app.use(primeKeysMiddleware);
 app.use("/auth", authRouter);
 
 // Per-user fair use: per-minute caps plus a cap on requests in flight at once (a short burst waits a
@@ -110,6 +113,10 @@ app.use("/connections", connectionsRouter);
 app.use("/connect", connectRouter);
 app.use("/docs", docsRouter);
 app.use("/memory", memoryRouter);
+app.post("/me/keys/:provider/test", rateLimit(10));
+app.put("/me/keys/:provider", rateLimit(10));
+app.use("/me/keys", keysRouter);
+app.use("/me/usage", myUsageRouter);
 app.use("/app", appRouter);
 
 app.use((_req, _res, next) => next(new AppError(404, "not_found", "Not found")));

@@ -49,6 +49,8 @@ export class UpstreamError extends Error {
   ) {
     super(message.slice(0, 200));
   }
+  /** Set when the call was made with the user's own provider key (their failure, not the server's). */
+  userKey?: boolean;
   get retryable() {
     return this.status === 0 || this.status === 429 || this.status >= 500;
   }
@@ -68,9 +70,9 @@ export function mapFinish(reason: string): "length" | "content_filter" | "stop" 
 }
 
 /** `tokens` yields text deltas; `usage` is filled in as the stream progresses. */
-export type StreamHandle = { tokens: AsyncGenerator<string>; usage: StreamUsage };
+export type StreamHandle = { tokens: AsyncGenerator<string>; usage: StreamUsage; /** Whose provider key the call used. */ keySource?: "user" | "server" };
 
-export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low"; /** Sampling temperature (OpenAI-compatible providers); unset = provider default. */ temperature?: number; /** Quota re-probe: bypasses the exhausted-quota guard. */ probe?: boolean };
+export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: number; maxTokens?: number; /** gpt-oss on Groq only: "low" keeps short answers from being eaten by reasoning. */ reasoningEffort?: "low"; /** Sampling temperature (OpenAI-compatible providers); unset = provider default. */ temperature?: number; /** Quota re-probe: bypasses the exhausted-quota guard. */ probe?: boolean; /** The user's own provider key for this call (set by streamModel, never by callers). */ apiKey?: string };
 
 /**
  * Streams one model. A provider (or model) whose quota is known to be exhausted
@@ -81,6 +83,19 @@ export type StreamOptions = { signal: AbortSignal; firstByteMs: number; idleMs: 
 export async function streamModel(id: string, messages: Message[], opts: StreamOptions): Promise<StreamHandle> {
   const quota = await import("./llm/quota.js");
   const budget = await import("./llm/budget.js");
+  const keys = await import("./keys/store.js");
+  const provider = id.slice(0, id.indexOf(":"));
+  // Quota probes always check the server's own key; everything else uses the caller's key when they brought one.
+  let user: ReturnType<typeof keys.activeUserKey> = null;
+  if (!opts.probe) {
+    await keys.primeUserKeys();
+    user = keys.activeUserKey(provider);
+  }
+  if (user) {
+    // The user's own key: the server's quota blocks, minute/day budgets and reservations do not apply to it.
+    const handle = await openStream(id, messages, { ...opts, apiKey: user.key });
+    return { tokens: watchUserKey(user.userId, provider, handle.tokens), usage: handle.usage, keySource: "user" };
+  }
   if (!opts.probe) quota.quotaGuard(id);
   // Proactive: a call that would not fit the model's minute/day budget is skipped before it costs a 429.
   const need = budget.estimateRequestTokens(messages, opts.maxTokens);
@@ -93,7 +108,26 @@ export async function streamModel(id: string, messages: Message[], opts: StreamO
     reservation.settle(0);
     throw e;
   }
-  return { tokens: watchQuota(id, handle.tokens, quota, () => settleFrom(reservation, handle.usage)), usage: handle.usage };
+  return { tokens: watchQuota(id, handle.tokens, quota, () => settleFrom(reservation, handle.usage)), usage: handle.usage, keySource: "server" };
+}
+
+/**
+ * A call on the user's key: failures are tagged as the user's (so server cooldowns and
+ * quota blocks stay untouched) and a rejected or out-of-credit key is recorded on the key itself.
+ */
+async function* watchUserKey(userId: string, provider: string, tokens: AsyncGenerator<string>): AsyncGenerator<string> {
+  const [{ classifyError }, keys] = await Promise.all([import("./llm/quota.js"), import("./keys/store.js")]);
+  try {
+    yield* tokens;
+  } catch (e) {
+    if (e instanceof UpstreamError) {
+      e.userKey = true;
+      const c = classifyError(`${provider}:user`, e);
+      if (c.kind === "quota_exhausted") keys.noteKeyFailure(userId, provider, "quota");
+      else if (c.kind === "auth" && (e.status === 401 || e.status === 403)) keys.noteKeyFailure(userId, provider, "invalid");
+    }
+    throw e;
+  }
 }
 
 /** Replaces the estimate with what the provider reported (prompt + completion), when it did. */
@@ -129,8 +163,8 @@ async function openStream(id: string, messages: Message[], opts: StreamOptions):
     const { config } = await import("./config.js");
     const target =
       provider === "groq"
-        ? { provider, url: "https://api.groq.com/openai/v1/chat/completions", apiKey: config.groqApiKey }
-        : { provider, url: "https://integrate.api.nvidia.com/v1/chat/completions", apiKey: config.nvidiaApiKey };
+        ? { provider, url: "https://api.groq.com/openai/v1/chat/completions", apiKey: opts.apiKey ?? config.groqApiKey }
+        : { provider, url: "https://integrate.api.nvidia.com/v1/chat/completions", apiKey: opts.apiKey ?? config.nvidiaApiKey };
     return streamOpenAiCompatible(target, model, provider === "groq" ? capImages(messages, 5) : ONE_IMAGE_MODELS.test(model) ? keepLatestImage(messages) : messages, opts);
   }
   throw new UpstreamError(400, `Unknown provider in ${id}`);

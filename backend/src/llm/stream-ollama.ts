@@ -5,10 +5,11 @@ import { UpstreamError, type Message, type StreamHandle, type StreamOptions, typ
 export function streamOllama(model: string, messages: Message[], opts: StreamOptions): StreamHandle {
   const usage: StreamUsage = { promptTokens: null, completionTokens: null, finishReason: null, completed: false };
   async function* tokens(): AsyncGenerator<string> {
-    if (!config.ollamaApiKey) throw new UpstreamError(401, "OLLAMA_API_KEY missing");
+    const apiKey = opts.apiKey ?? config.ollamaApiKey;
+    if (!apiKey) throw new UpstreamError(401, "OLLAMA_API_KEY missing");
     const lines = postLines(
       "https://ollama.com/api/chat",
-      { Authorization: `Bearer ${config.ollamaApiKey}` },
+      { Authorization: `Bearer ${apiKey}` },
       { model, messages: messages.map((m) => (m.images?.length ? { role: m.role, content: m.content, images: m.images } : { role: m.role, content: m.content })), stream: true, ...(opts.maxTokens ? { options: { num_predict: opts.maxTokens } } : {}) },
       opts,
     );

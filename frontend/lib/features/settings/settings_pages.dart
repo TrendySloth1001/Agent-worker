@@ -1,3 +1,5 @@
+import '../../core/constants/api_keys.dart';
+import 'api_keys/api_keys_screen.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -837,8 +839,25 @@ List<SettingsSection> _modelSections(AppScope scope) {
       ),
     ],
   );
+  // Bring-your-own provider keys: every signed-in user.
+  final yourKeys = SettingsSection(
+    title: ApiKeysStrings.settingsLabel,
+    items: [
+      SettingItem(
+        id: 'api-keys',
+        title: ApiKeysStrings.settingsLabel,
+        keywords: ApiKeysStrings.settingsKeywords,
+        build: (c) => SettingsTile(
+          icon: ApiKeysIcons.key,
+          title: ApiKeysStrings.settingsLabel,
+          summary: ApiKeysStrings.settingsHelp,
+          onTap: () => ApiKeysScreen.open(c),
+        ),
+      ),
+    ],
+  );
   // Quotas, tokens, providers and service keys are developer details.
-  if (!isOwner()) return [modelPick];
+  if (!isOwner()) return [modelPick, yourKeys];
   final c = scope.usage;
   final u = c.usage;
   const usageWords =
@@ -903,6 +922,7 @@ List<SettingsSection> _modelSections(AppScope scope) {
   ];
   return [
     modelPick,
+    yourKeys,
     SettingsSection(
       title: SettingsStrings.secUsage,
       items: [

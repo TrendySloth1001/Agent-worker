@@ -63,6 +63,7 @@ model User {
   memories         Memory[]
   conversationChunks ConversationChunk[]
   appInstall       AppInstall?
+  apiKeys          UserApiKey[]
 
   @@map("users")
 }
@@ -344,11 +345,14 @@ model UsageEvent {
   userId           String?  @map("user_id") @db.Uuid
   requestId        String?  @map("request_id")
   conversationId   String?  @map("conversation_id")
+  /// Whose provider key paid for the call: "user" (their own key) or "server". NULL on old rows = server.
+  keySource        String?  @map("key_source")
 
   @@index([provider, ts])
   @@index([ts])
   @@index([model, ts])
   @@index([userId, ts])
+  @@index([userId, keySource, ts])
   @@map("usage_events")
 }
 
@@ -637,4 +641,24 @@ model AppInstall {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("app_installs")
+}
+
+/// A provider API key the user brought themselves (Settings → Your API keys). key_enc is
+/// AES-256-GCM via connections/crypto.ts; only the last 4 characters are kept readable.
+model UserApiKey {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  provider      String
+  label         String    @default("")
+  keyEnc        String    @map("key_enc")
+  keyHint       String    @map("key_hint")
+  /// untested | valid | invalid | quota
+  status        String    @default("untested")
+  lastCheckedAt DateTime? @map("last_checked_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, provider])
+  @@map("user_api_keys")
 }
