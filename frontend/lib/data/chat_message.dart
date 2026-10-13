@@ -44,6 +44,13 @@ class ChatMessage {
   /// Backend phase while waiting: queued, searching, retrieving, generating.
   String? status;
 
+  /// What the wait line shows while no text has arrived (not saved):
+  /// the models the server may try, the attempt of the current model and
+  /// which kind of event came last (`start`, `status`, `model`).
+  List<String> waitCandidates = const [];
+  int waitAttempt = 1;
+  String? waitLast;
+
   /// Latest non-fatal notice from the server.
   String? notice;
 

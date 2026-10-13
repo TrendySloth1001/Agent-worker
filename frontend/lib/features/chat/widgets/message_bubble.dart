@@ -8,6 +8,7 @@ import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/constants/docs.dart';
+import '../../../core/constants/wait_copy.dart';
 import '../../../core/constants/share_export.dart';
 import '../../../core/constants/smart_toggles.dart';
 import '../../../core/haptics.dart';
@@ -21,7 +22,6 @@ import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
 import '../../docs/doc_card.dart';
 import '../../docs/doc_text.dart';
 import '../chat_actions.dart';
-import '../stream_retry.dart';
 import '../share/reply_share.dart';
 import 'markdown/app_markdown.dart';
 import 'message_sheet.dart';
@@ -32,7 +32,10 @@ import 'memory_chip.dart';
 import 'suggest_prompt.dart';
 import 'source_chips.dart';
 import 'suggestion_chips.dart';
-import 'thinking_indicator.dart';
+import 'model_info_sheet.dart';
+import 'wait_status_line.dart';
+import '../wait_status.dart';
+import '../../../data/ai_model.dart';
 import 'round_table_header.dart';
 import 'round_table_panel.dart';
 import '../../../core/constants/app_icons.dart';
@@ -51,9 +54,13 @@ class MessageBubble extends StatelessWidget {
     this.onNotify,
     this.onEdit,
     this.onTurnIntoDoc,
+    this.models = const [],
   });
 
   final ChatMessage message;
+
+  /// The server's model list: friendly names and "about" details.
+  final List<AiModel> models;
 
   /// Live Round Table: answer with one model instead / notify when done.
   final VoidCallback? onAnswerFast;
@@ -133,14 +140,15 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  String _statusLabel() => switch (message.status) {
-    'queued' => AppStrings.queued,
-    'searching' => AppStrings.searchingWeb,
-    'retrieving' => AppStrings.retrieving,
-    'round_table' => TableStrings.status,
-    StreamRetry.reconnectingPhase => AppStrings.reconnectingStatus,
-    _ => AppStrings.thinking,
-  };
+  String? _friendlyName(String id) =>
+      models.where((m) => m.id == id).firstOrNull?.name;
+
+  void _openModelInfo(BuildContext context, String id) => showModelInfoSheet(
+    context,
+    modelId: id,
+    name: _friendlyName(id) ?? label,
+    model: models.where((m) => m.id == id).firstOrNull,
+  );
 
   Widget _assistant(BuildContext context) {
     final p = context.palette;
@@ -148,43 +156,57 @@ class MessageBubble extends StatelessWidget {
     final waiting = message.isStreaming && message.content.isEmpty;
     final doc = message.isError ? null : DocLink.fromMeta(message.meta);
     if (doc != null) return _docReply(context, doc);
+    final tableWaiting = waiting && message.tablePhase != null;
+    final plainWaiting = waiting && !tableWaiting && !message.isError;
+    final id = message.modelId;
+    final canOpenInfo = !message.isError && !waiting && id != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            // Who answered: the model family's real logo; a plain dot for
-            // errors and replies with no known model.
-            if (message.isError || message.modelId == null)
-              SizedBox.square(
-                dimension: AppSizes.modelLabelLogo,
-                child: Center(
-                  child: Container(
-                    width: AppSizes.dot,
-                    height: AppSizes.dot,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      // An interrupted answer is not an error: no red dot.
-                      color: message.isError && !message.interrupted
-                          ? p.accent
-                          : p.textPrimary,
+        if (!plainWaiting)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: canOpenInfo ? () => _openModelInfo(context, id) : null,
+            onLongPress: canOpenInfo ? () => _openModelInfo(context, id) : null,
+            child: Semantics(
+              button: canOpenInfo,
+              label: canOpenInfo ? ModelInfoStrings.openHint : null,
+              child: Row(
+                children: [
+                  // Who answered: the model family's real logo; a plain dot for
+                  // errors and replies with no known model.
+                  if (message.isError || message.modelId == null)
+                    SizedBox.square(
+                      dimension: AppSizes.modelLabelLogo,
+                      child: Center(
+                        child: Container(
+                          width: AppSizes.dot,
+                          height: AppSizes.dot,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            // An interrupted answer is not an error: no red dot.
+                            color: message.isError && !message.interrupted
+                                ? p.accent
+                                : p.textPrimary,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ModelLogo(message.modelId, size: AppSizes.modelLabelLogo),
+                  const SizedBox(width: AppSpacing.sm),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.meta,
                     ),
                   ),
-                ),
-              )
-            else
-              ModelLogo(message.modelId, size: AppSizes.modelLabelLogo),
-            const SizedBox(width: AppSpacing.sm),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: t.meta,
+                ],
               ),
             ),
-          ],
-        ),
+          ),
         const SizedBox(height: AppSpacing.sm),
         if (message.table != null && !message.isError) ...[
           RoundTableHeader(table: message.table!, citations: message.citations),
@@ -209,7 +231,10 @@ class MessageBubble extends StatelessWidget {
             onNotify: onNotify,
           )
         else if (waiting)
-          ThinkingIndicator(label: _statusLabel())
+          WaitStatusLine(
+            step: resolveWait(message, nameOf: _friendlyName),
+            prompt: question,
+          )
         else
           GestureDetector(
             onLongPress:
@@ -271,10 +296,7 @@ class MessageBubble extends StatelessWidget {
               content: message.content,
             ).isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
-          OpenInChips(
-            citations: message.citations,
-            content: message.content,
-          ),
+          OpenInChips(citations: message.citations, content: message.content),
         ],
         if (!message.isStreaming && !message.isError)
           SuggestionChips(message: message),

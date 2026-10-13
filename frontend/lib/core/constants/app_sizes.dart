@@ -85,6 +85,13 @@ abstract final class AppSizes {
   static const sendButton = 34.0;
   static const thinkingDot = 5.0;
 
+  /// Model info sheet: header logo and label column.
+  static const modelSheetLogo = 32.0;
+  static const modelSheetLabelWidth = 88.0;
+
+  /// Candidate logos that are not the highlighted one while a model is picked.
+  static const waitDimmedOpacity = 0.35;
+
   // Floating UI
   /// Chat top bar: its icon buttons and the new-chat pill share this height.
   static const topBar = 40.0;
@@ -198,6 +205,11 @@ abstract final class AppDurations {
   static const usageTimeout = Duration(seconds: 10);
   static const streamIdle = Duration(seconds: 45);
   static const streamTick = Duration(milliseconds: 600);
+
+  /// How often the wait line moves to its next candidate logo, and how many
+  /// of those beats pass before the playful word changes.
+  static const waitCycle = Duration(milliseconds: 800);
+  static const waitWordBeats = 3;
   static const kbRequestTimeout = Duration(seconds: 20);
   static const diagramTimeout = Duration(seconds: 10);
 
