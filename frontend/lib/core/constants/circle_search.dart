@@ -39,6 +39,22 @@ abstract final class CircleStrings {
   static const cropFailed = "Couldn't cut that out — try again";
   static const screenFailed = "Couldn't read the screen — try again";
   static const nothingSelected = 'Draw around something to search it.';
+
+  /// The capture of the selection is blank (a protected window, or the
+  /// screenshot came back empty): shown in place of the thumbnail.
+  static const blankCapture = 'No picture';
+  static const blankCaptureNote =
+      "Couldn't capture this area. The app may block screenshots.";
+
+  /// Said as the answer when nothing readable could be taken from the selection.
+  static const blankAnswer =
+      "I couldn't capture anything readable from that selection. The app may "
+      'block screenshots; try selecting text you can copy, or share it as text.';
+
+  /// A question about a blank capture that still has its text.
+  static String textOnly(String prompt, String text) =>
+      '$prompt\n\nThe selection could not be captured as a picture. This is '
+      'its text:\n"""\n$text\n"""';
 }
 
 abstract final class CircleSizes {
@@ -74,6 +90,14 @@ abstract final class CircleSizes {
 
   /// The thumbnail of the selection in the answer sheet.
   static const thumb = 56.0;
+
+  /// A cut-out is blank when no sampled pixel is brighter than this (0-255);
+  /// sampled on a grid this many points a side.
+  static const blankLuma = 10;
+  static const blankGrid = 24;
+
+  /// Fade under the chips where the answer scrolls out of view.
+  static const topFade = 20.0;
 
   /// JPEG quality of the cut-out sent to the model.
   static const jpegQuality = 88;

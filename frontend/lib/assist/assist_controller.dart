@@ -348,6 +348,10 @@ class AssistController extends ChangeNotifier {
   /// The on-screen text inside the selection.
   String circleText = '';
 
+  /// The cut-out shows nothing (black): a protected window or an empty
+  /// capture. It is never sent to the model.
+  bool circleBlank = false;
+
   ScreenContext? _circleScreen;
   FileInfo? _circleFile;
 
@@ -374,6 +378,7 @@ class AssistController extends ChangeNotifier {
     circleView = null;
     circleCrop = null;
     circleText = '';
+    circleBlank = false;
     _askWithSelection = false;
     _sendingSelection = false;
   }
@@ -478,12 +483,14 @@ class AssistController extends ChangeNotifier {
     notifyListeners();
     String? path;
     var text = '';
+    var blank = false;
     try {
       path = await cropper
           .crop(image, selection, view)
           .timeout(CircleConfig.cropTimeout);
       if (path != null) {
         text = selectionText(selection, view: view, screen: ctx);
+        blank = await cropper.isBlank(path);
       }
     } catch (e) {
       debugPrint('circle: cutting out the selection failed: $e');
@@ -500,6 +507,7 @@ class AssistController extends ChangeNotifier {
     }
     circleCrop = path;
     circleText = text;
+    circleBlank = blank;
     _circleFile = null;
     circle = CirclePhase.results;
     notifyListeners();
@@ -535,6 +543,7 @@ class AssistController extends ChangeNotifier {
   Future<bool> _askCircle(String prompt, {bool web = false}) async {
     if (sending) stop();
     if (web) webMode = WebMode.on;
+    if (circleBlank) return _askBlank(prompt);
     final file = _circleFile;
     if (file != null) return _ask(prompt, [file]);
     final crop = circleCrop;
@@ -549,12 +558,29 @@ class AssistController extends ChangeNotifier {
     return send(prompt);
   }
 
+  /// A selection whose picture is blank: with its text the question goes
+  /// as text only; without, the answer says plainly nothing was captured
+  /// (the model is never shown a black square to invent from).
+  Future<bool> _askBlank(String prompt) async {
+    if (circleText.isNotEmpty) {
+      return send(CircleStrings.textOnly(prompt, circleText));
+    }
+    Haptics.error();
+    messages.add(
+      ChatMessage(role: Role.assistant, content: CircleStrings.blankAnswer),
+    );
+    notifyListeners();
+    return false;
+  }
+
   /// The screen for a request: in circle mode the app and address with only
   /// the text inside the selection.
   Map<String, Object>? get _screenJson {
     final c = _circleScreen;
     if (circle != CirclePhase.off && c != null) {
-      return _sendingSelection ? c.withText(circleText).toJson() : null;
+      return _sendingSelection
+          ? c.withText(circleText).toJson(selection: true)
+          : null;
     }
     return screen?.toJson();
   }

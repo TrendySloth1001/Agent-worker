@@ -12,6 +12,10 @@ import 'circle_geometry.dart';
 abstract class CircleCropper {
   /// The cut-out's path, or null when it could not be made.
   Future<String?> crop(String screenshot, Rect selection, Size view);
+
+  /// Whether the cut-out at [path] shows nothing (black): a protected window
+  /// or an empty capture. Such a picture must not reach the model.
+  Future<bool> isBlank(String path) async => false;
 }
 
 class JpegCircleCropper implements CircleCropper {
@@ -39,6 +43,16 @@ class JpegCircleCropper implements CircleCropper {
     } catch (e) {
       debugPrint('circle: crop isolate failed: $e');
       return null;
+    }
+  }
+
+  @override
+  Future<bool> isBlank(String path) async {
+    try {
+      return await compute(isBlankImage, path);
+    } catch (e) {
+      debugPrint('circle: blank check failed: $e');
+      return false;
     }
   }
 }
@@ -84,4 +98,25 @@ Future<String?> cropJpeg(CropJob job) async {
     job.target,
   ).writeAsBytes(img.encodeJpg(cut, quality: CircleSizes.jpegQuality));
   return job.target;
+}
+
+/// True when the image at [path] is (nearly) all black: sampled on a grid, no
+/// pixel is brighter than [CircleSizes.blankLuma].
+Future<bool> isBlankImage(String path) async {
+  final image = img.decodeImage(await File(path).readAsBytes());
+  if (image == null) return false;
+  const n = CircleSizes.blankGrid;
+  for (var j = 0; j < n; j++) {
+    for (var i = 0; i < n; i++) {
+      final x = ((i + 0.5) * image.width / n).floor().clamp(0, image.width - 1);
+      final y = ((j + 0.5) * image.height / n).floor().clamp(
+        0,
+        image.height - 1,
+      );
+      final px = image.getPixel(x, y);
+      final luma = 0.299 * px.r + 0.587 * px.g + 0.114 * px.b;
+      if (luma > CircleSizes.blankLuma) return false;
+    }
+  }
+  return true;
 }

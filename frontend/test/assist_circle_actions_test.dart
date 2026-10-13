@@ -38,6 +38,9 @@ import 'assist_overlay_test.dart'
 // ---- fakes -------------------------------------------------------------------
 
 class FakeCropper implements CircleCropper {
+  @override
+  Future<bool> isBlank(String path) async => false;
+
   FakeCropper(this.path);
   final String path;
   final calls = <(Rect, Size)>[];
@@ -49,8 +52,19 @@ class FakeCropper implements CircleCropper {
   }
 }
 
+/// A cropper whose cut-out is a blank (black) capture.
+class BlankCropper extends FakeCropper {
+  BlankCropper(super.path);
+
+  @override
+  Future<bool> isBlank(String path) async => true;
+}
+
 /// A cropper whose cut-outs finish only when the test says so.
 class GatedCropper implements CircleCropper {
+  @override
+  Future<bool> isBlank(String path) async => false;
+
   final calls = <Rect>[];
   final gates = <Completer<String?>>[];
 
@@ -65,6 +79,9 @@ class GatedCropper implements CircleCropper {
 
 /// A cropper that fails like a broken decode in the isolate.
 class ThrowingCropper implements CircleCropper {
+  @override
+  Future<bool> isBlank(String path) async => false;
+
   int calls = 0;
 
   @override
@@ -477,6 +494,8 @@ void main() {
     expect(req.history.last.content, CircleStrings.searchPrompt);
     expect(req.history.last.attachments.single.name, CircleConfig.cropName);
     expect(req.screen![AssistWire.text], 'Air Runner 90\n129.00');
+    // The server is told the picture is the crop, not the whole screen.
+    expect(req.screen![AssistWire.selection], true);
     expect(h.chat.flags.single.web, WebMode.on);
     h.chat.live!
       ..add(const DeltaEvent('A shoe.'))
@@ -495,6 +514,110 @@ void main() {
       CircleStrings.explainPrompt,
     );
     h.controller.stop();
+  });
+
+  testWidgets('every quick action sends the current selection crop', (
+    tester,
+  ) async {
+    final h = await open(tester, dark: false);
+    await h.controller.startCircle();
+    await h.controller.circleSelect(
+      const Rect.fromLTRB(10, 400, 300, 480),
+      const Size(412, 915),
+    );
+    await _settle(tester);
+    h.chat.live!
+      ..add(const DeltaEvent('A shoe.'))
+      ..add(const DoneEvent());
+    await _settle(tester);
+    await tester.tap(find.text(CircleStrings.translate));
+    await _settle(tester);
+    final last = h.chat.requests.last;
+    expect(last.history.last.content, contains('Translate the text'));
+    expect(last.history.last.attachments.single.name, CircleConfig.cropName);
+    expect(last.screen![AssistWire.selection], true);
+    expect(last.screen![AssistWire.text], 'Air Runner 90\n129.00');
+    h.controller.stop();
+  });
+
+  testWidgets(
+    'a blank capture shows a placeholder and never reaches the model',
+    (tester) async {
+      final h = await open(
+        tester,
+        dark: false,
+        cropper: BlankCropper(cropPath),
+      );
+      await h.controller.startCircle();
+      await h.controller.circleSelect(
+        const Rect.fromLTRB(10, 600, 300, 700),
+        const Size(412, 915),
+      );
+      await _settle(tester);
+      expect(h.controller.circleBlank, true);
+      expect(h.chat.requests, isEmpty);
+      expect(find.text(CircleStrings.blankCaptureNote), findsWidgets);
+      expect(find.text(CircleStrings.blankAnswer), findsOneWidget);
+      // A quick action says so again instead of inventing a translation.
+      await tester.tap(find.text(CircleStrings.translate));
+      await _settle(tester);
+      expect(h.chat.requests, isEmpty);
+    },
+  );
+
+  testWidgets('a blank capture with text asks about the text only', (
+    tester,
+  ) async {
+    final h = await open(tester, dark: false, cropper: BlankCropper(cropPath));
+    await h.controller.startCircle();
+    await h.controller.circleSelect(
+      const Rect.fromLTRB(10, 400, 300, 480),
+      const Size(412, 915),
+    );
+    await _settle(tester);
+    await tester.tap(find.text(CircleStrings.explain));
+    await _settle(tester);
+    final q = h.chat.requests.last.history.last;
+    expect(q.attachments, isEmpty);
+    expect(q.content, contains('Air Runner 90'));
+    expect(q.content, contains(CircleStrings.explainPrompt));
+    h.controller.stop();
+  });
+
+  testWidgets('chip row starts fully visible and the thumbnail is clean', (
+    tester,
+  ) async {
+    final h = await open(tester, dark: false);
+    await h.controller.startCircle();
+    await h.controller.circleSelect(
+      const Rect.fromLTRB(10, 400, 300, 480),
+      const Size(412, 915),
+    );
+    await _settle(tester);
+    final chip = tester.getTopLeft(find.text(CircleStrings.search));
+    expect(chip.dx, greaterThanOrEqualTo(AssistSizes.sheetPadding));
+    expect(find.byType(Image), findsWidgets);
+    h.controller.stop();
+  });
+
+  test('a black picture counts as blank, a real one does not', () async {
+    final dir = Directory.systemTemp.createTempSync('blank');
+    final black = File('${dir.path}/black.jpg')
+      ..writeAsBytesSync(
+        img.encodeJpg(img.Image(width: 80, height: 80), quality: 80),
+      );
+    expect(await isBlankImage(black.path), true);
+    final real = File('${dir.path}/real.jpg')
+      ..writeAsBytesSync(
+        img.encodeJpg(
+          img.fill(
+            img.Image(width: 80, height: 80),
+            color: img.ColorRgb8(200, 30, 30),
+          ),
+          quality: 80,
+        ),
+      );
+    expect(await isBlankImage(real.path), false);
   });
 
   // The real-phone bug: circled album art, then "Open on youtube music".

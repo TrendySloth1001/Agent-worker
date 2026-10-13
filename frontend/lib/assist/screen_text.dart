@@ -120,12 +120,13 @@ class ScreenContext {
   );
 
   /// The `screen` field of a chat request.
-  Map<String, Object> toJson() => {
+  Map<String, Object> toJson({bool selection = false}) => {
     AssistWire.text: text,
     AssistWire.app: ?app,
     AssistWire.package: ?package,
     AssistWire.url: ?url,
     if (hasScreenshot) AssistWire.screenshot: true,
+    if (selection) AssistWire.selection: true,
   };
 }
 

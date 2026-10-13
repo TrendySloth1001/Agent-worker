@@ -27,3 +27,16 @@ test("screenshot only still tells the model about the image", () => {
 test("schema caps the text", () => {
   assert.equal(screenSchema.safeParse({ text: "x".repeat(8001) }).success, false);
 });
+
+test("a circled selection says the image is a crop and forbids inventing text", () => {
+  const m = screenContextMessage(screenSchema.parse({ package: "com.x", screenshot: true, selection: true }))!;
+  assert.match(m, /crop of the part of the screen the user circled/);
+  assert.match(m, /never invent text/);
+  assert.doesNotMatch(m, /screenshot of the screen is attached/);
+});
+
+test("selection text is labelled as inside the selection", () => {
+  const m = screenContextMessage(screenSchema.parse({ text: "Air Runner 90", selection: true }))!;
+  assert.match(m, /Text inside the selection/);
+  assert.equal(screenSchema.parse({}).selection, false);
+});
