@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher shortcut "Ask sparky": the dot spark, white on Nothing red. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/shortcut_background"
+        android:pathData="M24,0a24,24 0,1 0,0 48a24,24 0,1 0,0 -48z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24,13a2.5,2.5 0,1 0,0 5a2.5,2.5 0,1 0,0 -5zM24,21.5a2.5,2.5 0,1 0,0 5a2.5,2.5 0,1 0,0 -5zM24,30a2.5,2.5 0,1 0,0 5a2.5,2.5 0,1 0,0 -5zM15.5,21.5a2.5,2.5 0,1 0,0 5a2.5,2.5 0,1 0,0 -5zM32.5,21.5a2.5,2.5 0,1 0,0 5a2.5,2.5 0,1 0,0 -5z" />
+</vector>

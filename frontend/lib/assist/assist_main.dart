@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_scope.dart';
 import '../core/constants/app_config.dart';
 import '../core/constants/app_strings.dart';
+import '../core/notify/notification_center.dart';
 import '../core/theme/app_theme.dart';
 import '../data/chat_api.dart';
 import '../data/conversations_api.dart';
@@ -18,6 +19,7 @@ import '../features/settings/usage_controller.dart';
 import 'assist_bridge.dart';
 import 'assist_controller.dart';
 import 'assist_overlay.dart';
+import 'share_payload.dart';
 
 /// Entry point of the assistant overlay's engine (AssistEngine.kt starts it
 /// ahead of time, so the overlay is ready when the power button is held).
@@ -26,6 +28,8 @@ import 'assist_overlay.dart';
 Future<void> assistMain() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsController.load();
+  // Reminders from action cards follow the app's notification choices.
+  NotificationCenter.instance.attach(settings.notify);
   unawaited(AuthController.instance.restore());
   runApp(AssistApp(bridge: ChannelAssistBridge(), settings: settings));
 }
@@ -52,11 +56,13 @@ class _AssistAppState extends State<AssistApp> {
   );
   late final VoiceController _voice = createVoiceController(_settings);
   StreamSubscription<AssistShow>? _shows;
+  StreamSubscription<SharedPayload>? _shared;
 
   @override
   void initState() {
     super.initState();
     _shows = widget.bridge.shows.listen(_onShow);
+    _shared = widget.bridge.shared.listen(_controller.receiveShared);
     widget.bridge.ready().then((first) {
       if (first != null && mounted) _onShow(first);
     });
@@ -80,11 +86,13 @@ class _AssistAppState extends State<AssistApp> {
     if (!mounted) return;
     setState(() => _settings = next);
     _controller.settings = next;
+    NotificationCenter.instance.attach(next.notify);
   }
 
   @override
   void dispose() {
     _shows?.cancel();
+    _shared?.cancel();
     _controller.dispose();
     _voice.dispose();
     _usage.dispose();

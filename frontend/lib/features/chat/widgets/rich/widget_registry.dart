@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/constants/connections.dart';
+import '../../../../core/constants/device_actions.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/constants/widget_kit.dart';
 import '../../../../core/constants/widget_structure.dart';
+import '../../../actions/action_card.dart';
 import '../github/github_commits_card.dart';
 import '../github/github_compare_card.dart';
 import '../github/github_connect_card.dart';
@@ -101,6 +103,11 @@ final Map<String, _Entry> _entries = {
   ConnectLang.githubConnect: _Entry(
     ConnectStrings.cardTitle,
     (s) => GithubConnectCard(source: s),
+  ),
+  // A device action the model proposed: runs only after Confirm.
+  DeviceActionWire.fence: _Entry(
+    DeviceActionStrings.cardLabel,
+    (s) => ActionCard(source: s),
   ),
 };
 

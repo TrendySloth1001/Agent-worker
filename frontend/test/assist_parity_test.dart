@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app/assist/assist_bridge.dart';
 import 'package:app/assist/assist_controller.dart';
 import 'package:app/assist/screen_text.dart';
+import 'package:app/assist/share_payload.dart';
 import 'package:app/core/constants/smart_toggles.dart';
 import 'package:app/core/haptics.dart';
 import 'package:app/data/ai_model.dart';
@@ -48,6 +49,7 @@ class _Recorder extends ChatApi {
     Set<SuggestKind> suppressSuggest = const {},
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
+    Map<String, Object>? deviceActions,
   }) async* {
     calls.add({
       'history': [for (final m in history) '${m.role.name}:${m.content}'],
@@ -98,6 +100,10 @@ class _Conversations extends ConversationsApi {
 class _Bridge implements AssistBridge {
   @override
   Stream<AssistShow> get shows => const Stream.empty();
+  @override
+  Stream<SharedPayload> get shared => const Stream.empty();
+  @override
+  Stream<void> get hides => const Stream.empty();
   @override
   Future<AssistShow?> ready() async => null;
   @override

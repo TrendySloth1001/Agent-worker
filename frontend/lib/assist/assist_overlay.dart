@@ -1,9 +1,15 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_icons.dart';
 import '../core/constants/app_sizes.dart';
 import '../core/constants/app_strings.dart';
 import '../core/constants/assist.dart';
+import '../core/constants/circle_search.dart';
+import '../core/constants/live_voice.dart';
 import '../core/constants/docs.dart';
 import '../core/constants/smart_toggles.dart';
 import '../core/constants/voice.dart';
@@ -19,6 +25,7 @@ import '../features/auth/auth_controller.dart';
 import '../features/auth/widgets/auth_widgets.dart' show Wordmark;
 import '../features/chat/attach_picker.dart';
 import '../features/chat/voice/voice_controller.dart';
+import '../features/chat/voice/voice_locale.dart';
 import '../features/chat/voice/voice_permission.dart';
 import '../features/chat/voice/voice_strip.dart';
 import '../features/chat/widgets/attachment_bar.dart';
@@ -32,6 +39,10 @@ import '../features/chat/widgets/source_chips.dart';
 import '../features/chat/widgets/suggest_prompt.dart';
 import '../features/chat/widgets/thinking_indicator.dart';
 import 'assist_controller.dart';
+import 'circle/circle_view.dart';
+import 'live/live_bar.dart';
+import 'live/live_voice.dart';
+import 'live/speaker.dart';
 
 /// Card colour of the overlay: white on light, raised black on dark.
 Color _card(AppPalette p) => p.isDark ? p.surfaceRaised : p.surface;
@@ -48,6 +59,8 @@ class AssistOverlay extends StatefulWidget {
     this.voice,
     this.auth,
     this.attach,
+    this.speaker,
+    this.circleImage,
   });
 
   final AssistController controller;
@@ -59,6 +72,12 @@ class AssistOverlay extends StatefulWidget {
   /// The "+" (the app's picker: photos, camera, video, documents).
   final AttachPicker? attach;
 
+  /// Live mode's voice; defaults to Android TextToSpeech.
+  final Speaker? speaker;
+
+  /// The frozen screenshot's image (a file on the phone; tests pass bytes).
+  final ImageProvider Function(String path)? circleImage;
+
   @override
   State<AssistOverlay> createState() => _AssistOverlayState();
 }
@@ -69,6 +88,9 @@ class _AssistOverlayState extends State<AssistOverlay> {
   late final _attachPicker = widget.attach ?? AttachPicker();
   String _voiceBase = '';
   bool _talking = false;
+  LiveVoice? _live;
+  StreamSubscription<void>? _hides;
+  int _answers = 0;
 
   AssistController get _c => widget.controller;
   AuthController get _auth => widget.auth ?? AuthController.instance;
@@ -77,6 +99,11 @@ class _AssistOverlayState extends State<AssistOverlay> {
   void initState() {
     super.initState();
     _c.addListener(_onController);
+    // Out of sight (Home, another app): stop talking and listening.
+    _hides = _c.bridge.hides.listen((_) {
+      _live?.end();
+      widget.voice?.cancel();
+    });
   }
 
   @override
@@ -88,13 +115,31 @@ class _AssistOverlayState extends State<AssistOverlay> {
     }
   }
 
-  /// A new opening clears what was typed.
+  /// A new opening clears what was typed; shared text fills the field;
+  /// Live hears about the answer growing.
   void _onController() {
-    if (_c.generation == _seen) return;
-    _seen = _c.generation;
-    _field.clear();
-    _focus.unfocus();
-    widget.voice?.cancel();
+    if (_c.generation != _seen) {
+      _seen = _c.generation;
+      _field.clear();
+      _focus.unfocus();
+      _live?.end();
+      widget.voice?.cancel();
+    }
+    final draft = _c.takeDraft();
+    if (draft != null) {
+      _field.value = TextEditingValue(
+        text: draft,
+        selection: TextSelection.collapsed(offset: draft.length),
+      );
+    }
+    final live = _live;
+    if (live != null && live.active) {
+      final n = _c.messages.length;
+      if (n != _answers || _c.streaming || !_c.sending) {
+        _answers = n;
+        live.answerChanged();
+      }
+    }
   }
 
   late int _seen = _c.generation;
@@ -102,6 +147,8 @@ class _AssistOverlayState extends State<AssistOverlay> {
   @override
   void dispose() {
     _c.removeListener(_onController);
+    _hides?.cancel();
+    _live?.dispose();
     _field.dispose();
     _focus.dispose();
     super.dispose();
@@ -157,6 +204,41 @@ class _AssistOverlayState extends State<AssistOverlay> {
     return false;
   }
 
+  // ---- live ----------------------------------------------------------------
+
+  /// Live: talk, sparky answers aloud, and listens again.
+  Future<void> _startLive() async {
+    final voice = widget.voice;
+    if (voice == null || voice.active || (_live?.active ?? false)) return;
+    Haptics.tap();
+    if (!await _micRationale(voice) || !mounted) return;
+    _focus.unfocus();
+    final live = _live ??= LiveVoice(
+      ears: VoiceEars(voice),
+      speaker: widget.speaker ?? ChannelSpeaker(),
+      ask: (text) => _c.send(text),
+      answer: () => _c.liveAnswer,
+      onInterrupt: _c.stop,
+      lang: () => voiceLocaleFor(
+        language: _c.settings.language,
+        device: PlatformDispatcher.instance.locale.toLanguageTag(),
+      ),
+    )..addListener(_onLive);
+    _answers = _c.messages.length;
+    live.start();
+  }
+
+  void _onLive() {
+    final live = _live;
+    if (live != null && !live.active && live.endedBySilence) {
+      live.endedBySilence = false;
+      _c.say(LiveStrings.ended);
+    }
+    if (mounted) setState(() {});
+  }
+
+  bool get _liveOn => _live?.active ?? false;
+
   void _onVoiceText(String text, bool isFinal) {
     if (!mounted) return;
     final all = _voiceBase + text;
@@ -200,19 +282,41 @@ class _AssistOverlayState extends State<AssistOverlay> {
         body: Stack(
           children: [
             Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _c.close,
-                child: ListenableBuilder(
-                  listenable: Listenable.merge([_c, ?widget.voice]),
-                  builder: (context, _) => DotMatrixBackdrop(
-                    mode: _backdropMode(),
-                    wave: _c.generation,
-                    level: widget.voice == null
-                        ? null
-                        : () => widget.voice!.level,
-                  ),
-                ),
+              child: ListenableBuilder(
+                listenable: _c,
+                builder: (context, _) {
+                  final image = _c.circleImage;
+                  if (_c.circle != CirclePhase.off && image != null) {
+                    return CircleView(
+                      image:
+                          widget.circleImage?.call(image) ??
+                          CircleView.fileImage(image),
+                      selection: _c.circleSelection,
+                      selecting: _c.circle != CirclePhase.results,
+                      busy: _c.circle == CirclePhase.cropping,
+                      onSelect: (rect, view) {
+                        _focus.unfocus();
+                        _c.circleSelect(rect, view);
+                      },
+                      onCancel: _c.cancelCircle,
+                      onEmpty: () => _c.say(CircleStrings.nothingSelected),
+                    );
+                  }
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _c.close,
+                    child: ListenableBuilder(
+                      listenable: Listenable.merge([_c, ?widget.voice]),
+                      builder: (context, _) => DotMatrixBackdrop(
+                        mode: _backdropMode(),
+                        wave: _c.generation,
+                        level: widget.voice == null
+                            ? null
+                            : () => widget.voice!.level,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             Align(
@@ -221,7 +325,7 @@ class _AssistOverlayState extends State<AssistOverlay> {
                 child: Padding(
                   padding: const EdgeInsets.all(AssistSizes.edge),
                   child: ListenableBuilder(
-                    listenable: Listenable.merge([_c, _auth]),
+                    listenable: Listenable.merge([_c, _auth, ?_live]),
                     builder: (context, _) => _content(context),
                   ),
                 ),
@@ -237,6 +341,7 @@ class _AssistOverlayState extends State<AssistOverlay> {
   /// streaming, else a calm idle glow.
   DotMatrixMode _backdropMode() {
     if (widget.voice?.listening ?? false) return DotMatrixMode.listening;
+    if (_live?.phase == LivePhase.speaking) return DotMatrixMode.streaming;
     final last = _c.messages.lastOrNull;
     if (_c.waitingUploads ||
         (_c.streaming && last!.content.isEmpty) ||
@@ -253,6 +358,13 @@ class _AssistOverlayState extends State<AssistOverlay> {
     }
     final maxSheet =
         MediaQuery.sizeOf(context).height * AssistSizes.sheetMaxFactor;
+    // Drawing on the frozen screen: only a note, if any, at the bottom.
+    if (_c.circle == CirclePhase.selecting ||
+        _c.circle == CirclePhase.cropping) {
+      return _c.notice == null
+          ? const SizedBox.shrink()
+          : _Notice(controller: _c);
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -261,7 +373,11 @@ class _AssistOverlayState extends State<AssistOverlay> {
           Flexible(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxSheet),
-              child: _AnswerSheet(controller: _c),
+              child: _AnswerSheet(
+                controller: _c,
+                onAsk: () => _focus.requestFocus(),
+                circleThumb: widget.circleImage,
+              ),
             ),
           ),
         if (_c.hasThread) const SizedBox(height: AppSpacing.sm),
@@ -277,10 +393,21 @@ class _AssistOverlayState extends State<AssistOverlay> {
           _Notice(controller: _c),
           const SizedBox(height: AppSpacing.sm),
         ],
-        if (_c.canShare && !_c.hasThread) ...[
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: _ShareChip(controller: _c),
+        if (_c.canShare && !_c.hasThread && !_liveOn) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            child: Row(
+              children: [
+                _ShareChip(controller: _c),
+                const SizedBox(width: AppSpacing.sm),
+                _ScreenChip(
+                  icon: CircleIcons.circle,
+                  label: CircleStrings.chip,
+                  onTap: _c.startCircle,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
         ],
@@ -292,7 +419,8 @@ class _AssistOverlayState extends State<AssistOverlay> {
   Widget _pill(BuildContext context) {
     final p = context.palette;
     final voice = widget.voice;
-    return Container(
+    final live = _live;
+    final pill = Container(
       constraints: const BoxConstraints(minHeight: AssistSizes.pillHeight),
       padding: const EdgeInsets.all(AssistSizes.pillPadding),
       decoration: BoxDecoration(
@@ -301,40 +429,45 @@ class _AssistOverlayState extends State<AssistOverlay> {
         border: Border.all(color: p.border, width: AppBorder.thin),
         boxShadow: _shadow(p.isDark),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AttachmentBar(controller: _c.attachments),
-          if (voice != null)
-            VoiceStrip(
-              voice: voice,
-              holding: false,
-              slidingOut: false,
-              onCancel: _cancelVoice,
-              onRetry: _startVoice,
-              onSettings: voice.openSettings,
+      child: live != null && live.active
+          ? LiveBar(live: live, level: () => voice?.level ?? 0)
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AttachmentBar(controller: _c.attachments),
+                if (voice != null)
+                  VoiceStrip(
+                    voice: voice,
+                    holding: false,
+                    slidingOut: false,
+                    onCancel: _cancelVoice,
+                    onRetry: _startVoice,
+                    onSettings: voice.openSettings,
+                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _RoundButton(
+                      icon: AppIcons.add,
+                      label: AssistStrings.attach,
+                      fill: _tonal(p),
+                      color: p.textPrimary,
+                      onTap: _attach,
+                    ),
+                    Expanded(child: _input(context)),
+                    if (voice != null) _micButton(context, voice),
+                    const SizedBox(width: AppSpacing.xs),
+                    _trailing(context),
+                  ],
+                ),
+                _Toggles(controller: _c),
+              ],
             ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _RoundButton(
-                icon: AppIcons.add,
-                label: AssistStrings.attach,
-                fill: _tonal(p),
-                color: p.textPrimary,
-                onTap: _attach,
-              ),
-              Expanded(child: _input(context)),
-              if (voice != null) _micButton(context, voice),
-              const SizedBox(width: AppSpacing.xs),
-              _trailing(context),
-            ],
-          ),
-          _Toggles(controller: _c),
-        ],
-      ),
     );
+    // Long-press the pill: Circle to search (when the screen can be used).
+    if (!_c.canCircle) return pill;
+    return GestureDetector(onLongPress: _c.startCircle, child: pill);
   }
 
   Widget _input(BuildContext context) {
@@ -406,12 +539,13 @@ class _AssistOverlayState extends State<AssistOverlay> {
       builder: (context, _) {
         final ready = _c.canSend(_field.text);
         if (!ready && widget.voice != null) {
+          final live = _c.settings.assistLive;
           return _RoundButton(
-            icon: AssistIcons.live,
-            label: AssistStrings.talk,
+            icon: live ? LiveIcons.live : AssistIcons.live,
+            label: live ? LiveStrings.start : AssistStrings.talk,
             fill: p.textPrimary,
             color: p.textInverse,
-            onTap: () => _startVoice(talk: true),
+            onTap: live ? _startLive : () => _startVoice(talk: true),
           );
         }
         return _RoundButton(
@@ -554,6 +688,55 @@ class _ShareChip extends StatelessWidget {
   }
 }
 
+/// A plain chip next to the screen chip ("Circle to search").
+class _ScreenChip extends StatelessWidget {
+  const _ScreenChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final AppIconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: AssistSizes.chipHeight,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: _card(p),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(color: p.border, width: AppBorder.thin),
+            boxShadow: _shadow(p.isDark),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(icon, size: AppIconSize.sm, color: p.accent),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                label,
+                style: context.text.bodySmall.copyWith(
+                  color: p.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// One line of help above the pill, optionally with a SETTINGS link.
 class _Notice extends StatelessWidget {
   const _Notice({required this.controller});
@@ -612,9 +795,17 @@ class _Notice extends StatelessWidget {
 /// The conversation of this opening, newest at the bottom, with the
 /// actions under the latest answer.
 class _AnswerSheet extends StatelessWidget {
-  const _AnswerSheet({required this.controller});
+  const _AnswerSheet({
+    required this.controller,
+    required this.onAsk,
+    this.circleThumb,
+  });
 
   final AssistController controller;
+
+  /// "Ask…" under a circle answer: focus the field.
+  final VoidCallback onAsk;
+  final ImageProvider Function(String path)? circleThumb;
 
   @override
   Widget build(BuildContext context) {
@@ -664,6 +855,8 @@ class _AnswerSheet extends StatelessWidget {
               ],
             ),
           ),
+          if (c.circle == CirclePhase.results && c.circleCrop != null)
+            _CircleHeader(controller: c, onAsk: onAsk, thumb: circleThumb),
           Flexible(
             child: SingleChildScrollView(
               // Anchored at the bottom: new text stays in view.
@@ -687,6 +880,158 @@ class _AnswerSheet extends StatelessWidget {
             ),
           ),
           if (c.lastAnswer != null && !c.streaming) _Actions(controller: c),
+        ],
+      ),
+    );
+  }
+}
+
+/// Above a circle answer: the cut-out, its text, and the quick chips
+/// (Search, Explain, Translate, Copy text, Ask…, Re-select).
+class _CircleHeader extends StatefulWidget {
+  const _CircleHeader({
+    required this.controller,
+    required this.onAsk,
+    this.thumb,
+  });
+
+  final AssistController controller;
+  final VoidCallback onAsk;
+  final ImageProvider Function(String path)? thumb;
+
+  @override
+  State<_CircleHeader> createState() => _CircleHeaderState();
+}
+
+class _CircleHeaderState extends State<_CircleHeader> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await widget.controller.circleQuick(CircleQuick.copy);
+    if (!mounted) return;
+    setState(() => _copied = true);
+    await Future<void>.delayed(AppDurations.copiedFeedback);
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final c = widget.controller;
+    final crop = c.circleCrop!;
+    final text = c.circleText.replaceAll('\n', ' · ');
+    const gap = SizedBox(width: AppSpacing.xs);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AssistSizes.sheetPadding,
+        AppSpacing.xs,
+        AssistSizes.sheetPadding,
+        AppSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                child: Container(
+                  width: CircleSizes.thumb,
+                  height: CircleSizes.thumb,
+                  decoration: BoxDecoration(
+                    color: _tonal(p),
+                    border: Border.all(color: p.accent, width: AppBorder.thick),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: Image(
+                    image: widget.thumb?.call(crop) ?? FileImage(File(crop)),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(CircleStrings.selection, style: context.text.caption),
+                    if (text.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                SmartChip(
+                  label: CircleStrings.search,
+                  icon: CircleIcons.search,
+                  active: false,
+                  height: AssistSizes.toggleHeight,
+                  onTap: () => c.circleQuick(CircleQuick.search),
+                ),
+                gap,
+                SmartChip(
+                  label: CircleStrings.explain,
+                  icon: CircleIcons.explain,
+                  active: false,
+                  height: AssistSizes.toggleHeight,
+                  onTap: () => c.circleQuick(CircleQuick.explain),
+                ),
+                gap,
+                SmartChip(
+                  label: CircleStrings.translate,
+                  icon: CircleIcons.translate,
+                  active: false,
+                  height: AssistSizes.toggleHeight,
+                  onTap: () => c.circleQuick(CircleQuick.translate),
+                ),
+                if (c.circleText.isNotEmpty) ...[
+                  gap,
+                  SmartChip(
+                    label: _copied
+                        ? CircleStrings.copiedText
+                        : CircleStrings.copyText,
+                    icon: _copied ? AppIcons.check : CircleIcons.copy,
+                    active: false,
+                    height: AssistSizes.toggleHeight,
+                    onTap: _copy,
+                  ),
+                ],
+                gap,
+                SmartChip(
+                  label: CircleStrings.ask,
+                  icon: CircleIcons.ask,
+                  active: false,
+                  height: AssistSizes.toggleHeight,
+                  onTap: () {
+                    c.circleQuick(CircleQuick.ask);
+                    widget.onAsk();
+                  },
+                ),
+                gap,
+                SmartChip(
+                  label: CircleStrings.reselect,
+                  icon: CircleIcons.reselect,
+                  active: false,
+                  height: AssistSizes.toggleHeight,
+                  onTap: c.startCircle,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -753,7 +1098,8 @@ String _attachLabel(ChatMessage m) {
   final screen = m.attachments.any(
     (a) => a.name == AssistConfig.screenshotName,
   );
-  return AssistStrings.attachLabel(n, screenshot: screen);
+  final selection = m.attachments.any((a) => a.name == CircleConfig.cropName);
+  return AssistStrings.attachLabel(n, screenshot: screen, selection: selection);
 }
 
 class _Answer extends StatelessWidget {

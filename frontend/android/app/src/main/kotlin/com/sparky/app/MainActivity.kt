@@ -17,6 +17,7 @@ import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.lifecycleScope
 import com.sparky.app.assist.AssistantSetup
+import com.sparky.app.assist.DeviceActions
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -127,6 +128,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(BrowsersHandler(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AssistantSetup.CHANNEL)
             .setMethodCallHandler(assistant)
+        // Action cards in the chat (alarm, event, dial...) run only on Confirm.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AssistProtocol.ACTIONS_CHANNEL)
+            .setMethodCallHandler(DeviceActions(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, authChannelName)
             .setMethodCallHandler { call, result -> handleAuth(call, result) }
     }

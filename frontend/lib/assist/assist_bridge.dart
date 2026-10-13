@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../core/constants/assist.dart';
 import 'screen_text.dart';
+import 'share_payload.dart';
 
 /// How the overlay was opened.
 enum AssistSource {
@@ -14,29 +15,49 @@ enum AssistSource {
   assist,
 
   /// Settings > Assistant > Try it.
-  tryIt;
+  tryIt,
+
+  /// The Quick Settings tile.
+  tile,
+
+  /// "Ask sparky" in another app's share sheet.
+  share,
+
+  /// A launcher shortcut (long-press the sparky icon).
+  shortcut;
 
   static AssistSource parse(Object? raw) => switch (raw) {
     AssistChannel.sourceSession => session,
     AssistChannel.sourceTry => tryIt,
+    AssistChannel.sourceTile => tile,
+    AssistChannel.sourceShare => share,
+    AssistChannel.sourceShortcut => shortcut,
     _ => assist,
   };
 }
 
 /// One opening of the overlay.
 class AssistShow {
-  const AssistShow({required this.source, this.screen = false});
+  const AssistShow({
+    required this.source,
+    this.screen = false,
+    this.circle = false,
+  });
 
   final AssistSource source;
 
   /// The system will deliver screen context for this session.
   final bool screen;
 
+  /// Opened to "Circle to search" (the launcher shortcut).
+  final bool circle;
+
   static AssistShow? parse(Object? raw) {
     if (raw is! Map) return null;
     return AssistShow(
       source: AssistSource.parse(raw[AssistChannel.source]),
       screen: raw[AssistChannel.screen] == true,
+      circle: raw[AssistChannel.mode] == AssistChannel.modeCircle,
     );
   }
 }
@@ -46,6 +67,12 @@ class AssistShow {
 abstract class AssistBridge {
   /// Each new opening of the overlay (the first one included).
   Stream<AssistShow> get shows;
+
+  /// Content shared to "Ask sparky", after the opening it belongs to.
+  Stream<SharedPayload> get shared;
+
+  /// The overlay went out of sight (Home, another app in front).
+  Stream<void> get hides;
 
   /// Starts listening; returns a show that came before Dart was ready.
   Future<AssistShow?> ready();
@@ -72,17 +99,32 @@ abstract class AssistBridge {
 class ChannelAssistBridge implements AssistBridge {
   ChannelAssistBridge() {
     _channel.setMethodCallHandler((call) async {
-      if (call.method != AssistChannel.onShow) return;
-      final show = AssistShow.parse(call.arguments);
-      if (show != null) _shows.add(show);
+      switch (call.method) {
+        case AssistChannel.onShow:
+          final show = AssistShow.parse(call.arguments);
+          if (show != null) _shows.add(show);
+        case AssistChannel.onShared:
+          final payload = SharedPayload.parse(call.arguments);
+          if (payload != null) _shared.add(payload);
+        case AssistChannel.onHide:
+          _hides.add(null);
+      }
     });
   }
 
   static const _channel = MethodChannel(AssistConfig.channel);
   final _shows = StreamController<AssistShow>.broadcast();
+  final _shared = StreamController<SharedPayload>.broadcast();
+  final _hides = StreamController<void>.broadcast();
 
   @override
   Stream<AssistShow> get shows => _shows.stream;
+
+  @override
+  Stream<SharedPayload> get shared => _shared.stream;
+
+  @override
+  Stream<void> get hides => _hides.stream;
 
   @override
   Future<AssistShow?> ready() async {

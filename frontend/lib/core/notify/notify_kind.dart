@@ -224,6 +224,20 @@ enum NotifyKind {
       vibrate: false,
     ),
     defaultOn: false,
+  ),
+
+  /// "Remind me to…" from a confirmed action card (chat or overlay).
+  reminder(
+    key: 'reminder',
+    label: NotifyCopy.reminderLabel,
+    help: NotifyCopy.reminderHelp,
+    group: NotifyGroup.chat,
+    channel: NotifyChannel(
+      id: 'assistant_reminder',
+      name: NotifyCopy.reminderChannel,
+      description: NotifyCopy.reminderChannelInfo,
+      importance: Importance.high,
+    ),
   );
 
   const NotifyKind({

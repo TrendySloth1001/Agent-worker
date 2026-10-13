@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static launcher shortcuts (long-press the sparky icon). Both open the
+     assistant overlay; "Circle to search" needs the screen, so from here it
+     explains how to start it from the assistant (hold the power button). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="ask"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_ask"
+        android:shortcutShortLabel="@string/shortcut_ask_short"
+        android:shortcutLongLabel="@string/shortcut_ask_long"
+        android:shortcutDisabledMessage="@string/shortcut_disabled">
+        <intent
+            android:action="com.sparky.app.action.ASK"
+            android:targetPackage="com.sparky.app"
+            android:targetClass="com.sparky.app.assist.AssistActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="circle"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_circle"
+        android:shortcutShortLabel="@string/shortcut_circle_short"
+        android:shortcutLongLabel="@string/shortcut_circle_long"
+        android:shortcutDisabledMessage="@string/shortcut_disabled">
+        <intent
+            android:action="com.sparky.app.action.CIRCLE"
+            android:targetPackage="com.sparky.app"
+            android:targetClass="com.sparky.app.assist.AssistActivity" />
+    </shortcut>
+</shortcuts>

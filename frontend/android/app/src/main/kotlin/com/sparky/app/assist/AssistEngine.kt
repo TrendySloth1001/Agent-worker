@@ -29,11 +29,15 @@ object AssistEngine {
     private const val ENTRYPOINT = "assistMain"
 
     private var channel: MethodChannel? = null
+    private var speech: TtsBridge? = null
     private var dartReady = false
     private var activity: WeakReference<AssistActivity>? = null
 
     /** The latest show request, until Dart has seen it. */
     private var lastShow: Map<String, Any?>? = null
+
+    /** Shared content that arrived before Dart was listening. */
+    private var pendingShared: Map<String, Any?>? = null
     private var showAt = 0L
     private var latencyLogged = true
 
@@ -50,6 +54,12 @@ object AssistEngine {
         // Links in answers open like they do in the app.
         MethodChannel(engine.dartExecutor.binaryMessenger, AssistProtocol.BROWSERS_CHANNEL)
             .setMethodCallHandler(BrowsersHandler(app))
+        // Confirmed action cards; one that opens another app closes the overlay.
+        MethodChannel(engine.dartExecutor.binaryMessenger, AssistProtocol.ACTIONS_CHANNEL)
+            .setMethodCallHandler(DeviceActions(app) { closeOverlay() })
+        // Live mode reads answers aloud.
+        val tts = MethodChannel(engine.dartExecutor.binaryMessenger, AssistProtocol.TTS_CHANNEL)
+        speech = TtsBridge(app, tts).also { tts.setMethodCallHandler(it) }
         val bundle = FlutterInjector.instance().flutterLoader().findAppBundlePath()
         engine.dartExecutor.executeDartEntrypoint(
             DartExecutor.DartEntrypoint(bundle, LIBRARY, ENTRYPOINT),
@@ -72,16 +82,38 @@ object AssistEngine {
      * VOICE_COMMAND intent) or try (the app's "Try it"). [t0] is when the
      * request started (uptime ms), for the latency log.
      */
-    fun show(source: String, t0: Long, screen: Boolean) {
+    fun show(source: String, t0: Long, screen: Boolean, mode: String? = null) {
         showAt = t0
         latencyLogged = false
+        pendingShared = null
         val args = mapOf<String, Any?>(
             AssistProtocol.SOURCE to source,
             AssistProtocol.T0 to t0,
             AssistProtocol.SCREEN to screen,
+            AssistProtocol.MODE to mode,
         )
         lastShow = args
         if (dartReady) channel?.invokeMethod(AssistProtocol.ON_SHOW, args)
+    }
+
+    /** What was shared to "Ask sparky", once it is copied (after [show]). */
+    fun shared(payload: Map<String, Any?>) {
+        if (dartReady) {
+            channel?.invokeMethod(AssistProtocol.ON_SHARED, payload)
+        } else {
+            pendingShared = payload
+        }
+    }
+
+    /** The overlay is no longer visible: silence Live mode at once. */
+    fun hidden() {
+        speech?.stopNow()
+        if (dartReady) channel?.invokeMethod(AssistProtocol.ON_HIDE, null)
+    }
+
+    private fun closeOverlay() {
+        activity?.get()?.close()
+        SparkySession.finishCurrent()
     }
 
     /** The first frame of the overlay reached the screen. */
@@ -97,6 +129,10 @@ object AssistEngine {
             AssistProtocol.READY -> {
                 dartReady = true
                 result.success(lastShow)
+                pendingShared?.let { payload ->
+                    pendingShared = null
+                    channel?.invokeMethod(AssistProtocol.ON_SHARED, payload)
+                }
             }
             // Dart drew the pill for this show (its own clock, for the log).
             AssistProtocol.SHOWN -> {

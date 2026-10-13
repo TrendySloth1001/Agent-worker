@@ -3,4 +3,6 @@
     <color name="ic_launcher_background">#0A0A0A</color>
     <!-- Window behind Flutter until its first frame: AppColors.lightBackground. -->
     <color name="app_background">#F4F4F2</color>
+    <!-- Launcher shortcut circles: AppColors.red (Nothing red). -->
+    <color name="shortcut_background">#D71921</color>
 </resources>

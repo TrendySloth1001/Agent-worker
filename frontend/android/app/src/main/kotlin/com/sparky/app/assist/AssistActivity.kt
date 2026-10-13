@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
@@ -49,13 +51,31 @@ class AssistActivity : FlutterActivity() {
 
     /** Tells Dart a new overlay starts (resets it) before the view draws. */
     private fun announce(intent: Intent) {
-        val source = intent.getStringExtra(EXTRA_SOURCE) ?: AssistProtocol.SOURCE_ASSIST
         val t0 = intent.getLongExtra(EXTRA_T0, SystemClock.uptimeMillis())
+        val source = when {
+            ShareIntake.isShare(intent) -> AssistProtocol.SOURCE_SHARE
+            intent.action == AssistProtocol.ACTION_ASK || intent.action == AssistProtocol.ACTION_CIRCLE ->
+                AssistProtocol.SOURCE_SHORTCUT
+            else -> intent.getStringExtra(EXTRA_SOURCE) ?: AssistProtocol.SOURCE_ASSIST
+        }
         val screen = intent.getBooleanExtra(EXTRA_SCREEN, false)
-        // Opened without a session (ASSIST intent, Try it): no screen to share.
+        val mode = if (intent.action == AssistProtocol.ACTION_CIRCLE) AssistProtocol.MODE_CIRCLE else null
+        // Opened without a session (ASSIST intent, Try it, tile, share,
+        // shortcut): no screen to share.
         if (source != AssistProtocol.SOURCE_SESSION) ScreenContextStore.clear(this)
-        AssistEngine.show(source, t0, screen)
+        AssistEngine.show(source, t0, screen, mode)
+        if (source == AssistProtocol.SOURCE_SHARE) {
+            // Copied while this activity holds the read grant, off the main thread.
+            val app = applicationContext
+            val shared = Intent(intent)
+            Thread {
+                val payload = ShareIntake.read(app, shared)
+                main.post { AssistEngine.shared(payload) }
+            }.start()
+        }
     }
+
+    private val main = Handler(Looper.getMainLooper())
 
     override fun getCachedEngineId(): String = AssistEngine.ENGINE_ID
 
@@ -76,6 +96,11 @@ class AssistActivity : FlutterActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         close()
+    }
+
+    override fun onStop() {
+        AssistEngine.hidden()
+        super.onStop()
     }
 
     fun close() {
