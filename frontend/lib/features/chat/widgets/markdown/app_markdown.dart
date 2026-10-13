@@ -15,6 +15,7 @@ import 'code_block_builder.dart';
 import 'emoji_icons.dart';
 import 'inline_icon.dart';
 import 'inline_image.dart';
+import 'link_chip_syntax.dart';
 import 'md_blocks.dart';
 import 'md_callout.dart';
 import 'md_heading.dart';
@@ -248,11 +249,15 @@ class _Flow extends StatelessWidget {
         IconSyntax(),
         HighlightSyntax(),
         StrayImageSyntax(),
+        BareUrlSyntax(),
       ],
       builders: {
         'pre': CodeBlockBuilder(streaming: streaming),
         'icon': IconBuilder(),
         'mark': HighlightBuilder(),
+        BareUrlSyntax.tag: BareUrlBuilder(
+          onTap: (context, url) => openUrl(context, url),
+        ),
         'math': MathBuilder(inTable: cell != null),
         'cite': CitationBuilder(
           citations: citations,

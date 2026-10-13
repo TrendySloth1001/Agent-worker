@@ -32,7 +32,7 @@ export class TagStream {
       this.pending = s.slice(cut);
       s = s.slice(0, cut);
     } else {
-      const ws = /[ \t]+$/.exec(s);
+      const ws = /[ \t\u00a0\u202f]+$/.exec(s);
       if (ws) {
         this.pending = ws[0];
         s = s.slice(0, ws.index);
@@ -40,7 +40,7 @@ export class TagStream {
     }
     // A kept tag already went out: the space before the punctuation that follows it in a later chunk goes too
     // ("Spotify [W2]" then " ." reads "Spotify [W2].").
-    if (this.afterTag) s = s.replace(/^[ \t]+(?=[.,;:!?)])/, "");
+    if (this.afterTag) s = s.replace(/^[ \t\u00a0\u202f]+(?=[.,;:!?)])/, "");
     const out = normalize(s, this.valid);
     if (out) this.afterTag = /\[[KWDGC]\d+\]$/.test(out);
     if (out.trim()) this.emitted = true;
@@ -52,7 +52,7 @@ export class TagStream {
     // A dangling partial "<thi" that never became a tag is ordinary text; an open <think> is dropped.
     const tail = this.inThink ? "" : this.thinkTail;
     let held = this.pending + tail;
-    if (this.afterTag) held = held.replace(/^[ \t]+(?=[.,;:!?)])/, "");
+    if (this.afterTag) held = held.replace(/^[ \t\u00a0\u202f]+(?=[.,;:!?)])/, "");
     const rest = normalize(held, this.valid);
     this.pending = "";
     this.thinkTail = "";
@@ -130,8 +130,8 @@ const DROPPED = "\u0000";
 export function tidyCitations(s: string, valid?: ReadonlySet<string>): string {
   if (!s.includes("[")) return s;
   return s
-    .replace(/[ \t]*\[([KWDGC]\d+)\](?!\()/g, (m, id: string) => (valid && !valid.has(id) ? DROPPED : m))
-    .replace(/\u0000+[ \t]*(?=[.,;:!?)])/g, "")
+    .replace(/[ \t\u00a0\u202f]*\[([KWDGC]\d+)\](?!\()/g, (m, id: string) => (valid && !valid.has(id) ? DROPPED : m))
+    .replace(/\u0000+[ \t\u00a0\u202f]*(?=[.,;:!?)])/g, "")
     .replace(/\u0000+/g, "")
-    .replace(/(\[[KWDGC]\d+\])[ \t]+(?=[.,;:!?)])/g, "$1");
+    .replace(/(\[[KWDGC]\d+\])[ \t\u00a0\u202f]+(?=[.,;:!?)])/g, "$1");
 }

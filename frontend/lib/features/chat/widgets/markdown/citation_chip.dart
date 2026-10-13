@@ -139,8 +139,13 @@ const _keptMark = '\u0001';
 /// No space before punctuation where tags were: a dropped tag takes the
 /// space before it ("India [W9]." reads "India.", not "India ."), and a
 /// kept chip sits right against the punctuation after it.
-final _droppedBeforePunct = RegExp('[ \\t]*$_droppedMark+[ \\t]*(?=[.,;:!?)])');
-final _keptBeforePunct = RegExp('$_keptMark[ \\t]+(?=[.,;:!?)])');
+final _droppedBeforePunct = RegExp(
+  '[$_hspace]*$_droppedMark+[$_hspace]*(?=[.,;:!?)])',
+);
+final _keptBeforePunct = RegExp('$_keptMark[$_hspace]+(?=[.,;:!?)])');
+
+/// Spaces between a tag and punctuation, no-break ones included.
+const _hspace = ' \\t\\u00a0\\u202f';
 final _marks = RegExp('[$_droppedMark$_keptMark]');
 
 @visibleForTesting
@@ -258,7 +263,8 @@ class CitationChip extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: AppSizes.citeMinTap),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          // Room before the chip only: punctuation after it sits right against it.
+          padding: const EdgeInsets.only(left: AppSpacing.xxs),
           child: Center(
             widthFactor: 1,
             child: Container(

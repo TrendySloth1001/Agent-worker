@@ -232,5 +232,6 @@ test("a kept tag and the punctuation after it in a later chunk: no space between
   assert.equal(run(["on Spotify [W1]", " ."]), "on Spotify [W1].");
   assert.equal(run(["on Spotify [W1] ", "."]), "on Spotify [W1].");
   assert.equal(run(["on Spotify [W1]", " ", "."]), "on Spotify [W1].");
+  assert.equal(run(["on Spotify [W1]", "\u00a0."]), "on Spotify [W1].");
   assert.equal(run(["on Spotify [W1]", " and more."]), "on Spotify [W1] and more.");
 });
