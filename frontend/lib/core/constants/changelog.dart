@@ -117,6 +117,41 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.9.1',
+      date: '14 Oct 2026',
+      headline: 'Smoother, everywhere',
+      items: [
+        (
+          kind: ChangeKind.improved,
+          title: 'Friendlier sheets',
+          detail:
+              'Every confirm and choice now slides up from the bottom, with '
+              'a little illustration to go with it.',
+          icon: HugeIcons.strokeRoundedSquareArrowUp02,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'A glowing profile',
+          detail:
+              'Your photo gets a soft dot aura that lights up when you '
+              'touch it. Tap the photo to change it.',
+          icon: HugeIcons.strokeRoundedUserCircle,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'Keyboard behaves',
+          detail: 'Tap anywhere outside a text box to put the keyboard away.',
+          icon: HugeIcons.strokeRoundedKeyboard,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'One buzz, not two',
+          detail: 'Opening the sidebar from the menu vibrates just once.',
+          icon: HugeIcons.strokeRoundedSmartPhone01,
+        ),
+      ],
+    ),
+    (
       version: '1.9.0',
       date: '14 Oct 2026',
       headline: 'Yours, and locked',

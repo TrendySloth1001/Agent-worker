@@ -14,7 +14,7 @@ abstract final class AppIcons {
   static const add = HugeIcons.strokeRoundedAdd01;
   static const remove = HugeIcons.strokeRoundedRemove01;
   static const newChat = HugeIcons.strokeRoundedBubbleChatAdd;
-  static const settings = HugeIcons.strokeRoundedSlidersHorizontal;
+  static const settings = HugeIcons.strokeRoundedSettings01;
   static const history = HugeIcons.strokeRoundedClock01;
   static const menu = HugeIcons.strokeRoundedSidebarLeft;
   static const knowledge = HugeIcons.strokeRoundedBookOpen01;

@@ -66,8 +66,9 @@ List<String> _recordHaptics(WidgetTester tester) {
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
     SystemChannels.platform,
     (call) async {
-      if (call.method == 'HapticFeedback.vibrate')
+      if (call.method == 'HapticFeedback.vibrate') {
         calls.add('${call.arguments}');
+      }
       return null;
     },
   );
