@@ -11,6 +11,7 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/model_logo.dart';
 import '../../../data/telemetry.dart';
 import '../format.dart';
 import 'telemetry_charts.dart';
@@ -847,6 +848,13 @@ class ModelRow extends StatelessWidget {
           children: [
             Row(
               children: [
+                ModelLogo(
+                  group.key,
+                  provider: group.providers.firstOrNull,
+                  size: TelemetrySizes.providerIcon,
+                  color: context.palette.textSecondary,
+                ),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

@@ -9,6 +9,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/model_logo.dart';
 import '../../../data/chat_event.dart';
 import '../../../data/chat_message.dart';
 
@@ -421,6 +422,8 @@ class TableSeatRow extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  ModelLogo(seat.model, size: TableSizes.seatLogo),
+                  const SizedBox(width: AppSpacing.xs),
                   Flexible(
                     child: Text(
                       seat.name.toUpperCase(),

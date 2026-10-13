@@ -12,6 +12,7 @@ import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/appear.dart';
 import '../../../core/widgets/copy_action.dart';
+import '../../../core/widgets/model_logo.dart';
 import '../../../data/chat_message.dart';
 import '../../../data/doc_models.dart';
 import '../../../core/widgets/m3_kit_extras.dart' show sentenceCase;
@@ -147,16 +148,33 @@ class MessageBubble extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              width: AppSizes.dot,
-              height: AppSizes.dot,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: message.isError ? p.accent : p.textPrimary,
+            // Who answered: the model family's real logo; a plain dot for
+            // errors and replies with no known model.
+            if (message.isError || message.modelId == null)
+              SizedBox.square(
+                dimension: AppSizes.modelLabelLogo,
+                child: Center(
+                  child: Container(
+                    width: AppSizes.dot,
+                    height: AppSizes.dot,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: message.isError ? p.accent : p.textPrimary,
+                    ),
+                  ),
+                ),
+              )
+            else
+              ModelLogo(message.modelId, size: AppSizes.modelLabelLogo),
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.meta,
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(label, style: t.meta),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),

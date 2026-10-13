@@ -174,12 +174,15 @@ abstract final class AppIcons {
   };
 
   /// Icon for a model provider id.
-  static AppIconData provider(String id) => switch (id) {
+  static AppIconData provider(String id) => knownProvider(id) ?? models;
+
+  /// A model provider's logo, or null when [id] is not a provider.
+  static AppIconData? knownProvider(String id) => switch (id) {
     'groq' => groq,
     'nvidia' => nvidia,
     'ollama' => ollama,
     'openrouter' => openrouter,
-    _ => models,
+    _ => null,
   };
 }
 
