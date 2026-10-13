@@ -39,11 +39,10 @@ abstract final class ConnectorCodes {
 }
 
 abstract final class ConnectorStrings {
-  static const notSetUp = 'Not set up on this server';
+  static const notSetUp = 'Not available yet';
   static const notSetUpTag = 'UNAVAILABLE';
   static const notSetUpBody =
-      'The server running sparky has not been set up for this app yet. '
-      'Ask whoever runs it to add the app’s keys.';
+      "This app isn't available on sparky yet. Check back later.";
   static const connected = 'CONNECTED';
   static const reconnectTag = 'RECONNECT';
   static const openingBrowser = 'Opening…';
@@ -144,8 +143,7 @@ abstract final class DriveStrings {
       : n == 1
       ? '1 file added.'
       : '$n files added.';
-  static const pickerUnavailable =
-      'The Drive picker is not set up on this server yet.';
+  static const pickerUnavailable = "Picking Drive files isn't available yet.";
   static const saveToDrive = 'Save to Drive';
   static const saved = 'Saved to Google Drive.';
   static const kindDoc = 'Google Doc';

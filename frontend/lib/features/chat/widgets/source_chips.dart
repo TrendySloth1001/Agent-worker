@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/constants/error_copy.dart';
 import '../../../core/app_scope.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
@@ -174,7 +175,7 @@ class _SourceCardState extends State<_SourceCard> {
         _toast(AppStrings.savedToKnowledge);
       } else {
         Haptics.error();
-        _toast(e.message);
+        _toast(friendlyException(e));
       }
     }
   }

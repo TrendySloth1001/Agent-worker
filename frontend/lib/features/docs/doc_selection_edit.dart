@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/docs.dart';
 import '../../core/haptics.dart';
@@ -136,8 +137,10 @@ class _PreviewState extends State<_Preview> {
       Haptics.error();
       setState(
         () => _error = e is ApiException && e.status == 422
-            ? e.message
-            : (e is ApiException ? e.message : DocStrings.previewFailed),
+            ? friendlyException(e)
+            : (e is ApiException
+                  ? friendlyException(e)
+                  : DocStrings.previewFailed),
       );
     }
   }

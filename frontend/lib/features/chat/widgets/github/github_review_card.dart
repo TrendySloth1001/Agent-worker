@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -176,7 +177,9 @@ class GithubReviewView extends StatelessWidget {
         if (snap.hasError) {
           final e = snap.error;
           return GhError(
-            message: e is ApiException ? e.message : GithubStrings.loadFailed,
+            message: e is ApiException
+                ? friendlyException(e)
+                : GithubStrings.loadFailed,
             onRetry: onRetry,
           );
         }

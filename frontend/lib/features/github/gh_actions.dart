@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/github_detail.dart';
 import '../../core/constants/widget_github.dart';
 import '../../core/haptics.dart';
@@ -96,9 +97,9 @@ void openGhCommit(
 /// The user-facing text of a failed GitHub call.
 String ghErrorText(Object e) {
   if (e is GhApiException && e.rateLimited) {
-    return e.message.isNotEmpty ? e.message : GhDetailStrings.rateLimited;
+    return safeOr(e.message, GhDetailStrings.rateLimited);
   }
-  if (e is ApiException && e.message.isNotEmpty) return e.message;
+  if (e is ApiException) return friendlyException(e);
   return GhDetailStrings.actionFailed;
 }
 

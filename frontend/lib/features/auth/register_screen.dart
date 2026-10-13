@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/auth_constants.dart';
 import '../../core/haptics.dart';
@@ -70,7 +71,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) setState(() => _formError = e.message);
+      if (mounted) setState(() => _formError = friendlyException(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

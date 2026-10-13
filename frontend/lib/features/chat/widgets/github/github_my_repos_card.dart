@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -256,7 +257,9 @@ class _GhMyReposState extends State<GhMyRepos> {
         return GithubConnectPanel(paper: context.palette.codeBackground);
       }
       return GhError(
-        message: e is ApiException ? e.message : GithubStrings.loadFailed,
+        message: e is ApiException
+            ? friendlyException(e)
+            : GithubStrings.loadFailed,
         onRetry: () => _load(false),
       );
     }

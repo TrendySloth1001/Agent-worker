@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_files.dart';
 import '../../core/notify/job_watch.dart';
 import '../../data/chat_api.dart';
@@ -134,7 +135,7 @@ class AttachmentsController extends ChangeNotifier {
         .catchError((Object e) {
           if (a.cancel.cancelled) return;
           a.state = PendingState.failed;
-          a.error = e is ApiException ? e.message : null;
+          a.error = e is ApiException ? friendlyException(e) : null;
           notifyListeners();
         });
   }

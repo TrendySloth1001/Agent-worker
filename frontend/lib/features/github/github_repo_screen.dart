@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/apps.dart';
@@ -257,7 +258,7 @@ class _GithubRepoScreenState extends State<GithubRepoScreen>
         M3Empty(
           icon: GithubHubIcons.repo,
           title: GithubHubStrings.loadFailed,
-          hint: e is ApiException ? e.message : null,
+          hint: e is ApiException ? friendlyException(e) : null,
           action: FilledButton.tonal(
             onPressed: _load,
             child: const Text(GithubHubStrings.retry),

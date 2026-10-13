@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/constants/error_copy.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/auth_constants.dart';
 import '../../../core/constants/sso_constants.dart';
@@ -107,7 +108,7 @@ class _SsoSectionState extends State<SsoSection> {
       Haptics.received();
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _error = friendlyException(e));
     } finally {
       if (mounted) setState(() => _google = false);
     }

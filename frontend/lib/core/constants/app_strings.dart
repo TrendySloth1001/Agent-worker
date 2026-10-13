@@ -37,7 +37,8 @@ abstract final class AppStrings {
 
   // Errors
   static const errorGeneric = 'Something went wrong. Try again.';
-  static const errorNetwork = 'No connection to server.';
+  static const errorNetwork =
+      "Can't reach sparky — check your connection and try again.";
   static const retry = 'RETRY';
 
   // Chat features
@@ -148,9 +149,8 @@ abstract final class AppStrings {
   static const copyLink = 'LINK COPIED';
   static const copySource = 'COPY SOURCE';
   static const mermaidLabel = 'MERMAID';
-  static const noticeFallback = 'Switched to another model.';
   static const stoppedByUser = 'STOPPED';
-  static const errorTimeout = 'The server stopped responding.';
+  static const errorTimeout = 'That took too long — try again.';
   static const errorInterrupted = 'The reply was interrupted.';
   static const cantOpenLink = 'Could not open link.';
 
@@ -238,7 +238,7 @@ abstract final class AppStrings {
   static const staleData = 'SHOWING LAST KNOWN DATA';
   static const serverOffline = 'SERVER OFFLINE';
   static const serverOfflineHint =
-      'Cannot reach the backend. Check the URL and your network.';
+      "Can't reach sparky right now. Check your connection.";
   static const keyLabel = 'KEY';
   static const keyNotSet = 'NOT SET';
   static const keyNotSetHint =

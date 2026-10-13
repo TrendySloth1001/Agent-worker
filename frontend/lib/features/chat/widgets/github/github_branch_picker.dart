@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/constants/error_copy.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/theme/app_palette.dart';
@@ -275,7 +276,9 @@ class _BranchPickerState extends State<_BranchPicker> {
     final e = _error;
     if (e != null && _items.isEmpty) {
       return GhError(
-        message: e is ApiException ? e.message : GithubStrings.loadFailed,
+        message: e is ApiException
+            ? friendlyException(e)
+            : GithubStrings.loadFailed,
         onRetry: () => _load(reset: true),
       );
     }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/notify/job_watch.dart';
@@ -87,8 +88,9 @@ class KnowledgeController extends ChangeNotifier {
     }
   }
 
-  String _message(Object error) =>
-      error is ApiException ? error.message : AppStrings.errorGeneric;
+  String _message(Object error) => error is ApiException
+      ? friendlyException(error)
+      : AppStrings.errorGeneric;
 
   void _notify() {
     if (!_disposed) notifyListeners();

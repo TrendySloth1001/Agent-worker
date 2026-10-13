@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/constants/error_copy.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/auth_constants.dart';
@@ -76,7 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
       await _auth.updateUser(info.user);
     } on ApiException catch (e) {
-      if (mounted) setState(() => _loadError = e.message);
+      if (mounted) setState(() => _loadError = friendlyException(e));
     }
   }
 
@@ -144,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await _loadMethods();
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(friendlyException(e));
     } finally {
       if (mounted) setState(() => _methodBusy = null);
     }
@@ -169,14 +170,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               SsoStrings.keep,
-              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.textSecondary),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               SsoStrings.unlink,
-              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.error),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge!.copyWith(color: p.error),
             ),
           ),
         ],
@@ -192,7 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await _loadMethods();
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(friendlyException(e));
     } finally {
       if (mounted) setState(() => _methodBusy = null);
     }
@@ -224,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) _snack(ProfileStrings.saved);
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(friendlyException(e));
     }
   }
 
@@ -306,7 +311,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(friendlyException(e));
     }
   }
 
@@ -328,14 +333,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               ProfileStrings.cancel,
-              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.textSecondary),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               ProfileStrings.logOut,
-              style: Theme.of(context).textTheme.labelLarge!.copyWith(color: p.textPrimary),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge!.copyWith(color: p.textPrimary),
             ),
           ),
         ],
@@ -661,7 +670,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _snack(ProfileCopy.othersSignedOut);
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) _snack(e.message);
+      if (mounted) _snack(friendlyException(e));
     }
   }
 }
@@ -938,7 +947,7 @@ class _PasswordSheetState extends State<_PasswordSheet> {
       );
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _error = friendlyException(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1031,7 +1040,7 @@ class _DeleteSheetState extends State<_DeleteSheet> {
       await AuthController.instance.signOut(callServer: false);
     } on ApiException catch (e) {
       Haptics.error();
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _error = friendlyException(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
