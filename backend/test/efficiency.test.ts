@@ -7,7 +7,6 @@ import { dedupeSeatQueries, runSeatResearch } from "../src/table/research.js";
 import { searchCacheKey } from "../src/web/cacheStore.js";
 import { decideSearchLocal } from "../src/web/searchDecision.js";
 import { fitBudget, snippetAnswers } from "../src/web/budget.js";
-import { enoughFree, freeFirst } from "../src/web/pipeline.js";
 import { heuristicQueries, isComparison, planFromPreflight } from "../src/web/plan.js";
 import { extractionPlan, TurnBatcher } from "../src/memory/batcher.js";
 import { analyzeMemory } from "../src/nlp/memoryIntent.js";
@@ -178,18 +177,6 @@ test("one query by default, a second only for comparisons", () => {
   assert.equal(isComparison("what is tcp"), false);
   assert.equal(planFromPreflight("what is tcp", ["tcp protocol", "tcp handshake"], "evergreen").queries.length, 1);
   assert.equal(planFromPreflight("tcp vs udp", ["tcp vs udp", "tcp udp speed"], null).queries.length, 2);
-});
-
-test("free sources first for code/academic/definitional evergreen turns, Ollama only if they fall short", () => {
-  const plan = (queries: string[], fresh: "evergreen" | "recent", intents: Array<"code" | "encyclopedic" | "news" | "academic" | "repo" | "discussion">) => ({ queries, fresh, intents, via: "heuristic" as const });
-  assert.equal(freeFirst(plan(["python list comprehension"], "evergreen", ["code"])), true);
-  assert.equal(freeFirst(plan(["what is a bloom filter"], "evergreen", ["encyclopedic"])), true);
-  assert.equal(freeFirst(plan(["best sourdough starter tips"], "evergreen", ["encyclopedic"])), false); // default intent only
-  assert.equal(freeFirst(plan(["python 3.14 release"], "recent", ["code"])), false);
-  const cand = (url: string, text?: string) => ({ provider: "x", ms: 1, candidates: [{ title: "t", url, snippet: "s", text, source: "x", rank: 0 }] });
-  assert.equal(enoughFree([cand("https://a.test/1", "x".repeat(500)), cand("https://b.test/2"), cand("https://c.test/3")]), true);
-  assert.equal(enoughFree([cand("https://a.test/1", "x".repeat(500)), cand("https://b.test/2")]), false);
-  assert.equal(enoughFree([cand("https://a.test/1"), cand("https://b.test/2"), cand("https://c.test/3")]), false); // no real body
 });
 
 test("snippetAnswers skips page fetches only when the text already covers the question", () => {

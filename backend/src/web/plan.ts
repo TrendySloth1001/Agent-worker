@@ -31,7 +31,25 @@ const BREAKING = /\b(breaking|today|tonight|right now|just (released|announced)|
 const FILLER = /^(?:hey|hi|hello|ok(?:ay)?|so|please|pls|kindly)[,.!\s]+|^(?:can|could|would|will) you (?:please )?(?:tell me|find|search(?: for)?|look up|check|google|explain)\s+|^(?:i (?:want|need|would like) to (?:know|find out)|tell me|let me know|find me|search for|look up|google)\s+(?:about\s+)?/i;
 const FOLLOW_UP = /^(?:and|but|also|what about|how about|then|so|why|how|what|where|when|who|which|is|are|does|do|did|can|could)\b[^.?!]{0,60}\b(it|its|that|this|they|them|those|these|he|she|there|one|the same)\b|^(?:and|also|what about|how about|more|why|and then)\b/i;
 
-const stripFiller = (s: string) => s.replace(FILLER, "").replace(FILLER, "");
+/** Trailing answer-format instructions ("explain in detail", "with examples", Hinglish "detail mein batao") are not search terms. */
+const TRAILING_ASK = /[\s,;:.-]*(?:\b(?:please|pls|kindly)\s+)?(?:\b(?:explain(?: it)?|answer|reply|tell me|describe)\s+)?(?:\b(?:in (?:detail|brief|short|simple (?:words|terms)|bullet points|points|steps|hindi|english)|briefly|step by step|with (?:examples?|sources|code)|in \d+ (?:words|lines|points)|(?:detail|vistar) (?:mein|me|se)(?: (?:batao|samjhao|bataiye|samjhaiye))?|batao|samjhao|bataiye|samjhaiye|bata do|samjha do))\s*[?!.]*$/i;
+
+const stripFiller = (s: string) => {
+  let out = s.replace(FILLER, "").replace(FILLER, "");
+  for (let i = 0; i < 3; i++) {
+    const next = out.replace(TRAILING_ASK, "").trim();
+    if (next === out || next.split(/\s+/).length < 2) break;
+    out = next;
+  }
+  return out;
+};
+
+/** Language hint for the search engines: "hi" when the query is written in Devanagari. */
+export function queryLang(text: string): string | undefined {
+  const deva = (text.match(/[\u0900-\u097F]/g) ?? []).length;
+  const letters = (text.match(/\p{L}/gu) ?? []).length;
+  return letters && deva / letters > 0.3 ? "hi" : undefined;
+}
 const clean = (s: string) => s.replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
 
 export function classifyFreshness(text: string): Freshness {

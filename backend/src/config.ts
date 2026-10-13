@@ -42,6 +42,10 @@ const schema = z.object({
   SEARXNG_URLS: str,
   /** "1" enables the Reddit search source (usually blocked from server IPs). */
   WEB_SEARCH_REDDIT: str,
+  /** Optional Brave Search API key (free tier); adds Brave as the first general web engine. */
+  BRAVE_SEARCH_API_KEY: str,
+  /** Optional comma-separated web search providers to turn off (e.g. "bing,duckduckgo"). */
+  WEB_SEARCH_DISABLE: str,
   OLLAMA_MONTHLY_REQUEST_BUDGET: optInt,
   API_TOKEN: str,
   S3_ENDPOINT: str,
@@ -106,6 +110,8 @@ export const config = {
   webSearch: {
     searxngUrls: (env.SEARXNG_URLS ?? "").split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean),
     reddit: env.WEB_SEARCH_REDDIT === "1",
+    braveKey: env.BRAVE_SEARCH_API_KEY?.trim() || undefined,
+    disabled: new Set((env.WEB_SEARCH_DISABLE ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)),
   },
   ollamaMonthlyBudget: env.OLLAMA_MONTHLY_REQUEST_BUDGET,
   apiToken: env.API_TOKEN,

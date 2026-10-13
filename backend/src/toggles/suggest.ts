@@ -135,7 +135,7 @@ export function pickSuggestion(o: {
 
 // ---- the model's view ------------------------------------------------------------------------------------------
 
-export type ToolsState = { web: "searched" | "auto-none" | "off"; kb: "on" | "off"; kbSuggested?: boolean; docSuggested?: boolean };
+export type ToolsState = { web: "searched" | "auto-none" | "off" | "unavailable"; kb: "on" | "off"; kbSuggested?: boolean; docSuggested?: boolean };
 
 /** A short system note: which tools were active this turn, so the model never claims one it did not use. */
 export function toolsNote(s: ToolsState): string {
@@ -143,7 +143,9 @@ export function toolsNote(s: ToolsState): string {
   lines.push(
     s.web === "searched"
       ? "- Web search: used. Cite the numbered web sources you were given."
-      : s.web === "off"
+      : s.web === "unavailable"
+        ? "- Web search: tried, but no usable live sources came back. Answer from what you know. Only if the answer depends on current facts, say in one short plain sentence that you couldn't check live sources just now; never mention search engines, providers or errors."
+        : s.web === "off"
         ? "- Web search: off. Do not say you searched the web."
         : "- Web search: not needed for this turn; none was run. Do not say you searched the web.",
   );

@@ -1,7 +1,13 @@
 // Search providers behind one interface, a shared circuit breaker, a TTL
 // cache keyed by freshness class, per-provider timeouts and telemetry.
+//
+// Roles:
+//  - web: general web engines, asked as a hedged chain in PROVIDERS order
+//    (first one, then the next only if it is slow, fails or comes back thin);
+//  - secondary: topical sources (Wikipedia, StackOverflow, arXiv, HN, news...)
+//    asked in parallel when the question's intent fits them;
+//  - fallback: only when everything else came up short.
 
-import pLimit from "p-limit";
 import { config } from "../config.js";
 import { recordUsage } from "../db/usage.js";
 import { log } from "../util/logger.js";
@@ -9,20 +15,28 @@ import { redactForExternal } from "../nlp/pii.js";
 import { CircuitBreaker } from "./breaker.js";
 import { TtlLru } from "./lru.js";
 import { readPersisted, searchCacheKey, writePersisted } from "./cacheStore.js";
-import { clip, isRateLimit, OLLAMA_WEB_ID, ollamaPost, statusOf } from "./ollama.js";
+import { clip, OLLAMA_WEB_ID, ollamaPost, statusOf, isRateLimit } from "./ollama.js";
 import { isQuotaBlocked } from "../llm/quota.js";
 import { terms } from "./passages.js";
+import { htmlToText } from "./html.js";
+import { BROWSER_UA, TEXT_BROWSER_UA, bingParams, duckDuckGoForm, parseBingRss, parseBrave, parseBraveHtml, parseDuckDuckGo, parseDuckDuckGoLite, engineQuery } from "./general.js";
+import { recordOutcome } from "./stats.js";
 import type { Candidate, Freshness, Intent, SearchCtx } from "./types.js";
+
+export { htmlToText } from "./html.js";
 
 export type Provider = {
   name: string;
-  /** primary: always asked; secondary: asked when its intent matches; fallback: only when the rest came up short. */
-  role: "primary" | "secondary" | "fallback";
+  role: "web" | "secondary" | "fallback";
   intents: Intent[] | "any";
   timeoutMs: number;
   enabled(): boolean;
   /** Records its own telemetry (the Ollama client does). */
   selfRecorded?: boolean;
+  /** Scraped engines: a 429 without Retry-After means "blocked for a while", not "try again in a second". */
+  blockCooldownMs?: number;
+  /** Circuit shared with other endpoints of the same service (they share its per-IP limits). */
+  breakerKey?: string;
   search(query: string, ctx: SearchCtx): Promise<Candidate[]>;
 };
 
@@ -37,6 +51,10 @@ export class ProviderError extends Error {
 }
 
 const UA = "AgentWorkerBot/1.0 (+https://sparky.cloudnsofts.com)";
+/** How long a scraped engine that started refusing us (429, bot check) is left alone. */
+const BLOCKED_COOLDOWN_MS = 10 * 60_000;
+
+const off = (name: string) => config.webSearch.disabled.has(name);
 
 async function http(url: string, ctx: SearchCtx, timeoutMs: number, init: RequestInit = {}): Promise<Response> {
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -61,23 +79,35 @@ async function json(url: string, ctx: SearchCtx, timeoutMs: number, init?: Reque
   }
 }
 
-const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-export function htmlToText(html: string): string {
-  return html
-    .replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_m, c) => `\n\n${c.replace(/<[^>]+>/g, "")}\n\n`)
-    .replace(/<\/(p|div|li|h\d|blockquote)>/gi, "\n\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e: string) => {
-      if (e[0] === "#") {
-        const n = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-        return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m;
-      }
-      return ENTITIES[e.toLowerCase()] ?? m;
-    })
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+// ---- general web engines -------------------------------------------------------
+
+const brave: Provider = {
+  name: "brave",
+  role: "web",
+  intents: "any",
+  timeoutMs: 4_000,
+  enabled: () => !!config.webSearch.braveKey && !off("brave"),
+  async search(query, ctx) {
+    const qs = new URLSearchParams({ q: query, count: String(Math.min(ctx.limit + 2, 10)), extra_snippets: "1", ...(ctx.fresh === "breaking" ? { freshness: "pw" } : {}) });
+    const data = await json(`https://api.search.brave.com/res/v1/web/search?${qs}`, ctx, this.timeoutMs, {
+      headers: { "X-Subscription-Token": config.webSearch.braveKey!, "Accept-Encoding": "gzip" },
+    });
+    return parseBrave(data);
+  },
+};
+
+/**
+ * Keyless engines rate-limit bursts per IP: calls to one engine are spaced
+ * [gapMs] apart process-wide (a waiting call is overtaken by the hedge).
+ */
+const nextSlot = new Map<string, number>();
+export async function engineSlot(name: string, gapMs: number, signal?: AbortSignal): Promise<void> {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot.get(name) ?? 0);
+  // A long queue is not worth waiting in: the hedge or the next engine answers sooner (not a failure, the circuit stays closed).
+  if (at - now > 3 * gapMs) throw new ProviderError(`${name} queue full`, 499);
+  nextSlot.set(name, at + gapMs);
+  if (at > now) await sleep(at - now, signal);
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -86,41 +116,84 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener("abort", () => (clearTimeout(t), reject(signal.reason)), { once: true });
   });
 
-// ---- providers ---------------------------------------------------------------
-
-const ollamaLimit = pLimit(2);
-/** Ollama's web search 429s on bursts (round-table seats searching at once): space call starts. */
-const OLLAMA_MIN_GAP_MS = 700;
-let ollamaNextAt = 0;
-async function ollamaSlot(signal?: AbortSignal): Promise<void> {
-  const now = Date.now();
-  const wait = Math.max(0, ollamaNextAt - now);
-  ollamaNextAt = Math.max(now, ollamaNextAt) + OLLAMA_MIN_GAP_MS;
-  if (wait > 0) await sleep(wait, signal);
+/** DuckDuckGo answers 403 when it rate-limits an IP and 202 + a challenge page when it suspects a bot. */
+async function duckDuckGoPost(url: string, query: string, ctx: SearchCtx, timeoutMs: number): Promise<string> {
+  await engineSlot("duckduckgo", 2_000, ctx.signal);
+  let res: Response;
+  try {
+    res = await http(url, ctx, timeoutMs, {
+      method: "POST",
+      body: duckDuckGoForm(query, ctx.fresh, ctx.lang),
+      headers: { "User-Agent": TEXT_BROWSER_UA, Accept: "text/html", "Content-Type": "application/x-www-form-urlencoded", Referer: new URL(url).origin + "/" },
+    });
+  } catch (e) {
+    // A 403 is DuckDuckGo's per-IP rate limit: a soft block, retried after a cooldown (not an auth failure).
+    if (e instanceof ProviderError && e.status === 403) throw new ProviderError("duckduckgo rate limit", 429, 5 * 60_000);
+    throw e;
+  }
+  const html = await res.text();
+  if (res.status === 202 || /anomaly-modal|challenge-form/i.test(html)) throw new ProviderError("duckduckgo bot check", 429, BLOCKED_COOLDOWN_MS);
+  return html;
 }
+
+const duckduckgo: Provider = {
+  name: "duckduckgo",
+  blockCooldownMs: 5 * 60_000,
+  breakerKey: "duckduckgo",
+  role: "web",
+  intents: "any",
+  timeoutMs: 4_000,
+  enabled: () => !off("duckduckgo"),
+  async search(query, ctx) {
+    return parseDuckDuckGo(await duckDuckGoPost("https://html.duckduckgo.com/html/", query, ctx, this.timeoutMs));
+  },
+};
+
+/** Brave Search's public HTML results page (no key; an independent index). */
+const braveHtml: Provider = {
+  name: "brave-html",
+  blockCooldownMs: 5 * 60_000,
+  role: "web",
+  intents: "any",
+  timeoutMs: 4_500,
+  enabled: () => !off("brave-html") && !config.webSearch.braveKey,
+  async search(query, ctx) {
+    await engineSlot("brave-html", 1_000, ctx.signal);
+    const qs = new URLSearchParams({ q: engineQuery(query), source: "web", ...(ctx.fresh === "breaking" ? { tf: "pw" } : {}) });
+    const res = await http(`https://search.brave.com/search?${qs}`, ctx, this.timeoutMs, { headers: { "User-Agent": BROWSER_UA, Accept: "text/html", "Accept-Language": ctx.lang === "hi" ? "hi,en;q=0.8" : "en-US,en;q=0.9" } });
+    const html = await res.text();
+    if (/captcha/i.test(res.url) || (!/data-type="web"/.test(html) && /captcha|are you a robot/i.test(html))) throw new ProviderError("brave bot check", 429, BLOCKED_COOLDOWN_MS);
+    return parseBraveHtml(html);
+  },
+};
+
+/** Same index, separate endpoint: the last keyless hedge. */
+const duckduckgoLite: Provider = {
+  name: "duckduckgo-lite",
+  blockCooldownMs: 5 * 60_000,
+  breakerKey: "duckduckgo",
+  role: "web",
+  intents: "any",
+  timeoutMs: 4_000,
+  enabled: () => !off("duckduckgo-lite"),
+  async search(query, ctx) {
+    return parseDuckDuckGoLite(await duckDuckGoPost("https://lite.duckduckgo.com/lite/", query, ctx, this.timeoutMs));
+  },
+};
 
 const ollama: Provider = {
   name: "ollama",
-  role: "primary",
+  role: "web",
   intents: "any",
-  timeoutMs: 10_000,
+  timeoutMs: 8_000,
   selfRecorded: true,
-  // Off while the Ollama account quota is exhausted (the pipeline uses the other providers).
-  enabled: () => !!config.ollamaApiKey && !isQuotaBlocked(OLLAMA_WEB_ID),
+  // Off while the Ollama account quota is exhausted (shared with chat): the free engines carry the load.
+  enabled: () => !!config.ollamaApiKey && !isQuotaBlocked(OLLAMA_WEB_ID) && !off("ollama"),
   async search(query, ctx) {
-    // Ollama's search is the one that rate-limits: cap concurrency, retry a 429 once.
-    const call = () => ollamaPost("web_search", { query, max_results: Math.min(ctx.limit, 8) }, ctx.signal, this.timeoutMs);
-    const data = await ollamaLimit(async () => {
-      await ollamaSlot(ctx.signal);
-      try {
-        return await call();
-      } catch (e) {
-        if (!isRateLimit(e) || isQuotaBlocked(OLLAMA_WEB_ID)) throw e;
-        await sleep(1200 + Math.random() * 800, ctx.signal);
-        return await call();
-      }
-    }).catch((e) => {
-      throw new ProviderError((e as Error).message, statusOf(e) || (isRateLimit(e) ? 429 : 502));
+    // No retry on 429: the next engine in the chain answers instead.
+    const data = await ollamaPost("web_search", { query, max_results: Math.min(ctx.limit, 8) }, ctx.signal, this.timeoutMs).catch((e) => {
+      const rateLimited = isRateLimit(e);
+      throw new ProviderError((e as Error).message, statusOf(e) || (rateLimited ? 429 : 502), rateLimited ? BLOCKED_COOLDOWN_MS : 0);
     });
     return (Array.isArray(data?.results) ? data.results : [])
       .filter((r: any) => typeof r?.url === "string")
@@ -135,25 +208,44 @@ const ollama: Provider = {
   },
 };
 
+// ---- topical sources -------------------------------------------------------------
+
+const bingNews: Provider = {
+  name: "bingnews",
+  blockCooldownMs: 5 * 60_000,
+  role: "secondary",
+  intents: ["news"],
+  timeoutMs: 3_500,
+  enabled: () => !off("bingnews"),
+  async search(query, ctx) {
+    const res = await http(`https://www.bing.com/news/search?${bingParams(query, ctx.lang)}`, ctx, this.timeoutMs, { headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, text/xml" } });
+    const xml = await res.text();
+    if (!/<rss\b/i.test(xml.slice(0, 500))) throw new ProviderError("bing news returned no RSS (bot check?)", 429, BLOCKED_COOLDOWN_MS);
+    return parseBingRss(xml, "bingnews");
+  },
+};
+
 const wikipedia: Provider = {
   name: "wikipedia",
   role: "secondary",
   intents: ["encyclopedic", "academic"],
-  timeoutMs: 5_000,
-  enabled: () => true,
+  timeoutMs: 4_000,
+  enabled: () => !off("wikipedia"),
   async search(query, ctx) {
+    // Devanagari questions get Hindi Wikipedia (English titles would not match).
+    const wiki = ctx.lang === "hi" ? "hi" : "en";
     const qs = new URLSearchParams({
-      action: "query", format: "json", generator: "search", gsrsearch: query, gsrlimit: "3", gsrnamespace: "0",
+      action: "query", format: "json", generator: "search", gsrsearch: query.replace(/"/g, ""), gsrlimit: "3", gsrnamespace: "0",
       prop: "extracts", exintro: "1", explaintext: "1", exchars: "1800", redirects: "1",
     });
-    const data = await json(`https://en.wikipedia.org/w/api.php?${qs}`, ctx, this.timeoutMs);
+    const data = await json(`https://${wiki}.wikipedia.org/w/api.php?${qs}`, ctx, this.timeoutMs);
     const pages: any[] = Object.values(data?.query?.pages ?? {});
     return pages
       .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
       .filter((p) => typeof p.extract === "string" && p.extract.length > 60)
       .map((p, rank): Candidate => ({
         title: `${p.title} - Wikipedia`,
-        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(String(p.title).replace(/ /g, "_"))}`,
+        url: `https://${wiki}.wikipedia.org/wiki/${encodeURIComponent(String(p.title).replace(/ /g, "_"))}`,
         snippet: clip(p.extract, 400),
         text: clip(p.extract, 4000),
         source: "wikipedia",
@@ -165,12 +257,12 @@ const wikipedia: Provider = {
 const hackerNews: Provider = {
   name: "hackernews",
   role: "secondary",
-  intents: ["news", "discussion", "repo"],
-  timeoutMs: 5_000,
-  enabled: () => true,
+  intents: ["discussion", "repo"],
+  timeoutMs: 4_000,
+  enabled: () => !off("hackernews"),
   async search(query, ctx) {
     const endpoint = ctx.fresh === "breaking" ? "search_by_date" : "search";
-    const qs = new URLSearchParams({ query, tags: "story", hitsPerPage: "6" });
+    const qs = new URLSearchParams({ query: query.replace(/"/g, ""), tags: "story", hitsPerPage: "6" });
     const data = await json(`https://hn.algolia.com/api/v1/${endpoint}?${qs}`, ctx, this.timeoutMs);
     return (Array.isArray(data?.hits) ? data.hits : [])
       .filter((h: any) => h?.title && (h.points ?? 0) >= 5)
@@ -189,11 +281,11 @@ const stackExchange: Provider = {
   name: "stackexchange",
   role: "secondary",
   intents: ["code"],
-  timeoutMs: 6_000,
-  enabled: () => true,
+  timeoutMs: 5_000,
+  enabled: () => !off("stackexchange"),
   async search(query, ctx) {
     const key: Record<string, string> = config.stackExchangeKey ? { key: config.stackExchangeKey } : {};
-    const qs = new URLSearchParams({ order: "desc", sort: "relevance", q: query, site: "stackoverflow", accepted: "True", pagesize: "4", ...key });
+    const qs = new URLSearchParams({ order: "desc", sort: "relevance", q: query.replace(/"/g, ""), site: "stackoverflow", accepted: "True", pagesize: "4", ...key });
     const data = await json(`https://api.stackexchange.com/2.3/search/advanced?${qs}`, ctx, this.timeoutMs);
     const qItems: any[] = (data?.items ?? []).filter((q: any) => q.accepted_answer_id);
     if (!qItems.length) return [];
@@ -224,10 +316,10 @@ const githubRepos: Provider = {
   name: "github",
   role: "secondary",
   intents: ["repo"],
-  timeoutMs: 6_000,
-  enabled: () => !!config.githubToken,
+  timeoutMs: 5_000,
+  enabled: () => !!config.githubToken && !off("github"),
   async search(query, ctx) {
-    const qs = new URLSearchParams({ q: query, sort: "stars", order: "desc", per_page: "5" });
+    const qs = new URLSearchParams({ q: query.replace(/"/g, ""), sort: "stars", order: "desc", per_page: "5" });
     const data = await json(`https://api.github.com/search/repositories?${qs}`, ctx, this.timeoutMs, {
       headers: { Authorization: `Bearer ${config.githubToken}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
     });
@@ -246,8 +338,8 @@ const arxiv: Provider = {
   name: "arxiv",
   role: "secondary",
   intents: ["academic"],
-  timeoutMs: 7_000,
-  enabled: () => true,
+  timeoutMs: 6_000,
+  enabled: () => !off("arxiv"),
   async search(query, ctx) {
     const ts = terms(query).slice(0, 6);
     if (!ts.length) return [];
@@ -269,7 +361,7 @@ const reddit: Provider = {
   role: "secondary",
   intents: ["discussion"],
   timeoutMs: 5_000,
-  enabled: () => config.webSearch.reddit,
+  enabled: () => config.webSearch.reddit && !off("reddit"),
   async search(query, ctx) {
     const qs = new URLSearchParams({ q: query, limit: "5", sort: "relevance", t: "year", raw_json: "1" });
     const data = await json(`https://www.reddit.com/search.json?${qs}`, ctx, this.timeoutMs);
@@ -296,7 +388,7 @@ const searxng: Provider[] = config.webSearch.searxngUrls.map((base) => ({
   timeoutMs: 6_000,
   enabled: () => true,
   async search(query: string, ctx: SearchCtx) {
-    const qs = new URLSearchParams({ q: query, format: "json", language: "en", ...(ctx.fresh === "breaking" ? { time_range: "week" } : {}) });
+    const qs = new URLSearchParams({ q: query, format: "json", language: ctx.lang ?? "en", ...(ctx.fresh === "breaking" ? { time_range: "week" } : {}) });
     const data = await json(`${base}/search?${qs}`, ctx, 6_000);
     return (Array.isArray(data?.results) ? data.results : []).slice(0, ctx.limit).map((r: any, rank: number): Candidate => ({
       title: clip(r.title, 200) || r.url,
@@ -309,14 +401,20 @@ const searxng: Provider[] = config.webSearch.searxngUrls.map((base) => ({
   },
 }));
 
-export const PROVIDERS: Provider[] = [ollama, wikipedia, hackerNews, stackExchange, githubRepos, arxiv, reddit, ...searxng];
+/** Web engines in chain order: a configured free-tier API, then the keyless engines, Ollama (shared quota) last. */
+export const PROVIDERS: Provider[] = [brave, duckduckgo, braveHtml, duckduckgoLite, ollama, bingNews, wikipedia, hackerNews, stackExchange, githubRepos, arxiv, reddit, ...searxng];
 
 // ---- runner --------------------------------------------------------------------
 
-export const breaker = new CircuitBreaker({ threshold: 3, cooldownMs: 60_000, maxCooldownMs: 10 * 60_000 });
+export const breaker = new CircuitBreaker({ threshold: 3, cooldownMs: 60_000, maxCooldownMs: 30 * 60_000 });
 
-const cache = new TtlLru<Candidate[]>(300);
-export const CACHE_TTL_MS: Record<Freshness, number> = { breaking: 2 * 60_000, recent: 10 * 60_000, evergreen: 12 * 60 * 60_000 };
+/** Enabled, not quota-blocked and not circuit-open: worth a request right now. */
+export function available(p: Provider): boolean {
+  return p.enabled() && breaker.state(p.breakerKey ?? p.name) !== "open";
+}
+
+const cache = new TtlLru<Candidate[]>(400);
+export const CACHE_TTL_MS: Record<Freshness, number> = { breaking: 3 * 60_000, recent: 30 * 60_000, evergreen: 24 * 60 * 60_000 };
 const EMPTY_TTL_MS = 60_000;
 
 export type CallOutcome = { provider: string; candidates: Candidate[]; ms: number; cached?: boolean; skipped?: "circuit"; error?: string };
@@ -327,13 +425,19 @@ const inflight = new Map<string, Promise<CallOutcome>>();
 export function callProvider(p: Provider, rawQuery: string, ctx: SearchCtx): Promise<CallOutcome> {
   // Third-party search engines never see emails, phone numbers, cards or keys.
   const query = redactForExternal(rawQuery);
-  const key = searchCacheKey(p.name, ctx.fresh, query);
+  const key = searchCacheKey(p.name, ctx.fresh, query, ctx.lang);
   const hit = cache.get(key);
-  if (hit) return Promise.resolve({ provider: p.name, candidates: hit, ms: 0, cached: true });
+  if (hit) {
+    const o = { provider: p.name, candidates: hit, ms: 0, cached: true };
+    recordOutcome(o);
+    return Promise.resolve(o);
+  }
   // Round-table seats and concurrent users asking the same thing share one upstream call.
   const running = inflight.get(key);
   if (running) return running.then((o) => ({ ...o, cached: true, ms: 0 }));
-  const run = callUncached(p, query, key, ctx).finally(() => inflight.delete(key));
+  const run = callUncached(p, query, key, ctx)
+    .then((o) => (recordOutcome(o), o))
+    .finally(() => inflight.delete(key));
   inflight.set(key, run);
   return run;
 }
@@ -344,31 +448,39 @@ async function callUncached(p: Provider, query: string, key: string, ctx: Search
     cache.set(key, shared, shared.length ? CACHE_TTL_MS[ctx.fresh] : EMPTY_TTL_MS);
     return { provider: p.name, candidates: shared, ms: 0, cached: true };
   }
-  if (!breaker.allow(p.name)) return { provider: p.name, candidates: [], ms: 0, skipped: "circuit" };
+  const circuit = p.breakerKey ?? p.name;
+  if (!breaker.allow(circuit)) return { provider: p.name, candidates: [], ms: 0, skipped: "circuit" };
   const started = Date.now();
   try {
     const candidates = (await p.search(query, ctx)).slice(0, ctx.limit);
     const ms = Date.now() - started;
-    breaker.success(p.name);
+    breaker.success(circuit);
     const ttl = candidates.length ? CACHE_TTL_MS[ctx.fresh] : EMPTY_TTL_MS;
     cache.set(key, candidates, ttl);
     if (candidates.length) writePersisted(key, candidates, ttl);
-    if (!p.selfRecorded) recordUsage({ provider: "web", model: p.name, kind: "search", ok: true, status: 200, latencyMs: ms, count: 1 });
+    if (!p.selfRecorded) recordUsage({ provider: "web", model: p.name, kind: "search", ok: true, status: 200, latencyMs: ms, count: candidates.length });
     return { provider: p.name, candidates, ms };
   } catch (e) {
     const ms = Date.now() - started;
     if (ctx.signal?.aborted) return { provider: p.name, candidates: [], ms, error: "aborted" };
     const status = e instanceof ProviderError ? e.status : statusOf(e);
-    const retryAfterMs = e instanceof ProviderError ? e.retryAfterMs : 0;
+    const retryAfterMs = (e instanceof ProviderError ? e.retryAfterMs : 0) || (status === 429 ? (p.blockCooldownMs ?? 0) : 0);
     const timedOut = (e as Error)?.name === "TimeoutError" || /timed? ?out/i.test((e as Error)?.message ?? "");
     // 4xx other than 429 on a search request is our problem or a block, not an outage: only 401/403 trips at once.
+    // A 429 with a long cooldown (an engine's bot check, an exhausted quota) also opens at once: retrying it only burns time.
     const countable = status === 0 || status === 429 || status >= 500 || timedOut;
-    if (status === 401 || status === 403) breaker.failure(p.name, { hard: true, retryAfterMs });
-    else if (countable) breaker.failure(p.name, { retryAfterMs });
+    if (status === 401 || status === 403 || (status === 429 && retryAfterMs >= 5 * 60_000)) breaker.failure(circuit, { hard: true, retryAfterMs });
+    else if (countable) breaker.failure(circuit, { retryAfterMs });
     if (!p.selfRecorded) {
       recordUsage({ provider: "web", model: p.name, kind: "search", ok: false, status: status || undefined, latencyMs: ms, errorMessage: timedOut ? "timeout" : (e as Error).message });
     }
-    log.warn("web provider failed", { provider: p.name, status, message: (e as Error).message?.slice(0, 100), circuit: breaker.state(p.name) });
+    log.warn("web provider failed", { provider: p.name, status, message: (e as Error).message?.slice(0, 100), circuit: breaker.state(circuit) });
     return { provider: p.name, candidates: [], ms, error: timedOut ? "timeout" : status ? `http_${status}` : "error" };
   }
+}
+
+/** Test hook: forget cached provider results. */
+export function clearProviderCache(): void {
+  cache.clear();
+  inflight.clear();
 }
