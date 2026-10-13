@@ -117,6 +117,53 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.9.0',
+      date: '14 Oct 2026',
+      headline: 'Yours, and locked',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Bring your own keys',
+          detail:
+              'Add a key from Groq, OpenRouter, NVIDIA or Ollama and your '
+              'chats run on it. Test it in one tap.',
+          icon: HugeIcons.strokeRoundedKey01,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Your own usage',
+          detail:
+              'See requests, tokens and models for the chats run on your '
+              'keys. Only you can see it.',
+          icon: HugeIcons.strokeRoundedAnalytics01,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Encrypted for you',
+          detail:
+              'Your chats, memories, notes and files are encrypted on our '
+              'servers with a key of their own.',
+          icon: HugeIcons.strokeRoundedSecurityLock,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Livelier dots',
+          detail:
+              'Backgrounds and your profile ring now move like the '
+              'assistant, then rest to save battery.',
+          icon: HugeIcons.strokeRoundedGridView,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'Circle to search',
+          detail:
+              'Answers stick to what you circled, and a blank capture says '
+              'so instead of guessing.',
+          icon: HugeIcons.strokeRoundedSearchArea,
+        ),
+      ],
+    ),
+    (
       version: '1.8.0',
       date: '14 Oct 2026',
       headline: 'See sparky think',
