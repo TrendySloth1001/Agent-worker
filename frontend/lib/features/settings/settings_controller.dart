@@ -40,6 +40,7 @@ class SettingsController extends ChangeNotifier {
         ? savedScale!
         : 'normal';
     modelChoice = _prefs?.getString(AppPrefs.modelChoice) ?? 'auto';
+    modelChoiceName = _prefs?.getString(AppPrefs.modelChoiceName) ?? '';
     browserPackage = _prefs?.getString(AppPrefs.browserPackage) ?? '';
     browserLabel = _prefs?.getString(AppPrefs.browserLabel) ?? '';
     Haptics.enabled = hapticsOn;
@@ -112,6 +113,9 @@ class SettingsController extends ChangeNotifier {
 
   /// 'auto', 'fast', 'smart' or a raw model id.
   late String modelChoice;
+
+  /// Friendly name of a specific model pick; empty for the presets.
+  String modelChoiceName = '';
 
   /// Remembered browser for external links. Empty means the system default.
   late String browserPackage, browserLabel;
@@ -295,9 +299,11 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setModelChoice(String id) {
+  void setModelChoice(String id, {String name = ''}) {
     modelChoice = id.isEmpty ? 'auto' : id;
+    modelChoiceName = name;
     _prefs?.setString(AppPrefs.modelChoice, modelChoice);
+    _prefs?.setString(AppPrefs.modelChoiceName, name);
     notifyListeners();
   }
 
@@ -334,6 +340,7 @@ class SettingsController extends ChangeNotifier {
     length = 'detailed';
     textScale = 'normal';
     modelChoice = 'auto';
+    modelChoiceName = '';
     autocompleteOn = true;
     voiceAutoSend = false;
     voiceHighAccuracy = false;
@@ -352,6 +359,7 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.profileLength,
       AppPrefs.textScale,
       AppPrefs.modelChoice,
+      AppPrefs.modelChoiceName,
       AppPrefs.autocomplete,
       AppPrefs.voiceAutoSend,
       AppPrefs.voiceHighAccuracy,

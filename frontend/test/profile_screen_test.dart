@@ -72,7 +72,8 @@ void main() {
       // No photo: the dot-matrix monogram and the dot grid are shown.
       expect(find.byType(DotMonogram), findsOneWidget);
       expect(find.byType(DotGrid), findsOneWidget);
-      expect(find.text('ID ABCDEF01'), findsOneWidget);
+      // The account id is for the owner only.
+      expect(find.text('ID ABCDEF01'), findsNothing);
       expect(find.text(ProfileCopy.roleMember), findsOneWidget);
       expect(tester.takeException(), isNull);
       final list = find
@@ -89,6 +90,18 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('the owner also sees the account id', (tester) async {
+    AuthController.instance.user = const AuthUser(
+      id: 'abcdef0123456789',
+      email: 'ada@x.dev',
+      name: 'Ada Lovelace',
+      role: 'owner',
+    );
+    await _pump(tester, AppTheme.light);
+    expect(find.text('ID ABCDEF01'), findsOneWidget);
+    expect(find.text(ProfileCopy.roleOwner), findsOneWidget);
+  });
 
   testWidgets('the edit button opens the name sheet', (tester) async {
     await _pump(tester, AppTheme.light);

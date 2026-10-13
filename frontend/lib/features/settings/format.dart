@@ -54,3 +54,23 @@ String grouped(int? v) {
   }
   return '${v < 0 ? '-' : ''}$out';
 }
+
+/// A readable name for a model id when the server's display name is not at
+/// hand: drops the provider and vendor parts and the punctuation, so
+/// `ollama:gemma4:31b` reads "Gemma4 31b". Never shows the raw id.
+String friendlyModelName(String id) {
+  final colon = id.indexOf(':');
+  var rest = colon < 0 ? id : id.substring(colon + 1);
+  final slash = rest.lastIndexOf('/');
+  if (slash >= 0) rest = rest.substring(slash + 1);
+  return rest
+      .split(RegExp(r'[:_\-\s]+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
+}
+
+/// [name] as given, unless it is really an id (has `:` or `/`), which is
+/// then made readable with [friendlyModelName].
+String friendlyModelLabel(String name) =>
+    name.contains(RegExp('[:/]')) ? friendlyModelName(name) : name;

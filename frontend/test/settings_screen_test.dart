@@ -168,10 +168,10 @@ void main() {
     expect(settings.notifyRoundTable, isFalse);
   });
 
-  testWidgets('a non-owner does not see Telemetry', (tester) async {
+  testWidgets('a non-owner does not see Telemetry or Server', (tester) async {
     await _pump(tester, AppTheme.light);
-    await _scrollTo(tester, find.text(SettingsStrings.catServer));
-    expect(find.text(SettingsStrings.catServer), findsOneWidget);
+    await _scrollThrough(tester);
+    expect(find.text(SettingsStrings.catServer), findsNothing);
     expect(find.text(SettingsStrings.catTelemetry), findsNothing);
     expect(searchSettings('telemetry', _scopeOf(tester)), isEmpty);
   });
@@ -185,6 +185,9 @@ void main() {
     );
     await _pump(tester, AppTheme.light);
     expect(find.text('Owner'), findsOneWidget);
+    await _scrollTo(tester, find.text(SettingsStrings.developerShow));
+    await tester.tap(find.text(SettingsStrings.developerShow));
+    await _settle(tester);
     await _scrollTo(tester, find.text(SettingsStrings.catTelemetry));
     expect(find.text(SettingsStrings.catTelemetry), findsOneWidget);
     expect(searchSettings('telemetry', _scopeOf(tester)), isNotEmpty);

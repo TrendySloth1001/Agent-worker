@@ -559,7 +559,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     : ProfileCopy.roleMember,
                 accent: user?.isOwner == true,
               ),
-              if (shortId.isNotEmpty)
+              // The account id is a support/developer detail.
+              if (shortId.isNotEmpty && user?.isOwner == true)
                 SettingsMetaLabel(
                   '${ProfileCopy.idLabel} ${shortId.toUpperCase()}',
                 ),

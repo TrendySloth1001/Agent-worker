@@ -10,6 +10,8 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/icon_label.dart';
 import '../../../data/ai_model.dart';
+import '../../auth/auth_controller.dart';
+import '../format.dart';
 import '../telemetry/telemetry_format.dart' show providerLabel;
 import 'settings_kit.dart';
 
@@ -68,12 +70,19 @@ class SpecificModelTile extends StatelessWidget {
       listenable: s,
       builder: (context, _) {
         final raw = !_presets.contains(s.modelChoice);
+        final owner = AuthController.instance.user?.isOwner ?? false;
+        // People see a friendly name; only the owner sees the raw id.
+        final name = owner
+            ? s.modelChoice
+            : s.modelChoiceName.isNotEmpty
+            ? s.modelChoiceName
+            : friendlyModelName(s.modelChoice);
         return SettingsTile(
           icon: raw
               ? ModelLogos.forModelId(s.modelChoice)
               : SettingsIcons.listModels,
           title: SettingsStrings.allModels,
-          summary: raw ? s.modelChoice : SettingsStrings.allModelsHelp,
+          summary: raw ? name : SettingsStrings.allModelsHelp,
           trailing: raw
               ? AppIcon(
                   AppIcons.check,
@@ -114,6 +123,7 @@ class _ModelSheetState extends State<_ModelSheet> {
     final s = AppScope.of(context).settings;
     final tt = Theme.of(context).textTheme;
     final p = context.palette;
+    final owner = AuthController.instance.user?.isOwner ?? false;
     return FutureBuilder<List<AiModel>>(
       future: _models,
       builder: (context, snap) {
@@ -132,6 +142,7 @@ class _ModelSheetState extends State<_ModelSheet> {
             ),
           );
         } else {
+          final models = snap.data!;
           body = ListenableBuilder(
             listenable: s,
             builder: (context, child) => RadioGroup<String>(
@@ -139,32 +150,39 @@ class _ModelSheetState extends State<_ModelSheet> {
               onChanged: (v) {
                 if (v == null) return;
                 Haptics.tap();
-                s.setModelChoice(v);
+                final pick = models.where((m) => m.id == v).firstOrNull;
+                s.setModelChoice(
+                  v,
+                  name: pick == null ? '' : friendlyModelLabel(pick.name),
+                );
                 Navigator.pop(context);
               },
               child: child!,
             ),
             child: Column(
               children: [
-                for (final m in snap.data!)
+                for (final m in models)
                   RadioListTile<String>(
                     value: m.id,
                     controlAffinity: ListTileControlAffinity.trailing,
                     secondary: SettingsIconCircle(
                       ModelLogos.forModelId(m.id, provider: m.provider),
                     ),
-                    title: Text(m.name),
-                    subtitle: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: IconLabel(
-                        icon: AppIcons.provider(m.provider),
-                        text: providerLabel(m.provider),
-                        style: tt.bodyMedium!.copyWith(
-                          color: p.textSecondary,
-                        ),
-                        iconSize: AppIconSize.sm,
-                      ),
-                    ),
+                    title: Text(owner ? m.name : friendlyModelLabel(m.name)),
+                    // Provider names are a developer detail.
+                    subtitle: !owner
+                        ? null
+                        : Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: IconLabel(
+                              icon: AppIcons.provider(m.provider),
+                              text: providerLabel(m.provider),
+                              style: tt.bodyMedium!.copyWith(
+                                color: p.textSecondary,
+                              ),
+                              iconSize: AppIconSize.sm,
+                            ),
+                          ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.lg,
                     ),

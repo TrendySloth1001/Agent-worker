@@ -36,10 +36,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text(AboutStrings.tagline), findsOneWidget);
-      expect(
-        find.text(AboutStrings.versionLine('1.0.0', '1', 'Android')),
-        findsOneWidget,
-      );
+      expect(find.text(AboutStrings.versionPlain('1.0.0')), findsOneWidget);
 
       // Scroll through every section; any overflow throws.
       final list = find.byType(Scrollable).first;

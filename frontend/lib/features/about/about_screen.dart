@@ -21,15 +21,22 @@ import '../../core/widgets/dot_grid_background.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../core/widgets/illustration.dart';
 import '../../data/usage.dart';
+import '../../core/constants/auth_constants.dart';
+import '../auth/auth_controller.dart';
 import '../auth/widgets/auth_widgets.dart';
 import '../chat/widgets/open_url.dart';
 import '../onboarding/onboarding_screen.dart';
 import 'changelog_screen.dart';
 import '../settings/widgets/section_header.dart';
+import '../settings/telemetry/telemetry_screen.dart';
+import '../settings/widgets/developer_section.dart';
 import '../settings/widgets/settings_kit.dart';
+import '../../core/constants/settings_copy.dart';
 
-/// About sparky: hero, what it does, privacy, backend, credits, licenses
-/// and feedback.
+/// About sparky. Everyone gets the logo, version, what's new, the tour,
+/// privacy and terms, licenses and feedback. The owner also sees what it
+/// does, privacy details, credits and a collapsible Developer section with
+/// the server address, status, build and Telemetry.
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
 
@@ -64,7 +71,7 @@ class _AboutScreenState extends State<AboutScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
-    if (_healthRequested) return;
+    if (_healthRequested || !_owner) return;
     _healthRequested = true;
     // Opened from Profile, health may not be loaded yet.
     final usage = _scope?.usage;
@@ -92,6 +99,14 @@ class _AboutScreenState extends State<AboutScreen> {
   }
 
   String get _baseUrl => _scope?.baseUrl ?? AppConfig.apiBaseUrl;
+
+  bool get _owner => AuthController.instance.user?.isOwner ?? false;
+
+  /// Privacy policy and terms are served by the sparky server.
+  void _openLegal(String path) {
+    Haptics.tap();
+    openUrl(context, '$_baseUrl$path');
+  }
 
   String get _host {
     final host = Uri.tryParse(_baseUrl)?.host ?? '';
@@ -130,6 +145,12 @@ class _AboutScreenState extends State<AboutScreen> {
         LicenseEntryWithLineBreaks([
           AboutStrings.licenseLobeIcons,
         ], AboutStrings.licenseLobeIconsText),
+        LicenseEntryWithLineBreaks([
+          AboutStrings.licenseIcons,
+        ], AboutStrings.licenseIconsText),
+        LicenseEntryWithLineBreaks([
+          AboutStrings.licenseLogos,
+        ], AboutStrings.licenseLogosText),
         LicenseEntryWithLineBreaks([
           AboutStrings.licenseFonts,
         ], AboutStrings.licenseFontsText),
@@ -174,61 +195,118 @@ class _AboutScreenState extends State<AboutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final usage = _scope?.usage;
-    return M3Page(
-      title: AboutCopy.title,
-      slivers: [
-        M3Body(
-          children: [
-            Builder(builder: _hero),
-            const SettingsGroupHeader(AboutCopy.whatItDoes),
-            _ItemGroup(items: AboutStrings.features),
-            const SettingsGroupHeader(AboutCopy.privacy),
-            _ItemGroup(items: AboutStrings.privacyItems(_host)),
-            const SettingsGroupHeader(AboutCopy.backend),
-            if (usage == null)
-              _BackendCard(url: _baseUrl, health: null, onTap: _copyUrl)
-            else
-              ListenableBuilder(
-                listenable: usage,
-                builder: (context, _) => _BackendCard(
-                  url: _baseUrl,
-                  health: usage.health,
-                  onTap: _copyUrl,
+    return ListenableBuilder(
+      listenable: AuthController.instance,
+      builder: (context, _) {
+        final owner = _owner;
+        return M3Page(
+          title: AboutCopy.title,
+          slivers: [
+            M3Body(
+              children: [
+                Builder(builder: _hero),
+                const SizedBox(height: SettingsSizes.groupSpacing),
+                SettingsGroup(
+                  entries: [
+                    GroupEntry(
+                      _LinkTile(
+                        icon: ChangelogIcons.entry,
+                        title: ChangelogStrings.entry,
+                        onTap: () => ChangelogScreen.open(context),
+                      ),
+                    ),
+                    GroupEntry(
+                      _LinkTile(
+                        icon: OnboardingIcons.tour,
+                        title: OnboardingStrings.takeTour,
+                        onTap: () => OnboardingScreen.open(context),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            const SettingsGroupHeader(AboutCopy.credits),
-            const _Credits(),
-            const SizedBox(height: AppSpacing.xl),
-            _ActionButton(
-              label: ChangelogStrings.entry,
-              icon: ChangelogIcons.entry,
-              onTap: () => ChangelogScreen.open(context),
+                const SizedBox(height: SettingsSizes.groupSpacing),
+                SettingsGroup(
+                  entries: [
+                    GroupEntry(
+                      _LinkTile(
+                        icon: AboutIcons.privacyPolicy,
+                        title: AboutStrings.privacyPolicy,
+                        external: true,
+                        onTap: () => _openLegal(AuthLegal.privacyPath),
+                      ),
+                    ),
+                    GroupEntry(
+                      _LinkTile(
+                        icon: AboutIcons.terms,
+                        title: AboutStrings.terms,
+                        external: true,
+                        onTap: () => _openLegal(AuthLegal.termsPath),
+                      ),
+                    ),
+                    GroupEntry(
+                      _LinkTile(
+                        icon: AboutIcons.licenses,
+                        title: AboutCopy.licenses,
+                        onTap: _openLicenses,
+                      ),
+                    ),
+                    GroupEntry(
+                      _LinkTile(
+                        icon: AboutIcons.feedback,
+                        title: AboutCopy.feedback,
+                        onTap: _sendFeedback,
+                      ),
+                    ),
+                  ],
+                ),
+                if (owner) ..._ownerSections(context),
+                const SizedBox(height: AppSpacing.xxl),
+                const _Footer(),
+              ],
             ),
-            const SizedBox(height: AppSpacing.md),
-            _ActionButton(
-              label: OnboardingStrings.takeTour,
-              icon: OnboardingIcons.tour,
-              onTap: () => OnboardingScreen.open(context),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _ActionButton(
-              label: AboutCopy.licenses,
-              icon: AboutIcons.licenses,
-              onTap: _openLicenses,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _ActionButton(
-              label: AboutCopy.feedback,
-              icon: AboutIcons.feedback,
-              onTap: _sendFeedback,
-            ),
-            const SizedBox(height: AppSpacing.xxl),
-            const _Footer(),
           ],
-        ),
-      ],
+        );
+      },
     );
+  }
+
+  /// What it does, privacy details, credits and the Developer section.
+  List<Widget> _ownerSections(BuildContext context) {
+    final usage = _scope?.usage;
+    Widget status(HealthStatus? h) => _StatusTile(health: h);
+    return [
+      const SettingsGroupHeader(AboutCopy.whatItDoes),
+      _ItemGroup(items: AboutStrings.features),
+      const SettingsGroupHeader(AboutCopy.privacy),
+      _ItemGroup(items: AboutStrings.privacyItems(_host)),
+      const SettingsGroupHeader(AboutCopy.credits),
+      const _Credits(),
+      DeveloperSection(
+        summary: AboutStrings.developerHelp,
+        children: [
+          _BackendTile(url: _baseUrl, onTap: _copyUrl),
+          if (usage == null)
+            status(null)
+          else
+            ListenableBuilder(
+              listenable: usage,
+              builder: (context, _) => status(usage.health),
+            ),
+          SettingsTile(
+            icon: AboutIcons.build,
+            title: AboutStrings.buildTitle,
+            summary: AboutStrings.buildLine(_version, _build, _platform),
+          ),
+          SettingsTile(
+            icon: AboutIcons.telemetry,
+            title: AboutStrings.telemetry,
+            summary: AboutStrings.telemetryHelp,
+            onTap: () =>
+                Navigator.push(context, settingsRoute(const TelemetryScreen())),
+          ),
+        ],
+      ),
+    ];
   }
 
   /// Hero card: dot-matrix field with the illustration, wordmark, tagline and
@@ -262,7 +340,9 @@ class _AboutScreenState extends State<AboutScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   M3Tag(
-                    AboutStrings.versionLine(_version, _build, _platform),
+                    _owner
+                        ? AboutStrings.versionLine(_version, _build, _platform)
+                        : AboutStrings.versionPlain(_version),
                     mono: false,
                   ),
                 ],
@@ -298,63 +378,89 @@ class _ItemGroup extends StatelessWidget {
   }
 }
 
-/// API base URL and live health; tap copies the URL.
-class _BackendCard extends StatelessWidget {
-  const _BackendCard({
-    required this.url,
-    required this.health,
-    required this.onTap,
-  });
+/// API base URL; tap copies it. Owner only.
+class _BackendTile extends StatelessWidget {
+  const _BackendTile({required this.url, required this.onTap});
 
   final String url;
-  final HealthStatus? health;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    return SettingsTile(
+      icon: AboutIcons.backend,
+      title: url,
+      summary: AboutCopy.urlHint,
+      trailing: AppIcon(
+        AboutIcons.copy,
+        size: AppIconSize.sm,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+/// Live server health. Owner only.
+class _StatusTile extends StatelessWidget {
+  const _StatusTile({required this.health});
+
+  final HealthStatus? health;
+
+  @override
+  Widget build(BuildContext context) {
     final p = context.palette;
-    final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (health) {
       null => (AppStrings.dash, p.textTertiary),
       HealthStatus(online: false) => (AppStrings.offline, p.accent),
       HealthStatus(ok: true) => (AppStrings.online, p.textPrimary),
       _ => (AppStrings.degraded, p.accent),
     };
-    return SettingsGroup(
-      entries: [
-        GroupEntry(
-          SettingsTile(
-            icon: AboutIcons.backend,
-            title: url,
-            summary: AboutCopy.urlHint,
-            trailing: AppIcon(
-              AboutIcons.copy,
-              size: AppIconSize.sm,
-              color: scheme.onSurfaceVariant,
-            ),
-            onTap: onTap,
+    return ListTile(
+      leading: const SettingsIconCircle(AboutIcons.backend),
+      title: const Text(AboutCopy.status),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StatusDot(color: color, hollow: health == null),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge!.copyWith(color: color),
           ),
-        ),
-        GroupEntry(
-          ListTile(
-            leading: const SettingsIconCircle(AboutIcons.backend),
-            title: const Text(AboutCopy.status),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                StatusDot(color: color, hollow: health == null),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelLarge!.copyWith(color: color),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One row of the About lists; [external] shows an open-in-browser mark.
+class _LinkTile extends StatelessWidget {
+  const _LinkTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.external = false,
+  });
+
+  final AppIconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final bool external;
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsTile(
+      icon: icon,
+      title: title,
+      trailing: AppIcon(
+        external ? AboutIcons.open : AboutIcons.chevron,
+        size: AppIconSize.sm,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      onTap: onTap,
     );
   }
 }
@@ -387,30 +493,6 @@ class _Credits extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final AppIconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.tonalIcon(
-      style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(AppSizes.buttonHeight),
-      ),
-      onPressed: onTap,
-      icon: AppIcon(icon, size: AppIconSize.sm),
-      label: Text(label),
     );
   }
 }

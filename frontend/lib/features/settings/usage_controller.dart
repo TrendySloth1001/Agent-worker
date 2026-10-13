@@ -6,6 +6,7 @@ import '../../core/notify/notify_kind.dart';
 import '../../core/notify/notify_target.dart';
 import '../../data/usage.dart';
 import '../../data/usage_api.dart';
+import '../auth/auth_controller.dart';
 
 /// Loads provider quotas, service stats and server health for settings.
 class UsageController extends ChangeNotifier {
@@ -35,7 +36,9 @@ class UsageController extends ChangeNotifier {
     final u = results[0] as UsageSnapshot?;
     offline = u == null;
     usage = u ?? usage;
-    if (u != null) notifyLimits(u);
+    // Provider quota alerts are for the owner who runs the server.
+    final owner = AuthController.instance.user?.isOwner ?? false;
+    if (u != null && owner) notifyLimits(u);
     health = (results[1] as HealthStatus?) ?? const HealthStatus(null);
     loading = false;
     notifyListeners();

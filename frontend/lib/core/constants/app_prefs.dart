@@ -24,6 +24,9 @@ abstract final class AppPrefs {
   static const profileSignature = 'profile_signature';
   static const textScale = 'text_scale';
   static const modelChoice = 'model_choice';
+
+  /// Display name of a specifically chosen model (never shown as a raw id).
+  static const modelChoiceName = 'model_choice_name';
   static const browserPackage = 'browser_package';
   static const browserLabel = 'browser_label';
 

@@ -75,7 +75,9 @@ void main() {
       await tester.drag(_list, const Offset(0, -250));
       await tester.pump(const Duration(milliseconds: 50));
     }
-    expect(seen.length, NotifyKind.values.length);
+    // Provider quota alerts are only offered to the owner.
+    expect(seen.length, NotifyKind.values.length - 1);
+    expect(seen, isNot(contains(NotifyKind.usage.key)));
   });
 
   testWidgets('master and per-kind switches change the prefs', (tester) async {
