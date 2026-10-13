@@ -69,6 +69,10 @@ abstract final class MdSizes {
   static const tlDiamondTurns = 0.125;
   static const tlDiamondScale = 0.72;
 
+  /// A one-item list has no timeline to start: a plain dot, this share of
+  /// the marker box (a lone filled square read as a stray "■" glyph).
+  static const tlSingleDotScale = 0.5;
+
   static const tableCodeFontSize = 12.0;
 
   // Math

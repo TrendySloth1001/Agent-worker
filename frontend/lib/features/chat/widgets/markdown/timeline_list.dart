@@ -435,8 +435,24 @@ class _Marker extends StatelessWidget {
       );
     }
 
-    final single = isFirst && isLast;
-    if (isFirst || single) {
+    // One item: nothing to connect, so a plain bullet dot (a lone filled
+    // square read as a stray "■" glyph).
+    if (isFirst && isLast) {
+      return SizedBox.square(
+        dimension: box,
+        child: Center(
+          child: Container(
+            width: box * MdSizes.tlSingleDotScale,
+            height: box * MdSizes.tlSingleDotScale,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: p.textPrimary,
+            ),
+          ),
+        ),
+      );
+    }
+    if (isFirst) {
       return Container(
         width: box,
         height: box,
