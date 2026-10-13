@@ -75,7 +75,8 @@ const messageSchema = z.object({
   table: tableSchema.nullish(),
 });
 
-const putSchema = z.object({ messages: z.array(messageSchema).min(1).max(2000) });
+// `origin` names where a new chat came from ("assistant": the assistant overlay); only set when the chat is created.
+export const putSchema = z.object({ messages: z.array(messageSchema).min(1).max(2000), origin: z.enum(["assistant"]).optional().catch(undefined) });
 const patchSchema = z
   .object({
     title: z.string().trim().min(1).max(120).optional(),
@@ -324,7 +325,7 @@ conversationsRouter.get("/:id", async (req, res) => {
 conversationsRouter.put("/:id", async (req, res) => {
   db();
   const id = idParam(req.params.id);
-  const { messages } = putSchema.parse(req.body);
+  const { messages, origin } = putSchema.parse(req.body);
   const uid = userOf(req).id;
   const firstUser = messages.find((m) => m.role === "user")?.content ?? "";
   const preview = firstUser.replace(/\s+/g, " ").trim().slice(0, 140);
@@ -336,7 +337,7 @@ conversationsRouter.put("/:id", async (req, res) => {
     // A plain upsert by primary key runs as INSERT ... ON CONFLICT, so concurrent first saves do not collide.
     const row = await c.conversation.upsert({
       where: { id },
-      create: { id, messageCount: messages.length, preview: preview || null, userId: uid },
+      create: { id, messageCount: messages.length, preview: preview || null, userId: uid, ...(origin ? { origin } : {}) },
       update: { messageCount: messages.length, ...(preview ? { preview } : {}), updatedAt: new Date() },
     });
     if (row.userId !== uid) throw new AppError(404, "not_found", "Conversation not found");
