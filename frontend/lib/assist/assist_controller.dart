@@ -16,11 +16,13 @@ import '../data/ai_model.dart';
 import '../data/chat_api.dart';
 import '../data/chat_event.dart';
 import '../data/chat_message.dart';
+import '../data/conversation.dart';
 import '../data/conversations_api.dart';
 import '../data/doc_models.dart';
 import '../data/docs_api.dart';
 import '../data/files_api.dart';
 import '../features/auth/auth_controller.dart';
+import '../features/actions/device_action_runner.dart';
 import '../features/chat/attachments_controller.dart';
 import '../features/chat/chat_turn.dart';
 import '../features/docs/doc_registry.dart';
@@ -226,8 +228,14 @@ class AssistController extends ChangeNotifier {
   /// Saving the chat for "Open in sparky".
   bool opening = false;
 
-  /// The id this chat gets when it is opened in the app.
+  /// The id this chat is saved under (history, "Open in sparky").
   String? conversationId;
+
+  /// The save in flight (saves run one after another, newest last).
+  Future<bool>? _saving;
+
+  /// The id, message count and content hash of the last save that worked.
+  String? _savedKey;
 
   PendingAttachment? _screenshot;
   int _session = 0;
@@ -253,6 +261,8 @@ class AssistController extends ChangeNotifier {
 
   /// A fresh opening: drop the previous conversation and screen.
   void reset(AssistShow next) {
+    // "Play it in my music app" picks an installed app: ask the phone now.
+    if (DeviceActionRunner.supported) InstalledMediaApps.warm();
     _cancelStream();
     generation++;
     show = next;
@@ -265,6 +275,7 @@ class AssistController extends ChangeNotifier {
     noticeOpensSettings = false;
     opening = false;
     conversationId = null;
+    _savedKey = null;
     _screenshot = null;
     for (final a in List.of(attachments.items)) {
       attachments.remove(a);
@@ -732,6 +743,7 @@ class AssistController extends ChangeNotifier {
         ..content = DocStrings.messageText(card.title)
         ..meta = {...reply.meta, 'doc': card.toMeta()};
       Haptics.send();
+      unawaited(autosave());
     } catch (e) {
       if (session != _session) return;
       Haptics.error();
@@ -773,6 +785,7 @@ class AssistController extends ChangeNotifier {
       _throttle = null;
       _closeStream();
       notifyListeners();
+      unawaited(autosave());
     }
 
     void fail(String text) {
@@ -964,18 +977,59 @@ class AssistController extends ChangeNotifier {
     await Clipboard.setData(ClipboardData(text: a.content));
   }
 
-  /// Saves this chat like the app does and opens it there; with no chat,
-  /// just opens the app.
+  /// What the history keeps of this chat: the visible questions (with their
+  /// photos, e.g. the circled cut-out) and the answers. The shared screen's
+  /// text is never part of a message, so it is never saved.
+  List<ChatMessage> get _savable => [
+    for (final m in messages)
+      if (!m.isStreaming &&
+          (m.content.trim().isNotEmpty || m.attachments.isNotEmpty))
+        m,
+  ];
+
+  /// Saves the chat to the history after each answered turn (Settings →
+  /// Assistant → "Save assistant chats to history", on by default). Errors
+  /// are quiet: the next turn or "Open in sparky" saves again.
+  Future<bool> autosave() {
+    if (!settings.assistSaveHistory) return Future.value(false);
+    return _save();
+  }
+
+  /// Saves [_savable] under [conversationId], after any save in flight; true
+  /// when it is stored. Marked as an assistant chat (the sidebar's icon).
+  Future<bool> _save() {
+    final saved = _savable;
+    if (!saved.any((m) => m.role == Role.assistant && !m.isError)) {
+      return Future.value(false);
+    }
+    final id = conversationId ??= ConversationsApi.newId();
+    final key =
+        '$id:${saved.length}:${Object.hashAll(saved.map((m) => m.content))}';
+    final previous = _saving ?? Future.value(true);
+    final next = previous.then((_) async {
+      if (_savedKey == key) return true;
+      try {
+        await conversations.save(
+          id,
+          saved,
+          origin: ConversationSummary.originAssistant,
+        );
+        if (conversationId == id) _savedKey = key;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    });
+    _saving = next;
+    return next;
+  }
+
+  /// Opens this chat in the app: it is already in the history (autosave);
+  /// otherwise it is saved first. With no chat, just opens the app.
   Future<bool> openInSparky() async {
     if (opening) return false;
     Haptics.tap();
-    final saved = [
-      for (final m in messages)
-        if (!m.isStreaming &&
-            (m.content.trim().isNotEmpty || m.attachments.isNotEmpty))
-          m,
-    ];
-    if (!saved.any((m) => m.role == Role.assistant)) {
+    if (!_savable.any((m) => m.role == Role.assistant)) {
       return bridge.openApp();
     }
     if (streaming) stop();
@@ -983,9 +1037,7 @@ class AssistController extends ChangeNotifier {
     notice = null;
     notifyListeners();
     final id = conversationId ??= ConversationsApi.newId();
-    try {
-      await conversations.save(id, saved);
-    } catch (_) {
+    if (!await _save()) {
       opening = false;
       Haptics.error();
       _setNotice(AssistStrings.openFailed);

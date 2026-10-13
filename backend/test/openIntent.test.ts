@@ -13,6 +13,7 @@ import {
   resolveOpenAction,
   siteQueries,
   type SiteSearchFn,
+  type MetaFn,
 } from "../src/context/openIntent.js";
 import { NO_TOOLS_NOTE } from "../src/prompts/system.js";
 import { tidyCitations, TagStream } from "../src/web/tagStream.js";
@@ -33,16 +34,16 @@ const SOURCES = [
 
 test("open/play/listen/watch ... on <app> is an open request", () => {
   const i = parseOpenIntent("Open on youtube music")!;
-  assert.equal(i.app.key, "youtube_music");
+  assert.equal(i.app?.key, "youtube_music");
   assert.equal(i.query, "");
-  assert.equal(parseOpenIntent("open it on YouTube Music.")!.app.key, "youtube_music");
-  assert.equal(parseOpenIntent("play this song on spotify please")!.app.key, "spotify");
+  assert.equal(parseOpenIntent("open it on YouTube Music.")!.app?.key, "youtube_music");
+  assert.equal(parseOpenIntent("play this song on spotify please")!.app?.key, "spotify");
   assert.equal(parseOpenIntent("play this song on spotify please")!.query, "");
   assert.equal(parseOpenIntent("Can you play I Met Her Again on JioSaavn")!.query, "I Met Her Again");
-  assert.equal(parseOpenIntent("watch it on youtube")!.app.key, "youtube");
-  assert.equal(parseOpenIntent("listen to it on gaana")!.app.key, "gaana");
-  assert.equal(parseOpenIntent("show it in google maps")!.app.key, "maps");
-  assert.equal(parseOpenIntent("buy it on flipkart")!.app.key, "flipkart");
+  assert.equal(parseOpenIntent("watch it on youtube")!.app?.key, "youtube");
+  assert.equal(parseOpenIntent("listen to it on gaana")!.app?.key, "gaana");
+  assert.equal(parseOpenIntent("show it in google maps")!.app?.key, "maps");
+  assert.equal(parseOpenIntent("buy it on flipkart")!.app?.key, "flipkart");
   assert.equal(parseOpenIntent("open youtube music")!.explicit, false);
 });
 
@@ -88,18 +89,21 @@ test("conversation links: the sent sources plus links written in the answer", ()
 
 // ---- resolution -------------------------------------------------------------
 
+const noMeta: MetaFn = async () => ({});
 const neverSearch: SiteSearchFn = async () => {
   throw new Error("search must not run");
 };
 
 test("a direct link in the sources is used without searching", async () => {
-  const a = await resolveOpenAction({ intent: parseOpenIntent("Open on youtube music")!, sources: SOURCES, lastAnswer: LAST_ANSWER, search: neverSearch });
+  const a = await resolveOpenAction({ intent: parseOpenIntent("Open on youtube music")!, sources: SOURCES, lastAnswer: LAST_ANSWER, search: neverSearch, meta: noMeta });
   assert.deepEqual(a, {
     type: "url",
     url: "https://music.youtube.com/watch?v=abcDEF12345",
     app: "YouTube Music",
     package: "com.google.android.apps.youtube.music",
     via: "source",
+    title: "I Met Her Again",
+    subtitle: "Maan Panu",
   });
 });
 
@@ -112,7 +116,7 @@ test("no link in the sources: a site-scoped search finds the item page", async (
       { title: "I Met Her Again", url: "https://open.spotify.com/track/7xyz123ABC", content: "" },
     ];
   };
-  const a = await resolveOpenAction({ intent: parseOpenIntent("play it on spotify")!, sources: SOURCES, lastAnswer: LAST_ANSWER, search });
+  const a = await resolveOpenAction({ intent: parseOpenIntent("play it on spotify")!, sources: SOURCES, lastAnswer: LAST_ANSWER, search, meta: noMeta });
   assert.deepEqual(asked, siteQueries(app("spotify"), "I Met Her Again Maan Panu"));
   assert.equal(asked[0], '"I Met Her Again Maan Panu" site:open.spotify.com');
   assert.equal(a?.type === "url" && a.url, "https://open.spotify.com/track/7xyz123ABC");
@@ -121,14 +125,14 @@ test("no link in the sources: a site-scoped search finds the item page", async (
 
 test("nothing found (or the search fails): the app's search deep link", async () => {
   for (const search of [async () => [], neverSearch] as SiteSearchFn[]) {
-    const a = await resolveOpenAction({ intent: parseOpenIntent("Open on youtube music")!, sources: [], lastAnswer: LAST_ANSWER, search });
+    const a = await resolveOpenAction({ intent: parseOpenIntent("Open on youtube music")!, sources: [], lastAnswer: LAST_ANSWER, search, meta: noMeta });
     assert.equal(a?.type === "url" && a.url, "https://music.youtube.com/search?q=I%20Met%20Her%20Again%20Maan%20Panu");
     assert.equal(a?.type === "url" && a.via, "app_search");
   }
 });
 
 test("'open youtube music' with nothing to open is an app action", async () => {
-  const a = await resolveOpenAction({ intent: parseOpenIntent("open youtube music")!, sources: [], lastAnswer: "", search: neverSearch });
+  const a = await resolveOpenAction({ intent: parseOpenIntent("open youtube music")!, sources: [], lastAnswer: "", search: neverSearch, meta: noMeta });
   assert.deepEqual(a, { type: "app", name: "YouTube Music", package: "com.google.android.apps.youtube.music" });
 });
 

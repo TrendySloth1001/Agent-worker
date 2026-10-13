@@ -87,7 +87,11 @@ class _Conversations extends ConversationsApi {
   _Conversations() : super('http://test');
 
   @override
-  Future<ConversationSummary> save(String id, List<ChatMessage> m) async =>
+  Future<ConversationSummary> save(
+    String id,
+    List<ChatMessage> m, {
+    String? origin,
+  }) async =>
       ConversationSummary(
         id: id,
         title: 'Chat',

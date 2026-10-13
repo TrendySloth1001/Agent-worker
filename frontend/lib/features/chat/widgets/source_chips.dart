@@ -24,28 +24,38 @@ class SourceChips extends StatelessWidget {
   final List<Citation> citations;
   final Set<String> used;
 
-  @override
-  Widget build(BuildContext context) {
-    // Several passages of one page or doc show as one chip, cited if any is.
+  /// One chip per page or doc, and one per web site (two Spotify pages are
+  /// one Spotify chip); GitHub keeps one per repository. A chip is cited if
+  /// any source it stands for is.
+  static List<(Citation, bool)> distinct(
+    List<Citation> citations,
+    Set<String> used,
+  ) {
     final byKey = <String, Citation>{};
     final cited = <String>{};
     for (final c in citations) {
-      final key =
-          '${c.kind.name}|${c.url.isNotEmpty ? c.url.split('#').first : c.title}';
+      final domain = citeDomain(c);
+      final page = c.url.isNotEmpty ? c.url.split('#').first : c.title;
+      final key = c.kind == CitationKind.web && domain.isNotEmpty
+          ? '${c.kind.name}|${domain == 'github.com' ? page : domain}'
+          : '${c.kind.name}|$page';
       byKey.putIfAbsent(key, () => c);
       if (used.contains(c.id)) cited.add(key);
     }
-    final keys = byKey.keys.toList();
+    return [for (final e in byKey.entries) (e.value, cited.contains(e.key))];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = distinct(citations, used);
     return SizedBox(
       height: AppSizes.sourceChipHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: keys.length,
+        itemCount: chips.length,
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xs),
-        itemBuilder: (context, i) => _SourceChip(
-          citation: byKey[keys[i]]!,
-          used: cited.contains(keys[i]),
-        ),
+        itemBuilder: (context, i) =>
+            _SourceChip(citation: chips[i].$1, used: chips[i].$2),
       ),
     );
   }

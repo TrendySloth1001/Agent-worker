@@ -41,6 +41,7 @@ abstract final class HistoryStrings {
   static const running = 'Replying';
   static const forked = 'Forked chat';
   static const merged = 'Merged chat';
+  static const fromAssistant = 'From the assistant';
   static const pinnedState = 'Pinned';
   static const currentState = 'Open chat';
   static const swipePin = 'PIN';
@@ -77,6 +78,7 @@ abstract final class HistorySizes {
   /// Always-visible "Search chats" field under the wordmark.
   static const searchPillHeight = 44.0;
   static const newChatHeight = 40.0;
+
   /// One chat row.
   static const rowHeight = 56.0;
   static const headerHeight = 56.0;
@@ -113,6 +115,7 @@ abstract final class HistoryIcons {
   static const back = AppIcons.back;
   static const fork = AppIcons.fork;
   static const merge = AppIcons.merge;
+  static const assistant = AppIcons.power;
   static const archive = AppIcons.archive;
   static const docs = AppIcons.doc;
 }
@@ -140,6 +143,7 @@ abstract final class DrawerMotion {
   // Rows and footer, Material 3 navigation drawer.
   static const itemInset = 12.0;
   static const footerTileHeight = 48.0;
+
   /// Icon over label, one row of four.
   static const footerTileTallHeight = 60.0;
   static const footerTileRadius = 20.0;

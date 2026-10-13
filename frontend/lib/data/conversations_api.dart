@@ -120,13 +120,16 @@ class ConversationsApi {
   /// Replaces the saved chat. The reply carries the title once it is named.
   Future<ConversationSummary> save(
     String id,
-    List<ChatMessage> messages,
-  ) async {
+    List<ChatMessage> messages, {
+    String? origin,
+  }) async {
     final r = await _send(
       'PUT',
       '/conversations/$id',
       body: {
         'messages': [for (final m in messages) m.toStorageJson()],
+        // Where a new chat came from ("assistant"); the server keeps the first.
+        'origin': ?origin,
       },
     );
     return ConversationSummary.fromJson(_json(r));

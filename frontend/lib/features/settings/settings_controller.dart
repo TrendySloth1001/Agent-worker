@@ -23,6 +23,7 @@ class SettingsController extends ChangeNotifier {
     voiceHighAccuracy = _prefs?.getBool(AppPrefs.voiceHighAccuracy) ?? false;
     assistActions = _prefs?.getBool(AppPrefs.assistActions) ?? true;
     assistLive = _prefs?.getBool(AppPrefs.assistLive) ?? true;
+    assistSaveHistory = _prefs?.getBool(AppPrefs.assistSaveHistory) ?? true;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
     role = _prefs?.getString(AppPrefs.profileRole) ?? '';
@@ -81,6 +82,9 @@ class SettingsController extends ChangeNotifier {
 
   /// Assistant: the talk button starts Live (spoken answers, keeps listening).
   late bool assistLive;
+
+  /// Assistant overlay chats are saved to the history on their own.
+  late bool assistSaveHistory;
 
   /// New chats start with WEB on Auto (true) or Off (false).
   late bool defaultWebSearch;
@@ -157,6 +161,12 @@ class SettingsController extends ChangeNotifier {
   void setAssistActions(bool value) {
     assistActions = value;
     _prefs?.setBool(AppPrefs.assistActions, value);
+    notifyListeners();
+  }
+
+  void setAssistSaveHistory(bool value) {
+    assistSaveHistory = value;
+    _prefs?.setBool(AppPrefs.assistSaveHistory, value);
     notifyListeners();
   }
 
@@ -329,6 +339,7 @@ class SettingsController extends ChangeNotifier {
     voiceHighAccuracy = false;
     assistActions = true;
     assistLive = true;
+    assistSaveHistory = true;
     for (final key in [
       AppPrefs.themeMode,
       AppPrefs.haptics,
@@ -346,6 +357,7 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.voiceHighAccuracy,
       AppPrefs.assistActions,
       AppPrefs.assistLive,
+      AppPrefs.assistSaveHistory,
     ]) {
       _prefs?.remove(key);
     }

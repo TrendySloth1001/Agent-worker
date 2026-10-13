@@ -182,46 +182,49 @@ class _ActionCardState extends State<ActionCard> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: DeviceActionSizes.iconCircle,
-                  height: DeviceActionSizes.iconCircle,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: app != null ? p.surface : p.accent,
-                    border: app != null
-                        ? Border.all(color: p.border, width: AppBorder.thin)
-                        : null,
-                  ),
-                  child: Center(
-                    child: AppIcon(
-                      app?.logo ?? a.icon,
-                      size: app != null
-                          ? MediaAppSizes.cardLogo
-                          : AppIconSize.md,
-                      color: app != null ? p.textPrimary : p.textInverse,
+            if (a.type == DeviceActionType.url)
+              LinkCardHeader(action: a, app: app)
+            else
+              Row(
+                children: [
+                  Container(
+                    width: DeviceActionSizes.iconCircle,
+                    height: DeviceActionSizes.iconCircle,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: app != null ? p.surface : p.accent,
+                      border: app != null
+                          ? Border.all(color: p.border, width: AppBorder.thin)
+                          : null,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        app?.logo ?? a.icon,
+                        size: app != null
+                            ? MediaAppSizes.cardLogo
+                            : AppIconSize.md,
+                        color: app != null ? p.textPrimary : p.textInverse,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(a.kicker, style: t.caption),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        a.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.title,
-                      ),
-                    ],
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(a.kicker, style: t.caption),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          a.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.title,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             if (details.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               for (final (label, value) in details)
@@ -264,11 +267,16 @@ class _ActionCardState extends State<ActionCard> {
                 runSpacing: AppSpacing.sm,
                 children: [
                   // Each button as wide as its label (a Wrap would stretch it).
+                  // A link offers two ways out (store, browser) on one row;
+                  // leaving it is Cancel enough.
                   for (final button in <Widget>[
-                    _CardButton(
-                      label: DeviceActionStrings.cancel,
-                      onTap: _state == ActionCardState.running ? null : _cancel,
-                    ),
+                    if (a.type != DeviceActionType.url)
+                      _CardButton(
+                        label: DeviceActionStrings.cancel,
+                        onTap: _state == ActionCardState.running
+                            ? null
+                            : _cancel,
+                      ),
                     _CardButton(
                       label: MediaAppStrings.getApp,
                       filled: a.type != DeviceActionType.url,
@@ -304,6 +312,8 @@ class _ActionCardState extends State<ActionCard> {
                     label: _state == ActionCardState.running
                         ? DeviceActionStrings.running
                         : app != null && _installed == true
+                        ? MediaAppStrings.openIn(app.label)
+                        : a.type == DeviceActionType.url
                         ? MediaAppStrings.open
                         : DeviceActionStrings.confirm,
                     filled: true,
@@ -359,6 +369,109 @@ class _CardButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The top of a link card: the cover (or the app's logo, large, when there is
+/// none), the item's name, who made it, and the app's logo badge with its
+/// name ("YouTube Music"). Never the bare URL.
+class LinkCardHeader extends StatelessWidget {
+  const LinkCardHeader({super.key, required this.action, this.app});
+
+  final DeviceAction action;
+  final MediaApp? app;
+
+  /// How covers load; tests swap in a local image.
+  static ImageProvider Function(String url) imageFor = NetworkImage.new;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = context.text;
+    final app = this.app;
+    final subtitle = action.linkSubtitle;
+    final logo = Center(
+      child: AppIcon(
+        app?.logo ?? action.icon,
+        size: MediaAppSizes.coverLogo,
+        color: p.textPrimary,
+      ),
+    );
+    final image = action.linkImage;
+    final zoom =
+        image != null && Uri.parse(image).host == MediaAppSizes.youtubeThumbHost
+        ? MediaAppSizes.youtubeZoom
+        : 1.0;
+    return Row(
+      children: [
+        Container(
+          width: MediaAppSizes.cover,
+          height: MediaAppSizes.cover,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: p.surface,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: p.border, width: AppBorder.thin),
+          ),
+          child: image == null
+              ? logo
+              : Image(
+                  image: imageFor(image),
+                  fit: BoxFit.cover,
+                  width: MediaAppSizes.cover,
+                  height: MediaAppSizes.cover,
+                  gaplessPlayback: true,
+                  // Only the loaded picture is zoomed, never the logo.
+                  frameBuilder: (_, child, frame, sync) => sync || frame != null
+                      ? Transform.scale(scale: zoom, child: child)
+                      : logo,
+                  errorBuilder: (_, _, _) => logo,
+                ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AppIcon(
+                    app?.logo ?? action.icon,
+                    size: MediaAppSizes.badgeLogo,
+                    color: p.textSecondary,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Flexible(
+                    child: Text(
+                      (app?.label ?? action.kicker).toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.caption,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                action.linkTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: t.title,
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.bodySmall,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

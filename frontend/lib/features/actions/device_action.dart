@@ -97,6 +97,43 @@ class DeviceAction {
     });
   }
 
+  /// Keys of a url action that only the card uses (Kotlin never sees them).
+  static const _cardOnly = {
+    DeviceActionWire.title,
+    DeviceActionWire.subtitle,
+    DeviceActionWire.image,
+    DeviceActionWire.site,
+  };
+
+  /// A url action the card shows richly: the item's name ("Rab Diyan Rab
+  /// Jaane"), else the site's host, never the raw link.
+  String get linkTitle =>
+      fields[DeviceActionWire.title] ??
+      Uri.parse(
+        fields[DeviceActionWire.url]!,
+      ).host.replaceFirst(RegExp(r'^www\.'), '');
+
+  /// Who made it (artist, channel) or the site; null when unknown.
+  String? get linkSubtitle =>
+      fields[DeviceActionWire.subtitle] ??
+      (fields[DeviceActionWire.title] != null
+          ? fields[DeviceActionWire.site]
+          : null);
+
+  /// The cover image (https only), or null: the card shows the app's logo.
+  /// A YouTube / YouTube Music link without one gets its video's thumbnail.
+  String? get linkImage {
+    final raw = fields[DeviceActionWire.image];
+    final u = raw == null ? null : Uri.tryParse(raw);
+    if (u != null && u.scheme == 'https' && u.host.isNotEmpty) return raw;
+    final link = fields[DeviceActionWire.url] ?? '';
+    final app = mediaApp;
+    final id = app == MediaApps.youtube || app == MediaApps.youtubeMusic
+        ? MediaAppWire.youtubeId.firstMatch(link)?.group(1)
+        : null;
+    return id == null ? null : MediaAppWire.youtubeThumb(id);
+  }
+
   bool get allDay => fields[DeviceActionWire.allDay] == 'true';
 
   int get seconds => int.tryParse(fields[DeviceActionWire.seconds] ?? '') ?? 0;
@@ -291,9 +328,6 @@ class DeviceAction {
         if (f(DeviceActionWire.notes) case final n?)
           (DeviceActionStrings.notesLabel, n),
       ],
-      DeviceActionType.url => [
-        (DeviceActionStrings.linkLabel, f(DeviceActionWire.url)!),
-      ],
       DeviceActionType.sms || DeviceActionType.whatsapp => [
         if (f(DeviceActionWire.number) case final n?)
           (DeviceActionStrings.toLabel, n),
@@ -315,7 +349,10 @@ class DeviceAction {
         if (f(DeviceActionWire.travel) case final t?)
           (DeviceActionStrings.travelLabel, t),
       ],
-      DeviceActionType.app || DeviceActionType.dial => const [],
+      // A link never shows as a bare URL: the card shows its title and site.
+      DeviceActionType.app ||
+      DeviceActionType.dial ||
+      DeviceActionType.url => const [],
     };
   }
 
@@ -353,6 +390,10 @@ class DeviceAction {
         DeviceActionType.whatsapp => {
           DeviceActionWire.number: f(DeviceActionWire.number),
           DeviceActionWire.text: f(DeviceActionWire.text),
+        },
+        DeviceActionType.url => {
+          for (final e in fields.entries)
+            if (!_cardOnly.contains(e.key)) e.key: e.value,
         },
         _ => fields,
       },

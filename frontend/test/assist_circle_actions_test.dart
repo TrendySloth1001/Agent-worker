@@ -552,7 +552,12 @@ void main() {
         ..add(const DoneEvent());
       await _settle(tester);
       expect(find.text(MediaAppStrings.openIn('YouTube')), findsOneWidget);
-      expect(find.text(MediaAppStrings.inBrowser('Gaana')), findsOneWidget);
+      // Installed apps first, at most two chips.
+      expect(
+        find.text(MediaAppStrings.inBrowser('Apple Music')),
+        findsOneWidget,
+      );
+      expect(find.text(MediaAppStrings.inBrowser('Gaana')), findsNothing);
 
       await tester.enterText(find.byType(TextField), 'Open on youtube music');
       await tester.testTextInput.receiveAction(TextInputAction.send);
@@ -576,9 +581,8 @@ void main() {
         find.text(MediaAppStrings.openIn('YouTube Music')),
         findsOneWidget,
       );
-      expect(find.text(MediaAppStrings.open), findsOneWidget);
       await _golden(tester, 'goldens/assist_open_in_app_$theme.png');
-      await tester.tap(find.text(MediaAppStrings.open));
+      await tester.tap(find.text(MediaAppStrings.openIn('YouTube Music')));
       await tester.pump();
       final run = runner.runs.last;
       expect(run.type, DeviceActionType.url);

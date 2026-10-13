@@ -39,7 +39,7 @@ import { peekKb } from "../retrieval/peek.js";
 import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { screenContextMessage, screenSchema } from "../context/screen.js";
 import { deviceActionsMessage, deviceActionsSchema, tailNotes } from "../context/deviceActions.js";
-import { actionBlock, conversationLinks, hasActionBlock, openActionNote, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
+import { actionBlock, conversationLinks, hasActionBlock, openActionNote, openReply, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
 import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
@@ -252,6 +252,41 @@ chatRouter.post("/", async (req, res) => {
     if (prepared.failed.length > 0) {
       sse.send("notice", { code: "attachment_failed", message: `Couldn't read ${prepared.failed.join(", ")}.` });
     }
+    // ---- open / play requests ("open it on YouTube Music", "play it in my music app", "gaana chalao"):
+    // a deterministic action (link from the sources, else a site search, else the app's search page), resolved
+    // before anything else. Without an attachment the turn is answered here, with no model: one short sentence
+    // and the rich card, so no images, widgets, GitHub data or source chips can join it.
+    const lastAssistant = [...body.messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
+    const openIntent = body.deviceActions && lastUserText ? parseOpenIntent(lastUserText) : null;
+    const openP: Promise<OpenAction | null> = openIntent
+      ? resolveOpenAction({
+          intent: openIntent,
+          sources: conversationLinks(body.sources, lastAssistant),
+          lastAnswer: lastAssistant,
+          history: body.messages.filter((m) => m.role === "user").slice(0, -1).map((m) => m.content),
+          installed: body.deviceActions?.installedApps ?? null,
+          search: (queries, signal) => researchWeb({ question: queries[0], preplanned: { queries, fresh: null }, maxResults: 8, fetchTop: 0, signal }),
+          signal: ctl.signal,
+        }).catch(() => null)
+      : Promise.resolve(null);
+    if (openIntent && latestIds.length === 0) {
+      const action = await openP;
+      if (ctl.signal.aborted) return;
+      if (action) {
+        const reply = openReply(action);
+        log.info("open action", { requestId, type: action.type, via: action.type === "url" ? action.via : action.type, intent: openIntent.app?.key ?? openIntent.category ?? "context" });
+        sse.send("status", { phase: "generating" });
+        sse.send("delta", { text: reply.text });
+        if (reply.suggestions.length) sse.send("suggestions", { items: reply.suggestions });
+        sse.send("usage", { promptTokens: 0, completionTokens: 0 });
+        const latencyMs = Date.now() - started;
+        summarize(Date.now());
+        sse.send("done", { used: [], finishReason: "stop", latencyMs });
+        log.info("chat", { requestId, model: "open-intent", latencyMs, status: 200 });
+        return;
+      }
+    }
+
     // ---- image + web: a fast vision call names what the image shows, the web is searched for it, a text model answers.
     const webMode = resolveWebMode(body);
     const latestImage = latestIds.some((id) => fileRows.get(id)?.kind === "image" && fileRows.get(id)?.status === "ready")
@@ -274,23 +309,11 @@ chatRouter.post("/", async (req, res) => {
     // ---- conversation context: built once, shared by every tool -------------
     const lastUserMsg = [...body.messages].reverse().find((m) => m.role === "user");
     const aboutAttachments = (lastUserMsg?.attachments?.length ?? 0) > 0;
-    const lastAssistant = [...body.messages].reverse().find((m) => m.role === "assistant")?.content ?? "";
     const smallTalk = nlp.intent.top === "chitchat" && !nlp.intent.uncertain && nlp.intent.confidence >= 0.6;
 
     // ---- preflight: ONE small-model call replaces the standalone rewrite, search decision, web query plan and RAG variants.
     // The local NLP and rules decide alone when they are confident; the model is asked only for what they cannot settle.
-    // "Open it on YouTube Music": a deterministic open action (link from the sources, else a site search, else the app's
-    // search page), resolved alongside the rest of the turn; the reply only needs one sentence, so no general search.
-    const openIntent = body.deviceActions && lastUserText ? parseOpenIntent(lastUserText) : null;
-    const openP: Promise<OpenAction | null> = openIntent
-      ? resolveOpenAction({
-          intent: openIntent,
-          sources: conversationLinks(body.sources, lastAssistant),
-          lastAnswer: lastAssistant,
-          search: (queries, signal) => researchWeb({ question: queries[0], preplanned: { queries, fresh: null }, maxResults: 8, fetchTop: 0, signal }),
-          signal: ctl.signal,
-        }).catch(() => null)
-      : Promise.resolve(null);
+    // An open request with an attachment still goes to the model (the image says what to open); it needs one sentence, so no search.
     const wantWeb = webMode !== "off" && !aboutAttachments && !openIntent;
     // On: always search (except small talk); auto: the local rules / preflight decide; off: never.
     const webLocal: SearchDecision | null = !wantWeb

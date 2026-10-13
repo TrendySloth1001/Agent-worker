@@ -25,6 +25,27 @@ class OpenInChips extends StatefulWidget {
   static List<(MediaApp, String)> linksOf(List<Citation> citations) =>
       MediaApps.openLinks(citations.map((c) => c.url));
 
+  /// The chips to draw once [installed] is known (empty: not yet): installed
+  /// apps first, no "{app} in browser" when an installed app of the same
+  /// kind is offered, at most [MediaAppSizes.shownChips].
+  static List<(MediaApp, String)> visible(
+    List<(MediaApp, String)> links,
+    Map<String, bool> installed,
+  ) {
+    if (installed.isEmpty) return links;
+    bool has(MediaApp a) => installed[a.package] ?? false;
+    final kinds = {
+      for (final (app, _) in links)
+        if (has(app)) app.category,
+    };
+    return [
+      for (final l in links)
+        if (has(l.$1)) l,
+      for (final l in links)
+        if (!has(l.$1) && !kinds.contains(l.$1.category)) l,
+    ].take(MediaAppSizes.shownChips).toList();
+  }
+
   @override
   State<OpenInChips> createState() => _OpenInChipsState();
 }
@@ -79,7 +100,7 @@ class _OpenInChipsState extends State<OpenInChips> {
       spacing: AppSpacing.xs,
       runSpacing: AppSpacing.xs,
       children: [
-        for (final (app, url) in _links)
+        for (final (app, url) in OpenInChips.visible(_links, _installed))
           _OpenChip(
             app: app,
             // Not installed (once known): the page opens in the browser.

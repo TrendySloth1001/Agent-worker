@@ -85,12 +85,30 @@ class ChatTurn {
   static WebMode defaultWeb(SettingsController s) =>
       s.defaultWebSearch ? WebMode.auto : WebMode.off;
 
-  /// Streams the reply. [screen] is the overlay's shared screen.
+  /// Streams the reply. [screen] is the overlay's shared screen. With
+  /// device actions, the installed media apps go along (the last answer of
+  /// the phone; never waited for).
   Stream<ChatEvent> stream(
     ChatApi api,
     http.Client client,
     List<ChatMessage> history, {
     Map<String, Object>? screen,
+  }) {
+    if (!deviceActions || !DeviceActionRunner.supported) {
+      return _stream(api, client, history, screen: screen);
+    }
+    // Never waits for the phone: the last answer goes, a fresh one is asked for.
+    final installed = InstalledMediaApps.cached;
+    InstalledMediaApps.warm();
+    return _stream(api, client, history, screen: screen, installed: installed);
+  }
+
+  Stream<ChatEvent> _stream(
+    ChatApi api,
+    http.Client client,
+    List<ChatMessage> history, {
+    Map<String, Object>? screen,
+    List<String>? installed,
   }) => api.streamChat(
     client,
     history,
@@ -106,7 +124,7 @@ class ChatTurn {
     suppressSuggest: suppressSuggest,
     apps: apps,
     screen: screen,
-    deviceActions: deviceActions ? deviceActionsRequest() : null,
+    deviceActions: deviceActions ? deviceActionsRequest(null, installed) : null,
   );
 
   /// DOC: the document request for [prompt] with the same toggles.
