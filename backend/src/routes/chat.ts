@@ -38,7 +38,8 @@ import { kbRelevance, pickSuggestion, referencesKb, resolveWebMode, toolsNote, t
 import { peekKb } from "../retrieval/peek.js";
 import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { screenContextMessage, screenSchema } from "../context/screen.js";
-import { deviceActionsMessage, deviceActionsSchema } from "../context/deviceActions.js";
+import { deviceActionsMessage, deviceActionsSchema, tailNotes } from "../context/deviceActions.js";
+import { actionBlock, conversationLinks, hasActionBlock, openActionNote, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
 import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
@@ -117,6 +118,11 @@ const bodySchema = z.object({
   screen: screenSchema.optional(),
   // The Android app can run confirmed device actions (alarm, event, dial...): teach the action block.
   deviceActions: deviceActionsSchema.optional(),
+  // Links of the conversation's recent answers (their sources): "open it on YouTube Music" opens the right one.
+  sources: z
+    .array(z.object({ url: z.string().max(2000), title: z.string().max(300).optional() }))
+    .max(40)
+    .optional(),
   // Connected-app items the user attached ("Ask Sparky about this page"): read live, cited as documents.
   apps: z
     .array(z.object({ provider: z.enum(["google_drive", "notion"]), id: z.string().min(10).max(200), title: z.string().max(200).optional() }))
@@ -273,7 +279,19 @@ chatRouter.post("/", async (req, res) => {
 
     // ---- preflight: ONE small-model call replaces the standalone rewrite, search decision, web query plan and RAG variants.
     // The local NLP and rules decide alone when they are confident; the model is asked only for what they cannot settle.
-    const wantWeb = webMode !== "off" && !aboutAttachments;
+    // "Open it on YouTube Music": a deterministic open action (link from the sources, else a site search, else the app's
+    // search page), resolved alongside the rest of the turn; the reply only needs one sentence, so no general search.
+    const openIntent = body.deviceActions && lastUserText ? parseOpenIntent(lastUserText) : null;
+    const openP: Promise<OpenAction | null> = openIntent
+      ? resolveOpenAction({
+          intent: openIntent,
+          sources: conversationLinks(body.sources, lastAssistant),
+          lastAnswer: lastAssistant,
+          search: (queries, signal) => researchWeb({ question: queries[0], preplanned: { queries, fresh: null }, maxResults: 8, fetchTop: 0, signal }),
+          signal: ctl.signal,
+        }).catch(() => null)
+      : Promise.resolve(null);
+    const wantWeb = webMode !== "off" && !aboutAttachments && !openIntent;
     // On: always search (except small talk); auto: the local rules / preflight decide; off: never.
     const webLocal: SearchDecision | null = !wantWeb
       ? { search: false, query: "", reason: "none" }
@@ -611,8 +629,18 @@ chatRouter.post("/", async (req, res) => {
     if (githubHint) prompt.push({ role: "system", content: githubHint });
     if (appsHint) prompt.push({ role: "system", content: appsHint });
     // The image was identified: a text model answers from the identification (no pixels), which is much faster.
-    if (ident) prompt.push({ role: "system", content: identificationMessage(ident) });
-    if (wantsVision) prompt.push({ role: "system", content: NO_TOOLS_NOTE });
+    // Device actions still apply on image, image + web and vision turns (the no-tools note allows the action block).
+    const openAction = await openP;
+    if (openAction) log.info("open action", { requestId, type: openAction.type, via: openAction.type === "url" ? openAction.via : "app" });
+    for (const note of tailNotes({
+      identification: ident ? identificationMessage(ident) : null,
+      vision: wantsVision,
+      noTools: NO_TOOLS_NOTE,
+      actions: body.deviceActions,
+      open: openAction ? openActionNote(openAction) : null,
+    })) {
+      prompt.push({ role: "system", content: note });
+    }
     prompt.push({
       role: "system",
       content: toolsNote({
@@ -667,9 +695,10 @@ chatRouter.post("/", async (req, res) => {
 
     sse.send("status", { phase: "generating" });
     let text = "";
-    const tags = new TagStream();
     // The chair only keeps tags that exist in the citation list.
     const validTags = new Set(citations.map((c) => c.id));
+    // Tags citing nothing of this turn (copied from earlier answers) are dropped, with the space before them.
+    const tags = new TagStream(validTags);
     const keepValid = (s: string) => (table ? s.replace(/\[([KWDC]\d+)\]/g, (m, id: string) => (validTags.has(id) ? m : "")) : s);
     const chairAt = Date.now();
     let firstTokenAt: number | null = null;
@@ -791,6 +820,12 @@ chatRouter.post("/", async (req, res) => {
     if (tail) {
       text += tail;
       sse.send("delta", { text: tail });
+    }
+    // The open action the model did not write itself (weak and vision models often answer in prose).
+    if (openAction && !hasActionBlock(text)) {
+      const block = actionBlock(openAction);
+      text += block;
+      sse.send("delta", { text: block });
     }
 
     // Follow-up prompt chips: a fast model, bounded so it never holds `done` for long.
