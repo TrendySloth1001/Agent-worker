@@ -32,6 +32,7 @@ import '../settings/widgets/settings_kit.dart';
 import '../storage/storage_screen.dart';
 import '../../core/constants/storage.dart';
 import 'widgets/sign_in_methods.dart';
+import 'widgets/log_out_sheet.dart';
 
 /// Account: name and photo, today's usage, sign-in methods, password,
 /// devices, log out.
@@ -317,40 +318,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _logOut() async {
     Haptics.tap();
-    final ok = await _confirm(ProfileStrings.logOutConfirm);
+    final ok = await LogOutSheet.show(context);
     if (ok) await _auth.signOut();
-  }
-
-  Future<bool> _confirm(String message) async {
-    final p = context.palette;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: p.surface,
-        content: Text(message, style: context.text.body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              ProfileStrings.cancel,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge!.copyWith(color: p.textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              ProfileStrings.logOut,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge!.copyWith(color: p.textPrimary),
-            ),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
   }
 
   void _openSheet(Widget sheet) {

@@ -87,7 +87,6 @@ abstract final class ProfileStrings {
   static const unknownDevice = 'Unknown device';
   static const lastActive = 'Active';
   static const logOut = 'Log out';
-  static const logOutConfirm = 'Log out of sparky on this device?';
   static const deleteAccount = 'Delete account';
   static const deleteWarning =
       'This permanently deletes your account, chats, knowledge base and files. '

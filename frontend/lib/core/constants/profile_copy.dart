@@ -18,6 +18,14 @@ abstract final class ProfileCopy {
   static const othersSignedOut = 'Other devices were signed out.';
   static const logOut = 'Sign out';
   static const logOutHelp = 'Sign out of sparky on this device.';
+
+  // Sign-out sheet.
+  static const logOutKicker = 'SIGN OUT';
+  static const logOutTitle = 'Taking a break?';
+  static const logOutBody =
+      'Your chats, memories and notes stay safe on your account. '
+      'Sign back in any time to pick up where you left off.';
+  static const logOutStay = 'Stay';
   static const deleteHelp = 'Permanently delete your account and data.';
   static const manageStorage = 'Manage storage';
   static const changePassword = 'Change password';
