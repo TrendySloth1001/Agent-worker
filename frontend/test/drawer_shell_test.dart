@@ -60,7 +60,47 @@ double get _contentScale {
   return box.getTransformTo(null).entry(0, 0);
 }
 
+/// Counts haptic calls on the platform channel.
+List<String> _recordHaptics(WidgetTester tester) {
+  final calls = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'HapticFeedback.vibrate')
+        calls.add('${call.arguments}');
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
+  return calls;
+}
+
 void main() {
+  testWidgets('opening from a button adds no second haptic', (tester) async {
+    await _pump(tester);
+    final calls = _recordHaptics(tester);
+    _shell.currentState!.open();
+    await tester.pumpAndSettle();
+    expect(_shell.currentState!.value, 1);
+    expect(calls, isEmpty); // The button gives the one tap itself.
+  });
+
+  testWidgets('a swipe that settles open ticks once', (tester) async {
+    await _pump(tester);
+    final calls = _recordHaptics(tester);
+    // A no-op open first must not silence the next swipe.
+    _shell.currentState!.close();
+    await tester.dragFrom(const Offset(2, 400), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(_shell.currentState!.value, 1);
+    expect(calls.length, 1);
+  });
+
   testWidgets('drag from the edge moves panel and chat 1:1', (tester) async {
     await _pump(tester);
     expect(_shell.currentState!.value, 0);

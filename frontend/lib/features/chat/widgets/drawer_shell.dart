@@ -58,6 +58,9 @@ class DrawerShellState extends State<DrawerShell>
   bool _shown = false;
   bool _opened = false;
   bool _dragging = false;
+
+  /// Opened by a button that already gave its own haptic: no second tick.
+  bool _quietOpen = false;
   bool _backActive = false;
   double _backFrom = 0;
   bool _reduce = false;
@@ -99,11 +102,17 @@ class DrawerShellState extends State<DrawerShell>
     final open = _c.value >= 1;
     if (open != _opened) {
       _opened = open;
-      if (open && !_dragging && !_backActive) Haptics.tick();
+      if (open && !_dragging && !_backActive && !_quietOpen) Haptics.tick();
+      _quietOpen = false;
     }
   }
 
-  void open({double velocity = 0}) => _settle(true, velocity);
+  /// Opens the drawer. A tap on a button already buzzed, so the "fully
+  /// open" tick is skipped; a swipe still ticks when it settles open.
+  void open({double velocity = 0}) {
+    _quietOpen = true;
+    _settle(true, velocity);
+  }
 
   void close({double velocity = 0}) => _settle(false, velocity);
 
@@ -148,6 +157,7 @@ class DrawerShellState extends State<DrawerShell>
   void dragStart(DragStartDetails d) {
     _c.stop();
     _dragging = true;
+    _quietOpen = false;
   }
 
   void dragUpdate(DragUpdateDetails d) {
