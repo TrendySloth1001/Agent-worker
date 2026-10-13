@@ -7,6 +7,7 @@ import '../../data/chat_event.dart';
 import '../../data/chat_message.dart';
 import '../../data/docs_api.dart';
 import '../../data/files_api.dart';
+import '../actions/device_action_runner.dart';
 import '../settings/settings_controller.dart';
 
 /// What one chat turn asks of the server besides the history. Built the same
@@ -26,6 +27,7 @@ class ChatTurn {
     this.smartSuggestions = true,
     this.suppressSuggest = const {},
     this.apps = const [],
+    this.deviceActions = false,
   });
 
   /// The turn for [settings] with the composer's toggles.
@@ -51,6 +53,7 @@ class ChatTurn {
     smartSuggestions: settings.smartSuggestions,
     suppressSuggest: Set.of(suppressSuggest),
     apps: apps,
+    deviceActions: settings.assistActions && DeviceActionRunner.supported,
   );
 
   final String? modelId;
@@ -64,6 +67,9 @@ class ChatTurn {
   final bool smartSuggestions;
   final Set<SuggestKind> suppressSuggest;
   final List<Map<String, String>> apps;
+
+  /// The phone can run proposed actions (Android, actions on in Settings).
+  final bool deviceActions;
 
   /// The model picked in Settings, only if the server still offers it
   /// (else Auto: the server routes).
@@ -100,6 +106,7 @@ class ChatTurn {
     suppressSuggest: suppressSuggest,
     apps: apps,
     screen: screen,
+    deviceActions: deviceActions ? deviceActionsRequest() : null,
   );
 
   /// DOC: the document request for [prompt] with the same toggles.

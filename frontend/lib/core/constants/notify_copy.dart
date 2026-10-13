@@ -44,6 +44,9 @@ abstract final class NotifyCopy {
   static const resumeChannel = 'Reminders';
   static const resumeChannelInfo =
       'A gentle reminder about work you left unfinished.';
+  static const reminderChannel = 'Your reminders';
+  static const reminderChannelInfo =
+      'Reminders you asked sparky to set (an action card you confirmed).';
 
   // Settings page: one switch per kind.
   static const replyLabel = 'Long replies';
@@ -66,6 +69,10 @@ abstract final class NotifyCopy {
   static const githubHelp = 'When GitHub needs to be connected again.';
   static const resumeLabel = 'Continue where you left off';
   static const resumeHelp = 'A reminder about an outline waiting for review.';
+  static const reminderLabel = 'Reminders you ask for';
+  static const reminderHelp =
+      '"Remind me to…": the reminders you confirm in a chat.';
+  static const reminderTitle = 'Reminder';
 
   // Settings page: sections and rows.
   static const masterLabel = 'Allow notifications';

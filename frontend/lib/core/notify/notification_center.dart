@@ -408,6 +408,50 @@ class NotificationCenter with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// A reminder the user confirmed on an action card, at [at] (local
+  /// time). Works from the assistant overlay's engine too: there the plugin
+  /// starts here, without the app's start-up clean-up (which would stop a
+  /// round table running in the app). False when notifications are blocked
+  /// or the user turned this kind off.
+  Future<bool> remind({
+    required String key,
+    required String body,
+    required DateTime at,
+  }) async {
+    if (!_supported) return false;
+    if (!_ready) {
+      try {
+        await _plugin.initialize(
+          settings: const InitializationSettings(
+            android: AndroidInitializationSettings(NotifyConfig.icon),
+          ),
+          onDidReceiveNotificationResponse: _onResponse,
+        );
+        _ready = true;
+        await _createChannels();
+      } catch (_) {
+        return false;
+      }
+    }
+    const kind = NotifyKind.reminder;
+    if (!prefs.allows(kind) || !await _enabled()) return false;
+    try {
+      await _plugin.zonedSchedule(
+        id: kind.idFor(key),
+        title: NotifyCopy.reminderTitle,
+        body: _clip(body),
+        scheduledDate: tz.TZDateTime.from(at.toUtc(), tz.UTC),
+        notificationDetails: NotificationDetails(
+          android: _doneDetails(kind, body, quiet: false, grouped: false),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---- test --------------------------------------------------------------
 
   /// A sample notification, regardless of the per-kind switches. False when

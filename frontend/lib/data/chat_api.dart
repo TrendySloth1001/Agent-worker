@@ -104,6 +104,7 @@ class ChatApi {
     Set<SuggestKind> suppressSuggest = const {},
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
+    Map<String, Object>? deviceActions,
   }) async* {
     final request =
         http.Request('POST', Uri.parse('${AppConfig.apiBaseUrl}/chat'))
@@ -128,6 +129,8 @@ class ChatApi {
             if (apps.isNotEmpty) 'apps': apps,
             // Assistant overlay: the screen the user chose to share.
             'screen': ?screen,
+            // Android: the phone can run confirmed actions (alarm, event...).
+            'deviceActions': ?deviceActions,
           });
 
     // [client] stays the caller's (closing it stops the stream); the
