@@ -216,7 +216,7 @@ abstract final class AssistIcons {
   static const camera = HugeIcons.strokeRoundedCamera01;
   static const photos = HugeIcons.strokeRoundedImage01;
   static const power = HugeIcons.strokeRoundedPower;
-  static const gesture = HugeIcons.strokeRoundedTouch01;
+  static const gesture = HugeIcons.strokeRoundedSwipeUp01;
   static const nothing = HugeIcons.strokeRoundedSmartPhone02;
   static const assistant = HugeIcons.strokeRoundedAiChat02;
   static const tryIt = HugeIcons.strokeRoundedPlay;
@@ -225,7 +225,7 @@ abstract final class AssistIcons {
   static const screenshot = HugeIcons.strokeRoundedImage01;
   static const privacy = HugeIcons.strokeRoundedShield01;
   static const circle = HugeIcons.strokeRoundedSearchArea;
-  static const tile = HugeIcons.strokeRoundedDashboardSquare02;
+  static const tile = HugeIcons.strokeRoundedToggleOn;
   static const shareTo = HugeIcons.strokeRoundedShare08;
   static const shortcuts = HugeIcons.strokeRoundedTouchInteraction01;
   static const actions = HugeIcons.strokeRoundedAlarmClock;

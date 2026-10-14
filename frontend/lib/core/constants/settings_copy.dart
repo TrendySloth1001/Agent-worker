@@ -1,5 +1,7 @@
 import 'package:hugeicons/hugeicons.dart';
 
+import 'app_icons.dart';
+
 /// Plain-language copy for the Settings screen.
 abstract final class SettingsStrings {
   static const searchHint = 'Search settings';
@@ -204,8 +206,8 @@ abstract final class SettingsStrings {
 abstract final class SettingsIcons {
   static const textSize = HugeIcons.strokeRoundedTextFont;
   static const theme = HugeIcons.strokeRoundedPaintBoard;
-  static const tone = HugeIcons.strokeRoundedSmile;
-  static const length = HugeIcons.strokeRoundedTextAlignLeft;
+  static const tone = HugeIcons.strokeRoundedMegaphone01;
+  static const length = HugeIcons.strokeRoundedRuler;
   static const account = HugeIcons.strokeRoundedUserCircle;
   static const listModels = HugeIcons.strokeRoundedListView;
   static const privacy = HugeIcons.strokeRoundedSecurityLock;
@@ -214,9 +216,21 @@ abstract final class SettingsIcons {
   static const apps = HugeIcons.strokeRoundedPlug01;
   static const modelAuto = HugeIcons.strokeRoundedRocket01;
   static const modelFast = HugeIcons.strokeRoundedFlash;
-  static const modelSmart = HugeIcons.strokeRoundedBrain02;
-  static const presetTeacher = HugeIcons.strokeRoundedTeacher;
-  static const presetFun = HugeIcons.strokeRoundedHappy;
+  static const modelSmart = HugeIcons.strokeRoundedAiIdea;
+  static const presetDefault = HugeIcons.strokeRoundedThumbsUp;
+  static const presetTeacher = HugeIcons.strokeRoundedPresentation01;
+  static const presetFun = HugeIcons.strokeRoundedParty;
+
+  // Typing and voice options: one glyph per behaviour.
+  static const autocomplete = HugeIcons.strokeRoundedKeyboard;
+  static const voiceAutoSend = HugeIcons.strokeRoundedSendToMobile;
+  static const voiceAccuracy = HugeIcons.strokeRoundedSpeechToText;
+  static const voiceAutoFix = AppIcons.aiFormat;
+  static const voiceExact = HugeIcons.strokeRoundedQuoteDown;
+
+  // Chat defaults and knowledge.
+  static const knowledgeManage = HugeIcons.strokeRoundedLibrary;
+  static const smartToggles = HugeIcons.strokeRoundedAiSearch;
   static const developer = HugeIcons.strokeRoundedSourceCode;
   static const expand = HugeIcons.strokeRoundedArrowDown01;
   static const unreachable = HugeIcons.strokeRoundedWifiDisconnected02;

@@ -445,7 +445,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                   'autocomplete suggest words type typing keyboard '
                   'predict',
               build: (_) => SettingsSwitchTile(
-                icon: AppIcons.aiFormat,
+                icon: SettingsIcons.autocomplete,
                 title: SettingsStrings.autocompleteLabel,
                 summary: SettingsStrings.autocompleteHelp,
                 value: s.autocompleteOn,
@@ -457,7 +457,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
               title: VoiceStrings.autoSendLabel,
               keywords: 'voice dictate microphone speech send automatically',
               build: (_) => SettingsSwitchTile(
-                icon: AppIcons.mic,
+                icon: SettingsIcons.voiceAutoSend,
                 title: VoiceStrings.autoSendLabel,
                 summary: VoiceStrings.autoSendHelp,
                 value: s.voiceAutoSend,
@@ -471,7 +471,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                   'voice dictate microphone speech accuracy whisper '
                   'transcription',
               build: (_) => SettingsSwitchTile(
-                icon: AppIcons.mic,
+                icon: SettingsIcons.voiceAccuracy,
                 title: VoiceStrings.accuracyLabel,
                 summary: VoiceStrings.accuracyHelp,
                 value: s.voiceHighAccuracy,
@@ -485,7 +485,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                   'voice dictate microphone speech fix correct grammar '
                   'punctuation transcription auto',
               build: (_) => SettingsSwitchTile(
-                icon: AppIcons.aiFormat,
+                icon: SettingsIcons.voiceAutoFix,
                 title: VoiceFixStrings.autoFixLabel,
                 summary: VoiceFixStrings.autoFixHelp,
                 value: s.voiceAutoFix,
@@ -498,7 +498,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
               keywords:
                   'voice dictate exact words verbatim punctuation only fix',
               build: (_) => SettingsSwitchTile(
-                icon: AppIcons.mic,
+                icon: SettingsIcons.voiceExact,
                 title: VoiceFixStrings.exactLabel,
                 summary: VoiceFixStrings.exactHelp,
                 value: s.voiceExactWords,
@@ -531,7 +531,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
               title: SettingsStrings.knowledgeTitle,
               keywords: 'knowledge base notes files saved sources',
               build: (c) => SettingsTile(
-                icon: AppIcons.knowledge,
+                icon: SettingsIcons.knowledgeManage,
                 title: SettingsStrings.knowledgeTitle,
                 summary: SettingsStrings.knowledgeHelp,
                 onTap: () =>
@@ -586,7 +586,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
               title: SmartStrings.settingLabel,
               keywords: SmartStrings.settingKeywords,
               build: (_) => SettingsSwitchTile(
-                icon: AppIcons.aiFormat,
+                icon: SettingsIcons.smartToggles,
                 title: SmartStrings.settingLabel,
                 summary: SmartStrings.settingHelp,
                 value: s.smartSuggestions,
@@ -676,7 +676,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
               title: NotifyCopy.masterLabel,
               keywords: NotifyCopy.keywords,
               build: (_) => SettingsSwitchTile(
-                icon: TableIcons.notify,
+                icon: NotifyIcons.master,
                 title: NotifyCopy.masterLabel,
                 summary: NotifyCopy.masterHelp,
                 value: s.notify.master,
@@ -710,7 +710,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                   title: k.label,
                   keywords: '${k.key} ${k.help} notify notification',
                   build: (_) => SettingsSwitchTile(
-                    icon: TableIcons.notify,
+                    icon: NotifyIcons.of(k.key),
                     title: k.label,
                     summary: k.help,
                     value: s.notify.isOn(k),
@@ -1037,7 +1037,7 @@ List<SettingsSection> _serverSections(AppScope scope) {
             title: SettingsStrings.embeddings,
             keywords: 'server embeddings vectors',
             build: (_) => SettingsTile(
-              icon: AppIcons.models,
+              icon: AppIcons.embeddings,
               title: SettingsStrings.embeddings,
               summary: h!.embeddings ?? AppStrings.dash,
             ),

@@ -1,3 +1,10 @@
+import 'package:hugeicons/hugeicons.dart';
+
+import 'app_icons.dart';
+import 'apps.dart';
+import 'memory.dart';
+import 'update.dart';
+
 /// Copy for the notification center: channels (what Android shows in the
 /// system settings), notification text and the settings page.
 abstract final class NotifyCopy {
@@ -207,4 +214,32 @@ abstract final class NotifyConfig {
 abstract final class NotifySizes {
   /// Height of the time wheel in the quiet-hours sheet.
   static const timeWheel = 180.0;
+}
+
+/// One glyph per notification kind (by NotifyKind.key) and for the page's
+/// own controls, so no two rows on the page look alike.
+abstract final class NotifyIcons {
+  static const master = HugeIcons.strokeRoundedNotification01;
+  static const test = HugeIcons.strokeRoundedSendToMobile;
+  static const quiet = HugeIcons.strokeRoundedNotificationOff01;
+  static const quietFrom = HugeIcons.strokeRoundedSunset;
+  static const quietTo = HugeIcons.strokeRoundedSunrise;
+  static const reminder = HugeIcons.strokeRoundedAlarmClock;
+
+  /// Icon for a notification kind key.
+  static AppIconData of(String key) => switch (key) {
+    'reply' => AppIcons.chat,
+    'round_table' => AppIcons.roundTable,
+    'doc' => AppIcons.doc,
+    'file' => AppIcons.attach,
+    'source' => AppIcons.knowledge,
+    'pr_review' => GithubHubIcons.pulls,
+    'memory' => MemoryIcons.section,
+    'usage' => AppIcons.usage,
+    'github' => AppIcons.github,
+    'resume' => AppIcons.history,
+    'reminder' => reminder,
+    'app_update' => UpdateIcons.update,
+    _ => master,
+  };
 }

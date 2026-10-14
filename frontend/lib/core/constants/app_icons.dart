@@ -78,7 +78,7 @@ abstract final class AppIcons {
   static const code = HugeIcons.strokeRoundedCodeSquare;
 
   /// DOC mode: a long-form document (chip, card, reader).
-  static const doc = HugeIcons.strokeRoundedFile02;
+  static const doc = HugeIcons.strokeRoundedNewspaper;
 
   // Modes
   static const modeEngineer = HugeIcons.strokeRoundedComputerTerminal01;
@@ -108,15 +108,15 @@ abstract final class AppIcons {
   static const profileAbout = HugeIcons.strokeRoundedNote01;
   static const profileLanguage = HugeIcons.strokeRoundedTranslate;
   static const profileInstructions = HugeIcons.strokeRoundedIdea01;
-  static const profileSignature = HugeIcons.strokeRoundedPen01;
+  static const profileSignature = HugeIcons.strokeRoundedSignature;
   static const toneFriendly = HugeIcons.strokeRoundedSmile;
-  static const toneProfessional = HugeIcons.strokeRoundedBriefcase01;
-  static const toneCasual = HugeIcons.strokeRoundedMessage01;
-  static const toneDirect = HugeIcons.strokeRoundedFlash;
-  static const toneEnthusiastic = HugeIcons.strokeRoundedSparkles;
-  static const lengthConcise = HugeIcons.strokeRoundedMenu01;
-  static const lengthBalanced = HugeIcons.strokeRoundedTextAlignLeft;
-  static const lengthDetailed = HugeIcons.strokeRoundedTextAlignJustifyLeft;
+  static const toneProfessional = HugeIcons.strokeRoundedTie;
+  static const toneCasual = HugeIcons.strokeRoundedCoffee01;
+  static const toneDirect = HugeIcons.strokeRoundedTarget01;
+  static const toneEnthusiastic = HugeIcons.strokeRoundedFire;
+  static const lengthConcise = HugeIcons.strokeRoundedScissor01;
+  static const lengthBalanced = HugeIcons.strokeRoundedBalanceScale;
+  static const lengthDetailed = HugeIcons.strokeRoundedLayers01;
 
   /// Icon for a reply tone id.
   static AppIconData tone(String id) => switch (id) {
@@ -188,6 +188,14 @@ abstract final class AppIcons {
     'openrouter' => openrouter,
     _ => null,
   };
+}
+
+/// The "attach a file" sheet: one glyph per way to add something.
+abstract final class AttachIcons {
+  static const media = AppIcons.image;
+  static const photo = AppIcons.camera;
+  static const video = AppIcons.video;
+  static const document = AppIcons.file;
 }
 
 /// Round Table waiting and research.
