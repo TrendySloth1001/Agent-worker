@@ -22,6 +22,9 @@ class ReleasesController extends ChangeNotifier {
   List<OwnerRelease> get releases => data?.releases ?? const [];
   List<AdoptionRow> get adoption => data?.adoption ?? const [];
 
+  /// Install attempts reported for [build] (null when none).
+  InstallStats? installsFor(int build) => data?.installsFor(build);
+
   Future<void> load() async {
     if (loading) return;
     loading = true;
@@ -64,6 +67,7 @@ class ReleasesController extends ChangeNotifier {
               if (x.id != r.id) x,
           ],
           adoption: d.adoption,
+          installs: d.installs,
         );
       }
       notifyListeners();
@@ -105,6 +109,7 @@ class ReleasesController extends ChangeNotifier {
       data = ReleaseList(
         releases: [created, ...d.releases],
         adoption: d.adoption,
+        installs: d.installs,
       );
       return null;
     } on ApiException catch (e) {
@@ -123,6 +128,7 @@ class ReleasesController extends ChangeNotifier {
     data = ReleaseList(
       releases: [for (final x in d.releases) x.id == updated.id ? updated : x],
       adoption: d.adoption,
+      installs: d.installs,
     );
     notifyListeners();
   }

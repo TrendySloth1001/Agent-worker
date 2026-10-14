@@ -238,6 +238,25 @@ abstract final class UpdateStrings {
   static const cancel = 'Cancel';
   static const save = 'Save';
 
+  // ---- owner: install outcomes ---------------------------------------------------
+  static const installsHeader = 'INSTALLS';
+  static const installsNone = 'No install attempts reported yet';
+  static String installsLine(int ok, int failed, int? percent) =>
+      '$ok installed · $failed failed${percent == null ? '' : ' · $percent% success'}';
+  static String stageLine(String label, int n) => '$label $n';
+  static const stageLabels = {
+    'download_start': 'started',
+    'download_ok': 'downloaded',
+    'download_fail': 'download failed',
+    'verify_fail': 'bad checksum',
+    'signature_mismatch': 'wrong signature',
+    'install_start': 'install tapped',
+    'install_ok': 'installed',
+    'install_fail': 'install failed',
+    'cancelled': 'cancelled',
+    'first_launch_ok': 'opened after update',
+  };
+
   static const statusDraft = 'DRAFT';
   static const statusLive = 'LIVE';
   static const statusPulled = 'PULLED';

@@ -448,3 +448,16 @@ So the section 4.4 assumption holds: native libs are STORED (so per-entry bsdiff
 **Tooling not available here:** `aapt2` and `apksigner` are not installed (no Android build-tools on PATH), so versionCode/signer verification must be done another way (see Phase 1 note: server-side manifest parse).
 
 **Background worker auth decision (no implementation):** use a **Kotlin `UpdateWorker`** reading a token copy kept in `EncryptedSharedPreferences`, not the `workmanager` Flutter plugin. Rationale: the Dart plugin spins up a second Flutter engine per run (tens of MB RAM, plugin registration for a headless isolate, notorious flakiness with plugins like secure storage/notifications), while the worker only needs three tiny HTTPS calls (`/app/update`, `/app/config`, event flush) and a local notification, all of which are easy in Kotlin with `HttpURLConnection`. Cost: a small second HTTP/auth path in Kotlin (token refresh handled by the app on launch writing a fresh token; the worker treats 401 as "do nothing"). This reverses the section 4.7 preference for the plugin; Phase 6 should follow this decision.
+
+## 15. Phase 1 implementation notes (2026-10-14)
+
+Implemented: signing guard (Gradle fails release tasks without `key.properties`), `app_install_events` + `app_installs.channel/device_id` (migration `20261021090000_ota_health`), `POST /app/health/events` (batch <= 50, 10 req/min/user, user from session, stage-derived `ok`, timestamps clamped to the last 7 days), `x-app-build` header (`apiHeaders`), offline event queue + first-launch detection (`frontend/lib/core/update/update_events.dart`), resumable downloader (section 4.5 step 1), streaming APK upload (multer custom storage engine -> S3 multipart, 8 MiB parts, streaming sha256, staging key `releases/_incoming/<uuid>.apk` then server-side copy), server-side `versionCode == 2000 + build` check (hand-rolled zip central-directory + binary-XML reader in `backend/src/ota/apk.ts`, ranged S3 reads, tested against the real build-34 manifest), Releases "Installs" panel.
+
+Deviations / decisions:
+- `app_sessions` and the session tracker belong to Phase 2 (owned by the parallel agent) and are not built here.
+- Install success is also inferred: the old process usually dies in the install, so `install_start` writes `ota.pending` and the next launch reports `install_ok` (code `relaunch`) plus `first_launch_ok`.
+- Delta/`via=delta` is accepted by the schema for Phase 7; the client only sends `full` or `resume`.
+- The Kotlin `Updater.kt` archive versionCode check from section 8 is NOT done in this phase; the server check covers the replay-with-fake-build-number case at upload time.
+- Orphaned `releases/_incoming/*` objects (server crash mid-upload) are not swept yet; a failed S3 multipart is aborted in-process.
+
+Deploy notes: apply migration `20261021090000_ota_health` (additive; runs via the normal deploy migrate step). No new env vars. Upload still uses `POST /app/releases` (script unchanged). Phase 2's migration is `20261021100000_app_errors`, ordered after this one.
