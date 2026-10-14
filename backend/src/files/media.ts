@@ -93,16 +93,16 @@ export async function probe(file: string): Promise<Probe> {
   };
 }
 
-/** Up to `max` evenly spaced frames as JPEG buffers (768px wide at most). */
-export async function extractFrames(file: string, dir: string, durationS: number, max = 8): Promise<Buffer[]> {
-  const n = durationS < 2 ? 1 : Math.min(max, Math.max(2, Math.ceil(durationS / 2)));
-  const out: Buffer[] = [];
-  for (let i = 0; i < n; i++) {
-    const t = durationS > 0 ? (durationS * (i + 0.5)) / n : 0;
+export type Frame = { t: number; data: Buffer };
+
+/** Frame extraction: [times] are seconds into the video; unreadable frames are skipped. */
+export async function extractFramesAt(file: string, dir: string, times: number[]): Promise<Frame[]> {
+  const out: Frame[] = [];
+  for (let i = 0; i < times.length; i++) {
     const dest = path.join(dir, `f${i}.jpg`);
     try {
-      await run(FFMPEG, ["-y", "-ss", t.toFixed(2), "-i", file, "-frames:v", "1", "-vf", "scale='min(768,iw)':-2", "-q:v", "4", dest], 60_000);
-      out.push(await readFile(dest));
+      await run(FFMPEG, ["-y", "-ss", times[i].toFixed(2), "-i", file, "-frames:v", "1", "-vf", "scale='min(768,iw)':-2", "-q:v", "4", dest], 60_000);
+      out.push({ t: times[i], data: await readFile(dest) });
     } catch {
       /* skip unreadable frame */
     }
@@ -163,7 +163,7 @@ const SEGMENT_S = 600;
 const MAX_TRANSCRIBE_S = 3600;
 
 /** One clip through Groq Whisper; [language] is an ISO-639-1 hint, the result carries the detected language. */
-export async function groqTranscribe(audio: Buffer, name: string, opts: { mime?: string; language?: string } = {}): Promise<{ text: string; language: string }> {
+export async function groqTranscribe(audio: Buffer, name: string, opts: { mime?: string; language?: string } = {}): Promise<{ text: string; language: string; segments: Array<{ start: number; end: number; text: string }> }> {
   const t0 = Date.now();
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(audio)], { type: opts.mime ?? "audio/mpeg" }), name);
@@ -181,28 +181,40 @@ export async function groqTranscribe(audio: Buffer, name: string, opts: { mime?:
     });
     status = res.status;
     if (!res.ok) throw new Error(`Groq transcription ${status}: ${(await res.text()).slice(0, 150)}`);
-    const j = (await res.json()) as { text?: string; language?: string };
+    const j = (await res.json()) as { text?: string; language?: string; segments?: Array<{ start?: number; end?: number; text?: string }> };
     recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: true, status, latencyMs: Date.now() - t0 });
-    return { text: (j.text ?? "").trim(), language: j.language ?? "" };
+    const segments = (j.segments ?? [])
+      .filter((g) => typeof g.start === "number" && typeof g.end === "number" && (g.text ?? "").trim())
+      .map((g) => ({ start: g.start!, end: g.end!, text: g.text!.trim() }));
+    return { text: (j.text ?? "").trim(), language: j.language ?? "", segments };
   } catch (e) {
     recordUsage({ provider: "groq", model: "whisper-large-v3-turbo", kind: "transcribe", ok: false, status: status || undefined, latencyMs: Date.now() - t0, errorMessage: (e as Error).message });
     throw e;
   }
 }
 
-/** Mono 16 kHz MP3 segments of 10 minutes (about 2.4 MB each), transcribed one by one. Returns "" for silence. */
-export async function transcribe(file: string, dir: string, durationS: number): Promise<string> {
+export type TimedSegment = { start: number; end: number; text: string };
+
+/** Mono 16 kHz MP3 segments of 10 minutes (about 2.4 MB each), transcribed one by one, with segment timestamps. Empty text for silence. */
+export async function transcribeTimed(file: string, dir: string, durationS: number): Promise<{ text: string; segments: TimedSegment[] }> {
   if (!config.groqApiKey) throw new Error("GROQ_API_KEY missing, cannot transcribe");
   const total = Math.min(durationS || SEGMENT_S, MAX_TRANSCRIBE_S);
   const parts: string[] = [];
+  const segments: TimedSegment[] = [];
   for (let start = 0, i = 0; start < total; start += SEGMENT_S, i++) {
     const dest = path.join(dir, `a${i}.mp3`);
     await run(FFMPEG, ["-y", "-ss", String(start), "-t", String(SEGMENT_S), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", dest], 180_000);
     const buf = await readFile(dest);
     if (buf.length < 1500) continue;
-    const { text } = await groqTranscribe(buf, `part${i}.mp3`);
-    if (text) parts.push(text);
+    const r = await groqTranscribe(buf, `part${i}.mp3`);
+    if (r.text) parts.push(r.text);
+    for (const g of r.segments) segments.push({ start: g.start + start, end: g.end + start, text: g.text });
   }
   const all = parts.join("\n").trim();
-  return /[\p{L}\p{N}]/u.test(all) ? all : "";
+  return /[\p{L}\p{N}]/u.test(all) ? { text: all, segments } : { text: "", segments: [] };
+}
+
+/** Mono 16 kHz MP3 segments of 10 minutes, transcribed one by one. Returns "" for silence. */
+export async function transcribe(file: string, dir: string, durationS: number): Promise<string> {
+  return (await transcribeTimed(file, dir, durationS)).text;
 }

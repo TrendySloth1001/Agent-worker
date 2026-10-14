@@ -12,7 +12,8 @@ import { log } from "../util/logger.js";
 import { extractText } from "./extract.js";
 import type { FileKind } from "./kinds.js";
 import { config } from "../config.js";
-import { extractFrames, fitVideo, imageSize, probe, toJpeg, transcribe, withTmp } from "./media.js";
+import { extractFramesAt, fitVideo, imageSize, probe, toJpeg, transcribeTimed, withTmp, type TimedSegment } from "./media.js";
+import { baseEvidence, planFrames, sealEvidence } from "./video.js";
 
 const limit = pLimit(2);
 export const CHUNK_THRESHOLD = 12_000;
@@ -88,30 +89,34 @@ async function processMedia(t: Target, buf: Buffer) {
 
     if (t.kind === "video") {
       if (info.width) Object.assign(meta, { width: info.width, height: info.height });
-      const frames = info.hasVideo ? await extractFrames(src, dir, info.durationS) : [];
+      const frames = info.hasVideo ? await extractFramesAt(src, dir, planFrames(info.durationS)) : [];
       const frameKeys: string[] = [];
       for (let i = 0; i < frames.length; i++) {
         const key = `${t.id}/frame-${i}.jpg`;
-        await putUserObject(t.userId, key, frames[i], "image/jpeg");
+        await putUserObject(t.userId, key, frames[i].data, "image/jpeg");
         frameKeys.push(key);
       }
       meta.frames = frameKeys.length;
       meta.frameKeys = frameKeys;
+      meta.frameTimes = frames.map((f) => f.t);
       if (frames.length > 0) {
-        const poster = await toJpeg(frames[Math.floor(frames.length / 2)], 512, 75);
+        const poster = await toJpeg(frames[Math.floor(frames.length / 2)].data, 512, 75);
         thumbKey = `${t.id}/thumb.jpg`;
         await putUserObject(t.userId, thumbKey, poster.data, "image/jpeg");
       }
     }
 
     let transcript = "";
+    let segments: TimedSegment[] = [];
+    let transcriptFailed = false;
     meta.hasTranscript = false;
     if (info.hasAudio) {
       try {
-        transcript = await transcribe(src, dir, info.durationS);
+        ({ text: transcript, segments } = await transcribeTimed(src, dir, info.durationS));
         meta.hasTranscript = transcript.length > 0;
         if (info.durationS > 3600) meta.transcriptTruncated = true;
       } catch (e) {
+        transcriptFailed = true;
         meta.transcriptError = (e as Error).message.slice(0, 160);
         log.warn("transcription failed", { id: t.id, message: (e as Error).message.slice(0, 120) });
         if (t.kind === "audio") {
@@ -124,6 +129,12 @@ async function processMedia(t: Target, buf: Buffer) {
       return;
     }
     meta.chars = transcript.length;
+    if (t.kind === "video") {
+      // The evidence pack's facts and transcript are kept now; frame descriptions are added on first use.
+      const frameTimes = (meta.frameTimes as number[] | undefined) ?? [];
+      const ev = baseEvidence({ durationS: info.durationS, width: info.width, height: info.height, hasAudio: info.hasAudio, frameTimes, segments, hasTranscript: transcript.length > 0, transcriptFailed });
+      meta.evidence = await sealEvidence(t.userId, ev);
+    }
     await setResult(t, { status: "ready", thumbKey, meta, text: transcript.slice(0, 400_000) });
   });
 }

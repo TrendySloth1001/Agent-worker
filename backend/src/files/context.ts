@@ -11,6 +11,7 @@ import { CHUNK_THRESHOLD } from "./process.js";
 import { toJpeg } from "./media.js";
 import { IMAGE_JPEG_QUALITY, IMAGE_MAX_EDGE } from "../llm/vision.js";
 import { INFO_SELECT, toFileRow, type FileRow } from "./store.js";
+import { defaultDescribe, ensureCaptions, evidenceFromMeta, GROUNDING_NOTE, readEvidence, renderVideoBlock, routeVideo, writeEvidence, type Evidence, type VideoDeps } from "./video.js";
 
 export const ATTACH_PLACEHOLDER = "(no message text, only attachments)";
 const MAX_TRANSCRIPT_CHARS = 20_000;
@@ -122,12 +123,33 @@ export type Prepared = {
   messages: Message[];
   docs: Array<ContextItem & { row: FileRow }>;
   failed: string[];
+  /** User-safe notes about what could not be read from videos (shown as a notice). */
+  videoNotices: string[];
 };
 
+export type PrepareOptions = { signal?: AbortSignal; deps?: Partial<VideoDeps> };
+
+/** The pack of a ready video: cached, or built from its facts; frames are described only for the newest message's videos. */
+async function videoEvidence(row: FileRow, describe: boolean, opts: PrepareOptions): Promise<Evidence> {
+  const cached = await readEvidence(row);
+  const ev = cached ?? evidenceFromMeta(row.meta, !!(await docText(row.id)));
+  if (!describe) return ev;
+  const keys = (row.meta?.frameKeys as string[] | undefined) ?? [];
+  const deps: VideoDeps = {
+    frame: opts.deps?.frame ?? (async (k) => (await getUserObject(row.userId ?? null, k)).toString("base64")),
+    describe: opts.deps?.describe ?? defaultDescribe,
+    save: opts.deps?.save ?? ((e) => writeEvidence(row, e)),
+  };
+  return ensureCaptions(row.id, keys, ev, deps, opts.signal);
+}
+
 /** Turns request messages + resolved files into model messages (pixels, transcripts) and document context items. */
-export async function prepareMessages(messages: AttachedMessage[], rows: Map<string, FileRow>, question: string): Promise<Prepared> {
+export async function prepareMessages(messages: AttachedMessage[], rows: Map<string, FileRow>, question: string, opts: PrepareOptions = {}): Promise<Prepared> {
   const hasPixels = (m: AttachedMessage) => m.role === "user" && (m.attachments ?? []).some((id) => ["image", "video"].includes(rows.get(id)?.kind ?? "") && rows.get(id)?.status === "ready");
   const withPixels = new Set(messages.map((m, i) => (hasPixels(m) ? i : -1)).filter((i) => i >= 0).slice(-2));
+  const lastUserIdx = messages.map((m) => m.role === "user").lastIndexOf(true);
+  const videoQuestion = ([...messages].reverse().find((m) => m.role === "user")?.content ?? question).replace(ATTACH_PLACEHOLDER, "");
+  const videoNotices: string[] = [];
 
   const docRows: FileRow[] = [];
   const failed: string[] = [];
@@ -158,12 +180,16 @@ export async function prepareMessages(messages: AttachedMessage[], rows: Map<str
           lines.push(`[attached image: ${r.name}]`);
         } else lines.push(`[image: ${r.name}]`);
       } else if (r.kind === "video") {
-        const dur = r.meta?.durationS ? `, ${r.meta.durationS}s` : "";
-        const frames = withPixels.has(i) ? await pixels(r) : [];
-        images.push(...frames);
-        lines.push(frames.length ? `[attached video: ${r.name}${dur}; ${frames.length} evenly spaced frames are attached as images]` : `[video: ${r.name}${dur}]`);
-        const t = (await docText(r.id)).slice(0, MAX_TRANSCRIPT_CHARS);
-        lines.push(t ? `Transcript of "${r.name}":\n${t}` : `(no speech detected in "${r.name}")`);
+        const ev = await videoEvidence(r, i === lastUserIdx || withPixels.has(i), opts);
+        // Frames go along only in the newest messages and only when the question is about what is shown.
+        const route = routeVideo(ev, videoQuestion);
+        const frames = withPixels.has(i) && route.sendFrames ? await pixels(r) : [];
+        const shown = frames.length > 0 && frames.length === ev.frames.length ? route.frameIdx.map((k) => frames[k]) : [];
+        const sent = shown.length > 0 ? route : { ...route, sendFrames: false, frameIdx: [] };
+        images.push(...shown);
+        lines.push(renderVideoBlock(r.name, ev, sent, sent.sendFrames ? "" : await docText(r.id)));
+        if (!lines.includes(GROUNDING_NOTE)) lines.push(GROUNDING_NOTE);
+        if (withPixels.has(i)) videoNotices.push(...route.notices);
       } else if (r.kind === "audio") {
         const t = (await docText(r.id)).slice(0, MAX_TRANSCRIPT_CHARS);
         lines.push(t ? `[attached audio: ${r.name}${r.meta?.durationS ? `, ${r.meta.durationS}s` : ""}] Transcript:\n${t}` : `[audio: ${r.name}] (no speech detected)`);
@@ -183,5 +209,5 @@ export async function prepareMessages(messages: AttachedMessage[], rows: Map<str
       return { id: `D${idx + 1}`, title: row.name, url: `file:${row.id}`, heading: row.meta?.pages ? `${row.meta.pages} pages` : null, text, full: full.slice(0, MAX_FULL_FOR_EVIDENCE), row };
     }),
   );
-  return { messages: out, docs, failed };
+  return { messages: out, docs, failed, videoNotices: [...new Set(videoNotices)] };
 }
