@@ -66,6 +66,7 @@ model User {
   memories         Memory[]
   conversationChunks ConversationChunk[]
   appInstall       AppInstall?
+  appInstallEvents AppInstallEvent[]
   apiKeys          UserApiKey[]
 
   @@map("users")
@@ -644,10 +645,38 @@ model AppInstall {
   build   Int
   version String
   seenAt  DateTime @default(now()) @map("seen_at") @db.Timestamptz(6)
+  /// stable | beta
+  channel  String  @default("stable")
+  deviceId String? @map("device_id")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("app_installs")
+}
+
+/// One step of an update attempt reported by the app (download, verify, install, first launch).
+model AppInstallEvent {
+  id        BigInt   @id @default(autoincrement())
+  userId    String   @map("user_id") @db.Uuid
+  deviceId  String?  @map("device_id")
+  at        DateTime @default(now()) @db.Timestamptz(6)
+  /// Build the app was running when the event happened.
+  build     Int
+  /// Build being installed.
+  toBuild   Int      @map("to_build")
+  patchNumber Int?   @map("patch_number")
+  /// download_start | download_ok | download_fail | verify_fail | signature_mismatch | install_start | install_ok | install_fail | cancelled | first_launch_ok
+  stage     String
+  ok        Boolean
+  code      String?
+  bytes     BigInt?
+  /// full | delta | resume
+  via       String   @default("full")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([toBuild, at])
+  @@map("app_install_events")
 }
 
 /// A provider API key the user brought themselves (Settings → Your API keys). key_enc is

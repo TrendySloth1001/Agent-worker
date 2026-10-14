@@ -4,7 +4,10 @@ import { db } from "../db/prisma.js";
 import { config } from "../config.js";
 import { AppError } from "../util/errors.js";
 import { log } from "../util/logger.js";
-import { deleteObject, presign, putObject } from "../storage/s3.js";
+import { copyObject, deleteObject, getRange, presign } from "../storage/s3.js";
+import { apkVersionCode, expectedVersionCode } from "./apk.js";
+import type { StagedApk } from "./upload.js";
+import { toRows, type EventsBody, type Stage, installSuccessRate } from "./events.js";
 import type { AppRelease } from "../generated/prisma/client.js";
 import {
   apkKeyFor,
@@ -57,7 +60,7 @@ async function toOwner(r: AppRelease): Promise<OwnerRelease> {
 }
 
 /** GET /app/update body. Also records the caller's build for the adoption view. */
-export async function checkForUpdate(current: number, userId: string | null) {
+export async function checkForUpdate(current: number, userId: string | null, deviceId: string | null = null) {
   const rows = await db().appRelease.findMany({ where: { status: "live" }, orderBy: { build: "desc" } });
   const live: Array<LiveRelease & { row: AppRelease }> = rows.map((row) => ({ build: row.build, kind: row.kind as Kind, minSupportedBuild: row.minSupportedBuild, row }));
   const d = decideUpdate(live, current);
@@ -67,8 +70,8 @@ export async function checkForUpdate(current: number, userId: string | null) {
     db()
       .appInstall.upsert({
         where: { userId },
-        create: { userId, build: current, version },
-        update: { build: current, version, seenAt: new Date() },
+        create: { userId, build: current, version, deviceId },
+        update: { build: current, version, seenAt: new Date(), ...(deviceId && { deviceId }) },
       })
       .catch((e: unknown) => log.warn("app_installs upsert failed", { err: String(e) }));
   }
@@ -82,21 +85,80 @@ export async function checkForUpdate(current: number, userId: string | null) {
 }
 
 export async function listReleases() {
-  const [rows, groups] = await Promise.all([
+  const [rows, groups, stages] = await Promise.all([
     db().appRelease.findMany({ orderBy: { build: "desc" } }),
     db().appInstall.groupBy({ by: ["build", "version"], _count: { _all: true }, orderBy: { build: "desc" } }),
+    db().appInstallEvent.groupBy({ by: ["toBuild", "stage"], _count: { _all: true } }),
   ]);
+  const byBuild = new Map<number, Array<{ stage: Stage; count: number }>>();
+  for (const s of stages) {
+    const list = byBuild.get(s.toBuild) ?? [];
+    list.push({ stage: s.stage as Stage, count: s._count._all });
+    byBuild.set(s.toBuild, list);
+  }
   return {
     releases: await Promise.all(rows.map(toOwner)),
     adoption: groups.map((g) => ({ build: g.build, version: g.version, users: g._count._all })),
+    /** Install attempts per target build: event counts by stage plus the success rate (null with no attempts). */
+    installs: [...byBuild].map(([build, counts]) => ({ build, stages: counts, successRate: installSuccessRate(counts) })),
   };
 }
 
-export async function createRelease(body: CreateBody, apk: Buffer): Promise<OwnerRelease> {
-  if (await db().appRelease.findUnique({ where: { build: body.build }, select: { id: true } })) throw duplicateBuild(body.build);
-  const sha256 = createHash("sha256").update(apk).digest("hex");
-  const apkKey = apkKeyFor(body.build, body.version);
-  await putObject(apkKey, apk, "application/vnd.android.package-archive");
+/** POST /app/health/events: stores a batch of install-outcome events for the signed-in user. */
+export async function recordInstallEvents(body: EventsBody, userId: string): Promise<number> {
+  const rows = toRows(body, userId);
+  const r = await db().appInstallEvent.createMany({ data: rows });
+  if (body.deviceId) {
+    // Remember the device on the adoption row (best effort; the row exists once /app/update ran).
+    db()
+      .appInstall.updateMany({ where: { userId }, data: { deviceId: body.deviceId } })
+      .catch((e: unknown) => log.warn("app_installs device update failed", { err: String(e) }));
+  }
+  return r.count;
+}
+
+/** The storage calls createRelease makes (replaced in tests). */
+export const releaseStorage = {
+  copy: copyObject,
+  remove: deleteObject,
+  range: getRange,
+};
+
+/**
+ * Publishes an APK that was already streamed to S3 under a staging key: checks its versionCode is
+ * 2000 + build (so a signed APK cannot be filed under another build number), moves it to its final key
+ * and records it. The staging object is always removed.
+ */
+export async function createRelease(body: CreateBody, staged: StagedApk): Promise<OwnerRelease> {
+  const st = releaseStorage;
+  try {
+    if (await db().appRelease.findUnique({ where: { build: body.build }, select: { id: true } })) throw duplicateBuild(body.build);
+    let code: number;
+    try {
+      code = await apkVersionCode(staged.size, (off, len) => st.range(staged.key, off, Math.min(len, staged.size - off)));
+    } catch (e) {
+      if (e instanceof AppError) throw e;
+      log.warn("apk manifest unreadable", { err: String(e) });
+      throw new AppError(400, "bad_request", "Couldn't read the APK's manifest. Is this a valid APK?");
+    }
+    if (code !== expectedVersionCode(body.build)) {
+      throw new AppError(400, "bad_request", `APK versionCode is ${code} but build ${body.build} needs ${expectedVersionCode(body.build)}`);
+    }
+    const apkKey = apkKeyFor(body.build, body.version);
+    await st.copy(staged.key, apkKey);
+    try {
+      return await insertRelease(body, apkKey, staged);
+    } catch (e) {
+      await st.remove(apkKey).catch(() => undefined);
+      throw e;
+    }
+  } finally {
+    await st.remove(staged.key).catch((e: unknown) => log.warn("staged apk delete failed", { err: String(e) }));
+  }
+}
+
+async function insertRelease(body: CreateBody, apkKey: string, staged: StagedApk): Promise<OwnerRelease> {
+  const sha256 = staged.sha256;
   try {
     const row = await db().appRelease.create({
       data: {
@@ -107,7 +169,7 @@ export async function createRelease(body: CreateBody, apk: Buffer): Promise<Owne
         notes: body.notes,
         apkKey,
         sha256,
-        size: BigInt(apk.length),
+        size: BigInt(staged.size),
         minSupportedBuild: body.minSupportedBuild ?? null,
         status: body.status,
         publishedAt: body.status === "live" ? new Date() : null,

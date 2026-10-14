@@ -1,4 +1,15 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+  CopyObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config.js";
 import { AppError } from "../util/errors.js";
@@ -64,6 +75,109 @@ export async function listKeys(prefix: string): Promise<string[]> {
     token = res.IsTruncated ? res.NextContinuationToken : undefined;
   } while (token);
   return keys;
+}
+
+/** Part size for streamed uploads (S3's minimum is 5 MiB; peak memory is about one part). */
+export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
+
+/** The S3 calls behind [putStream] (replaced in tests). */
+export type MultipartIo = {
+  create(key: string, contentType: string): Promise<string>;
+  part(key: string, uploadId: string, n: number, body: Buffer): Promise<string>;
+  complete(key: string, uploadId: string, parts: Array<{ n: number; etag: string }>): Promise<void>;
+  abort(key: string, uploadId: string): Promise<void>;
+  put(key: string, body: Buffer, contentType: string): Promise<void>;
+};
+
+export const multipartIo: MultipartIo = {
+  async create(key, contentType) {
+    const r = await s3().send(new CreateMultipartUploadCommand({ Bucket: config.s3.bucket, Key: key, ContentType: contentType }));
+    if (!r.UploadId) throw new Error("no upload id");
+    return r.UploadId;
+  },
+  async part(key, uploadId, n, body) {
+    const r = await s3().send(new UploadPartCommand({ Bucket: config.s3.bucket, Key: key, UploadId: uploadId, PartNumber: n, Body: body }));
+    if (!r.ETag) throw new Error("no etag");
+    return r.ETag;
+  },
+  async complete(key, uploadId, parts) {
+    await s3().send(
+      new CompleteMultipartUploadCommand({
+        Bucket: config.s3.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: parts.map((p) => ({ PartNumber: p.n, ETag: p.etag })) },
+      }),
+    );
+  },
+  async abort(key, uploadId) {
+    await s3().send(new AbortMultipartUploadCommand({ Bucket: config.s3.bucket, Key: key, UploadId: uploadId }));
+  },
+  put: (k, b, t) => putObject(k, b, t),
+};
+
+/**
+ * Streams [source] into S3 without holding it in memory: parts of [partBytes] go up as they fill (a body
+ * smaller than one part is a single PUT). [onChunk] sees every byte once (hashing). Aborts the multipart
+ * upload on any error. Returns the byte count.
+ */
+export async function putStream(
+  key: string,
+  source: AsyncIterable<Buffer | Uint8Array>,
+  contentType: string,
+  opts: { partBytes?: number; onChunk?: (c: Buffer) => void; io?: MultipartIo } = {},
+): Promise<number> {
+  const io = opts.io ?? multipartIo;
+  const partBytes = opts.partBytes ?? UPLOAD_PART_BYTES;
+  let uploadId: string | null = null;
+  const parts: Array<{ n: number; etag: string }> = [];
+  let pending: Buffer[] = [];
+  let pendingLen = 0;
+  let total = 0;
+  const flush = async (len: number) => {
+    const all = pending.length === 1 ? pending[0] : Buffer.concat(pending);
+    const body = all.subarray(0, len);
+    const rest = all.subarray(len);
+    pending = rest.length ? [rest] : [];
+    pendingLen = rest.length;
+    uploadId ??= await io.create(key, contentType);
+    const n = parts.length + 1;
+    parts.push({ n, etag: await io.part(key, uploadId, n, body) });
+  };
+  try {
+    for await (const c of source) {
+      const chunk = Buffer.isBuffer(c) ? c : Buffer.from(c);
+      opts.onChunk?.(chunk);
+      total += chunk.length;
+      pending.push(chunk);
+      pendingLen += chunk.length;
+      while (pendingLen >= partBytes) await flush(partBytes);
+    }
+    if (!uploadId) {
+      await io.put(key, Buffer.concat(pending), contentType);
+      return total;
+    }
+    if (pendingLen > 0) await flush(pendingLen);
+    await io.complete(key, uploadId, parts);
+    return total;
+  } catch (e) {
+    if (uploadId) await io.abort(key, uploadId).catch(() => undefined);
+    throw e;
+  }
+}
+
+/** Server-side copy inside the bucket. */
+export async function copyObject(from: string, to: string): Promise<void> {
+  const b = config.s3.bucket;
+  await s3().send(new CopyObjectCommand({ Bucket: b, Key: to, CopySource: `${b}/${from.split("/").map(encodeURIComponent).join("/")}` }));
+}
+
+/** [length] bytes from [offset] (a ranged GET). */
+export async function getRange(key: string, offset: number, length: number): Promise<Buffer> {
+  if (length <= 0) return Buffer.alloc(0);
+  const res = await s3().send(new GetObjectCommand({ Bucket: config.s3.bucket, Key: key, Range: `bytes=${offset}-${offset + length - 1}` }));
+  if (!res.Body) throw new Error("empty object");
+  return Buffer.from(await res.Body.transformToByteArray());
 }
 
 export async function presign(key: string, expiresIn = 3600): Promise<string> {
