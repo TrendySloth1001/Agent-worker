@@ -6,7 +6,7 @@ import { AppError, errorBody } from "../util/errors.js";
 import { USER_MSG } from "../util/userMessages.js";
 import { log } from "../util/logger.js";
 import { openSse } from "../util/sse.js";
-import { pickCandidates, pickTextFallback, pickVisionCandidates, preferForPrompt, preferSmall, runChat, ChatFailure, maxTokensFor, type RunHooks, type RunResult } from "../llm/router.js";
+import { pickCandidates, pickTextFallback, pickVisionCandidates, preferForFacts, preferForPrompt, preferSmall, runChat, FACTUAL_TEMPERATURE, ChatFailure, maxTokensFor, type RunHooks, type RunResult } from "../llm/router.js";
 import { isVisionModel, VISION_FIRST_TOKEN_MS } from "../llm/vision.js";
 import { ToolCallGuard } from "../llm/toolCall.js";
 import { identificationMessage, identifyImage, identifyModels, imageWantsWeb, pipelineImageSearch, searchIdentified, type ImageIdentification } from "../context/imageWeb.js";
@@ -16,6 +16,7 @@ import { TagStream } from "../web/tagStream.js";
 import { githubGround } from "../github/grounding.js";
 import { appsGround } from "../connections/oauth/tools.js";
 import { decideSearchLocal, type SearchDecision } from "../web/searchDecision.js";
+import { isFactualLookup } from "../web/factual.js";
 import { fitBudget } from "../web/budget.js";
 import { newTurnCounters, recordTurnSummary, setTelemetry, withTelemetry } from "../db/usage.js";
 import { findImages, type ImageResult } from "../web/images.js";
@@ -730,6 +731,8 @@ chatRouter.post("/", async (req, res) => {
     const chairAt = Date.now();
     let firstTokenAt: number | null = null;
     const trivialAuto = auto && smallTalk && !table && !wantsVision;
+    // A precise factual lookup (or a searched time-sensitive question): low temperature, and a model with more world knowledge first.
+    const factualTurn = !smallTalk && !wantsVision && !table && (isFactualLookup(lastUserText) || decision.reason === "factual" || decision.reason === "fresh");
     // A reply that starts with a tool call ({"type":"websearch",...}) is held back, never shown (see llm/toolCall.ts).
     const toolGuard = new ToolCallGuard();
     const show = (chunk: string) => {
@@ -768,7 +771,7 @@ chatRouter.post("/", async (req, res) => {
     const firstTokenMs = wantsVision && !ident && !table ? VISION_FIRST_TOKEN_MS : undefined;
     const generate = (models: string[], messages: Message[]) =>
       withTelemetry({ purpose: table ? "table-chair" : "chat" }, async () => {
-        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs });
+        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs, ...(factualTurn ? { temperature: FACTUAL_TEMPERATURE } : {}) });
         const held = toolGuard.flush();
         if (held) show(held);
         return r;
@@ -776,7 +779,7 @@ chatRouter.post("/", async (req, res) => {
     let result: RunResult;
     try {
       result = await generate(
-        table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(genCandidates) : genCandidates, promptChars) : genCandidates,
+        table ? table.candidates : auto ? preferForPrompt(trivialAuto ? preferSmall(genCandidates) : factualTurn ? preferForFacts(genCandidates) : genCandidates, promptChars) : genCandidates,
         table ? [...prompt, table.chairMessage] : prompt,
       );
     } catch (e) {

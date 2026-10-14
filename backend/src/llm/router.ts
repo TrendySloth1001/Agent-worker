@@ -219,6 +219,20 @@ export function preferSmall(candidates: string[]): string[] {
   return small.length ? [...small, ...candidates.filter((id) => !small.includes(id))] : candidates;
 }
 
+/** Models with the most world knowledge: asked first for factual turns (gpt-oss-120b hallucinates on 78% of SimpleQA questions without browsing). */
+const KNOWLEDGEABLE_MODELS = new Set(["nvidia:nvidia/nemotron-3-ultra-550b-a55b", "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "ollama:nemotron-3-ultra"]);
+
+/** Temperature for factual turns: low sampling randomness keeps recall on the most likely (usually correct) answer. */
+export const FACTUAL_TEMPERATURE = 0.2;
+
+/** Auto for a factual turn: the biggest-knowledge models first and the small 20B ones last (soft preference, nothing is removed). */
+export function preferForFacts(candidates: string[]): string[] {
+  const big = candidates.filter((id) => KNOWLEDGEABLE_MODELS.has(id));
+  const small = candidates.filter((id) => SMALL_CHAT_MODELS.includes(id));
+  const mid = candidates.filter((id) => !KNOWLEDGEABLE_MODELS.has(id) && !SMALL_CHAT_MODELS.includes(id));
+  return [...big, ...mid, ...small];
+}
+
 /**
  * Streams the first candidate that works. A failing candidate moves on silently
  * if it produced nothing; if it already produced text, Auto resets and moves
@@ -232,6 +246,8 @@ export async function runChat(
   auto: boolean,
   opts: {
     maxTokens?: number;
+    /** Sampling temperature (factual turns use a low one; unset = provider default). */
+    temperature?: number;
     /** Auto: a model with no visible text after this long is abandoned for the next candidate (the last one always gets to finish). */
     firstTokenMs?: number;
     /** Test hook. */ stream?: typeof streamModel;
@@ -328,7 +344,7 @@ export async function runChat(
       hooks.onDelta(visible);
     };
     try {
-      handle = await stream(id, messages, { signal: attemptCtl.signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens });
+      handle = await stream(id, messages, { signal: attemptCtl.signal, firstByteMs: FIRST_BYTE_MS, idleMs: IDLE_MS, maxTokens: opts.maxTokens, temperature: opts.temperature });
       for await (const token of handle.tokens) emit(think.push(token));
       emit(think.flush());
       const completed = handle.usage.completed;

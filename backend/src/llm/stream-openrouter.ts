@@ -37,6 +37,7 @@ export function streamOpenRouter(model: string, messages: Message[], opts: Strea
         messages: toOpenAiMessages(messages),
         stream: true,
         ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       },
       opts,
     );
