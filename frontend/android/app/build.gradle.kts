@@ -8,8 +8,9 @@ plugins {
 }
 
 // Release signing: android/key.properties (git-ignored) points at the upload
-// keystore android/app/upload-keystore.jks (git-ignored). Without it, release
-// builds fall back to the debug key so `flutter build apk --release` still works.
+// keystore android/app/upload-keystore.jks (git-ignored). Without it a release
+// build FAILS (see the guard below): a debug-signed APK is rejected by the in-app
+// installer as a signature mismatch, so it must never be produced silently.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -53,10 +54,10 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // Never fall back to the debug key; the guard below fails release tasks
+            // when key.properties is missing. (Debug builds are unaffected.)
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
             isMinifyEnabled = true
             isShrinkResources = true
@@ -70,6 +71,24 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Signing guard: refuse to build a release without the real key.
+if (!keystorePropertiesFile.exists()) {
+    gradle.taskGraph.whenReady {
+        val releaseTask = allTasks.firstOrNull { t ->
+            t.project == project && t.name.contains("Release") &&
+                (t.name.startsWith("assemble") || t.name.startsWith("bundle") ||
+                    t.name.startsWith("package") || t.name.startsWith("validateSigning"))
+        }
+        if (releaseTask != null) {
+            throw GradleException(
+                "android/key.properties is missing: refusing to build a release APK signed with " +
+                    "the debug key (the in-app updater would reject it). Restore key.properties " +
+                    "and upload-keystore.jks, or build a debug APK instead.",
+            )
+        }
+    }
 }
 
 dependencies {
