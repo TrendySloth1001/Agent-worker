@@ -30,7 +30,7 @@ const replyPresets = [
     id: 'default',
     title: 'Default (recommended)',
     sample: '“A clear, thorough answer with all the details.”',
-    icon: AppIcons.lengthDetailed,
+    icon: SettingsIcons.presetDefault,
     tone: '',
     length: 'detailed',
   ),

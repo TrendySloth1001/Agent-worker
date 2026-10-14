@@ -135,7 +135,7 @@ abstract final class AboutStrings {
 
   static const creditList = <AboutCredit>[
     (
-      icon: AboutIcons.illustrations,
+      icon: AboutIcons.peeps,
       label: 'ILLUSTRATIONS',
       value: 'Open Peeps by Pablo Stanley (CC0)',
       url: 'https://www.openpeeps.com/',
@@ -153,7 +153,7 @@ abstract final class AboutStrings {
       url: 'https://hugeicons.com/',
     ),
     (
-      icon: AboutIcons.icons,
+      icon: AboutIcons.iconify,
       label: 'ICONS',
       value: 'Iconify icon sets',
       url: 'https://iconify.design/',
@@ -167,7 +167,7 @@ abstract final class AboutStrings {
       url: 'https://github.com/gilbarbara/logos',
     ),
     (
-      icon: AboutIcons.logos,
+      icon: AboutIcons.modelLogos,
       label: 'MODEL LOGOS',
       value:
           'LobeHub Icons (MIT). Logos are trademarks of their owners and '
@@ -286,17 +286,20 @@ abstract final class AboutIcons {
   static const send = HugeIcons.strokeRoundedSent;
 
   static const illustrations = HugeIcons.strokeRoundedPaintBrush01;
-  static const icons = HugeIcons.strokeRoundedDashboardSquare01;
+  static const icons = HugeIcons.strokeRoundedStarSquare;
   static const fonts = HugeIcons.strokeRoundedTextFont;
   static const flutter = BrandLogos.flutter;
   static const logos = HugeIcons.strokeRoundedCheckmarkBadge01;
+  static const peeps = HugeIcons.strokeRoundedUserMultiple;
+  static const iconify = HugeIcons.strokeRoundedShapes;
+  static const modelLogos = HugeIcons.strokeRoundedCube;
   static const open = AppIcons.openExternal;
   static const copy = AppIcons.copy;
 
   static const licenses = HugeIcons.strokeRoundedLegalDocument01;
-  static const privacyPolicy = HugeIcons.strokeRoundedShield01;
+  static const privacyPolicy = HugeIcons.strokeRoundedShieldUser;
   static const terms = HugeIcons.strokeRoundedAgreement01;
-  static const build = HugeIcons.strokeRoundedInformationCircle;
+  static const build = HugeIcons.strokeRoundedWrench01;
   static const telemetry = HugeIcons.strokeRoundedActivity01;
   static const feedback = HugeIcons.strokeRoundedMail01;
   static const heart = HugeIcons.strokeRoundedFavourite;

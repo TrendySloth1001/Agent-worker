@@ -134,7 +134,7 @@ class QuietHoursTiles extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         SettingsSwitchTile(
-          icon: AppIcons.themeDark,
+          icon: NotifyIcons.quiet,
           title: NotifyCopy.quietLabel,
           summary: NotifyCopy.quietHelp,
           value: prefs.quietOn,
@@ -142,7 +142,7 @@ class QuietHoursTiles extends StatelessWidget {
         ),
         if (prefs.quietOn) ...[
           SettingsTile(
-            icon: AppIcons.history,
+            icon: NotifyIcons.quietFrom,
             title: NotifyCopy.quietFrom,
             trailing: Text(QuietHours.format(prefs.quietStart)),
             onTap: () => _pick(
@@ -153,7 +153,7 @@ class QuietHoursTiles extends StatelessWidget {
             ),
           ),
           SettingsTile(
-            icon: AppIcons.history,
+            icon: NotifyIcons.quietTo,
             title: NotifyCopy.quietTo,
             trailing: Text(QuietHours.format(prefs.quietEnd)),
             onTap: () => _pick(
@@ -178,7 +178,7 @@ class NotifyTestTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SettingsTile(
-      icon: TableIcons.notify,
+      icon: NotifyIcons.test,
       title: NotifyCopy.testLabel,
       summary: NotifyCopy.testHelp,
       onTap: () async {

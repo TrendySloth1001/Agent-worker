@@ -834,10 +834,14 @@ Future<AttachChoice?> showAttachSheet(BuildContext context) {
     builder: (sheet) => M3ActionSheet(
       rows: [
         for (final (choice, icon, label) in [
-          (AttachChoice.media, AppIcons.image, AppStrings.attachMedia),
-          (AttachChoice.photo, AppIcons.camera, AppStrings.attachTakePhoto),
-          (AttachChoice.video, AppIcons.video, AppStrings.attachRecordVideo),
-          (AttachChoice.document, AppIcons.file, AppStrings.attachDocument),
+          (AttachChoice.media, AttachIcons.media, AppStrings.attachMedia),
+          (AttachChoice.photo, AttachIcons.photo, AppStrings.attachTakePhoto),
+          (AttachChoice.video, AttachIcons.video, AppStrings.attachRecordVideo),
+          (
+            AttachChoice.document,
+            AttachIcons.document,
+            AppStrings.attachDocument,
+          ),
         ])
           SettingsTile(
             icon: icon,
