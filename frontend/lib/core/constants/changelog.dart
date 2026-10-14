@@ -117,6 +117,37 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.11.0',
+      date: '15 Oct 2026',
+      headline: 'Facts first',
+      items: [
+        (
+          kind: ChangeKind.improved,
+          title: 'Checks before it claims',
+          detail:
+              'Factual questions now search the web first, and sparky says '
+              'so when it does not know instead of guessing.',
+          icon: HugeIcons.strokeRoundedCheckmarkBadge01,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Updates that resume',
+          detail:
+              'A dropped connection no longer restarts an update download '
+              'from zero.',
+          icon: HugeIcons.strokeRoundedDownload04,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Crash reports',
+          detail:
+              'If sparky crashes, it can tell us so we can fix it. Never '
+              'your chats. Turn it off in Privacy.',
+          icon: HugeIcons.strokeRoundedBug01,
+        ),
+      ],
+    ),
+    (
       version: '1.10.0',
       date: '15 Oct 2026',
       headline: 'Straight answers',
