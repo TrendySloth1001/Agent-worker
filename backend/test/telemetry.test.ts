@@ -173,6 +173,8 @@ test("overview: legacy rows without status or error are unknown, turn rows are s
     // Same statement as migration 20261013100000 (rolled back with the rest), for databases that predate it.
     await c.$executeRawUnsafe(`ALTER TABLE usage_events DROP CONSTRAINT IF EXISTS usage_events_kind_check`);
     await c.$executeRawUnsafe(`ALTER TABLE usage_events ADD CONSTRAINT usage_events_kind_check CHECK (kind IN ('chat','embed','search','fetch','transcribe','github','turn'))`);
+    // Turn summaries span all providers: start from an empty window (rolled back, so real rows return).
+    await c.usageEvent.deleteMany({ where: { kind: "turn" } });
     await c.usageEvent.createMany({
       data: [
         { provider, kind: "chat", model: "a", ok: true, status: 200, ts },
