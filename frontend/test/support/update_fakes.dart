@@ -40,10 +40,23 @@ class FakeUpdateApi implements UpdateApi {
   final calls = <String>[];
 
   @override
-  Future<UpdateInfo> check(int build) async {
+  Future<UpdateInfo> check(int build, {String? deviceId}) async {
     checks++;
     if (error != null) throw error!;
     return info ?? UpdateInfo(current: build);
+  }
+
+  /// Events the app tried to send; set [eventsError] to make sending fail.
+  final sentEvents = <Map<String, dynamic>>[];
+  Object? eventsError;
+
+  @override
+  Future<void> sendEvents(
+    String deviceId,
+    List<Map<String, dynamic>> events,
+  ) async {
+    if (eventsError != null) throw eventsError!;
+    sentEvents.addAll(events);
   }
 
   @override
@@ -145,6 +158,8 @@ class FakeDownloader implements UpdateDownloader {
   Future<String> download(
     UpdateRelease r, {
     required void Function(double progress) onProgress,
+    Future<String?> Function()? refreshUrl,
+    void Function(int offset)? onResume,
   }) async {
     downloads++;
     onProgress(0.5);

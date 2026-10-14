@@ -39,8 +39,24 @@ class UpdateApi {
       jsonDecode(r.body) as Map<String, dynamic>;
 
   /// Is there a newer build than [build]?
-  Future<UpdateInfo> check(int build) async =>
-      UpdateInfo.fromJson(_json(await _send('GET', '/update?build=$build')));
+  Future<UpdateInfo> check(int build, {String? deviceId}) async {
+    final device = deviceId == null ? '' : '&device=$deviceId';
+    return UpdateInfo.fromJson(
+      _json(await _send('GET', '/update?build=$build$device')),
+    );
+  }
+
+  /// Sends queued install-outcome events (`POST /app/health/events`).
+  Future<void> sendEvents(
+    String deviceId,
+    List<Map<String, dynamic>> events,
+  ) async {
+    await _send(
+      'POST',
+      '/health/events',
+      body: {'deviceId': deviceId, 'events': events},
+    );
+  }
 
   // ---- owner -----------------------------------------------------------
 

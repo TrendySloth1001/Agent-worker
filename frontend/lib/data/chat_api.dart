@@ -7,6 +7,8 @@ import '../core/constants/app_config.dart';
 import '../core/constants/app_sizes.dart';
 import '../core/constants/error_copy.dart';
 import '../core/constants/smart_toggles.dart';
+import '../core/constants/update.dart';
+import '../core/update/app_build.dart';
 import '../features/auth/auth_controller.dart';
 import 'api_client.dart';
 import 'ai_model.dart';
@@ -41,6 +43,8 @@ Map<String, String> apiHeaders({bool json = false}) {
   return {
     if (json) 'Content-Type': 'application/json',
     if (token != null) 'Authorization': 'Bearer $token',
+    if (AppBuild.current != null)
+      UpdateConfig.buildHeader: '${AppBuild.current}',
   };
 }
 

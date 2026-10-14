@@ -23,6 +23,24 @@ class DownloadRecord {
   }
 }
 
+/// An install handed to the system: running build -> target build.
+class PendingInstall {
+  const PendingInstall(this.from, this.to);
+
+  final int from;
+  final int to;
+
+  String get encoded => '$from|$to';
+
+  static PendingInstall? parse(String? raw) {
+    final parts = raw?.split('|');
+    if (parts == null || parts.length != 2) return null;
+    final from = int.tryParse(parts[0]);
+    final to = int.tryParse(parts[1]);
+    return from == null || to == null ? null : PendingInstall(from, to);
+  }
+}
+
 /// The `ota.*` preferences.
 class UpdateStore {
   UpdateStore(this._p);
@@ -69,6 +87,15 @@ class UpdateStore {
   Future<void> setDownloaded(DownloadRecord? r) => r == null
       ? _p.remove(UpdatePrefs.downloaded)
       : _p.setString(UpdatePrefs.downloaded, r.encoded);
+
+  int? get lastBuild => _p.getInt(UpdatePrefs.lastBuild);
+  Future<void> setLastBuild(int b) => _p.setInt(UpdatePrefs.lastBuild, b);
+
+  PendingInstall? get pending =>
+      PendingInstall.parse(_p.getString(UpdatePrefs.pending));
+  Future<void> setPending(PendingInstall? p) => p == null
+      ? _p.remove(UpdatePrefs.pending)
+      : _p.setString(UpdatePrefs.pending, p.encoded);
 
   DateTime? _time(String key) {
     final ms = _p.getInt(key);
