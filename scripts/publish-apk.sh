@@ -69,9 +69,10 @@ echo "Uploading $(basename "$apk") as v$version (build $build, $kind, $status) t
 
 args=(-sS -o - -w '\n%{http_code}' --max-time 900 -X POST "$base/app/releases"
   -F "apk=@${apk};type=application/vnd.android.package-archive"
-  -F "version=$version" -F "build=$build" -F "kind=$kind" -F "title=$title"
-  -F "notes=$json_notes" -F "status=$status")
-[ -n "$min" ] && args+=(-F "minSupportedBuild=$min")
+  # --form-string: values are sent verbatim (-F would treat ';' and a leading '@' or '<' as syntax).
+  --form-string "version=$version" --form-string "build=$build" --form-string "kind=$kind"
+  --form-string "title=$title" --form-string "notes=$json_notes" --form-string "status=$status")
+[ -n "$min" ] && args+=(--form-string "minSupportedBuild=$min")
 
 # The auth header goes through a curl config on stdin so the token never appears in argv.
 resp="$(printf 'header = "Authorization: Bearer %s"\n' "$token" | curl -K - "${args[@]}")" || { echo "error: request failed" >&2; exit 1; }

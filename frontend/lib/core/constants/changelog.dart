@@ -117,7 +117,7 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
-      version: '1.11.0',
+      version: '1.11.1',
       date: '15 Oct 2026',
       headline: 'Facts first',
       items: [
