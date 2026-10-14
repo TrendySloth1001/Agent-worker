@@ -137,7 +137,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _startTimer = Timer(_startDelay, () => unawaited(check()));
     unawaited(_loadSettings());
-    unawaited(_onLaunch());
+    unawaited(launch());
   }
 
   /// Called when someone signs in: the check needs a session.
@@ -170,7 +170,8 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   /// First start of a build: when it is newer than the last one that ran, an
   /// update just landed. Reports it (and the install itself when the system
   /// never told us), then sends whatever is queued.
-  Future<void> _onLaunch() async {
+  @visibleForTesting
+  Future<void> launch() async {
     try {
       final build = await _currentBuild();
       AppBuild.current = build;
@@ -198,6 +199,10 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
       unawaited(_events.flush());
     } catch (_) {}
   }
+
+  /// Sends queued install events now.
+  @visibleForTesting
+  Future<void> flushEvents() => _events.flush();
 
   Future<void> _emit(
     InstallStage stage,

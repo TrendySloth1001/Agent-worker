@@ -101,7 +101,7 @@ class UpdateEventReporter {
   final EventSender _send;
   final Future<SharedPreferences> Function() _prefs;
   final DateTime Function() _clock;
-  bool _flushing = false;
+  Future<void>? _inFlight;
 
   /// Queues an event (and trims the queue).
   Future<void> record({
@@ -134,9 +134,10 @@ class UpdateEventReporter {
   Future<int> pending() async => _load(await _prefs()).length;
 
   /// Sends everything queued, [UpdateConfig.eventBatch] at a time.
-  Future<void> flush() async {
-    if (_flushing) return;
-    _flushing = true;
+  Future<void> flush() =>
+      _inFlight ??= _flush().whenComplete(() => _inFlight = null);
+
+  Future<void> _flush() async {
     try {
       final p = await _prefs();
       final deviceId = _deviceId(p);
@@ -153,8 +154,6 @@ class UpdateEventReporter {
       }
     } catch (_) {
       // Offline or refused: the queue stays for the next flush.
-    } finally {
-      _flushing = false;
     }
   }
 

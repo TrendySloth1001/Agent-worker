@@ -208,4 +208,12 @@ class UpdateRig {
   int build;
   DateTime now = DateTime(2026, 10, 13, 12);
   final notified = <int>[];
+
+  /// Lets background work settle, then sends queued install events.
+  Future<void> flush() async {
+    for (var i = 0; i < 3; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await controller.flushEvents();
+  }
 }
