@@ -66,6 +66,9 @@ model User {
   memories         Memory[]
   conversationChunks ConversationChunk[]
   appInstall       AppInstall?
+  appSessions      AppSession[]
+  appErrorEvents   AppErrorEvent[]
+  appErrorUsers    AppErrorGroupUser[]
   apiKeys          UserApiKey[]
 
   @@map("users")
@@ -668,4 +671,92 @@ model UserApiKey {
 
   @@unique([userId, provider])
   @@map("user_api_keys")
+}
+
+/// One row per app process (client-generated id). outcome: ok | crash | anr | killed | unknown.
+model AppSession {
+  id          String    @id @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  build       Int
+  patchNumber Int?      @map("patch_number")
+  startedAt   DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt     DateTime? @map("ended_at") @db.Timestamptz(6)
+  outcome     String    @default("unknown")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([build, startedAt])
+  @@index([userId])
+  @@map("app_sessions")
+}
+
+/// One distinct app error (fingerprint). status: open | resolved | ignored.
+model AppErrorGroup {
+  fingerprint String   @id
+  firstBuild  Int      @map("first_build")
+  lastBuild   Int      @map("last_build")
+  count       BigInt   @default(0)
+  users       Int      @default(0)
+  firstSeen   DateTime @default(now()) @map("first_seen") @db.Timestamptz(6)
+  lastSeen    DateTime @default(now()) @map("last_seen") @db.Timestamptz(6)
+  status      String   @default("open")
+  title       String   @default("")
+  kind        String   @default("dart")
+
+  builds AppErrorGroupBuild[]
+  userRows AppErrorGroupUser[]
+  events AppErrorEvent[]
+
+  @@index([lastSeen])
+  @@map("app_error_groups")
+}
+
+model AppErrorGroupBuild {
+  fingerprint String
+  build       Int
+  count       BigInt   @default(0)
+  users       Int      @default(0)
+  firstSeen   DateTime @default(now()) @map("first_seen") @db.Timestamptz(6)
+  lastSeen    DateTime @default(now()) @map("last_seen") @db.Timestamptz(6)
+
+  group AppErrorGroup @relation(fields: [fingerprint], references: [fingerprint], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([fingerprint, build])
+  @@index([build])
+  @@map("app_error_group_builds")
+}
+
+model AppErrorGroupUser {
+  fingerprint String
+  build       Int
+  userId      String   @map("user_id") @db.Uuid
+  lastSeen    DateTime @default(now()) @map("last_seen") @db.Timestamptz(6)
+
+  group AppErrorGroup @relation(fields: [fingerprint], references: [fingerprint], onDelete: Cascade, onUpdate: NoAction)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([fingerprint, build, userId])
+  @@map("app_error_group_users")
+}
+
+/// Sample events only: at most 5 per group per build.
+model AppErrorEvent {
+  id          BigInt   @id @default(autoincrement())
+  fingerprint String
+  userId      String   @map("user_id") @db.Uuid
+  build       Int
+  at          DateTime @default(now()) @db.Timestamptz(6)
+  kind        String
+  message     String   @default("")
+  stack       String   @default("")
+  breadcrumbs Json     @default("[]")
+  device      Json     @default("{}")
+  sessionId   String?  @map("session_id") @db.Uuid
+
+  group AppErrorGroup @relation(fields: [fingerprint], references: [fingerprint], onDelete: Cascade, onUpdate: NoAction)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([fingerprint, at])
+  @@index([userId, at])
+  @@map("app_error_events")
 }

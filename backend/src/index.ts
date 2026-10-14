@@ -38,6 +38,8 @@ import { githubGate } from "./auth/githubGate.js";
 import { siteRouter } from "./routes/site.js";
 import { drainGuard, gracefulShutdown } from "./util/lifecycle.js";
 import { appRouter, releaseTokenRouter } from "./routes/app.js";
+import { adminErrorsRouter, adminHealthRouter } from "./routes/adminErrors.js";
+import { startAppErrorSweeper } from "./ota/errorsService.js";
 import { blobRouter } from "./routes/blob.js";
 import { assertDataKeyConfigured } from "./crypto/userData.js";
 import { corsOptions, httpsOnly, securityHeaders } from "./util/security.js";
@@ -109,6 +111,8 @@ app.post("/connections/github/device", rateLimit(10));
 app.use("/models", modelsRouter);
 app.use("/usage", usageRouter);
 app.use("/admin/telemetry", telemetryRouter);
+app.use("/admin/errors", adminErrorsRouter);
+app.use("/admin/health", adminHealthRouter);
 app.use("/chat", chatRouter);
 app.use("/knowledge", knowledgeRouter);
 app.use("/conversations", conversationsRouter);
@@ -140,6 +144,8 @@ process.on("unhandledRejection", (reason) => {
 // After a model switch, rebuild stored vectors as soon as the database is ready.
 onDbUp(() => void reembedAll().then(() => backfillRecall()));
 onDbUp(() => void failInterrupted());
+// Crash-report retention (errors 30 d, sessions 90 d), in-process.
+onDbUp(() => startAppErrorSweeper());
 // Documents left mid-run by a restart can be resumed.
 onDbUp(() => void docStore.sweepInterrupted(liveDocIds()).then((n) => n && log.info("docs interrupted", { count: n })).catch(() => undefined));
 initDb();

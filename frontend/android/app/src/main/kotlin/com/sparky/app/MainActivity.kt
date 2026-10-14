@@ -136,6 +136,9 @@ class MainActivity : FlutterActivity() {
         // In-app updates: install permission and the PackageInstaller hand-over.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Updater.CHANNEL)
             .setMethodCallHandler(Updater(this))
+        // Crash reports: the saved uncaught exception and the previous process's exit reason.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CrashRecorder.CHANNEL)
+            .setMethodCallHandler(CrashRecorder(this))
     }
 
     // ---- "Continue with Google" (Credential Manager) ----------------------

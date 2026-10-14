@@ -6,6 +6,7 @@ import '../../core/constants/update.dart';
 import '../../core/haptics.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/time_ago.dart';
+import '../../core/errors/errors_api.dart';
 import '../../core/update/update_api.dart';
 import '../../core/update/update_models.dart';
 import '../../core/widgets/app_icon.dart';
@@ -13,6 +14,8 @@ import '../../core/widgets/m3_kit_extras.dart';
 import '../chat/widgets/attachment_views.dart';
 import '../settings/widgets/settings_kit.dart';
 import '../settings/widgets/usage_states.dart';
+import '../errors/errors_screen.dart';
+import '../../core/constants/errors.dart';
 import 'release_form_sheet.dart';
 import 'release_labels.dart';
 import 'releases_controller.dart';
@@ -24,12 +27,19 @@ import '../../core/constants/confirm_copy.dart';
 /// how many people run each build, and the actions to ship, pull, edit and
 /// delete, plus "Upload APK".
 class ReleasesScreen extends StatefulWidget {
-  const ReleasesScreen({super.key, this.api, this.pickApk, this.now});
+  const ReleasesScreen({
+    super.key,
+    this.api,
+    this.pickApk,
+    this.now,
+    this.errorsApi,
+  });
 
   /// Test seams: the API, the file picker and the clock.
   final UpdateApi? api;
   final ApkPicker? pickApk;
   final DateTime Function()? now;
+  final ErrorsApi? errorsApi;
 
   @override
   State<ReleasesScreen> createState() => _ReleasesScreenState();
@@ -109,6 +119,17 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
     listenable: _c,
     builder: (context, _) => M3Page(
       title: UpdateStrings.releasesTitle,
+      actions: [
+        // The owner's way into crash reports.
+        IconButton(
+          tooltip: ErrorsStrings.entryTitle,
+          icon: const AppIcon(ErrorsIcons.entry, size: AppIconSize.md),
+          onPressed: () {
+            Haptics.tap();
+            ErrorsScreen.open(context, api: widget.errorsApi);
+          },
+        ),
+      ],
       onRefresh: _c.load,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _upload,
@@ -119,7 +140,9 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
     ),
   );
 
-  List<Widget> _children(BuildContext context) {
+  List<Widget> _children(BuildContext context) => _releaseChildren(context);
+
+  List<Widget> _releaseChildren(BuildContext context) {
     if (_c.data == null) {
       if (_c.failed && !_c.loading) {
         return [

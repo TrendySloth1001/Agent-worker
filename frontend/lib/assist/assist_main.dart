@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_scope.dart';
+import '../core/errors/error_reporter.dart';
 import '../core/constants/app_config.dart';
 import '../core/constants/app_strings.dart';
 import '../core/notify/notification_center.dart';
@@ -27,7 +28,9 @@ import '../core/widgets/tap_outside_unfocus.dart';
 /// Its own isolate: it shares only storage with the app.
 @pragma('vm:entry-point')
 Future<void> assistMain() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // The overlay is its own isolate and engine: it needs the same error hooks.
+  ErrorReporter.runGuarded(WidgetsFlutterBinding.ensureInitialized);
+  await ErrorReporter.install(assist: true);
   final settings = await SettingsController.load();
   // Reminders from action cards follow the app's notification choices.
   NotificationCenter.instance.attach(settings.notify);
