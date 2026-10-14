@@ -146,8 +146,8 @@ export function toolsNote(s: ToolsState): string {
       : s.web === "unavailable"
         ? "- Web search: tried, but no usable live sources came back. Answer from what you know. Only if the answer depends on current facts, say in one short plain sentence that you couldn't check live sources just now; never mention search engines, providers or errors."
         : s.web === "off"
-        ? "- Web search: off. Do not say you searched the web."
-        : "- Web search: not needed for this turn; none was run. Do not say you searched the web.",
+        ? "- Web search: off. Do not say you searched the web. Answer from memory only what you are sure of; for anything uncertain, obscure or possibly changed since your training, say so and mention that turning web search on would let you check."
+        : "- Web search: none was run this turn (it was judged unnecessary). Do not say you searched the web. Answer from memory only what you are sure of; for anything uncertain, obscure or possibly changed since your training, say so.",
   );
   if (s.kb === "on") lines.push("- Knowledge base: on. Only call something 'from your knowledge base' if it appears in the provided knowledge sources.");
   else

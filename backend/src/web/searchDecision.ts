@@ -2,9 +2,10 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { recordUsage } from "../db/usage.js";
 import { log } from "../util/logger.js";
 import { needsFreshFacts } from "./freshness.js";
+import { isFactualLookup } from "./factual.js";
 import { classifyIntent, webVerdict, type IntentResult } from "../nlp/intent.js";
 
-export type SearchDecision = { search: boolean; query: string; reason: "explicit" | "fresh" | "intent" | "model" | "none" };
+export type SearchDecision = { search: boolean; query: string; reason: "explicit" | "fresh" | "factual" | "intent" | "model" | "none" };
 
 /** The user explicitly asks for the web. */
 const EXPLICIT = /\b(search|google|look ?up|browse|find (me )?(sources?|links?|articles?|references?)|check (online|the web|the internet)|on the (web|internet)|cite sources?|with sources)\b/i;
@@ -66,6 +67,8 @@ export function decideSearchLocal(question: string, intent?: IntentResult): Sear
   // data, not news: let the model decide those instead of the fast path.
   const ownData = /\b(my|our|mine|we have|i have|i got|we got)\b/i.test(q) && /\d/.test(q);
   if (!ownData && needsFreshFacts(q)) return { search: true, query: q.slice(0, 200), reason: "fresh" };
+  // Precise facts about named things: small models answer these from memory, confidently and often wrongly.
+  if (!ownData && isFactualLookup(q)) return { search: true, query: q.slice(0, 200), reason: "factual" };
   // A confident local classifier (chit-chat, code, math, writing... or news) saves the model call.
   const verdict = webVerdict(intent ?? classifyIntent(q));
   if (verdict === "skip") return { search: false, query: "", reason: "intent" };

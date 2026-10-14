@@ -10,7 +10,7 @@ export function streamOllama(model: string, messages: Message[], opts: StreamOpt
     const lines = postLines(
       "https://ollama.com/api/chat",
       { Authorization: `Bearer ${apiKey}` },
-      { model, messages: messages.map((m) => (m.images?.length ? { role: m.role, content: m.content, images: m.images } : { role: m.role, content: m.content })), stream: true, ...(opts.maxTokens ? { options: { num_predict: opts.maxTokens } } : {}) },
+      { model, messages: messages.map((m) => (m.images?.length ? { role: m.role, content: m.content, images: m.images } : { role: m.role, content: m.content })), stream: true, ...(opts.maxTokens || opts.temperature !== undefined ? { options: { ...(opts.maxTokens ? { num_predict: opts.maxTokens } : {}), ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}) } } : {}) },
       opts,
     );
     for await (const line of lines) {
