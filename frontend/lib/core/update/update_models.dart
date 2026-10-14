@@ -150,12 +150,59 @@ class AdoptionRow {
   );
 }
 
+/// Install attempts reported for one target build.
+class InstallStats {
+  const InstallStats({
+    required this.build,
+    this.stages = const {},
+    this.successRate,
+  });
+
+  final int build;
+
+  /// Event count per stage name (`install_ok`, `download_fail`, ...).
+  final Map<String, int> stages;
+
+  /// install_ok / (install_ok + install_fail + verify_fail); null with none.
+  final double? successRate;
+
+  int count(String stage) => stages[stage] ?? 0;
+
+  /// Download or install attempts that ended badly.
+  int get failures =>
+      count('download_fail') +
+      count('verify_fail') +
+      count('signature_mismatch') +
+      count('install_fail');
+
+  bool get isEmpty => stages.isEmpty;
+
+  factory InstallStats.fromJson(Map<String, dynamic> j) => InstallStats(
+    build: (j['build'] as num?)?.toInt() ?? 0,
+    stages: {
+      for (final s in j['stages'] as List? ?? const [])
+        if (s is Map<String, dynamic> && s['stage'] is String)
+          s['stage'] as String: (s['count'] as num?)?.toInt() ?? 0,
+    },
+    successRate: (j['successRate'] as num?)?.toDouble(),
+  );
+}
+
 /// `GET /app/releases`.
 class ReleaseList {
-  const ReleaseList({this.releases = const [], this.adoption = const []});
+  const ReleaseList({
+    this.releases = const [],
+    this.adoption = const [],
+    this.installs = const [],
+  });
 
   final List<OwnerRelease> releases;
   final List<AdoptionRow> adoption;
+  final List<InstallStats> installs;
+
+  /// Install stats for [build], or null when nothing was reported.
+  InstallStats? installsFor(int build) =>
+      installs.where((i) => i.build == build).firstOrNull;
 
   factory ReleaseList.fromJson(Map<String, dynamic> j) => ReleaseList(
     releases: [
@@ -165,6 +212,10 @@ class ReleaseList {
     adoption: [
       for (final r in j['adoption'] as List? ?? const [])
         if (r is Map<String, dynamic>) AdoptionRow.fromJson(r),
+    ],
+    installs: [
+      for (final r in j['installs'] as List? ?? const [])
+        if (r is Map<String, dynamic>) InstallStats.fromJson(r),
     ],
   );
 }
@@ -194,6 +245,9 @@ class ReleaseEdit {
     'kind': ?kind?.name,
     'title': ?title,
     'notes': ?notes,
-    if (clearMin) 'minSupportedBuild': null else 'minSupportedBuild': ?minSupportedBuild,
+    if (clearMin)
+      'minSupportedBuild': null
+    else
+      'minSupportedBuild': ?minSupportedBuild,
   };
 }

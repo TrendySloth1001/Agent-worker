@@ -8,8 +8,10 @@ import '../constants/update.dart';
 import '../notify/notification_center.dart';
 import '../notify/notify_kind.dart';
 import '../notify/notify_target.dart';
+import 'app_build.dart';
 import 'update_api.dart';
 import 'update_downloader.dart';
+import 'update_events.dart';
 import 'update_installer.dart';
 import 'update_models.dart';
 import 'update_policy.dart';
@@ -50,7 +52,9 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     DateTime Function()? clock,
     Future<void> Function(UpdateRelease release)? notify,
     Duration? startDelay,
+    UpdateEventReporter? events,
   }) : _apiOverride = api,
+       _eventsOverride = events,
        _installerOverride = installer,
        _downloaderOverride = downloader,
        _openStore = store ?? UpdateStore.open,
@@ -64,6 +68,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   static final instance = UpdateController();
 
   final UpdateApi? _apiOverride;
+  final UpdateEventReporter? _eventsOverride;
   final UpdateInstaller? _installerOverride;
   final UpdateDownloader? _downloaderOverride;
   final Future<UpdateStore> Function() _openStore;
@@ -80,6 +85,8 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
       _installerOverride ?? PlatformUpdateInstaller();
   late final UpdateDownloader _downloader =
       _downloaderOverride ?? UpdateDownloader();
+  late final UpdateEventReporter _events =
+      _eventsOverride ?? UpdateEventReporter(send: _api.sendEvents);
 
   UpdateStore? _store;
   Timer? _startTimer;
@@ -130,6 +137,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _startTimer = Timer(_startDelay, () => unawaited(check()));
     unawaited(_loadSettings());
+    unawaited(launch());
   }
 
   /// Called when someone signs in: the check needs a session.
@@ -147,6 +155,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    unawaited(_events.flush());
     if (_phase == UpdatePhase.needsPermission) {
       unawaited(_resumeInstall());
       return;
@@ -155,6 +164,64 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<UpdateStore> _s() async => _store ??= await _openStore();
+
+  // ---- install health events ---------------------------------------------------
+
+  /// First start of a build: when it is newer than the last one that ran, an
+  /// update just landed. Reports it (and the install itself when the system
+  /// never told us), then sends whatever is queued.
+  @visibleForTesting
+  Future<void> launch() async {
+    try {
+      final build = await _currentBuild();
+      AppBuild.current = build;
+      final s = await _s();
+      final prev = s.lastBuild;
+      final pending = s.pending;
+      if (FirstLaunch.afterUpdate(prev, build)) {
+        if (pending != null && pending.to == build) {
+          // The old process died in the install, so no result reached it.
+          await _events.record(
+            build: pending.from,
+            toBuild: build,
+            stage: InstallStage.installOk,
+            code: 'relaunch',
+          );
+        }
+        await _events.record(
+          build: build,
+          toBuild: build,
+          stage: InstallStage.firstLaunchOk,
+        );
+      }
+      if (pending != null && pending.to <= build) await s.setPending(null);
+      if (prev != build) await s.setLastBuild(build);
+      unawaited(_events.flush());
+    } catch (_) {}
+  }
+
+  /// Sends queued install events now.
+  @visibleForTesting
+  Future<void> flushEvents() => _events.flush();
+
+  Future<void> _emit(
+    InstallStage stage,
+    UpdateRelease r, {
+    String? code,
+    int? bytes,
+    InstallVia via = InstallVia.full,
+  }) async {
+    try {
+      await _events.record(
+        build: await _currentBuild(),
+        toBuild: r.build,
+        stage: stage,
+        code: code,
+        bytes: bytes,
+        via: via,
+      );
+    } catch (_) {}
+  }
 
   Future<void> _loadSettings() async {
     final s = await _s();
@@ -189,7 +256,8 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
       final s = await _s();
       _wifiOnly = s.wifiOnly;
       final build = await _currentBuild();
-      final info = await _api.check(build);
+      final info = await _api.check(build, deviceId: await _events.deviceId());
+      unawaited(_events.flush());
       await s.setLastCheckAt(_clock());
       _info = info;
       _everChecked = true;
@@ -322,6 +390,8 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     _failure = null;
     notifyListeners();
     final s = await _s();
+    var via = InstallVia.full;
+    await _emit(InstallStage.downloadStart, latest);
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final path = await _downloader.download(
@@ -330,26 +400,50 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
             _progress = p;
             notifyListeners();
           },
+          refreshUrl: () => _freshUrl(latest),
+          onResume: (_) => via = InstallVia.resume,
         );
+        await _emit(
+          InstallStage.downloadOk,
+          latest,
+          bytes: latest.size > 0 ? latest.size : null,
+          via: via,
+        );
+        unawaited(_events.flush());
         _apkPath = path;
-        await s.setDownloaded(DownloadRecord(latest.build, path, latest.sha256));
+        await s.setDownloaded(
+          DownloadRecord(latest.build, path, latest.sha256),
+        );
         _phase = UpdatePhase.ready;
         notifyListeners();
         return;
       } on UpdateVerifyException {
+        await _emit(InstallStage.verifyFail, latest, code: 'sha_mismatch');
         // One more go; a second mismatch is a real problem.
         if (attempt == 0) {
           _progress = 0;
           notifyListeners();
           continue;
         }
+        unawaited(_events.flush());
         _fail(UpdateFailure.verify, quiet: auto);
         return;
       } catch (_) {
+        await _emit(InstallStage.downloadFail, latest, code: 'network');
+        unawaited(_events.flush());
         _fail(UpdateFailure.network, quiet: auto);
         return;
       }
     }
+  }
+
+  /// A new link for the build being downloaded (the old one expired), or null.
+  Future<String?> _freshUrl(UpdateRelease r) async {
+    final info = await _api.check(await _currentBuild());
+    final l = info.latest;
+    return l != null && l.build == r.build && l.sha256 == r.sha256
+        ? l.url
+        : null;
   }
 
   void _fail(UpdateFailure f, {bool quiet = false}) {
@@ -378,22 +472,35 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     _phase = UpdatePhase.installing;
     _failure = null;
     notifyListeners();
+    final store = await _s();
+    // Remembered so the next launch can tell the install worked even when
+    // the system replaced this process before reporting back.
+    await store.setPending(PendingInstall(await _currentBuild(), latest.build));
+    await _emit(InstallStage.installStart, latest);
     final status = await _installer.install(path);
+    if (status != InstallStatus.success) await store.setPending(null);
     switch (status) {
       case InstallStatus.success:
         // The new app normally replaces this process; if not, we are done.
+        await _emit(InstallStage.installOk, latest);
+        await store.setPending(null);
         _phase = UpdatePhase.idle;
-        final s = await _s();
-        await _forgetDownload(s);
+        await _forgetDownload(store);
       case InstallStatus.cancelled:
+        await _emit(InstallStage.cancelled, latest);
         _phase = UpdatePhase.ready;
       case InstallStatus.signatureMismatch:
+        await _emit(InstallStage.signatureMismatch, latest);
+        unawaited(_events.flush());
         _fail(UpdateFailure.signature);
         return;
       case InstallStatus.failed:
+        await _emit(InstallStage.installFail, latest);
+        unawaited(_events.flush());
         _fail(UpdateFailure.install);
         return;
     }
+    unawaited(_events.flush());
     notifyListeners();
   }
 
@@ -424,7 +531,9 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
 
   static Future<int> _installedBuild() async {
     final info = await PackageInfo.fromPlatform();
-    return UpdatePolicy.buildFromVersionCode(int.tryParse(info.buildNumber) ?? 0);
+    return UpdatePolicy.buildFromVersionCode(
+      int.tryParse(info.buildNumber) ?? 0,
+    );
   }
 
   static Future<bool> _wifiNow() async {

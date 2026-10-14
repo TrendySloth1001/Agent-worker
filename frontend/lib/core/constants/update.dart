@@ -43,6 +43,35 @@ abstract final class UpdateConfig {
 
   static const maxNotes = 6;
   static const apkMime = 'application/vnd.android.package-archive';
+
+  // ---- resumable download ------------------------------------------------
+
+  /// A presigned link older than this is replaced before it can expire (1 h).
+  static const urlMaxAge = Duration(minutes: 50);
+
+  /// Waits between retries after a network error; the list length is the
+  /// number of retries.
+  static const retryBackoff = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+    Duration(seconds: 16),
+    Duration(seconds: 32),
+  ];
+
+  // ---- install health events -----------------------------------------------
+
+  /// Offline queue bound; the oldest events are dropped first.
+  static const eventQueueMax = 100;
+
+  /// Events per request (the server accepts 50).
+  static const eventBatch = 50;
+
+  /// Queued events older than this are dropped.
+  static const eventMaxAge = Duration(days: 7);
+
+  /// `x-app-build` request header.
+  static const buildHeader = 'x-app-build';
 }
 
 abstract final class UpdatePrefs {
@@ -53,6 +82,21 @@ abstract final class UpdatePrefs {
   static const notifiedBuild = 'ota.notifiedBuild';
   static const wifiOnly = 'ota.wifiOnly';
   static const downloaded = 'ota.downloaded';
+
+  /// JSON of the partial download in progress (build, etag, url, urlAt).
+  static const partial = 'ota.partial';
+
+  /// JSON list of install events waiting to be sent.
+  static const events = 'ota.events';
+
+  /// Random per-install id sent with events (not a hardware id).
+  static const deviceId = 'ota.deviceId';
+
+  /// The build that was running at the last launch.
+  static const lastBuild = 'ota.lastBuild';
+
+  /// `<from>|<to>` of an install handed to the system and not yet confirmed.
+  static const pending = 'ota.pending';
 }
 
 abstract final class UpdateIcons {
@@ -193,6 +237,25 @@ abstract final class UpdateStrings {
       'The APK is removed from storage. This cannot be undone.';
   static const cancel = 'Cancel';
   static const save = 'Save';
+
+  // ---- owner: install outcomes ---------------------------------------------------
+  static const installsHeader = 'INSTALLS';
+  static const installsNone = 'No install attempts reported yet';
+  static String installsLine(int ok, int failed, int? percent) =>
+      '$ok installed · $failed failed${percent == null ? '' : ' · $percent% success'}';
+  static String stageLine(String label, int n) => '$label $n';
+  static const stageLabels = {
+    'download_start': 'started',
+    'download_ok': 'downloaded',
+    'download_fail': 'download failed',
+    'verify_fail': 'bad checksum',
+    'signature_mismatch': 'wrong signature',
+    'install_start': 'install tapped',
+    'install_ok': 'installed',
+    'install_fail': 'install failed',
+    'cancelled': 'cancelled',
+    'first_launch_ok': 'opened after update',
+  };
 
   static const statusDraft = 'DRAFT';
   static const statusLive = 'LIVE';

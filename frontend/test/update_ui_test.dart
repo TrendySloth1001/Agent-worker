@@ -399,6 +399,32 @@ void main() {
       });
     }
 
+    testWidgets('shows install outcomes for a release', (tester) async {
+      final data = ReleaseList(
+        releases: releases,
+        adoption: list.adoption,
+        installs: const [
+          InstallStats(
+            build: 30,
+            stages: {
+              'install_ok': 8,
+              'install_fail': 1,
+              'verify_fail': 1,
+              'cancelled': 2,
+            },
+            successRate: 0.8,
+          ),
+        ],
+      );
+      await open(tester, data: data);
+      expect(find.text(UpdateStrings.installsHeader), findsOneWidget);
+      expect(
+        find.text(UpdateStrings.installsLine(8, 2, 80)),
+        findsOneWidget,
+      );
+      expect(find.textContaining('cancelled 2'), findsOneWidget);
+    });
+
     testWidgets('empty state', (tester) async {
       await open(tester, data: const ReleaseList());
       expect(find.text(UpdateStrings.releasesEmptyTitle), findsOneWidget);

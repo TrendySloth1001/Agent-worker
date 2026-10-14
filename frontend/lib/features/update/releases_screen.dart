@@ -187,6 +187,7 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
       for (final r in _c.releases) ...[
         _ReleaseCard(
           release: r,
+          installs: _c.installsFor(r.build),
           now: _now,
           onGoLive: () => _run(() => _c.goLive(r), UpdateStrings.goLiveDone),
           onPull: () async {
@@ -260,6 +261,7 @@ class _AdoptionRow extends StatelessWidget {
 class _ReleaseCard extends StatelessWidget {
   const _ReleaseCard({
     required this.release,
+    required this.installs,
     required this.now,
     required this.onGoLive,
     required this.onPull,
@@ -268,6 +270,7 @@ class _ReleaseCard extends StatelessWidget {
   });
 
   final OwnerRelease release;
+  final InstallStats? installs;
   final DateTime now;
   final VoidCallback onGoLive, onPull, onEdit, onDelete;
 
@@ -313,6 +316,10 @@ class _ReleaseCard extends StatelessWidget {
               style: context.text.caption.copyWith(color: p.textTertiary),
             ),
           ],
+          if (installs != null && !installs!.isEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            _InstallsPanel(stats: installs!),
+          ],
           const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.sm,
@@ -346,6 +353,47 @@ class _ReleaseCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Install attempts for one release: success rate and counts by stage.
+class _InstallsPanel extends StatelessWidget {
+  const _InstallsPanel({required this.stats});
+
+  final InstallStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final rate = stats.successRate;
+    final line = UpdateStrings.installsLine(
+      stats.count('install_ok'),
+      stats.failures,
+      rate == null ? null : (rate * 100).round(),
+    );
+    final stages = [
+      for (final e in UpdateStrings.stageLabels.entries)
+        if (stats.count(e.key) > 0)
+          UpdateStrings.stageLine(e.value, stats.count(e.key)),
+    ].join(' · ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          UpdateStrings.installsHeader,
+          style: context.text.caption.copyWith(color: p.textTertiary),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(line, style: context.text.label),
+        if (stages.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            stages,
+            style: context.text.caption.copyWith(color: p.textSecondary),
+          ),
+        ],
+      ],
     );
   }
 }
