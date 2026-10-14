@@ -6,6 +6,9 @@ import { requireOwner, runAs, userOf } from "../auth/context.js";
 import { createBody, MAX_APK_BYTES, parseOr400, patchBody } from "../ota/logic.js";
 import { checkForUpdate, createRelease, deleteRelease, hasReleaseToken, listReleases, patchRelease } from "../ota/service.js";
 import { z } from "zod";
+import { errorsBody, sessionsBody } from "../ota/errorsLogic.js";
+import { ingestErrors, ingestSessions } from "../ota/errorsService.js";
+import { rateLimit } from "../util/rateLimit.js";
 import { USER_MSG } from "../util/userMessages.js";
 
 /** Behind requireUser: update check for everyone, release management for the owner. */
@@ -71,6 +74,25 @@ appRouter.get("/update", async (req, res) => {
   const out = await checkForUpdate(build, userOf(req).id);
   res.setHeader("Cache-Control", "private, max-age=300");
   res.json(out);
+});
+
+/** Crash/error ingest (OTA v2 phase 2): any signed-in user; the user id always comes from the session, never the body. */
+function ingestUser(req: Request): string {
+  const id = userOf(req).id;
+  if (!id) throw new AppError(403, "forbidden", "Sign in to send reports");
+  return id;
+}
+
+appRouter.post("/errors", rateLimit(20, 60_000, "auto", { name: "app-errors" }), async (req, res) => {
+  const userId = ingestUser(req);
+  const { errors } = parseOr400(errorsBody, req.body ?? {});
+  res.json(await ingestErrors(userId, errors));
+});
+
+appRouter.post("/sessions", rateLimit(30, 60_000, "auto", { name: "app-sessions" }), async (req, res) => {
+  const userId = ingestUser(req);
+  const { sessions } = parseOr400(sessionsBody, req.body ?? {});
+  res.json({ accepted: await ingestSessions(userId, sessions) });
 });
 
 appRouter.use("/releases", requireOwner);
