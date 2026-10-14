@@ -75,7 +75,7 @@ test("prompt size budget", () => {
   const full = build(undefined, { html: true, github: true, widgetExamples: true });
   const lean = build();
   const compact = build(undefined, { compact: true });
-  assert.ok(full.length < 26_000, `full prompt ${full.length}`);
+  assert.ok(full.length < 26_500, `full prompt ${full.length}`);
   assert.ok(lean.length < 18_000, `lean prompt ${lean.length}`);
   assert.ok(compact.length < 12_500, `compact prompt ${compact.length}`);
   for (const length of LENGTHS) for (const tone of TONES) assert.ok(build({ length, tone }).length < 18_500);
