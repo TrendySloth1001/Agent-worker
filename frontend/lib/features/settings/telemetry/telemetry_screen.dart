@@ -208,7 +208,6 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         if (provider == null && o.budgets != null)
           _budgets(context, o.budgets!),
         if (errors.isNotEmpty) _errors(context, errors),
-        if (provider == null && o.users.isNotEmpty) _users(context, o),
         _calls(context),
       ],
     );
@@ -391,19 +390,6 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
               open: _open.contains('error-${e.code}-${e.model}'),
               onTap: () => _toggle('error-${e.code}-${e.model}'),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _users(BuildContext context, TelemetryOverview o) {
-    return TSection(
-      title: TelemetryCopy.users,
-      icon: TelemetryIcons.users,
-      child: PlainList(
-        children: [
-          for (final u in o.users.take(TelemetrySizes.usersShown))
-            UserRow(user: u),
         ],
       ),
     );

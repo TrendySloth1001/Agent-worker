@@ -26,6 +26,8 @@ abstract final class SettingsStrings {
   static const catAppearance = 'Appearance';
   static const catModels = 'Models & usage';
   static const catTelemetry = 'Telemetry & analytics';
+  static const catUsers = 'Users';
+  static const catBugs = 'Bug reports';
   static const catServer = 'Server status';
   static const catAbout = 'About sparky';
 
@@ -33,6 +35,9 @@ abstract final class SettingsStrings {
   static const sumApps = 'GitHub, Google Drive, Google Photos';
   static const sumStorage = 'Files and uploads you shared';
   static const sumTelemetry = 'Owner only: model calls, tokens, latency';
+  static const sumUsers = 'Who uses sparky, and how much';
+  static const sumBugs = 'Crashes and errors reported by the app';
+  static const usersEmpty = 'No usage in this window yet.';
   static const sumNotSet = 'Not set';
   static const on = 'On';
   static const off = 'Off';

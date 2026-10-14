@@ -56,8 +56,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Owner-only entries, in the collapsible Developer section.
   static const _developer = [
     SettingsCategory.releases,
+    SettingsCategory.bugs,
     SettingsCategory.server,
     SettingsCategory.telemetry,
+    SettingsCategory.users,
   ];
 
   @override

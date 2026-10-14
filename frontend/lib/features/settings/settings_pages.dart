@@ -56,6 +56,8 @@ import 'widgets/service_cards.dart';
 import 'widgets/settings_kit.dart';
 import 'widgets/status_strip.dart';
 import 'widgets/usage_states.dart';
+import '../errors/errors_screen.dart';
+import 'telemetry/users_screen.dart';
 
 /// The entries on the Settings root, in display order within their groups.
 enum SettingsCategory {
@@ -70,6 +72,8 @@ enum SettingsCategory {
   appearance,
   models,
   telemetry,
+  users,
+  bugs,
   releases,
   server,
   about;
@@ -86,6 +90,8 @@ enum SettingsCategory {
     appearance => SettingsStrings.catAppearance,
     models => SettingsStrings.catModels,
     telemetry => SettingsStrings.catTelemetry,
+    users => SettingsStrings.catUsers,
+    bugs => SettingsStrings.catBugs,
     releases => UpdateStrings.releasesTitle,
     server => SettingsStrings.catServer,
     about => SettingsStrings.catAbout,
@@ -103,17 +109,26 @@ enum SettingsCategory {
     appearance => AppIcons.appearance,
     models => AppIcons.models,
     telemetry => TelemetryIcons.live,
+    users => TelemetryIcons.users,
+    bugs => ErrorsIcons.entry,
     releases => UpdateIcons.releases,
     server => AppIcons.server,
     about => AppIcons.about,
   };
 
   /// Only the owner sees this entry (in the Developer section).
-  bool get ownerOnly => this == telemetry || this == server || this == releases;
+  bool get ownerOnly =>
+      this == telemetry ||
+      this == users ||
+      this == bugs ||
+      this == server ||
+      this == releases;
 
   /// Opens an existing screen instead of a settings page.
   bool get isDirect =>
       this == telemetry ||
+      this == users ||
+      this == bugs ||
       this == releases ||
       this == about ||
       this == assistant;
@@ -131,6 +146,10 @@ Future<void> openSettingsCategory(
   switch (c) {
     case SettingsCategory.telemetry:
       return Navigator.push(context, settingsRoute(const TelemetryScreen()));
+    case SettingsCategory.users:
+      return Navigator.push(context, settingsRoute(const UsersScreen()));
+    case SettingsCategory.bugs:
+      return ErrorsScreen.open(context);
     case SettingsCategory.releases:
       return Navigator.push(context, settingsRoute(const ReleasesScreen()));
     case SettingsCategory.about:
@@ -219,6 +238,10 @@ String categorySummary(SettingsCategory c, AppScope scope) {
           : '$model$sep$n ${SettingsStrings.providersActive}';
     case SettingsCategory.telemetry:
       return SettingsStrings.sumTelemetry;
+    case SettingsCategory.users:
+      return SettingsStrings.sumUsers;
+    case SettingsCategory.bugs:
+      return SettingsStrings.sumBugs;
     case SettingsCategory.releases:
       return UpdateStrings.releasesSummary;
     case SettingsCategory.server:
@@ -814,6 +837,8 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
     case SettingsCategory.server:
       return _serverSections(scope);
     case SettingsCategory.telemetry:
+    case SettingsCategory.users:
+    case SettingsCategory.bugs:
     case SettingsCategory.releases:
     case SettingsCategory.about:
     case SettingsCategory.assistant:

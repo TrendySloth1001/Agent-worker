@@ -13,6 +13,8 @@ import 'package:app/data/usage_api.dart';
 import 'package:app/features/settings/settings_controller.dart';
 import 'package:app/features/settings/telemetry/telemetry_grouping.dart';
 import 'package:app/features/settings/telemetry/telemetry_screen.dart';
+import 'package:app/features/settings/telemetry/telemetry_widgets.dart';
+import 'package:app/features/settings/telemetry/users_screen.dart';
 import 'package:app/features/settings/usage_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -370,6 +372,30 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('users live on their own screen, not in telemetry', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsController.load();
+    await pumpScreen(
+      tester,
+      TelemetryScreen(api: _FakeTelemetry()),
+      height: 4000,
+      wrap: (app) => _scope(app, settings),
+    );
+    expect(
+      find.text('someone.with.a.long.address@example.com', findRichText: true),
+      findsNothing,
+    );
+    await pumpScreen(
+      tester,
+      UsersScreen(api: _FakeTelemetry()),
+      wrap: (app) => _scope(app, settings),
+    );
+    expect(find.byType(UserRow), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('one range selector, one chart behind tabs', (tester) async {
     SharedPreferences.setMockInitialValues({});
