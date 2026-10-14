@@ -119,6 +119,17 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
     listenable: _c,
     builder: (context, _) => M3Page(
       title: UpdateStrings.releasesTitle,
+      actions: [
+        // The owner's way into crash reports.
+        IconButton(
+          tooltip: ErrorsStrings.entryTitle,
+          icon: const AppIcon(ErrorsIcons.entry, size: AppIconSize.md),
+          onPressed: () {
+            Haptics.tap();
+            ErrorsScreen.open(context, api: widget.errorsApi);
+          },
+        ),
+      ],
       onRefresh: _c.load,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _upload,
@@ -129,30 +140,7 @@ class _ReleasesScreenState extends State<ReleasesScreen> {
     ),
   );
 
-  /// The owner's way into crash reports.
-  Widget _errorsEntry(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: AppSpacing.md),
-    child: SettingsGroup(
-      entries: [
-        GroupEntry(
-          SettingsTile(
-            icon: ErrorsIcons.entry,
-            title: ErrorsStrings.entryTitle,
-            summary: ErrorsStrings.entrySummary,
-            onTap: () {
-              Haptics.tap();
-              ErrorsScreen.open(context, api: widget.errorsApi);
-            },
-          ),
-        ),
-      ],
-    ),
-  );
-
-  List<Widget> _children(BuildContext context) => [
-    _errorsEntry(context),
-    ..._releaseChildren(context),
-  ];
+  List<Widget> _children(BuildContext context) => _releaseChildren(context);
 
   List<Widget> _releaseChildren(BuildContext context) {
     if (_c.data == null) {
