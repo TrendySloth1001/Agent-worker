@@ -12,7 +12,7 @@ const WH = /\b(who|whom|whose|when|which (year|date|day|month|country|city|state
 
 /** Asks to describe or recall a specific named thing. */
 const RECALL =
-  /\b(tell me about|summari[sz]e (the )?(plot|book|novel|film|movie|paper|article)|plot of|what (is|was|are|were) (the )?(population|height|price|cost|capital|gdp|salary|net worth|release date|chipset|specs?|launch date)|(api|docs?|documentation|reference) (for|of)|what does the .{1,40} (flag|option|command|function|method|package|library) do|(explain|describe|define) the .{1,40} (theorem|law|principle|effect|paradox|conjecture|lemma|algorithm|doctrine)|biography|research .{0,20}known for|known for)\b/i;
+  /\b(summari[sz]e (the )?(plot|book|novel|film|movie|paper|article)|plot of|what (is|was|are|were) (the )?(population|height|price|cost|capital|gdp|salary|net worth|release date|chipset|specs?|launch date)|(api|docs?|documentation|reference) (for|of)|what does the .{1,40} (flag|option|command|function|method|package|library) do|(explain|describe|define) the .{1,40} (theorem|law|principle|effect|paradox|conjecture|lemma|algorithm|doctrine)|biography|research .{0,20}known for|known for)\b/i;
 
 /** Programming/how-to/conceptual asks that are not lookups. */
 const NOT_LOOKUP = /\b(write|fix|debug|refactor|implement|translate|rewrite|proofread|brainstorm|poem|story|essay|code|function that|script|regex|my (code|app|file|data|resume|project)|explain (how|why|the concept)|how (do|does|to|can) (i|you|we)|step[- ]by[- ]step|difference between)\b/i;

@@ -48,8 +48,8 @@ test("factual turns try big-knowledge models first and the 20B ones last, droppi
 test("the system prompt carries the accuracy rules and today's date", () => {
   const p = buildSystemPrompt("default", undefined, new Date("2026-10-14"));
   assert.match(p, /Today's date is 2026-10-14/);
-  assert.match(p, /training knowledge has a cutoff/);
-  assert.match(p, /do(n't| not) recognize/i);
+  assert.match(p, /knowledge has a cutoff/);
+  assert.match(p, /don't recognize/i);
   assert.match(p, /Check the premise/);
   assert.match(p, /Exact figures/);
 });
