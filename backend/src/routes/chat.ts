@@ -26,6 +26,7 @@ import { retrieve, type KbHit } from "../retrieval/search.js";
 import { embeddingsHealthy, embedQueries } from "../embeddings/index.js";
 import type { Message } from "../providers.js";
 import { ATTACH_PLACEHOLDER, loadRows, prepareMessages, waitForFiles } from "../files/context.js";
+import { needsFrames, VIDEO_TEXT_ONLY_NOTE } from "../files/video.js";
 import { initialEtaMs, isTrivialTurn, runRoundTable, UnresolvedFilter, type SeatResearchInput, type TableRun } from "../table/roundTable.js";
 import { planQueries, runSeatResearch, type SeatResearch } from "../table/research.js";
 import { recordLatency } from "../table/latency.js";
@@ -187,7 +188,9 @@ chatRouter.post("/", async (req, res) => {
   // Files of the newest user message must exist; older ones may have been deleted since (placeholders).
   const latestIds = [...body.messages].reverse().find((m) => m.role === "user")?.attachments ?? [];
   let fileRows = await loadRows(attachmentIds, latestIds);
-  const wantsVision = [...fileRows.values()].some((r) => r.kind === "image" || r.kind === "video");
+  // A video needs a model that can see only when the question is about what it shows; speech-only questions are answered from its transcript.
+  const askedAbout = body.messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
+  const wantsVision = [...fileRows.values()].some((r) => r.kind === "image" || (r.kind === "video" && needsFrames(askedAbout === ATTACH_PLACEHOLDER ? "" : askedAbout)));
   let candidates = await pickCandidates(requested);
   let visionSwitched = false;
   if (wantsVision && !(requested && isVisionModel(requested))) {
@@ -248,10 +251,11 @@ chatRouter.post("/", async (req, res) => {
       sse.send("status", { phase: "processing_files" });
       fileRows = await waitForFiles(attachmentIds, ctl.signal, undefined, latestIds);
     }
-    const prepared = await prepareMessages(body.messages, fileRows, retrievalQuery(body.messages.map((m) => ({ role: m.role, content: m.content }))));
+    const prepared = await prepareMessages(body.messages, fileRows, retrievalQuery(body.messages.map((m) => ({ role: m.role, content: m.content }))), { signal: ctl.signal });
     if (prepared.failed.length > 0) {
       sse.send("notice", { code: "attachment_failed", message: `Couldn't read ${prepared.failed.join(", ")}.` });
     }
+    if (prepared.videoNotices.length > 0) sse.send("notice", { code: "video_limited", message: prepared.videoNotices.join(" ") });
     // ---- open / play requests ("open it on YouTube Music", "play it in my music app", "gaana chalao"):
     // a deterministic action (link from the sources, else a site search, else the app's search page), resolved
     // before anything else. Without an attachment the turn is answered here, with no model: one short sentence
@@ -781,7 +785,8 @@ chatRouter.post("/", async (req, res) => {
       log.warn("vision unavailable, answering text only", { requestId });
       sse.send("notice", { code: "vision_unavailable", message: USER_MSG.visionUnavailable });
       const textOnly = prompt.map((m) => (m.images?.length ? { ...m, images: undefined } : m));
-      textOnly.splice(Math.max(0, textOnly.length - 1), 0, { role: "system", content: VISION_UNAVAILABLE_NOTE });
+      const hasVideo = latestIds.some((id) => fileRows.get(id)?.kind === "video");
+      textOnly.splice(Math.max(0, textOnly.length - 1), 0, { role: "system", content: hasVideo ? VIDEO_TEXT_ONLY_NOTE : VISION_UNAVAILABLE_NOTE });
       result = await generate(preferForPrompt(await pickTextFallback(), promptChars), textOnly);
     }
 
