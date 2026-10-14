@@ -421,3 +421,30 @@ Still open, with recommendations:
 5. **Keystore backup** locations (two offline encrypted copies). Blocks Phase 4 sign-off.
 6. **Worker auth approach** (workmanager plugin vs Kotlin worker). Recommend plugin, decide after Phase 0 spike.
 7. **UIDT download job** (needs API 34 / targetSdk 35 considerations). Recommend optional enhancement after WorkManager baseline.
+
+---
+
+## 14. Phase 0 results (2026-10-14)
+
+Measured on build 34 (v1.10.0), `flutter build apk --release --split-per-abi --target-platform android-arm64`, signed with the real upload key.
+
+**APK entry storage** (`unzip -v`): total 39,394,394 bytes (39.4 MB).
+| Entry | Method | Size |
+|---|---|---|
+| lib/arm64-v8a/libapp.so | **Stored** | 16,581,552 |
+| lib/arm64-v8a/libflutter.so | **Stored** | 11,107,920 |
+| lib/arm64-v8a/libpdfium.so | Stored | 4,977,432 |
+| resources.arsc | Stored | 434,976 |
+| classes.dex / classes2.dex | Deflated | 3.4 MB -> 1.6 MB / 204 KB -> 93 KB |
+| AndroidManifest.xml | Deflated | 24.6 KB |
+So the section 4.4 assumption holds: native libs are STORED (so per-entry bsdiff works without reproducing deflate). libapp.so is 16.6 MB (not ~25-30 MB as guessed).
+
+**Delta estimate** (one-line Dart change, `print` added in `main()`, two consecutive builds): libapp.so differs; libflutter.so and classes.dex byte-identical. `bsdiff` (brew `bsdiff`, 3.8 s) of libapp.so: **377,651 bytes** (about 0.4 MB, 2.3% of libapp.so, 1.0% of the full APK). A whole-APK bsdiff of the two APKs was also small (386,437 bytes) because the changed entry is STORED and everything else is identical; the per-entry format remains the safer choice once dex/resources change (deflate re-randomisation) and for the v2/v3 signing block. Caveat: a one-line change is the best case; real releases touching many Dart files will be larger, so Phase 7 still needs the three-real-pairs measurement before committing. `bsdiff` is available on the build machine; `bspatch` ships with macOS.
+
+**Obfuscation** (`--obfuscate --split-debug-info=build/symbols/34`): builds fine with our toolchain, APK 37.2 MB (2.2 MB smaller), symbols file `app.android-arm64.symbols` 6.5 MB. Not switched on for release builds yet (not run on a device; Phase 2 enables it together with the symbols upload). Dart code has no reflection; the only runtime risk is anything keyed on class names or `runtimeType.toString()`, which Phase 2 should grep for before enabling.
+
+**Signing guard**: with `key.properties` missing, `flutter build apk --release` now fails in Gradle in about 8 s with an explicit message; with it present the build and signing work unchanged. Debug builds are unaffected.
+
+**Tooling not available here:** `aapt2` and `apksigner` are not installed (no Android build-tools on PATH), so versionCode/signer verification must be done another way (see Phase 1 note: server-side manifest parse).
+
+**Background worker auth decision (no implementation):** use a **Kotlin `UpdateWorker`** reading a token copy kept in `EncryptedSharedPreferences`, not the `workmanager` Flutter plugin. Rationale: the Dart plugin spins up a second Flutter engine per run (tens of MB RAM, plugin registration for a headless isolate, notorious flakiness with plugins like secure storage/notifications), while the worker only needs three tiny HTTPS calls (`/app/update`, `/app/config`, event flush) and a local notification, all of which are easy in Kotlin with `HttpURLConnection`. Cost: a small second HTTP/auth path in Kotlin (token refresh handled by the app on launch writing a fresh token; the worker treats 401 as "do nothing"). This reverses the section 4.7 preference for the plugin; Phase 6 should follow this decision.
