@@ -44,10 +44,7 @@ class _GithubConnectionTileState extends State<GithubConnectionTile> {
       icon: ConnectIcons.github,
       title: ConnectStrings.github,
       summary: githubSummary(_c),
-      onTap: () => Navigator.push(
-        context,
-        settingsRoute(const GithubScreen()),
-      ),
+      onTap: () => Navigator.push(context, settingsRoute(const GithubScreen())),
     ),
   );
 }

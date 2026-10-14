@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_prefs.dart';
 import '../../core/constants/app_sizes.dart';
+import '../../core/constants/errors.dart';
 import '../../core/constants/settings_copy.dart';
 import '../../core/haptics.dart';
 import '../../core/notify/notify_kind.dart';
@@ -26,6 +27,7 @@ class SettingsController extends ChangeNotifier {
     assistActions = _prefs?.getBool(AppPrefs.assistActions) ?? true;
     assistLive = _prefs?.getBool(AppPrefs.assistLive) ?? true;
     assistSaveHistory = _prefs?.getBool(AppPrefs.assistSaveHistory) ?? true;
+    sendCrashReports = _prefs?.getBool(ErrorsPrefs.sendReports) ?? true;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
     role = _prefs?.getString(AppPrefs.profileRole) ?? '';
@@ -91,6 +93,9 @@ class SettingsController extends ChangeNotifier {
 
   /// Assistant overlay chats are saved to the history on their own.
   late bool assistSaveHistory;
+
+  /// Crash reports are sent (the owner's always are, whatever this says).
+  late bool sendCrashReports;
 
   /// New chats start with WEB on Auto (true) or Off (false).
   late bool defaultWebSearch;
@@ -176,6 +181,25 @@ class SettingsController extends ChangeNotifier {
   void setVoiceExactWords(bool value) {
     voiceExactWords = value;
     _prefs?.setBool(AppPrefs.voiceExactWords, value);
+    notifyListeners();
+  }
+
+  /// Turning reports off also empties everything still waiting to be sent.
+  void setSendCrashReports(bool value) {
+    sendCrashReports = value;
+    final p = _prefs;
+    if (p != null) {
+      p.setBool(ErrorsPrefs.sendReports, value);
+      if (!value) {
+        for (final key in [
+          ErrorsPrefs.errorQueue,
+          ErrorsPrefs.assistErrorQueue,
+          ErrorsPrefs.sessionQueue,
+        ]) {
+          p.remove(key);
+        }
+      }
+    }
     notifyListeners();
   }
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'assist/assist_links.dart';
 import 'core/app_messenger.dart';
 import 'core/app_scope.dart';
+import 'core/errors/breadcrumbs.dart';
+import 'core/errors/error_reporter.dart';
 import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/notify/notification_center.dart';
@@ -28,7 +30,10 @@ import 'core/widgets/tap_outside_unfocus.dart';
 export 'assist/assist_main.dart' show assistMain;
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Pre-binding init is zoned so an error there is recorded; runApp stays in the root zone.
+  ErrorReporter.runGuarded(WidgetsFlutterBinding.ensureInitialized);
+  // Crash reports (Settings → Privacy): global handlers, breadcrumbs, sessions.
+  await ErrorReporter.install(updates: UpdateController.instance);
   final settings = await SettingsController.load();
   NotificationCenter.instance.attach(settings.notify);
   await NotificationCenter.instance.init();
@@ -124,6 +129,7 @@ class _AppState extends State<App> {
           darkTheme: AppTheme.dark,
           themeMode: widget.settings.themeMode,
           navigatorKey: _navigator,
+          navigatorObservers: [BreadcrumbObserver()],
           scaffoldMessengerKey: AppMessenger.key,
           builder: (context, child) {
             final media = MediaQuery.of(context);

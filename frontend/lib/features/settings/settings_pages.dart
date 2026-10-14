@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../core/app_scope.dart';
 import '../../core/constants/app_icons.dart';
 import '../../core/constants/apps.dart';
+import '../../core/constants/errors.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/constants/about.dart';
 import '../../core/constants/assist.dart';
@@ -537,6 +538,28 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 onTap: () =>
                     Navigator.push(c, settingsRoute(const KnowledgeScreen())),
               ),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: ErrorsStrings.sectionTitle,
+          items: [
+            SettingItem(
+              id: 'crash-reports',
+              title: ErrorsStrings.sendReportsTitle,
+              keywords: ErrorsStrings.sendReportsKeywords,
+              build: (c) {
+                final owner = isOwner();
+                return SettingsSwitchTile(
+                  icon: ErrorsIcons.sendReports,
+                  title: ErrorsStrings.sendReportsTitle,
+                  summary: owner
+                      ? ErrorsStrings.sendReportsOwner
+                      : ErrorsStrings.sendReportsHelp,
+                  value: owner || s.sendCrashReports,
+                  onChanged: owner ? (_) {} : s.setSendCrashReports,
+                );
+              },
             ),
           ],
         ),
