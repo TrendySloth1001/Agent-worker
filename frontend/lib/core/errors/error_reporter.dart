@@ -116,12 +116,12 @@ class ErrorReporter with WidgetsBindingObserver {
   );
 
   /// Async and platform errors (`PlatformDispatcher.onError`). Always true: handled.
-  bool recordPlatformError(Object error, StackTrace stack) {
+  bool recordPlatformError(Object cause, StackTrace stack) {
     unawaited(
       record(
         kind: 'platform',
-        type: error.runtimeType.toString(),
-        message: error.toString(),
+        type: cause.runtimeType.toString(),
+        message: cause.toString(),
         stack: stack.toString(),
       ),
     );
