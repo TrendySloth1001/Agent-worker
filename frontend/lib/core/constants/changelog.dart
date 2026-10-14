@@ -117,6 +117,41 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.10.0',
+      date: '15 Oct 2026',
+      headline: 'Straight answers',
+      items: [
+        (
+          kind: ChangeKind.improved,
+          title: 'Answers get to the point',
+          detail:
+              'Replies lead with the answer, fit their length to your '
+              'question and skip the filler.',
+          icon: HugeIcons.strokeRoundedTarget01,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'Videos, for real',
+          detail:
+              'sparky answers from the actual frames and audio, cites '
+              'moments like [0:42] and says when it can\'t tell.',
+          icon: HugeIcons.strokeRoundedVideo01,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'Real model names',
+          detail: 'Every answer shows which model wrote it, not just "AI".',
+          icon: HugeIcons.strokeRoundedAiChat02,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'One icon per option',
+          detail: 'Settings no longer reuse the same icon for different things.',
+          icon: HugeIcons.strokeRoundedDashboardSquare02,
+        ),
+      ],
+    ),
+    (
       version: '1.9.3',
       date: '14 Oct 2026',
       headline: 'Smoother, everywhere',
