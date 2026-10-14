@@ -40,6 +40,7 @@ import 'round_table_header.dart';
 import 'round_table_panel.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/models/model_names.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -140,8 +141,12 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  String? _friendlyName(String id) =>
-      models.where((m) => m.id == id).firstOrNull?.name;
+  String? _friendlyName(String id) {
+    final known = models.where((m) => m.id == id).firstOrNull?.name;
+    if (known != null && known.isNotEmpty) return known;
+    final pretty = prettyModelName(id);
+    return pretty.isEmpty ? null : pretty;
+  }
 
   void _openModelInfo(BuildContext context, String id) => showModelInfoSheet(
     context,

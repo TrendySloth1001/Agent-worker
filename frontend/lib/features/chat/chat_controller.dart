@@ -29,6 +29,7 @@ import '../settings/settings_controller.dart';
 import 'chat_turn.dart';
 import 'composer_state.dart';
 import 'stream_retry.dart';
+import '../../core/models/model_names.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController(
@@ -169,8 +170,14 @@ class ChatController extends ChangeNotifier {
     if (_background != null) _reattach();
   }
 
-  String modelName(String? id) =>
-      models.where((m) => m.id == id).firstOrNull?.name ?? AppStrings.assistant;
+  /// The model's name from the server's list; otherwise a readable name made
+  /// from its id; "AI" only when there is no model at all.
+  String modelName(String? id) {
+    final known = models.where((m) => m.id == id).firstOrNull?.name;
+    if (known != null && known.isNotEmpty) return known;
+    final pretty = id == null ? '' : prettyModelName(id);
+    return pretty.isEmpty ? AppStrings.assistant : pretty;
+  }
 
   /// Changing a default in settings carries over to the chips.
   void _onSettings() {
