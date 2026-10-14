@@ -269,7 +269,9 @@ test("db: file links serve decrypted bytes (ranges too), legacy plaintext object
     assert.match(legacy.headers.get("content-disposition") ?? "", /^attachment/); // an uploaded page never renders on the API origin
     assert.match(legacy.headers.get("content-security-policy") ?? "", /sandbox/);
 
-    assert.equal((await fetch(local(blobUrl(id, "original")).replace(/sig=[0-9a-f]/, "sig=0"))).status, 404);
+    // Flip the first signature digit (always a change, unlike forcing "0").
+    const tampered = local(blobUrl(id, "original")).replace(/sig=([0-9a-f])/, (_m, d: string) => `sig=${d === "0" ? "1" : "0"}`);
+    assert.equal((await fetch(tampered)).status, 404);
     assert.equal((await fetch(local(blobUrl(id, "original", Date.now() - 2 * 3600_000)))).status, 404);
     assert.equal((await fetch(local(blobUrl(id, "thumb")))).status, 404); // no thumbnail stored
   } finally {
