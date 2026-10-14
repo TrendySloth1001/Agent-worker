@@ -133,7 +133,7 @@ a.btn,button{display:block;width:100%;text-align:center;text-decoration:none;bac
 
 export function pickerPage(v: PickerView, nonce: string): string {
   const head = (title: string) =>
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light dark"><title>${esc(title)}</title><style nonce="${nonce}">${STYLE}</style></head>`;
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin"><meta name="color-scheme" content="light dark"><title>${esc(title)}</title><style nonce="${nonce}">${STYLE}</style></head>`;
   if (!v.ok) {
     return `${head(v.title)}<body><main><div class="mark">● sparky · google drive</div><h1>${esc(v.title)}</h1><p>${esc(v.message)}</p>${
       v.link ? `<a class="btn" href="${esc(v.link)}">RETURN TO SPARKY</a>` : ""

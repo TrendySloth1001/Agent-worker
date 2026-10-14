@@ -634,6 +634,10 @@ test("picker: start, page without API key, done verifies picked files once", asy
   assert.equal(v.ok, true);
   const html = pickerPage(v, "n0nce");
   assert.match(html, /"appId":"123456789012"/);
+  // Google checks the referrer-restricted picker key against the page origin: the page must send it
+  // (a no-referrer meta overrides the header and makes Google say "The API developer key is invalid").
+  assert.match(html, /<meta name="referrer" content="strict-origin">/);
+  assert.ok(!html.includes('content="no-referrer"'));
   assert.ok(!html.includes("</script><script>alert"));
   const done = await p.done(ticket, ["file123456789", "gone123456789", "file123456789", "bad id"]);
   assert.equal(done.picked, 1);
