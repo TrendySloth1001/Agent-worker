@@ -15,6 +15,8 @@ abstract final class AppPrefs {
   static const assistActions = 'assist_actions';
   static const assistLive = 'assist_live';
   static const assistSaveHistory = 'assist_save_history';
+  /// Read natively (flutter.assist_open_sound) when the overlay opens.
+  static const assistOpenSound = 'assist_open_sound';
   static const mode = 'chat_mode';
   static const profileName = 'profile_name';
   static const profileRole = 'profile_role';

@@ -150,6 +150,15 @@ class _AssistantSettingsScreenState extends State<AssistantSettingsScreen>
                     onChanged: settings.setAssistSaveHistory,
                   ),
                 ),
+                GroupEntry(
+                  SettingsSwitchTile(
+                    icon: AssistIcons.openSound,
+                    title: AssistStrings.soundTitle,
+                    summary: AssistStrings.soundBody,
+                    value: settings.assistOpenSound,
+                    onChanged: settings.setAssistOpenSound,
+                  ),
+                ),
               ],
             ),
           ),

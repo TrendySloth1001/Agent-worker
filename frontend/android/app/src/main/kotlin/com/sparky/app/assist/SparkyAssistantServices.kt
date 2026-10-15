@@ -22,6 +22,7 @@ class SparkyVoiceInteractionService : VoiceInteractionService() {
         super.onReady()
         try {
             AssistEngine.ensure(this)
+            AssistSound.preload(this)
         } catch (e: Exception) {
             // The overlay starts its engine itself if this failed.
             Log.w(AssistProtocol.LOG_TAG, "could not warm the engine", e)
