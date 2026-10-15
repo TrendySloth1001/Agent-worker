@@ -6,10 +6,15 @@ import 'package:flutter/material.dart';
 abstract final class AppMessenger {
   static final key = GlobalKey<ScaffoldMessengerState>();
 
-  static void show(String text) {
+  static void show(String text, {Duration? duration}) {
     final m = key.currentState;
     if (m == null) return;
     m.hideCurrentSnackBar();
-    m.showSnackBar(SnackBar(content: Text(text)));
+    final content = Text(text);
+    m.showSnackBar(
+      duration == null
+          ? SnackBar(content: content)
+          : SnackBar(content: content, duration: duration),
+    );
   }
 }

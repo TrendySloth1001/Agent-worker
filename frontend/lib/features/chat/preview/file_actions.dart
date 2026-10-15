@@ -11,8 +11,11 @@ import '../../../core/haptics.dart';
 import '../../../core/platform/browsers.dart';
 import '../../../core/widgets/confirm_sheet.dart';
 import '../../../core/widgets/illustration.dart';
+import '../../../core/constants/connectors.dart';
+import '../../../data/drive_ref.dart';
 import '../../../data/file_cache.dart';
 import '../../../data/files_api.dart';
+import '../../connectors/connector_actions.dart';
 import '../chat_launch.dart';
 
 void previewNotice(BuildContext context, String text, {bool error = false}) {
@@ -24,7 +27,7 @@ void previewNotice(BuildContext context, String text, {bool error = false}) {
 
 /// Can this file be deleted from here? Only stored files of the account
 /// (Drive or knowledge items are not in storage).
-bool canDeleteFile(FileInfo f) => f.id.isNotEmpty && !f.deleted;
+bool canDeleteFile(FileInfo f) => f.id.isNotEmpty && !f.deleted && !f.isDrive;
 
 /// Can a chat attach this file? It must be on the server.
 bool canAskAboutFile(FileInfo f) =>
@@ -34,6 +37,18 @@ bool canAskAboutFile(FileInfo f) =>
 /// message) and leaves the preview.
 void askAboutFile(BuildContext context, FileInfo file) {
   if (!canAskAboutFile(file)) return;
+  final driveId = file.driveFileId;
+  if (driveId != null) {
+    // A Drive file is read live by the server, not attached.
+    askAboutItem(
+      context,
+      provider: ConnectorIds.drive,
+      id: driveId,
+      title: file.name,
+      prompt: DriveStrings.prompt(file.name),
+    );
+    return;
+  }
   Haptics.tap();
   Navigator.of(context).popUntil((r) => r.isFirst);
   ChatLaunch.instance.ask(PreviewStrings.askPrompt(file.name), files: [file]);

@@ -23,6 +23,13 @@ abstract final class ConnectorLink {
   static const state = 'state';
   static const mode = 'mode';
   static const picked = 'picked';
+
+  /// Drive picker, folders: files imported from them, skipped ones, how many
+  /// folders were picked and how many Google would not let sparky open.
+  static const imported = 'imported';
+  static const skipped = 'skipped';
+  static const folders = 'folders';
+  static const limited = 'limited';
   static const error = 'error';
   static const message = 'message';
   static const modePicker = 'picker';
@@ -148,6 +155,34 @@ abstract final class DriveStrings {
       ? '1 file added.'
       : '$n files added.';
   static const pickerUnavailable = "Picking Drive files isn't available yet.";
+
+  /// Google lets sparky open only files the user picks, folders included.
+  static const folderLimited =
+      'Google only lets sparky open files you pick — select the files inside the folder.';
+  static String fromFolders(int n) =>
+      n == 1 ? '1 of them from your folders.' : '$n of them from your folders.';
+  static String skippedFiles(int n) => n == 1
+      ? '1 file was skipped (type not supported, or over the limit).'
+      : '$n files were skipped (type not supported, or over the limit).';
+
+  /// What a finished pick says: counts, then the folder note when Google
+  /// limited a folder.
+  static String pickedSummary({
+    required int picked,
+    int imported = 0,
+    int skipped = 0,
+    int limited = 0,
+  }) {
+    final total = picked + imported;
+    final parts = <String>[
+      if (total > 0 || limited == 0) DriveStrings.picked(total),
+      if (imported > 0) fromFolders(imported),
+      if (skipped > 0) skippedFiles(skipped),
+      if (limited > 0) folderLimited,
+    ];
+    return parts.join(' ');
+  }
+
   static const saveToDrive = 'Save to Drive';
   static const saved = 'Saved to Google Drive.';
   static const kindDoc = 'Google Doc';
@@ -294,6 +329,9 @@ abstract final class ConnectorSizes {
 
 abstract final class ConnectorDurations {
   static const request = Duration(seconds: 25);
+
+  /// A pick's message that carries the Google folder note stays longer.
+  static const longNotice = Duration(seconds: 9);
 
   /// A flow waiting for its deep link is dropped after this.
   static const pendingTtl = Duration(minutes: 15);

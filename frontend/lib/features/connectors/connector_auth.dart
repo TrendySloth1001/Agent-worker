@@ -27,6 +27,9 @@ class ConnectorOutcome {
     this.message,
     this.code,
     this.picked = 0,
+    this.imported = 0,
+    this.skipped = 0,
+    this.limited = 0,
   });
 
   final String provider;
@@ -35,6 +38,10 @@ class ConnectorOutcome {
 
   /// Drive picker: files sparky can now see.
   final int picked;
+
+  /// Drive picker, folders: files imported from them, skipped, and folders
+  /// Google would not let sparky open (the user picked files inside them).
+  final int imported, skipped, limited;
 
   bool get ok => message == null;
 }
@@ -214,6 +221,9 @@ class ConnectorAuth extends ChangeNotifier {
           provider: pending.provider,
           flow: pending.flow,
           picked: int.tryParse(q[ConnectorLink.picked] ?? '') ?? 0,
+          imported: int.tryParse(q[ConnectorLink.imported] ?? '') ?? 0,
+          skipped: int.tryParse(q[ConnectorLink.skipped] ?? '') ?? 0,
+          limited: int.tryParse(q[ConnectorLink.limited] ?? '') ?? 0,
         ),
         cold,
       );
@@ -258,7 +268,15 @@ class ConnectorAuth extends ChangeNotifier {
       phase = ConnectorPhase.idle;
       error = null;
       if (o.flow == ConnectorFlow.picker) {
-        AppMessenger.show(DriveStrings.picked(o.picked));
+        AppMessenger.show(
+          DriveStrings.pickedSummary(
+            picked: o.picked,
+            imported: o.imported,
+            skipped: o.skipped,
+            limited: o.limited,
+          ),
+          duration: o.limited > 0 ? ConnectorDurations.longNotice : null,
+        );
       } else {
         AppMessenger.show(
           ConnectorStrings.connectedAs(

@@ -5,10 +5,13 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../core/constants/app_config.dart';
+import '../core/constants/app_files.dart';
 import '../core/constants/connectors.dart';
 import 'api_client.dart';
 import 'chat_api.dart';
 import 'connections_api.dart';
+import 'file_insight.dart';
+import 'files_api.dart';
 
 /// A failed `/connect` call with the backend's error code.
 class ConnectException extends ApiException {
@@ -131,6 +134,7 @@ class ConnectApi {
     String path, {
     Map<String, Object?>? body,
     Map<String, String>? query,
+    Duration timeout = ConnectorDurations.request,
   }) async {
     final uri = Uri.parse(
       '${AppConfig.apiBaseUrl}/connect$path',
@@ -141,7 +145,7 @@ class ConnectApi {
     final http.Response res;
     try {
       res = await http.Response.fromStream(
-        await apiHttp.send(request).timeout(ConnectorDurations.request),
+        await apiHttp.send(request).timeout(timeout),
       );
     } on SocketException {
       throw const ConnectException(ConnectorStrings.offline, offline: true);
@@ -197,6 +201,46 @@ class ConnectApi {
   Future<DriveContent> driveRead(String id) async => DriveContent(
     await _send('GET', '/google_drive/files/${Uri.encodeComponent(id)}'),
   );
+
+  /// What sparky understands about a Drive file as stored (no model call).
+  Future<InsightData> driveInsight(String id) async => InsightData.fromJson(
+    await _send(
+      'GET',
+      '/google_drive/files/${Uri.encodeComponent(id)}/insight',
+    ),
+  );
+
+  /// Has sparky read the Drive file (slow: a model is called) and keeps it.
+  Future<InsightData> driveGenerateInsight(
+    String id, {
+    bool force = false,
+  }) async => InsightData.fromJson(
+    await _send(
+      'POST',
+      '/google_drive/files/${Uri.encodeComponent(id)}/insight',
+      body: {if (force) 'force': true},
+      timeout: AppFiles.insightTimeout,
+    ),
+  );
+
+  /// The Drive file's text, paged in characters.
+  Future<FileText> driveText(
+    String id, {
+    int offset = 0,
+    int limit = 200000,
+  }) async {
+    final j = await _send(
+      'GET',
+      '/google_drive/files/${Uri.encodeComponent(id)}/text',
+      query: {'offset': '$offset', 'limit': '$limit'},
+    );
+    return FileText(
+      text: _s(j['text']),
+      truncated: j['truncated'] == true,
+      chars: (j['chars'] as num?)?.toInt() ?? 0,
+      offset: (j['offset'] as num?)?.toInt() ?? offset,
+    );
+  }
 
   Future<void> driveToKnowledge(String id) => _send(
     'POST',
