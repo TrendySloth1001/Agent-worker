@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../core/constants/connections.dart';
 import '../../../../core/constants/device_actions.dart';
+import '../../../../core/constants/playlist.dart';
 import '../../../../core/constants/widget_github.dart';
 import '../../../../core/constants/widget_kit.dart';
 import '../../../../core/constants/widget_structure.dart';
@@ -23,6 +24,7 @@ import 'checklist_card.dart';
 import 'compare_card.dart';
 import 'flashcards_card.dart';
 import 'html_card.dart';
+import 'playlist_card.dart';
 import 'progress_card.dart';
 import 'quiz_card.dart';
 import 'stats_card.dart';
@@ -103,6 +105,11 @@ final Map<String, _Entry> _entries = {
   ConnectLang.githubConnect: _Entry(
     ConnectStrings.cardTitle,
     (s) => GithubConnectCard(source: s),
+  ),
+  // Several suggested songs: covers, previews, open in app, Play all.
+  PlaylistWire.fence: _Entry(
+    PlaylistStrings.label,
+    (s) => PlaylistCard(source: s),
   ),
   // A device action the model proposed: runs only after Confirm.
   DeviceActionWire.fence: _Entry(
