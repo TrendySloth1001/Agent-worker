@@ -4,6 +4,8 @@ import { z } from "zod";
 import { userOf } from "../auth/context.js";
 import { callbackPage } from "../auth/githubWebPage.js";
 import { drive, GDOC } from "../connections/oauth/drive.js";
+import { driveInsights } from "../connections/oauth/driveInsight.js";
+import { sendDriveFile } from "../connections/oauth/driveProxy.js";
 import { connectRedirectUri, oauthFlow } from "../connections/oauth/flow.js";
 import { notionApi } from "../connections/oauth/notion.js";
 import { picker, pickerCsp, pickerPage } from "../connections/oauth/picker.js";
@@ -58,6 +60,7 @@ export const connectPublicRouter = Router();
 connectPublicRouter.get("/:provider/callback", rateLimit(30, 60_000, "ip"));
 connectPublicRouter.get("/google_drive/picker", rateLimit(30, 60_000, "ip"));
 connectPublicRouter.post("/google_drive/picker/done", rateLimit(30, 60_000, "ip"));
+connectPublicRouter.post("/google_drive/picker/resolve", rateLimit(30, 60_000, "ip"));
 
 connectPublicRouter.get("/:provider/callback", async (req, res, next) => {
   const p = String(req.params.provider);
@@ -87,12 +90,24 @@ connectPublicRouter.get("/google_drive/picker", async (req, res) => {
   res.type("html").send(pickerPage(view, nonce));
 });
 
-const doneBody = z.object({ ticket: z.string().min(20).max(200), ids: z.array(z.string().max(200)).max(200).default([]) });
+const doneBody = z.object({
+  ticket: z.string().min(20).max(200),
+  ids: z.array(z.string().max(200)).max(200).default([]),
+  /** Picked folders whose files the user already picked inside them. */
+  handled: z.array(z.string().max(200)).max(50).default([]),
+});
+
+/** Folders the picker page must open next (the ticket stays valid). */
+connectPublicRouter.post("/google_drive/picker/resolve", async (req, res) => {
+  const b = doneBody.parse(req.body ?? {});
+  noStore(res);
+  res.json(await picker.resolve(b.ticket, b.ids));
+});
 
 connectPublicRouter.post("/google_drive/picker/done", async (req, res) => {
   const b = doneBody.parse(req.body ?? {});
   noStore(res);
-  res.json(await picker.done(b.ticket, b.ids));
+  res.json(await picker.done(b.ticket, b.ids, b.handled));
 });
 
 // ---- signed in ----------------------------------------------------------------
@@ -110,6 +125,10 @@ connectRouter.delete("/:provider", rateLimit(10, 60_000));
 connectRouter.post("/google_drive/picker", rateLimit(20, 60_000));
 connectRouter.get("/google_drive/files", rateLimit(60, 60_000));
 connectRouter.get("/google_drive/files/:id", rateLimit(30, 60_000));
+connectRouter.get("/google_drive/files/:id/raw", rateLimit(120, 60_000));
+connectRouter.get("/google_drive/files/:id/text", rateLimit(30, 60_000));
+connectRouter.get("/google_drive/files/:id/insight", rateLimit(60, 60_000));
+connectRouter.post("/google_drive/files/:id/insight", rateLimit(10, 60_000));
 connectRouter.get("/notion/search", rateLimit(60, 60_000));
 connectRouter.get("/notion/pages/:id", rateLimit(30, 60_000));
 connectRouter.post("/google_drive/files/:id/knowledge", rateLimit(10, 60_000));
@@ -151,6 +170,25 @@ connectRouter.get("/google_drive/files", async (req, res) => {
 
 connectRouter.get("/google_drive/files/:id", async (req, res) => {
   res.json(await drive.read(uid(req), String(req.params.id)));
+});
+
+/** The file's bytes for the in-app preview, streamed with the server's own Drive token (never the client's). */
+connectRouter.get("/google_drive/files/:id/raw", async (req, res) => {
+  await sendDriveFile(res, await drive.stream(uid(req), String(req.params.id), req.header("range")), req.header("if-none-match"));
+});
+
+connectRouter.get("/google_drive/files/:id/text", async (req, res) => {
+  res.json(await driveInsights.text(uid(req), String(req.params.id), Number(req.query.offset ?? 0), Number(req.query.limit ?? 200_000)));
+});
+
+/** What sparky understands about a Drive file, as stored (no model call). */
+connectRouter.get("/google_drive/files/:id/insight", async (req, res) => {
+  res.json(await driveInsights.get(uid(req), String(req.params.id)));
+});
+
+/** Reads the file once per version of it (`{force: true}` redoes it) and caches the reading. */
+connectRouter.post("/google_drive/files/:id/insight", async (req, res) => {
+  res.json(await driveInsights.ensure(uid(req), String(req.params.id), { force: req.body?.force === true }));
 });
 
 // ---- Notion ---------------------------------------------------------------------

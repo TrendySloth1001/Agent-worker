@@ -74,6 +74,24 @@ export function exportMime(mime: string): string | null {
   return null;
 }
 
+export const PDF_MIME = "application/pdf";
+/** Largest file the preview proxy streams (the app caches it on disk). */
+export const MAX_PROXY_BYTES = 150 * 1024 * 1024;
+/** Google-native files the preview shows as an exported PDF. */
+const EXPORT_PDF = new Set([GDOC, GSHEET, GSLIDES, "application/vnd.google-apps.drawing"]);
+
+/** What the preview proxy sends for [mime]: the exported PDF of a native Google file, or the stored bytes. */
+export function previewExport(mime: string): string | null {
+  return EXPORT_PDF.has(mime) ? PDF_MIME : null;
+}
+
+/** A `Range` request header Drive can take (single range); anything else is dropped. */
+export function safeRange(h: string | undefined | null): string | null {
+  return h && /^bytes=\d*-\d*$/.test(h) && h !== "bytes=-" ? h : null;
+}
+
+export type DriveStream = { file: DriveFile; status: number; contentType: string; headers: Record<string, string>; body: ReadableStream<Uint8Array> | null };
+
 export function toDriveFile(j: Record<string, unknown>): DriveFile {
   const s = (v: unknown) => (typeof v === "string" && v ? v : null);
   const owners = Array.isArray(j.owners) ? (j.owners as Array<Record<string, unknown>>) : [];
@@ -109,7 +127,7 @@ async function errorOf(res: Response, what: string): Promise<AppError> {
 }
 
 export function createDrive(tokens: TokenManager = connectorTokens, f: typeof fetch = fetch) {
-  const call = (userId: string, url: string, init: RequestInit = {}) => providerFetch(userId, "google_drive", url, init, tokens, f);
+  const call = (userId: string, url: string, init: RequestInit & { timeoutMs?: number } = {}) => providerFetch(userId, "google_drive", url, init, tokens, f);
 
   /** Files sparky can see (picked or created), newest first; [q] filters by name. */
   async function list(userId: string, opts: { q?: string; pageToken?: string; pageSize?: number } = {}): Promise<{ files: DriveFile[]; nextPageToken: string | null }> {
@@ -188,6 +206,48 @@ export function createDrive(tokens: TokenManager = connectorTokens, f: typeof fe
   }
 
   /**
+   * The file's bytes for the app's preview (the user's token never leaves the server): native Google
+   * files as an exported PDF, everything else as stored, with a single `Range` passed through.
+   */
+  async function stream(userId: string, id: string, range?: string | null): Promise<DriveStream> {
+    const file = await meta(userId, id);
+    if (file.mimeType === GFOLDER) throw new AppError(422, "unprocessable", "A folder has nothing to preview.");
+    const exp = previewExport(file.mimeType);
+    if (!exp && file.size != null && file.size > MAX_PROXY_BYTES) throw new AppError(413, "too_large", "This file is too big to preview here. Open it in Drive.");
+    const url = exp ? `${DRIVE_API}/files/${file.id}/export?mimeType=${encodeURIComponent(exp)}` : `${DRIVE_API}/files/${file.id}?alt=media&supportsAllDrives=true`;
+    const r = safeRange(range);
+    const res = await call(userId, url, { headers: r && !exp ? { Range: r } : {}, timeoutMs: 120_000 });
+    if (res.status === 403 && exp) throw new AppError(413, "too_large", "Google can't turn this one into a PDF preview (too big). Open it in Drive.");
+    if (!res.ok && res.status !== 206) throw await errorOf(res, "Opening the file");
+    const headers: Record<string, string> = {};
+    for (const k of ["content-length", "content-range", "accept-ranges"]) {
+      const v = res.headers.get(k);
+      if (v) headers[k] = v;
+    }
+    if (exp) delete headers["content-range"];
+    if (!exp) headers["accept-ranges"] ??= "bytes";
+    return { file, status: res.status === 206 ? 206 : 200, contentType: exp ?? file.mimeType, headers, body: res.body };
+  }
+
+  /**
+   * The files directly inside a folder that the token can see. Under drive.file this is usually empty or
+   * denied for a folder the user picked; the caller treats both as "ask for the files inside".
+   */
+  async function children(userId: string, folderId: string, max = 100): Promise<{ ok: boolean; status: number; files: DriveFile[] }> {
+    const params = new URLSearchParams({
+      q: `'${qEscape(checkFileId(folderId))}' in parents and trashed = false`,
+      fields: `files(${FIELDS})`,
+      pageSize: String(Math.min(Math.max(max, 1), 100)),
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    const res = await call(userId, `${DRIVE_API}/files?${params}`);
+    if (!res.ok) return { ok: false, status: res.status, files: [] };
+    const j = (await res.json().catch(() => ({}))) as { files?: Array<Record<string, unknown>> };
+    return { ok: true, status: res.status, files: (j.files ?? []).map(toDriveFile) };
+  }
+
+  /**
    * Creates a file in the user's Drive. [convert] turns it into a native Google
    * Doc (docx/markdown/html sources). Returns the new file.
    */
@@ -212,7 +272,7 @@ export function createDrive(tokens: TokenManager = connectorTokens, f: typeof fe
     return toDriveFile((await res.json()) as Record<string, unknown>);
   }
 
-  return { list, meta, read, upload };
+  return { list, meta, read, stream, children, upload };
 }
 
 export const drive = createDrive();
