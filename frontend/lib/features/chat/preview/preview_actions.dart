@@ -16,6 +16,7 @@ import '../../../core/theme/app_palette.dart';
 import '../../../core/constants/preview.dart';
 import 'file_actions.dart';
 import 'file_info.dart';
+import 'preview_view.dart';
 
 /// Fresh signed URL for a file. Signed URLs expire after an hour, so a
 /// server file always goes through GET /files/:id (cached while valid); the
@@ -112,12 +113,16 @@ class PreviewMessage extends StatelessWidget {
     this.hint,
     this.error = false,
     this.onRetry,
+    this.action,
   });
 
   final String title;
   final String? hint;
   final bool error;
   final VoidCallback? onRetry;
+
+  /// A custom button under the message (instead of RETRY).
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +151,10 @@ class PreviewMessage extends StatelessWidget {
                 style: tt.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
-            if (onRetry != null) ...[
+            if (action != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              action!,
+            ] else if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.lg),
               FilledButton.tonal(
                 style: FilledButton.styleFrom(
@@ -325,14 +333,24 @@ class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
     required this.file,
     this.extra = const [],
     this.immersive = false,
+    this.view,
+    this.onView,
   });
 
   final FileInfo file;
   final List<Widget> extra;
   final bool immersive;
 
+  /// With [onView], the ORIGINAL | SPARKY switch sits under the bar.
+  final PreviewView? view;
+  final ValueChanged<PreviewView>? onView;
+
+  bool get _switchable => view != null && onView != null;
+
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(
+    kToolbarHeight + (_switchable ? PreviewSizes.toggleBarHeight : 0),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -351,6 +369,18 @@ class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
         },
       ),
       title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      bottom: _switchable
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(
+                PreviewSizes.toggleBarHeight,
+              ),
+              child: PreviewViewToggle(
+                view: view!,
+                onChanged: onView!,
+                dark: immersive,
+              ),
+            )
+          : null,
       actions: [
         ...extra,
         PreviewMenu(file: file, color: fg),

@@ -16,6 +16,7 @@ import '../../../data/files_api.dart';
 import '../widgets/attachment_views.dart';
 import '../widgets/image_strip.dart';
 import 'preview_actions.dart';
+import 'preview_view.dart';
 
 /// In-app player for videos and audio files (local file or signed URL).
 class MediaPreviewScreen extends StatefulWidget {
@@ -27,7 +28,11 @@ class MediaPreviewScreen extends StatefulWidget {
   State<MediaPreviewScreen> createState() => _MediaPreviewScreenState();
 }
 
-class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
+class _MediaPreviewScreenState extends State<MediaPreviewScreen>
+    with PreviewViewMixin {
+  @override
+  FileInfo get viewFile => widget.file;
+
   VideoPlayerController? _video;
   bool _failed = false;
   bool _processing = false;
@@ -41,6 +46,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
   @override
   void initState() {
     super.initState();
+    loadSavedView();
     _start();
     if (_isAudio) _loadTranscript();
   }
@@ -142,6 +148,12 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     super.dispose();
   }
 
+  @override
+  void onViewChanged(PreviewView v) {
+    // Reading about the file is not a reason to keep it playing.
+    if (v == PreviewView.sparky) _video?.pause();
+  }
+
   void _toggle() {
     final c = _video;
     if (c == null || !c.value.isInitialized) return;
@@ -159,7 +171,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
   Widget build(BuildContext context) {
     final p = context.palette;
     // Video is immersive: black stage, light controls. Audio is a document.
-    final dark = !_isAudio;
+    final dark = !_isAudio && view == PreviewView.original;
     final body = Column(
       children: [
         Expanded(child: _isAudio ? _audioBody(p) : _videoBody(p)),
@@ -168,8 +180,13 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     );
     return Scaffold(
       backgroundColor: dark ? AppColors.black : null,
-      appBar: PreviewBar(file: widget.file, immersive: dark),
-      body: body,
+      appBar: PreviewBar(
+        file: widget.file,
+        immersive: dark,
+        view: canSwitchView ? view : null,
+        onView: pickView,
+      ),
+      body: DualBody(view: view, file: widget.file, original: body),
     );
   }
 

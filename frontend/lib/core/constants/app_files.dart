@@ -20,6 +20,9 @@ abstract final class AppFiles {
   static const uploadTimeout = Duration(minutes: 10);
   static const requestTimeout = Duration(seconds: 30);
 
+  /// Reading a file with a model (summary, frame descriptions) is slow.
+  static const insightTimeout = Duration(seconds: 120);
+
   /// Characters of extracted text fetched for the text preview.
   static const textPreviewLimit = 200000;
 
@@ -74,6 +77,9 @@ abstract final class AppFiles {
 
   /// Status the server writes into saved attachments of a deleted file.
   static const deletedStatus = 'deleted';
+
+  /// Path of the API's signed file links (the only readable file URLs).
+  static const blobPath = '/files/blob/';
 
   /// Sent as the text of an old message whose only files were deleted.
   static const deletedHistoryText = '(attachment deleted)';
