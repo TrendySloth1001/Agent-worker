@@ -141,6 +141,33 @@ export async function researchSections(args: {
   return { own, searches: run.length, failed };
 }
 
+/** Sources a writer sees per section, and the characters of each (the best-matching sentences). */
+export const WRITER_SOURCES = 6;
+export const WRITER_EXCERPT_CHARS = 600;
+
+/** The sentences of [text] that best match the section, in their original order, within [max] characters. */
+export function excerptFor(section: OutlineSection, text: string, max = WRITER_EXCERPT_CHARS): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const want = terms(`${section.heading} ${section.goal} ${section.keyPoints.join(" ")}`);
+  const sentences = flat.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) ?? [flat];
+  const scored = sentences.map((s, i) => {
+    let hit = 0;
+    for (const w of terms(s)) if (want.has(w)) hit++;
+    // The opening sentence usually names the subject; keep a small preference for it.
+    return { s: s.trim(), i, score: hit + (i === 0 ? 0.5 : 0) };
+  });
+  const keep = new Set<number>();
+  let used = 0;
+  for (const x of [...scored].sort((a, b) => b.score - a.score || a.i - b.i)) {
+    if (used + x.s.length + 1 > max) continue;
+    keep.add(x.i);
+    used += x.s.length + 1;
+  }
+  const out = scored.filter((x) => keep.has(x.i)).map((x) => x.s).join(" ");
+  return out || flat.slice(0, max);
+}
+
 /** The sources one section sees: its top own results + top shared, plus the most relevant KB and file sources. */
 export function pickSectionSources(section: OutlineSection, own: string[], book: SourceBook): string[] {
   const out: string[] = [];

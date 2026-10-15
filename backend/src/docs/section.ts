@@ -122,7 +122,7 @@ export function normalizeSection(md: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-export type RunChatFn = (candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean) => Promise<RunResult>;
+export type RunChatFn = (candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean, opts?: { maxTokens?: number }) => Promise<RunResult>;
 export type ImagesFn = (query: string, limit: number) => Promise<ImageResult[]>;
 
 export type SectionEvents = {
