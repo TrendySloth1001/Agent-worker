@@ -267,7 +267,12 @@ class _TextPreviewScreenState extends State<TextPreviewScreen>
             ),
         ],
       ),
-      body: DualBody(view: view, file: widget.file, original: _original(p)),
+      body: DualBody(
+        ready: viewReady,
+        view: view,
+        file: widget.file,
+        original: _original(p),
+      ),
     );
   }
 

@@ -139,7 +139,16 @@ class _SparkyViewState extends State<SparkyView> {
       return PreviewMessage(
         title: PreviewStrings.sparkyBusyTitle,
         hint: PreviewStrings.sparkyBusyHint,
-        onRetry: _load,
+        action: FilledButton.tonal(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, AppSizes.buttonHeight),
+          ),
+          onPressed: () {
+            Haptics.tap();
+            _load();
+          },
+          child: const Text(PreviewStrings.sparkyCheckAgain),
+        ),
       );
     }
     if (_kind != FileKind.image && !d.hasText && d.video == null) {

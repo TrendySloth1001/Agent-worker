@@ -115,6 +115,7 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen>
         onView: pickView,
       ),
       body: DualBody(
+        ready: viewReady,
         view: view,
         file: widget.file,
         original: Stack(

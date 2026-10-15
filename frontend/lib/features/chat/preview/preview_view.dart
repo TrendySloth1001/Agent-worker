@@ -60,16 +60,23 @@ mixin PreviewViewMixin<T extends StatefulWidget> on State<T> {
       : PreviewView.original;
   bool _picked = false;
 
+  /// False until the saved choice is known, so a screen does not open on
+  /// the default view and then jump to the saved one.
+  late bool viewReady = !hasSparkyView(viewFile);
+
   bool get canSwitchView => hasSparkyView(viewFile);
 
   /// Call from initState.
   void loadSavedView() {
     if (!canSwitchView) return;
     PreviewViewPrefs.load(viewType).then((v) {
-      if (mounted && !_picked && v != view) {
-        setState(() => view = v);
-        onViewChanged(v);
-      }
+      if (!mounted) return;
+      final changed = !_picked && v != view;
+      setState(() {
+        viewReady = true;
+        if (changed) view = v;
+      });
+      if (changed) onViewChanged(v);
     });
   }
 
@@ -144,11 +151,15 @@ class DualBody extends StatefulWidget {
     required this.view,
     required this.file,
     required this.original,
+    this.ready = true,
   });
 
   final PreviewView view;
   final FileInfo file;
   final Widget original;
+
+  /// False while the saved view is still being read.
+  final bool ready;
 
   @override
   State<DualBody> createState() => _DualBodyState();
@@ -160,7 +171,9 @@ class _DualBodyState extends State<DualBody> {
   @override
   Widget build(BuildContext context) {
     final sparky = widget.view == PreviewView.sparky;
-    if (sparky) _opened = true;
+    // Until the saved view is known a default of sparky is not drawn, so it
+    // never flashes; the original is always the first child and keeps state.
+    if (sparky && widget.ready) _opened = true;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -168,7 +181,7 @@ class _DualBodyState extends State<DualBody> {
           offstage: sparky,
           child: TickerMode(enabled: !sparky, child: widget.original),
         ),
-        if (_opened)
+        if (_opened && widget.ready)
           Offstage(
             offstage: !sparky,
             child: SparkyView(

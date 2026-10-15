@@ -186,7 +186,12 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen>
         view: canSwitchView ? view : null,
         onView: pickView,
       ),
-      body: DualBody(view: view, file: widget.file, original: body),
+      body: DualBody(
+        ready: viewReady,
+        view: view,
+        file: widget.file,
+        original: body,
+      ),
     );
   }
 
