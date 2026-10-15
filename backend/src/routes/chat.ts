@@ -42,6 +42,7 @@ import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { screenContextMessage, screenSchema } from "../context/screen.js";
 import { deviceActionsMessage, deviceActionsSchema, tailNotes } from "../context/deviceActions.js";
 import { convertSongList } from "../context/playlist.js";
+import { cardBlock, cardsNote, detectCardTypes, fallbackUpiCard, finalizeCards, hasCardBlock } from "../context/cards.js";
 import { actionBlock, conversationLinks, hasActionBlock, openActionNote, openReply, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
@@ -644,6 +645,10 @@ chatRouter.post("/", async (req, res) => {
     if (screenNote) prompt.push({ role: "system", content: screenNote });
     const actionsNote = deviceActionsMessage(body.deviceActions);
     if (actionsNote) prompt.push({ role: "system", content: actionsNote });
+    // Action cards (place, event, alarm/timer, contact, product, ride, food, travel, UPI): each type's rule only when the turn's text calls for it.
+    const cardTypes = body.deviceActions && lastUserText ? detectCardTypes(lastUserText) : [];
+    const cardsRule = cardsNote(cardTypes);
+    if (cardsRule) prompt.push({ role: "system", content: cardsRule });
     const context = buildContextMessage(kbItems, webItems, docItems, githubItems);
     if (context) prompt.push({ role: "system", content: context });
     const hint = lastUserText ? intentHint(lastUserText, nlp.intent) : null;
@@ -862,6 +867,20 @@ chatRouter.post("/", async (req, res) => {
       text = playlistText;
       sse.send("reset", { reason: "playlist" });
       sse.send("delta", { text });
+    }
+    // Action cards: rebuilt from the model's block (buttons and links are made here, never taken from it); a payment message always gets its UPI card.
+    if (cardTypes.length > 0) {
+      const userTexts = body.messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
+      let cardText = await finalizeCards(text, { userTexts, signal: ctl.signal }).catch(() => text);
+      if (cardTypes.includes("upi") && !hasCardBlock(cardText)) {
+        const upi = fallbackUpiCard(lastUserText);
+        if (upi) cardText = `${cardText}\n\n${cardBlock(upi)}`.trim();
+      }
+      if (cardText !== text) {
+        text = cardText;
+        sse.send("reset", { reason: "cards" });
+        sse.send("delta", { text });
+      }
     }
     // The open action the model did not write itself (weak and vision models often answer in prose).
     if (openAction && !hasActionBlock(text)) {

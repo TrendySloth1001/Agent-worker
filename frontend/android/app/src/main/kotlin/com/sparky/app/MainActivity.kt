@@ -132,6 +132,9 @@ class MainActivity : FlutterActivity() {
         // Action cards in the chat (alarm, event, dial...) run only on Confirm.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AssistProtocol.ACTIONS_CHANNEL)
             .setMethodCallHandler(DeviceActions(this))
+        // Buttons of the chat's action cards (place, event, contact, UPI...): one allow-listed intent per tap.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CardIntents.CHANNEL)
+            .setMethodCallHandler(CardIntents(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, authChannelName)
             .setMethodCallHandler { call, result -> handleAuth(call, result) }
         // In-app updates: install permission and the PackageInstaller hand-over.
