@@ -117,6 +117,21 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.13.1',
+      date: '15 Oct 2026',
+      headline: 'Knows where you are, roughly',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Local answers',
+          detail:
+              'Weather, prices, places and news fit your city or state, '
+              'with no location permission. Set your city in Privacy.',
+          icon: HugeIcons.strokeRoundedMapsLocation01,
+        ),
+      ],
+    ),
+    (
       version: '1.13.0',
       date: '15 Oct 2026',
       headline: 'Tap to do it',
