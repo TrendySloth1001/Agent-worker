@@ -277,10 +277,10 @@ test("UPI fallback card when the model wrote none", () => {
 
 // ---- the reply ---------------------------------------------------------------
 
-test("finalize: invalid blocks removed, at most two cards, prose kept", async () => {
-  const text = ["Sure.", block({ type: "ride", destination: "A" }), block({ type: "nonsense" }), block({ type: "food", query: "pizza" }), block({ type: "product", name: "x" })].join("\n\n");
+test("finalize: invalid blocks removed, at most three cards, prose kept", async () => {
+  const text = ["Sure.", block({ type: "ride", destination: "A" }), block({ type: "nonsense" }), block({ type: "food", query: "pizza" }), block({ type: "product", name: "x" }), block({ type: "ride", destination: "B" })].join("\n\n");
   const out = await finalizeCards(text, { userTexts: [] });
-  assert.deepEqual(cardsIn(out).map((c) => c.type), ["ride", "food"]);
+  assert.deepEqual(cardsIn(out).map((c) => c.type), ["ride", "food", "product"]);
   assert.ok(out.startsWith("Sure."));
   assert.equal(await finalizeCards("no blocks", { userTexts: [] }), "no blocks");
   assert.doesNotMatch(await finalizeCards("```sparky-card\nnot json\n```", { userTexts: [] }), /sparky-card/);
