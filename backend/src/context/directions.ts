@@ -220,7 +220,7 @@ export async function buildDirections(ask: DirectionsAsk, d: BuildDeps = {}): Pr
   if (originPoint && destPoint && originLabel) summary = await (d.route ?? drivingRoute)(originPoint, destPoint, { signal: d.signal }).catch(() => null);
 
   const text = summary && originLabel
-    ? `${destName} is about ${formatDistance(summary.meters)} from ${originLabel}, roughly ${formatDuration(summary.seconds)} by road. Tap Navigate for live directions.`
+    ? `${destName} is about ${formatDistance(summary.meters)} from ${originLabel}, roughly ${formatDuration(summary.seconds)} by road without traffic. Tap Navigate for live traffic and directions.`
     : `Tap Navigate for live directions to ${destName} from where you are, or Transit for trains and buses.`;
 
   const share = [destName, destInfo?.address, mapsDirUrl({ destination: dest })].filter(Boolean).join("\n");

@@ -165,7 +165,7 @@ test("Nalasopara after 'where are you starting from?' gives origin + destination
   assert.equal(ask.destination, "Lonavala");
   const r = await buildDirections(ask, { lookup, route });
   assert.ok(r);
-  assert.equal(r.text, "Lonavala is about 105 km from Nalasopara, roughly 2.5 h by road. Tap Navigate for live directions.");
+  assert.equal(r.text, "Lonavala is about 105 km from Nalasopara, roughly 2.5 h by road without traffic. Tap Navigate for live traffic and directions.");
   assert.deepEqual(routeCalls, ["19.4167,72.8167>18.7546,73.4062"]);
   const c = r.card;
   assert.deepEqual(c.rows, [{ k: "From", v: "Nalasopara" }, { k: "Distance", v: "105 km" }, { k: "Drive", v: "2.5 h" }]);
