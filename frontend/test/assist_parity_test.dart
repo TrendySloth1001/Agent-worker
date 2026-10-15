@@ -50,6 +50,8 @@ class _Recorder extends ChatApi {
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
     Map<String, Object>? deviceActions,
+    Map<String, String> locationHints = const {},
+    bool approxLocation = true,
   }) async* {
     calls.add({
       'history': [for (final m in history) '${m.role.name}:${m.content}'],

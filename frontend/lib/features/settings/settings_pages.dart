@@ -14,6 +14,7 @@ import '../../core/constants/assist.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/chat_cleanup.dart';
 import '../../core/constants/connections.dart';
+import '../../core/constants/location.dart';
 import '../../core/constants/memory.dart';
 import '../../core/constants/notify_copy.dart';
 import '../../core/notify/notify_kind.dart';
@@ -571,6 +572,36 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
                 summary: SettingsStrings.knowledgeHelp,
                 onTap: () =>
                     Navigator.push(c, settingsRoute(const KnowledgeScreen())),
+              ),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: LocationStrings.section,
+          items: [
+            SettingItem(
+              id: 'approx-location',
+              title: LocationStrings.approxTitle,
+              keywords: LocationStrings.approxKeywords,
+              build: (_) => SettingsSwitchTile(
+                icon: LocationIcons.approx,
+                title: LocationStrings.approxTitle,
+                summary: LocationStrings.approxHelp,
+                value: s.approxLocation,
+                onChanged: s.setApproxLocation,
+              ),
+            ),
+            SettingItem(
+              id: 'my-city',
+              title: LocationStrings.cityLabel,
+              keywords: LocationStrings.cityKeywords,
+              build: (_) => ProfileFieldTile(
+                label: LocationStrings.cityLabel,
+                icon: LocationIcons.city,
+                value: s.city,
+                hint: LocationStrings.cityHint,
+                max: AppSizes.profileCityMax,
+                onSave: s.setCity,
               ),
             ),
           ],

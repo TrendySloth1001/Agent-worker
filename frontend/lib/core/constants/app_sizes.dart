@@ -153,6 +153,7 @@ abstract final class AppSizes {
   static const profileLanguageMax = 40;
   static const profileInstructionsMax = 1500;
   static const profileSignatureMax = 300;
+  static const profileCityMax = 60;
   static const profileEditorLines = 6;
   static const profileValueMaxChars = 40;
   static const stepperButton = 32.0;

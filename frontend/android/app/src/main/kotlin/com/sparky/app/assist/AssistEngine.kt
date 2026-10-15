@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import com.sparky.app.BrowsersHandler
+import com.sparky.app.PhoneHintsHandler
 import com.sparky.app.MainActivity
 import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
@@ -54,6 +55,8 @@ object AssistEngine {
         // Links in answers open like they do in the app.
         MethodChannel(engine.dartExecutor.binaryMessenger, AssistProtocol.BROWSERS_CHANNEL)
             .setMethodCallHandler(BrowsersHandler(app))
+        MethodChannel(engine.dartExecutor.binaryMessenger, PhoneHintsHandler.CHANNEL)
+            .setMethodCallHandler(PhoneHintsHandler(app))
         // Confirmed action cards; one that opens another app closes the overlay.
         MethodChannel(engine.dartExecutor.binaryMessenger, AssistProtocol.ACTIONS_CHANNEL)
             .setMethodCallHandler(DeviceActions(app) { closeOverlay() })

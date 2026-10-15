@@ -109,6 +109,8 @@ class FakeChat extends ChatApi {
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
     Map<String, Object>? deviceActions,
+    Map<String, String> locationHints = const {},
+    bool approxLocation = true,
   }) {
     requests.add((history: List.of(history), screen: screen));
     flags.add((web: webMode, kb: knowledge, table: roundTable));

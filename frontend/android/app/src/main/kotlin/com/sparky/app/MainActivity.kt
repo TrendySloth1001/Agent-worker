@@ -127,6 +127,9 @@ class MainActivity : FlutterActivity() {
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler(BrowsersHandler(this))
+        // SIM / network country, time zone and locale for the server's approximate location (no permission).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PhoneHintsHandler.CHANNEL)
+            .setMethodCallHandler(PhoneHintsHandler(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AssistantSetup.CHANNEL)
             .setMethodCallHandler(assistant)
         // Action cards in the chat (alarm, event, dial...) run only on Confirm.

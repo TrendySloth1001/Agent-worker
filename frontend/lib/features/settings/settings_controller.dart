@@ -36,6 +36,8 @@ class SettingsController extends ChangeNotifier {
     language = _prefs?.getString(AppPrefs.profileLanguage) ?? '';
     customInstructions = _prefs?.getString(AppPrefs.profileInstructions) ?? '';
     signature = _prefs?.getString(AppPrefs.profileSignature) ?? '';
+    city = _prefs?.getString(AppPrefs.profileCity) ?? '';
+    approxLocation = _prefs?.getBool(AppPrefs.approxLocation) ?? true;
     final savedTone = _prefs?.getString(AppPrefs.profileTone);
     tone = tones.contains(savedTone) ? savedTone! : '';
     final savedLength = _prefs?.getString(AppPrefs.profileLength);
@@ -119,6 +121,14 @@ class SettingsController extends ChangeNotifier {
 
   // Personalization. Empty string means not set; [tone] '' means no tone.
   late String name, role, about, language, customInstructions, signature;
+
+  /// "My city": typed by the user, overrides the server's guess (sent in the
+  /// profile, never stored server-side).
+  late String city;
+
+  /// The server may guess a rough location from the network and phone hints
+  /// (never GPS) for questions that need one. Off: only [city] is used.
+  late bool approxLocation;
   late String tone;
   late String length;
 
@@ -317,6 +327,19 @@ class SettingsController extends ChangeNotifier {
     (x) => signature = x,
   );
 
+  void setCity(String v) => _setText(
+    AppPrefs.profileCity,
+    v,
+    AppSizes.profileCityMax,
+    (x) => city = x,
+  );
+
+  void setApproxLocation(bool value) {
+    approxLocation = value;
+    _prefs?.setBool(AppPrefs.approxLocation, value);
+    notifyListeners();
+  }
+
   /// Pass '' to clear the tone.
   void setTone(String value) {
     if (value.isNotEmpty && !tones.contains(value)) return;
@@ -376,13 +399,14 @@ class SettingsController extends ChangeNotifier {
   }
 
   /// Puts every preference back to its default. Name, role, about, language,
-  /// instructions and signature are the user's own words and stay.
+  /// instructions, signature and city are the user's own words and stay.
   void resetToDefaults() {
     themeMode = ThemeMode.system;
     hapticsOn = true;
     Haptics.enabled = true;
     defaultWebSearch = true;
     smartSuggestions = true;
+    approxLocation = true;
     defaultKnowledge = false;
     defaultRoundTable = false;
     notify.reset();
@@ -408,6 +432,7 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.defaultKnowledge,
       AppPrefs.defaultRoundTable,
       AppPrefs.smartSuggestions,
+      AppPrefs.approxLocation,
       AppPrefs.mode,
       AppPrefs.profileTone,
       AppPrefs.profileLength,
@@ -439,5 +464,6 @@ class SettingsController extends ChangeNotifier {
     if (language.isNotEmpty) 'language': language,
     if (customInstructions.isNotEmpty) 'instructions': customInstructions,
     if (signature.isNotEmpty) 'signature': signature,
+    if (city.isNotEmpty) 'city': city,
   };
 }

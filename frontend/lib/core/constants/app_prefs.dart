@@ -26,6 +26,8 @@ abstract final class AppPrefs {
   static const profileLanguage = 'profile_language';
   static const profileInstructions = 'profile_instructions';
   static const profileSignature = 'profile_signature';
+  static const profileCity = 'profile_city';
+  static const approxLocation = 'approx_location';
   static const textScale = 'text_scale';
   static const modelChoice = 'model_choice';
 
