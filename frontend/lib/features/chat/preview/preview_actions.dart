@@ -186,11 +186,7 @@ class PreviewMenu extends StatelessWidget {
       children: [
         if (canAskAboutFile(file))
           IconButton(
-            icon: AppIcon(
-              PreviewIcons.ask,
-              size: AppIconSize.md,
-              color: color,
-            ),
+            icon: AppIcon(PreviewIcons.ask, size: AppIconSize.md, color: color),
             tooltip: PreviewStrings.ask,
             onPressed: () => askAboutFile(context, file),
           ),
@@ -355,7 +351,10 @@ class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
         },
       ),
       title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      actions: [...extra, PreviewMenu(file: file, color: fg)],
+      actions: [
+        ...extra,
+        PreviewMenu(file: file, color: fg),
+      ],
     );
   }
 }

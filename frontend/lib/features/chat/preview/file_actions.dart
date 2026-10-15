@@ -76,7 +76,9 @@ Future<void> downloadFile(BuildContext context, FileInfo file) async {
       '${base.path}${Platform.pathSeparator}${StorageConfig.downloadFolder}',
     );
     await dir.create(recursive: true);
-    await f.copy('${dir.path}${Platform.pathSeparator}${safeFileName(file.name)}');
+    await f.copy(
+      '${dir.path}${Platform.pathSeparator}${safeFileName(file.name)}',
+    );
     if (context.mounted) previewNotice(context, PreviewStrings.saved);
   } catch (_) {
     if (context.mounted) {

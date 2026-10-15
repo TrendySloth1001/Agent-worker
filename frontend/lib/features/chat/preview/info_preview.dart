@@ -8,7 +8,12 @@ import 'preview_actions.dart';
 /// A file nothing here can draw (unknown type): name, type, size, date and
 /// the SHARE / OPEN WITH… / DOWNLOAD buttons.
 class InfoPreviewScreen extends StatelessWidget {
-  const InfoPreviewScreen({super.key, required this.file, this.title, this.hint});
+  const InfoPreviewScreen({
+    super.key,
+    required this.file,
+    this.title,
+    this.hint,
+  });
 
   final FileInfo file;
   final String? title;

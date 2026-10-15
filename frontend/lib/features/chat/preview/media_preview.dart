@@ -161,11 +161,11 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     // Video is immersive: black stage, light controls. Audio is a document.
     final dark = !_isAudio;
     final body = Column(
-        children: [
-          Expanded(child: _isAudio ? _audioBody(p) : _videoBody(p)),
-          _controls(p),
-        ],
-      );
+      children: [
+        Expanded(child: _isAudio ? _audioBody(p) : _videoBody(p)),
+        _controls(p),
+      ],
+    );
     return Scaffold(
       backgroundColor: dark ? AppColors.black : null,
       appBar: PreviewBar(file: widget.file, immersive: dark),

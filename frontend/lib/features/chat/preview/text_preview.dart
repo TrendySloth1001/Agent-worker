@@ -53,8 +53,7 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
 
   bool get _mono => _type == PreviewType.code || _type == PreviewType.json;
   bool get _searchable =>
-      _type != PreviewType.csv &&
-      !(_type == PreviewType.markdown && !_source);
+      _type != PreviewType.csv && !(_type == PreviewType.markdown && !_source);
 
   @override
   void initState() {
@@ -73,10 +72,7 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
     return [
       for (var i = 0; i < lines.length; i += PreviewConfig.blockLines)
         lines
-            .sublist(
-              i,
-              (i + PreviewConfig.blockLines).clamp(0, lines.length),
-            )
+            .sublist(i, (i + PreviewConfig.blockLines).clamp(0, lines.length))
             .join('\n'),
     ];
   }
@@ -111,7 +107,10 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
     final length = await file.length();
     final cut = length > PreviewConfig.maxTextBytes;
     final bytes = cut
-        ? await file.openRead(0, PreviewConfig.maxTextBytes).expand((c) => c).toList()
+        ? await file
+              .openRead(0, PreviewConfig.maxTextBytes)
+              .expand((c) => c)
+              .toList()
         : await file.readAsBytes();
     return (text: utf8.decode(bytes, allowMalformed: true), truncated: cut);
   }
@@ -441,9 +440,9 @@ class _OfficeHeader extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(
               PreviewStrings.textHint,
-              style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: AppSpacing.md),
             FileActionButtons(file: file, compact: true),
@@ -480,13 +479,14 @@ class _CsvTable extends StatelessWidget {
     final widths = [
       for (var c = 0; c < cols; c++)
         (visible
-                    .take(PreviewConfig.csvFirstRows)
-                    .fold<int>(
-                      0,
-                      (m, r) => c < r.length && r[c].length > m ? r[c].length : m,
-                    ) *
-                PreviewSizes.csvCharWidth +
-            AppSpacing.lg * 2)
+                        .take(PreviewConfig.csvFirstRows)
+                        .fold<int>(
+                          0,
+                          (m, r) =>
+                              c < r.length && r[c].length > m ? r[c].length : m,
+                        ) *
+                    PreviewSizes.csvCharWidth +
+                AppSpacing.lg * 2)
             .clamp(PreviewSizes.csvCellMinWidth, PreviewSizes.csvCellMaxWidth),
     ];
     final total = widths.fold<double>(0, (a, b) => a + b);
@@ -543,10 +543,7 @@ class _CsvTable extends StatelessWidget {
                           SizedBox(
                             width: PreviewSizes.csvGutterWidth,
                             child: Center(
-                              child: Text(
-                                header ? '' : '$i',
-                                style: t.caption,
-                              ),
+                              child: Text(header ? '' : '$i', style: t.caption),
                             ),
                           ),
                           for (var c = 0; c < cols; c++)
@@ -562,9 +559,7 @@ class _CsvTable extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: (header ? t.label : t.code).copyWith(
                                     color: p.textPrimary,
-                                    fontWeight: header
-                                        ? FontWeight.w700
-                                        : null,
+                                    fontWeight: header ? FontWeight.w700 : null,
                                   ),
                                 ),
                               ),

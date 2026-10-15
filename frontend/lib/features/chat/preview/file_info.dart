@@ -143,9 +143,9 @@ class FileInfoCard extends StatelessWidget {
               Text(
                 hint,
                 textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
+                style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: AppSpacing.xl),
               FileInfoRows(file: file),

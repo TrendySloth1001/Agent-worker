@@ -22,7 +22,9 @@ class FileCache {
     Future<FileInfo> Function(String id, {bool force})? info,
     http.Client Function()? client,
   }) : _root = root ?? _defaultRoot,
-       _info = info ?? ((id, {force = false}) => FilesApi.instance.get(id, force: force)),
+       _info =
+           info ??
+           ((id, {force = false}) => FilesApi.instance.get(id, force: force)),
        _client = client ?? http.Client.new;
 
   static FileCache instance = FileCache();
@@ -47,12 +49,17 @@ class FileCache {
   }
 
   /// The cached file when it is already on disk.
-  Future<File?> cached(FileInfo f, {FileVariant variant = FileVariant.original}) async {
+  Future<File?> cached(
+    FileInfo f, {
+    FileVariant variant = FileVariant.original,
+  }) async {
     final local = f.localPath;
     if (local != null && File(local).existsSync()) return File(local);
     if (f.id.isEmpty) return null;
     final dir = await _dir(f.id, variant);
-    final file = File('${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}');
+    final file = File(
+      '${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}',
+    );
     return file.existsSync() && file.lengthSync() > 0 ? file : null;
   }
 
@@ -72,9 +79,11 @@ class FileCache {
       throw const ApiException(ErrorCopy.downloadFailed);
     }
     final key = '${f.id}/${variant.name}';
-    return _inflight[key] ??= _download(f, variant, onProgress).whenComplete(() {
-      _inflight.remove(key);
-    });
+    return _inflight[key] ??= _download(f, variant, onProgress).whenComplete(
+      () {
+        _inflight.remove(key);
+      },
+    );
   }
 
   Future<File> _download(
@@ -84,7 +93,9 @@ class FileCache {
   ) async {
     final dir = await _dir(f.id, variant);
     await dir.create(recursive: true);
-    final target = File('${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}');
+    final target = File(
+      '${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}',
+    );
     Object? last;
     for (final force in const [false, true]) {
       final info = await _info(f.id, force: force);
@@ -104,7 +115,11 @@ class FileCache {
     );
   }
 
-  Future<void> _write(String url, File target, void Function(double)? onProgress) async {
+  Future<void> _write(
+    String url,
+    File target,
+    void Function(double)? onProgress,
+  ) async {
     final part = File('${target.path}.part');
     final client = _client();
     try {
