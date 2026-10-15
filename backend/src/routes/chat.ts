@@ -41,6 +41,7 @@ import { peekKb } from "../retrieval/peek.js";
 import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { screenContextMessage, screenSchema } from "../context/screen.js";
 import { deviceActionsMessage, deviceActionsSchema, tailNotes } from "../context/deviceActions.js";
+import { convertSongList } from "../context/playlist.js";
 import { actionBlock, conversationLinks, hasActionBlock, openActionNote, openReply, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
@@ -854,6 +855,13 @@ chatRouter.post("/", async (req, res) => {
     if (tail) {
       text += tail;
       sse.send("delta", { text: tail });
+    }
+    // Weak models list songs as plain text: in a music turn the list becomes the Playlist card (the text is replaced).
+    const playlistText = !table && lastUserText ? convertSongList(text, lastUserText) : null;
+    if (playlistText) {
+      text = playlistText;
+      sse.send("reset", { reason: "playlist" });
+      sse.send("delta", { text });
     }
     // The open action the model did not write itself (weak and vision models often answer in prose).
     if (openAction && !hasActionBlock(text)) {

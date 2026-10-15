@@ -1,11 +1,13 @@
 import { HTML_RULE } from "./html.js";
 import { hasIntent, type IntentResult } from "../nlp/intent.js";
+import { isMusicTurn } from "../context/playlist.js";
 export type Mode = "default" | "debug" | "review" | "design" | "explain";
 export const MODES: Mode[] = ["default", "debug", "review", "design", "explain"];
 
 // Placeholders in BASE for the optional sections (see baseFor).
 const HTML_SLOT = "\u0000HTML\u0000";
 const GITHUB_SLOT = "\u0000GITHUB\u0000";
+const PLAYLIST_SLOT = "\u0000PLAYLIST\u0000";
 
 const BASE = `You are a brilliant, friendly expert who explains things the way a great teacher and senior engineer would: warm, natural and human, never robotic. You are strongest in software, systems, data and AI, but you help with anything. You work inside a mobile chat app.
 
@@ -79,7 +81,7 @@ Format:
       {"type":"bar","title":"Monthly sales","x":["Jan","Feb","Mar"],"series":[{"name":"2025","data":[12,18,15]},{"name":"2026","data":[14,22,25]}],"unit":"k USD"}
       \`\`\`
 ${HTML_SLOT}
-    - quiz (test/quiz me): "title:", then repeating "q:", 3-6 "a:" options with "*" before the one correct option, and "why:". 5-8 questions.
+${PLAYLIST_SLOT}    - quiz (test/quiz me): "title:", then repeating "q:", 3-6 "a:" options with "*" before the one correct option, and "why:". 5-8 questions.
       \`\`\`quiz
       title: Capitals
       q: Capital of France?
@@ -166,6 +168,8 @@ const WIDGET_EXAMPLE_RE = /\n {6}```[a-z]+\n[\s\S]*?\n {6}```/g;
 export type PromptNeeds = {
   html?: boolean;
   github?: boolean;
+  /** Music turn: the sparky-playlist rule is included. */
+  playlist?: boolean;
   widgetExamples?: boolean;
   /** Image turns: the rich-block/widget catalogue is replaced by one line (~6k fewer characters, so the prompt fits Groq's minute window). */
   compact?: boolean;
@@ -193,6 +197,7 @@ export function promptNeeds(text: string, hasGithubContext = false, intent?: Int
   return {
     html: HTML_NEED_RE.test(text) || i("ui"),
     github: hasGithubContext || needsGithub(text) || i("github"),
+    playlist: isMusicTurn(text),
     widgetExamples: WIDGET_NEED_RE.test(text) || i("quiz") || i("compare") || i("math") || i("ui") || i("image") || i("longdoc"),
   };
 }
@@ -207,8 +212,12 @@ function baseFor(needs: PromptNeeds | undefined): string {
   const base = needs && !needs.widgetExamples ? BASE.replace(WIDGET_EXAMPLE_RE, "") : BASE;
   return base
     .replace(HTML_SLOT, needs && !needs.html ? HTML_SHORT : HTML_RULE)
-    .replace(GITHUB_SLOT, needs && !needs.github ? GITHUB_SHORT : GITHUB_RULE);
+    .replace(GITHUB_SLOT, needs && !needs.github ? GITHUB_SHORT : GITHUB_RULE)
+    .replace(PLAYLIST_SLOT, needs?.playlist ? PLAYLIST_RULE : "");
 }
+
+/** Only on music turns (the card shows covers, previews and Play all). */
+const PLAYLIST_RULE = "    - sparky-playlist: when you suggest 3 or more songs (recommendations, a playlist, songs like X), write them as ONE fenced block named sparky-playlist instead of a list, after one short sentence: first line \"title: <short name>\", then one \"- Song | Artist\" line per song (3-12, real songs you are sure exist; \"app: spotify\" only if the user named an app). Do not repeat the songs in prose.\n";
 
 const HTML_SHORT = "    - html: only when the user asks to build a page, dashboard, mockup or interactive UI (full rules are given when needed).";
 const GITHUB_SHORT = "    - github-* live cards (github-repo, github-commits, github-graph, github-prs, github-issues, github-search, github-connect): only for questions about GitHub; full rules are given when needed.\n";
