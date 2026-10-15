@@ -769,9 +769,11 @@ chatRouter.post("/", async (req, res) => {
     const genCandidates = ident ? (requested ? [requested] : await pickTextFallback()) : candidates;
     // Vision turns: a model still silent after a few seconds (a reasoning model thinking) gives way to the next.
     const firstTokenMs = wantsVision && !ident && !table ? VISION_FIRST_TOKEN_MS : undefined;
+    // One send budget for the whole turn: a vision fallback or a tool-call re-ask never restarts the count.
+    const turnSends = { sends: 0 };
     const generate = (models: string[], messages: Message[]) =>
       withTelemetry({ purpose: table ? "table-chair" : "chat" }, async () => {
-        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs, ...(factualTurn ? { temperature: FACTUAL_TEMPERATURE } : {}) });
+        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs, turn: turnSends, ...(factualTurn ? { temperature: FACTUAL_TEMPERATURE } : {}) });
         const held = toolGuard.flush();
         if (held) show(held);
         return r;

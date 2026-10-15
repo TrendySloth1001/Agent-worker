@@ -61,11 +61,11 @@ async function recentContext(conversationId: string | undefined, uid: string | n
 }
 
 // POST /assist/complete {text, conversationId?} -> {completion, nextWords[]}
-suggestRouter.post("/complete", perUser(90), async (req, res) => {
+suggestRouter.post("/complete", perUser(20), async (req, res) => {
   const body = bodySchema.safeParse(req.body);
   if (!body.success) throw new AppError(400, "bad_request", "Type something first.");
   const { text, conversationId } = body.data;
-  if (text.trim().length < 3 || endsInUrl(text)) {
+  if (text.trim().length < 8 || endsInUrl(text)) {
     res.json({ completion: "", nextWords: [] });
     return;
   }
