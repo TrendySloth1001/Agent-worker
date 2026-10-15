@@ -79,6 +79,14 @@ test("healthy providers: one send per turn", async () => {
   console.log(`[turn-cost] healthy  ${rows.join(" | ")}`);
 });
 
+test("two providers saturated: the turn is still answered within 3 sends", async () => {
+  const t: Tally = { sends: 0, tokens: 0, failed429: 0 };
+  const r = await runTurn("factual", t, (id) => id.startsWith("groq:") || id.startsWith("nvidia:"));
+  console.log(`[turn-cost] groq+nvidia saturated: sends=${t.sends} tokens=${t.tokens}`);
+  assert.ok(!(r instanceof ChatFailure));
+  assert.ok(t.sends <= 3);
+});
+
 test("429 storm on the first candidates: a cold turn sends at most 3 full prompts", async () => {
   // Everything except one late Ollama model is rate limited.
   const open = new Set(["ollama:nemotron-3-ultra"]);

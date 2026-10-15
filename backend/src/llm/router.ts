@@ -3,7 +3,7 @@ import { streamModel, UpstreamError, type Message } from "../providers.js";
 import { config } from "../config.js";
 import { recordUsage, withTelemetry } from "../db/usage.js";
 import { getOpenRouterKeyInfo, noteOpenRouterFreeRequest } from "../usage/openrouterKey.js";
-import { BudgetBlockedError, check as budgetCheck, estimateRequestTokens, noteAuxDeferred, noteWait, sleep } from "./budget.js";
+import { BudgetBlockedError, check as budgetCheck, estimateRequestTokens, noteAuxDeferred, noteWait, PROVIDER_LIMITS, sleep } from "./budget.js";
 import { slots, type Priority } from "./slots.js";
 import { noteKeyWorked, primeUserKeys, activeUserKey, setUserCooldown, slotsForUserKey, userCooldownUntil, usesUserKey } from "../keys/store.js";
 import { health } from "./health.js";
@@ -16,7 +16,16 @@ import { USER_MSG } from "../util/userMessages.js";
 
 const FIRST_BYTE_MS = 20_000;
 const IDLE_MS = 30_000;
-const MAX_AUTO_ATTEMPTS = 6;
+/** Most full-prompt sends one runChat makes in Auto (every send puts the whole prompt on a provider's minute window). */
+export const MAX_AUTO_ATTEMPTS = 3;
+/** Most sends for a whole turn (the first generation plus a re-ask after an intercepted tool call). */
+export const MAX_TURN_SENDS = 4;
+/** One provider family gets at most one retry per turn: a second failure there says the rest of it is just as saturated. */
+export const MAX_SENDS_PER_PROVIDER = 2;
+/** Cooling models are only tried when nothing healthy is left, and then just once. */
+const MAX_COOLING_SENDS = 1;
+/** A short Retry-After below this is waited out (jittered) instead of switching to a model that has to be primed from scratch. */
+const BACKOFF_MAX_MS = 2_000;
 /** The longest a turn waits for a minute window to free up rather than failing. */
 export const BUDGET_WAIT_MAX_MS = 4_000;
 
@@ -69,6 +78,26 @@ export function healthyFirst(ids: string[]): string[] {
   if (healthy.length > 0 || ids.length === 0) return healthy;
   log.warn("no healthy model, trying the soonest-recovering ones", { models: ids.length });
   return [...ids].sort((a, b) => (cooldownFor(a) ?? 0) - (cooldownFor(b) ?? 0));
+}
+
+/**
+ * Spreads the candidates over providers: the first model of every provider comes first (in the
+ * given order), the rest after. A few sends then probe different rate-limit windows instead of
+ * hammering one saturated provider with the same prompt.
+ */
+export function diversify(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const head: string[] = [];
+  const tail: string[] = [];
+  for (const id of ids) {
+    const p = providerOf(id);
+    if (seen.has(p)) tail.push(id);
+    else {
+      seen.add(p);
+      head.push(id);
+    }
+  }
+  return [...head, ...tail];
 }
 
 /** Ordered list of model ids to try. `requested` undefined/"auto" means Auto. */
@@ -250,6 +279,8 @@ export async function runChat(
     temperature?: number;
     /** Auto: a model with no visible text after this long is abandoned for the next candidate (the last one always gets to finish). */
     firstTokenMs?: number;
+    /** Sends already made this turn, shared by every runChat of the turn (a re-ask counts against the same budget). */
+    turn?: { sends: number };
     /** Test hook. */ stream?: typeof streamModel;
   } = {},
 ): Promise<RunResult> {
@@ -262,6 +293,16 @@ export async function runChat(
   let attempt = 0;
   let lastError: UpstreamError | null = null;
   let tried = 0;
+  const turn = opts.turn ?? { sends: 0 };
+  const providerSends = new Map<string, number>();
+  let coolingSends = 0;
+  const waited = new Set<string>();
+  /** A send that never reached the network (quota block found at call time, key swap) does not count. */
+  const refund = (provider: string, wasCooling: boolean) => {
+    turn.sends--;
+    providerSends.set(provider, Math.max(0, (providerSends.get(provider) ?? 1) - 1));
+    if (wasCooling) coolingSends--;
+  };
 
   if (queue.length === 0) {
     const anyQuota = candidates.length > 0;
@@ -281,6 +322,12 @@ export async function runChat(
     const rest = queue.filter((id) => !verdicts.get(id)!.ok);
     queue.splice(0, queue.length, ...fitting, ...rest);
   }
+  // Nothing fits right now: the model whose window frees first goes first.
+  if (auto && fitting.length === 0 && queue.length > 1) {
+    const wait = (id: string) => { const v = verdicts.get(id)!; return v.ok ? 0 : v.waitMs; };
+    queue.sort((a, b) => wait(a) - wait(b));
+  }
+  if (auto) queue.splice(0, queue.length, ...diversify(queue));
   const considered = auto ? queue : queue.slice(0, 1);
   if (considered.length > 0 && considered.every((id) => !verdicts.get(id)!.ok)) {
     const waitMs = Math.min(...considered.map((id) => { const v = verdicts.get(id)!; return v.ok ? 0 : v.waitMs; }));
@@ -309,8 +356,14 @@ export async function runChat(
       queue.push(id);
       continue;
     }
-    if (auto && tried >= MAX_AUTO_ATTEMPTS) break;
+    if (auto && (tried >= MAX_AUTO_ATTEMPTS || turn.sends >= MAX_TURN_SENDS)) break;
+    // Fail fast instead of re-sending the whole prompt to a family that already failed, or to a model known to be cooling.
+    const cooling = cooldownFor(id) !== null;
+    if (auto && ((providerSends.get(provider) ?? 0) >= MAX_SENDS_PER_PROVIDER || (cooling && coolingSends >= MAX_COOLING_SENDS))) continue;
     tried++;
+    turn.sends++;
+    providerSends.set(provider, (providerSends.get(provider) ?? 0) + 1);
+    if (cooling) coolingSends++;
 
     const release = sem ? await sem.acquire(signal, { onWait: hooks.onQueued }) : () => {};
     attempt++;
@@ -421,6 +474,7 @@ export async function runChat(
       } else {
         attempt--;
         tried--;
+        refund(provider, cooling);
       }
       const cls = applyCooldown(id, err);
       if (!skipped) console.warn(`[chat] ${id} failed (${cls.kind}): ${describe(err)}`);
@@ -433,6 +487,7 @@ export async function runChat(
         queue.unshift(id);
         attempt--;
         tried--;
+        refund(provider, cooling);
         continue;
       }
 
@@ -443,6 +498,21 @@ export async function runChat(
         throw new ChatFailure(busy ? "model_busy" : "upstream_failed", busy ? USER_MSG.modelBusy : USER_MSG.modelRejected, busy);
       }
       if (produced) hooks.onReset();
+      if (cls.kind === "rate_limited") {
+        // An account-wide window (NVIDIA, OpenRouter, Ollama) is just as full for the provider's other models.
+        if (PROVIDER_LIMITS[provider]?.scope === "provider") {
+          for (let i = queue.length - 1; i >= 0; i--) if (providerOf(queue[i]) === provider) queue.splice(i, 1);
+        }
+        // Nothing healthy left and the window is about to reopen: waiting a moment (jittered) is cheaper than another cold start.
+        if (!skipped && !waited.has(id) && cls.cooldownMs <= BACKOFF_MAX_MS && !queue.some((q) => cooldownFor(q) === null && !isQuotaBlocked(q))) {
+          waited.add(id);
+          hooks.onQueued();
+          await sleep(Math.round(cls.cooldownMs * (0.75 + Math.random() * 0.5)) + 50, signal);
+          clearCooldown(id);
+          queue.unshift(id);
+          continue;
+        }
+      }
       const next = queue.find((q) => !isQuotaBlocked(q));
       if (next && !skipped) hooks.onFallback(id, next);
     } finally {
