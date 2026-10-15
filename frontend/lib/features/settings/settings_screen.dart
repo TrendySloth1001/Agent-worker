@@ -57,6 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _developer = [
     SettingsCategory.releases,
     SettingsCategory.bugs,
+    SettingsCategory.vault,
     SettingsCategory.server,
     SettingsCategory.telemetry,
     SettingsCategory.users,

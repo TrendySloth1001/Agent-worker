@@ -22,6 +22,7 @@ import '../../core/constants/smart_toggles.dart';
 import '../../core/constants/storage.dart';
 import '../../core/constants/telemetry.dart';
 import '../../core/constants/update.dart';
+import '../../core/constants/vault.dart';
 import '../../core/constants/voice.dart';
 import '../../core/constants/voice_fix.dart';
 import '../../core/platform/browsers.dart';
@@ -38,6 +39,7 @@ import '../knowledge/knowledge_screen.dart';
 import '../memory/memory_screen.dart';
 import '../profile/profile_screen.dart';
 import '../update/releases_screen.dart';
+import '../vault/vault_screen.dart';
 import '../storage/storage_screen.dart';
 import '../storage/widgets/storage_usage_card.dart';
 import 'settings_controller.dart';
@@ -74,6 +76,7 @@ enum SettingsCategory {
   telemetry,
   users,
   bugs,
+  vault,
   releases,
   server,
   about;
@@ -92,6 +95,7 @@ enum SettingsCategory {
     telemetry => SettingsStrings.catTelemetry,
     users => SettingsStrings.catUsers,
     bugs => SettingsStrings.catBugs,
+    vault => VaultStrings.entryTitle,
     releases => UpdateStrings.releasesTitle,
     server => SettingsStrings.catServer,
     about => SettingsStrings.catAbout,
@@ -111,6 +115,7 @@ enum SettingsCategory {
     telemetry => TelemetryIcons.live,
     users => TelemetryIcons.users,
     bugs => ErrorsIcons.entry,
+    vault => VaultIcons.entry,
     releases => UpdateIcons.releases,
     server => AppIcons.server,
     about => AppIcons.about,
@@ -121,6 +126,7 @@ enum SettingsCategory {
       this == telemetry ||
       this == users ||
       this == bugs ||
+      this == vault ||
       this == server ||
       this == releases;
 
@@ -129,6 +135,7 @@ enum SettingsCategory {
       this == telemetry ||
       this == users ||
       this == bugs ||
+      this == vault ||
       this == releases ||
       this == about ||
       this == assistant;
@@ -150,6 +157,8 @@ Future<void> openSettingsCategory(
       return Navigator.push(context, settingsRoute(const UsersScreen()));
     case SettingsCategory.bugs:
       return ErrorsScreen.open(context);
+    case SettingsCategory.vault:
+      return VaultScreen.open(context);
     case SettingsCategory.releases:
       return Navigator.push(context, settingsRoute(const ReleasesScreen()));
     case SettingsCategory.about:
@@ -242,6 +251,8 @@ String categorySummary(SettingsCategory c, AppScope scope) {
       return SettingsStrings.sumUsers;
     case SettingsCategory.bugs:
       return SettingsStrings.sumBugs;
+    case SettingsCategory.vault:
+      return VaultStrings.entrySummary;
     case SettingsCategory.releases:
       return UpdateStrings.releasesSummary;
     case SettingsCategory.server:
@@ -839,6 +850,7 @@ List<SettingsSection> sectionsFor(SettingsCategory c, AppScope scope) {
     case SettingsCategory.telemetry:
     case SettingsCategory.users:
     case SettingsCategory.bugs:
+    case SettingsCategory.vault:
     case SettingsCategory.releases:
     case SettingsCategory.about:
     case SettingsCategory.assistant:
