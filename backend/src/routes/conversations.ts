@@ -1,3 +1,4 @@
+import { withFreshUrls } from "../files/attachmentUrls.js";
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
@@ -194,8 +195,8 @@ async function loadConversation(id: string, uid: string | null) {
       isError: m.isError,
       images: m.images,
       evidence: m.evidence,
-      // Stored as the app sent it (validated attachment objects).
-      attachments: (m.attachments ?? []) as Array<Record<string, unknown>>,
+      // Stored as the app sent it (validated attachment objects); links are signed again at read time.
+      attachments: withFreshUrls(m.attachments),
       meta: m.meta ?? {},
       table: m.table ?? null,
     })),

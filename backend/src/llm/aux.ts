@@ -25,6 +25,7 @@ export const AUX_PURPOSES = new Set([
   "toggle-suggest",
   "followups",
   "transcript-fix",
+  "file-summary",
 ]);
 
 export const isAux = (purpose: string | undefined): boolean => !!purpose && AUX_PURPOSES.has(purpose);

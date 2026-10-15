@@ -105,6 +105,7 @@ app.post("/assist/transcribe", rateLimit(20), aiBudget());
 app.post("/conversations/merge", rateLimit(6), aiInFlight, aiBudget());
 app.post("/conversations/bulk-delete", rateLimit(10));
 app.post("/github/repos/:owner/:repo/pulls/:n/review", rateLimit(6), aiInFlight, aiBudget());
+app.post("/files/:id/insight", rateLimit(10), aiBudget());
 app.post("/files", rateLimit(20, 60_000, "auto", { name: "upload" }), inFlightLimit(3, 4_000, "upload"));
 app.get("/images/search", rateLimit(30), aiBudget());
 app.post("/connections/github/device", rateLimit(10));

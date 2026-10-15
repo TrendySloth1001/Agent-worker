@@ -3,6 +3,7 @@ import { db } from "../db/prisma.js";
 import { verifyBlob } from "../files/blobUrl.js";
 import { getUserObject } from "../storage/s3.js";
 import { AppError } from "../util/errors.js";
+import { log } from "../util/logger.js";
 
 /**
  * GET /files/blob/:id/:variant?exp=&sig= : a file's decrypted bytes, for the signed links in file listings.
@@ -22,6 +23,8 @@ blobRouter.get("/:id/:variant", async (req, res) => {
   const key = row ? (thumb ? row.thumbKey : row.s3Key) : null;
   if (!row || !key) throw new AppError(404, "not_found", "File not found");
   const body = await getUserObject(row.userId, key).catch((e) => {
+    // Ids and the error only, never content: tells a missing object from a key that cannot decrypt it.
+    log.warn("file blob read failed", { id, variant: req.params.variant, code: e instanceof AppError ? e.code : "storage", message: String((e as Error).message ?? "").slice(0, 120) });
     if (e instanceof AppError) throw e;
     throw new AppError(404, "not_found", "File not found");
   });
