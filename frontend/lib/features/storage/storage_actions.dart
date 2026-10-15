@@ -99,7 +99,14 @@ Future<void> openStorageFile(
   BuildContext context,
   StorageController controller,
   FileInfo file,
-) => openFilePreview(context, controller.files, file);
+) async {
+  final before = FilesApi.instance.changes.value;
+  await openFilePreview(context, controller.files, file);
+  // The preview can delete the file: bring the list back in line.
+  if (FilesApi.instance.changes.value != before) {
+    await controller.reload();
+  }
+}
 
 /// Jumps back to the chat screen and opens the chat the file is in.
 void openStorageChat(BuildContext context, FileInfo file) {

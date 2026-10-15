@@ -74,6 +74,7 @@ abstract final class AppSizes {
   static const sourceCardFavicon = 28.0;
   static const sourceCardSnippetLines = 8;
   static const imageMaxZoom = 5.0;
+  static const imageDoubleTapZoom = 2.5;
 
   static const buttonHeight = 48.0;
   static const inputHeight = 52.0;

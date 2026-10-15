@@ -55,7 +55,11 @@ class SourceTile extends StatelessWidget {
     required this.onDelete,
     this.now,
     this.imageFor,
+    this.onOpen,
   });
+
+  /// Tap action (opens the file preview for uploaded files); none when null.
+  final VoidCallback? onOpen;
 
   final KbSource source;
   final VoidCallback onRefresh;
@@ -126,6 +130,12 @@ class SourceTile extends StatelessWidget {
         ? p.accent
         : scheme.onSurfaceVariant;
     return ListTile(
+      onTap: onOpen == null
+          ? null
+          : () {
+              Haptics.tap();
+              onOpen!();
+            },
       onLongPress: onDelete,
       leading: SourceIcon(source: source, imageFor: imageFor),
       title: Text(

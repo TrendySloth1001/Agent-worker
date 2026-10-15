@@ -15,6 +15,7 @@ import '../../data/kb_source.dart';
 import '../../data/knowledge_api.dart';
 import '../settings/widgets/settings_kit.dart';
 import 'knowledge_controller.dart';
+import 'knowledge_file.dart';
 import 'widgets/add_source_sheet.dart';
 import 'widgets/source_tile.dart';
 import '../../core/widgets/confirm_sheet.dart';
@@ -219,6 +220,9 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
                 child: SourceTile(
                   source: source,
                   imageFor: widget.imageFor,
+                  onOpen: knowledgeFileOf(source) == null
+                      ? null
+                      : () => openKnowledgeFile(context, source),
                   onRefresh: () {
                     Haptics.tap();
                     controller.refresh(source.id);

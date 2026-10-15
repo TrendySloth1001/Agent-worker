@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/platform/browsers.dart';
+import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
@@ -11,6 +12,10 @@ import '../../../core/haptics.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/files_api.dart';
 import '../../settings/widgets/dot_matrix.dart';
+import '../../../core/theme/app_palette.dart';
+import '../../../core/constants/preview.dart';
+import 'file_actions.dart';
+import 'file_info.dart';
 
 /// Fresh signed URL for a file. Signed URLs expire after an hour, so a
 /// server file always goes through GET /files/:id (cached while valid); the
@@ -161,21 +166,184 @@ class PreviewMessage extends StatelessWidget {
   }
 }
 
-/// Standard preview app bar: back, file name, actions.
+enum _MenuAction { share, download, openWith, copyLink, info, delete }
+
+/// ASK SPARKY button and the overflow menu (share, download, open with,
+/// copy link, info, delete) shared by every preview app bar.
+class PreviewMenu extends StatelessWidget {
+  const PreviewMenu({super.key, required this.file, this.color});
+
+  final FileInfo file;
+
+  /// Icon color on an immersive (dark) bar.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (canAskAboutFile(file))
+          IconButton(
+            icon: AppIcon(PreviewIcons.ask, size: AppIconSize.md, color: color),
+            tooltip: PreviewStrings.ask,
+            onPressed: () => askAboutFile(context, file),
+          ),
+        PopupMenuButton<_MenuAction>(
+          tooltip: PreviewStrings.more,
+          icon: AppIcon(PreviewIcons.more, size: AppIconSize.md, color: color),
+          onOpened: Haptics.tap,
+          onSelected: (a) => switch (a) {
+            _MenuAction.share => shareFile(context, file),
+            _MenuAction.download => downloadFile(context, file),
+            _MenuAction.openWith => openFileWith(context, file),
+            _MenuAction.copyLink => _copyLink(context, file),
+            _MenuAction.info => showFileInfoSheet(context, file),
+            _MenuAction.delete => deleteFileWithConfirm(context, file),
+          },
+          itemBuilder: (_) => [
+            for (final (a, icon, label) in [
+              (_MenuAction.share, PreviewIcons.share, PreviewStrings.share),
+              (
+                _MenuAction.download,
+                PreviewIcons.download,
+                PreviewStrings.download,
+              ),
+              (
+                _MenuAction.openWith,
+                PreviewIcons.openWith,
+                PreviewStrings.openWith,
+              ),
+              (_MenuAction.copyLink, AppIcons.link, AppStrings.previewCopyLink),
+              (_MenuAction.info, PreviewIcons.info, PreviewStrings.info),
+            ])
+              if (a != _MenuAction.copyLink || file.id.isNotEmpty)
+                PopupMenuItem(
+                  value: a,
+                  child: Row(
+                    children: [
+                      AppIcon(icon, size: AppIconSize.md),
+                      const SizedBox(width: AppSpacing.md),
+                      Text(label),
+                    ],
+                  ),
+                ),
+            if (canDeleteFile(file))
+              PopupMenuItem(
+                value: _MenuAction.delete,
+                child: Row(
+                  children: [
+                    AppIcon(
+                      PreviewIcons.delete,
+                      size: AppIconSize.md,
+                      color: p.accent,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Text(
+                      PreviewStrings.delete,
+                      style: TextStyle(color: p.accent),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+Future<void> _copyLink(BuildContext context, FileInfo file) async {
+  Haptics.tap();
+  final link = await resolveFileUrl(file);
+  if (!context.mounted) return;
+  if (link == null) {
+    previewNotice(context, AppStrings.previewNoLink, error: true);
+    return;
+  }
+  await Clipboard.setData(ClipboardData(text: link));
+  if (context.mounted) previewNotice(context, AppStrings.previewLinkCopied);
+}
+
+/// SHARE, OPEN WITH… and DOWNLOAD as buttons, for cards that have nothing
+/// to draw (unknown types, Office files).
+class FileActionButtons extends StatelessWidget {
+  const FileActionButtons({
+    super.key,
+    required this.file,
+    this.compact = false,
+  });
+
+  final FileInfo file;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(AppIconData icon, String label, VoidCallback onTap) =>
+        FilledButton.tonalIcon(
+          style: FilledButton.styleFrom(
+            minimumSize: Size(
+              0,
+              compact ? PreviewSizes.compactButton : AppSizes.buttonHeight,
+            ),
+          ),
+          icon: AppIcon(icon, size: AppIconSize.md),
+          label: Text(label),
+          onPressed: onTap,
+        );
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        button(
+          PreviewIcons.openWith,
+          PreviewStrings.openWith,
+          () => openFileWith(context, file),
+        ),
+        button(
+          PreviewIcons.share,
+          PreviewStrings.share,
+          () => shareFile(context, file),
+        ),
+        button(
+          PreviewIcons.download,
+          PreviewStrings.download,
+          () => downloadFile(context, file),
+        ),
+      ],
+    );
+  }
+}
+
+/// Standard preview app bar: back, file name, actions. [immersive] gives
+/// the dark transparent bar used over images and video.
 class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
-  const PreviewBar({super.key, required this.file, this.extra = const []});
+  const PreviewBar({
+    super.key,
+    required this.file,
+    this.extra = const [],
+    this.immersive = false,
+  });
 
   final FileInfo file;
   final List<Widget> extra;
+  final bool immersive;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
+    final fg = immersive ? AppColors.white : null;
     return AppBar(
+      backgroundColor: immersive ? Colors.transparent : null,
+      foregroundColor: fg,
+      elevation: 0,
+      scrolledUnderElevation: 0,
       leading: IconButton(
-        icon: const AppIcon(AppIcons.back, size: AppIconSize.md),
+        icon: AppIcon(AppIcons.back, size: AppIconSize.md, color: fg),
         tooltip: AppStrings.back,
         onPressed: () {
           Haptics.tap();
@@ -185,7 +353,7 @@ class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
       title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       actions: [
         ...extra,
-        PreviewActions(file: file),
+        PreviewMenu(file: file, color: fg),
       ],
     );
   }

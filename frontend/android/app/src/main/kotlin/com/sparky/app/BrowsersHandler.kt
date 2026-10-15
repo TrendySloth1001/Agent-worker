@@ -55,7 +55,33 @@ class BrowsersHandler(private val context: Context) : MethodChannel.MethodCallHa
                 val title = call.argument<String>("title") ?: ""
                 result.success(openHtml(html, title, call.argument<String>("package")))
             }
+            "openFile" -> {
+                val path = call.argument<String>("path")
+                val mime = call.argument<String>("mime") ?: "*/*"
+                result.success(if (path.isNullOrEmpty()) false else openFile(path, mime))
+            }
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * ACTION_VIEW for a file the app cached under cache/previews: "Open
+     * with…" in the file preview. Paths outside that folder are refused.
+     */
+    private fun openFile(path: String, mime: String): Boolean {
+        return try {
+            val root = File(context.cacheDir, "previews").canonicalFile
+            val file = File(path).canonicalFile
+            if (!file.path.startsWith(root.path + File.separator) || !file.isFile) return false
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            val view = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, mime)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val chooser = Intent.createChooser(view, null)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            start(chooser)
+        } catch (e: Exception) {
+            false
         }
     }
 

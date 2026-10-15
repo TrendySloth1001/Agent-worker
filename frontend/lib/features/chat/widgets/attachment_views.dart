@@ -12,6 +12,7 @@ import '../../../data/chat_api.dart';
 import '../../../data/files_api.dart';
 import 'image_strip.dart';
 import '../preview/file_preview.dart';
+import '../preview/image_preview.dart';
 
 AppIconData fileIcon(FileKind kind) => switch (kind) {
   FileKind.image => AppIcons.image,
@@ -65,6 +66,9 @@ class MessageAttachments extends StatefulWidget {
 class _MessageAttachmentsState extends State<MessageAttachments> {
   late List<FileInfo> _files = widget.files;
 
+  /// Keeps hero tags unique when a file shows in more than one message.
+  late final String _scope = 'm${identityHashCode(this)}';
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +119,14 @@ class _MessageAttachmentsState extends State<MessageAttachments> {
     }
   }
 
+  Widget _heroed(BuildContext context, FileInfo f, Widget tile) => Semantics(
+    button: true,
+    label: f.name,
+    child: f.kind == FileKind.image && !MediaQuery.disableAnimationsOf(context)
+        ? Hero(tag: fileHeroTag(_scope, f), child: tile)
+        : tile,
+  );
+
   @override
   Widget build(BuildContext context) {
     final media = _files
@@ -153,8 +165,9 @@ class _MessageAttachmentsState extends State<MessageAttachments> {
               children: [
                 for (final f in media)
                   GestureDetector(
-                    onTap: () => openFilePreview(context, _files, f),
-                    child: _MediaTile(file: f, size: tile),
+                    onTap: () =>
+                        openFilePreview(context, _files, f, heroScope: _scope),
+                    child: _heroed(context, f, _MediaTile(file: f, size: tile)),
                   ),
               ],
             ),

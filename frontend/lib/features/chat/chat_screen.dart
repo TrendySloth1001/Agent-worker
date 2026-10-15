@@ -116,7 +116,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.newChat();
     _controller.appRefs = ChatLaunch.instance.apps;
     ChatLaunch.instance.apps = const [];
-    _controller.send(text);
+    final files = ChatLaunch.instance.files;
+    ChatLaunch.instance.files = const [];
+    _controller.send(text, attachments: files);
   }
 
   /// A screen asked for an empty new chat (the tour from Settings).
