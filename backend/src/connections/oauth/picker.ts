@@ -129,7 +129,15 @@ body{background:var(--bg);color:var(--fg);font-family:"Space Grotesk",ui-sans-se
 main{width:100%;max-width:420px;border:1px solid var(--line);border-radius:20px;padding:28px 22px}
 .mark{font-family:"Space Mono",ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 h1{font-size:24px;font-weight:600;margin:14px 0 8px}p{margin:0 0 22px;line-height:1.5;color:var(--muted);font-size:15px}
-a.btn,button{display:block;width:100%;text-align:center;text-decoration:none;background:var(--fg);color:var(--bg);border:0;border-radius:999px;padding:15px 18px;font-family:"Space Mono",ui-monospace,Menlo,monospace;font-weight:700;font-size:13px;letter-spacing:.12em}`;
+a.btn,button{display:block;width:100%;text-align:center;text-decoration:none;background:var(--fg);color:var(--bg);border:0;border-radius:999px;padding:15px 18px;font-family:"Space Mono",ui-monospace,Menlo,monospace;font-weight:700;font-size:13px;letter-spacing:.12em}
+.spin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:s .8s linear infinite;margin:0 0 22px}
+@keyframes s{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+body.picking main{visibility:hidden}
+/* Google's picker wrapper lives in our page (its contents are Google's iframe): full screen on phones, our backdrop. */
+.picker-dialog-bg{background:var(--bg)!important;opacity:1!important}
+.picker-dialog{border:0!important;border-radius:0!important;box-shadow:none!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;height:100dvh!important}
+.picker-dialog-content,.picker-dialog-content iframe{width:100vw!important;height:100vh!important;height:100dvh!important}
+@media (min-width:900px){.picker-dialog{top:50%!important;left:50%!important;transform:translate(-50%,-50%);width:860px!important;height:600px!important;border-radius:20px!important;overflow:hidden}.picker-dialog-content,.picker-dialog-content iframe{width:860px!important;height:600px!important}}`;
 
 export function pickerPage(v: PickerView, nonce: string): string {
   const head = (title: string) =>
@@ -141,13 +149,13 @@ export function pickerPage(v: PickerView, nonce: string): string {
   }
   const cfg = { token: v.token, key: v.apiKey, appId: v.appId, origin: v.origin, ticket: v.ticket, done: `${v.origin}${PICKER_PATH}/done` };
   return `${head("Pick files from Drive")}<body><main><div class="mark">● sparky · google drive</div><h1>Pick files for sparky</h1>
-<p id="lead">Opening Google Drive… sparky will only see the files you choose here.</p>
+<div class="spin" id="spin" aria-hidden="true"></div><p id="lead">Opening Google Drive… sparky will only see the files you choose here.</p>
 <button id="again" type="button" hidden>OPEN DRIVE AGAIN</button></main>
 <script nonce="${nonce}" type="application/json" id="cfg">${jsonForScript(cfg)}</script>
 <script nonce="${nonce}">
 (function(){
   var cfg=JSON.parse(document.getElementById("cfg").textContent);
-  var lead=document.getElementById("lead"), again=document.getElementById("again"), sent=false;
+  var lead=document.getElementById("lead"), again=document.getElementById("again"), spin=document.getElementById("spin"), sent=false;
   function finish(ids){
     if(sent)return; sent=true; lead.textContent=ids.length?"Saving your picks…":"Going back to sparky…";
     fetch(cfg.done,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:cfg.ticket,ids:ids})})
@@ -156,21 +164,28 @@ export function pickerPage(v: PickerView, nonce: string): string {
       .catch(function(){lead.textContent="Could not reach sparky. Go back to the app and try again.";});
   }
   function open(){
-    var view=new google.picker.DocsView(google.picker.ViewId.DOCS).setIncludeFolders(true).setSelectFolderEnabled(false);
-    var b=new google.picker.PickerBuilder().setOAuthToken(cfg.token).setDeveloperKey(cfg.key).addView(view)
-      .addView(new google.picker.DocsUploadView()).enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    var P=google.picker, list=P.DocsViewMode.LIST;
+    // Files first (newest on top, list rows read well on a phone), then folders to browse, then upload.
+    var files=new P.DocsView(P.ViewId.DOCS).setMode(list).setIncludeFolders(false).setLabel("Files");
+    var folders=new P.DocsView(P.ViewId.FOLDERS).setMode(list).setIncludeFolders(true).setSelectFolderEnabled(false).setLabel("Folders");
+    var shared=new P.DocsView(P.ViewId.DOCS).setMode(list).setOwnedByMe(false).setLabel("Shared with me");
+    var b=new P.PickerBuilder().setOAuthToken(cfg.token).setDeveloperKey(cfg.key)
+      .addView(files).addView(folders).addView(shared).addView(new P.DocsUploadView())
+      .enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
       .setOrigin(cfg.origin).setTitle("Pick files for sparky")
+      .setSize(Math.max(320,window.innerWidth),Math.max(400,window.innerHeight))
       .setCallback(function(d){
-        if(d.action===google.picker.Action.PICKED){finish((d.docs||[]).map(function(x){return x.id;}));}
-        else if(d.action===google.picker.Action.CANCEL){finish([]);}
+        if(d.action===P.Action.LOADED){document.body.classList.add("picking");}
+        if(d.action===P.Action.PICKED){document.body.classList.remove("picking");spin.hidden=false;finish((d.docs||[]).map(function(x){return x.id;}));}
+        else if(d.action===P.Action.CANCEL){document.body.classList.remove("picking");spin.hidden=false;finish([]);}
       });
     if(cfg.appId)b.setAppId(cfg.appId);
     b.build().setVisible(true);
   }
   again.addEventListener("click",open);
   var s=document.createElement("script"); s.src="https://apis.google.com/js/api.js";
-  s.onload=function(){gapi.load("picker",{callback:function(){again.hidden=false;open();}});};
-  s.onerror=function(){lead.textContent="Could not load Google Drive. Check your connection and try again.";};
+  s.onload=function(){gapi.load("picker",{callback:function(){again.hidden=false;spin.hidden=true;open();}});};
+  s.onerror=function(){spin.hidden=true;lead.textContent="Could not load Google Drive. Check your connection and try again.";};
   document.head.appendChild(s);
 })();
 </script></body></html>`;
