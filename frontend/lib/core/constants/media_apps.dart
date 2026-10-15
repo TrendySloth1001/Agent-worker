@@ -18,6 +18,7 @@ class MediaApp {
     required this.package,
     required this.hosts,
     required this.logo,
+    this.searchTemplate = '',
   });
 
   /// The backend's MEDIA_APPS key ("youtube_music"): sent as installedApps.
@@ -37,6 +38,14 @@ class MediaApp {
 
   /// The real logo ([BrandLogos]).
   final AppIconData logo;
+
+  /// The app's search page with `{q}` for the query (mirrors `search` in the
+  /// backend's MEDIA_APPS); empty when the app has none here.
+  final String searchTemplate;
+
+  /// The app's search page for [query] (what a song's "open in app" opens).
+  String searchUrl(String query) =>
+      searchTemplate.replaceFirst('{q}', Uri.encodeComponent(query));
 
   /// Whether [url] is one of this app's links (not just its home page).
   bool owns(String url) {
@@ -65,6 +74,7 @@ abstract final class MediaApps {
     package: 'com.google.android.apps.youtube.music',
     hosts: ['music.youtube.com'],
     logo: BrandLogos.youtubeMusic,
+    searchTemplate: 'https://music.youtube.com/search?q={q}',
   );
   static const youtube = MediaApp(
     key: 'youtube',
@@ -73,6 +83,7 @@ abstract final class MediaApps {
     package: 'com.google.android.youtube',
     hosts: ['youtube.com', 'youtu.be'],
     logo: BrandLogos.youtube,
+    searchTemplate: 'https://www.youtube.com/results?search_query={q}',
   );
   static const spotify = MediaApp(
     key: 'spotify',
@@ -81,6 +92,7 @@ abstract final class MediaApps {
     package: 'com.spotify.music',
     hosts: ['open.spotify.com'],
     logo: BrandLogos.spotify,
+    searchTemplate: 'https://open.spotify.com/search/{q}',
   );
   static const jiosaavn = MediaApp(
     key: 'jiosaavn',
@@ -89,6 +101,7 @@ abstract final class MediaApps {
     package: 'com.jio.media.jiobeats',
     hosts: ['jiosaavn.com'],
     logo: BrandLogos.jiosaavn,
+    searchTemplate: 'https://www.jiosaavn.com/search/{q}',
   );
   static const gaana = MediaApp(
     key: 'gaana',
@@ -97,6 +110,7 @@ abstract final class MediaApps {
     package: 'com.gaana',
     hosts: ['gaana.com'],
     logo: BrandLogos.gaana,
+    searchTemplate: 'https://gaana.com/search/{q}',
   );
   static const appleMusic = MediaApp(
     key: 'apple_music',
@@ -105,6 +119,7 @@ abstract final class MediaApps {
     package: 'com.apple.android.music',
     hosts: ['music.apple.com'],
     logo: BrandLogos.appleMusic,
+    searchTemplate: 'https://music.apple.com/search?term={q}',
   );
   static const amazon = MediaApp(
     key: 'amazon',
