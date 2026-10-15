@@ -92,6 +92,42 @@ async function run(state: DocState, mode: "full" | "write" | "resume", deps: Doc
   return events;
 }
 
+test("editor: exact-match fixes are applied to the flagged spot only; bad fixes are ignored", async () => {
+  const store = memoryStore();
+  const doc = await newDoc(store);
+  const deps = fakeDeps(store, {
+    ask: async (_m, _msgs, opts) => {
+      if (opts.purpose === "doc-outline") return JSON.stringify(OUTLINE);
+      return JSON.stringify({
+        takeaways: ["One.", "Two.", "Three."],
+        abstract: "An abstract.",
+        fixes: [
+          { sectionId: "s2", find: "Body of s2: TLS 1.3 removed RSA", replace: "Building on s1, TLS 1.3 removed RSA" },
+          { sectionId: "s3", find: "text that is not in the section", replace: "x" },
+          { sectionId: "s9", find: "Body of s9", replace: "y" },
+        ],
+      });
+    },
+  });
+  await run(doc, "full", deps);
+  const saved = (await store.get(doc.userId, doc.id))!;
+  assert.match(saved.sections.find((s) => s.sectionId === "s2")!.markdown, /^Building on s1, TLS 1.3 removed RSA/);
+  assert.match(saved.sections.find((s) => s.sectionId === "s3")!.markdown, /^Body of s3/);
+});
+
+test("writer prompt carries only its brief: neighbours, own glossary terms, no full outline", async () => {
+  const { sectionMessages } = await import("../src/prompts/doc.js");
+  const sections = [1, 2, 3].map((i) => ({ id: `s${i}`, heading: `Head ${i}`, goal: `Goal ${i}.`, keyPoints: ["k"], queries: [], visual: "none" as const, words: 300, terms: i === 2 ? ["TLS"] : [], notes: i === 2 ? "Use the RFC." : undefined }));
+  const outline = { title: "T", subtitle: "", audience: "", style: "guide" as const, sections };
+  const msgs = sectionMessages({ preamble: "", outline, glossary: [{ term: "TLS", definition: "Transport Layer Security." }, { term: "HSTS", definition: "other" }], section: sections[1], prev: { heading: "Head 1", summary: "Did s1." }, context: null, validTags: [] });
+  const text = msgs.map((m) => m.content).join("\n");
+  assert.match(text, /Section before yours.*Head 1: Did s1\./);
+  assert.match(text, /Section after yours.*Head 3: Goal 3\./);
+  assert.match(text, /TLS: Transport Layer Security\./);
+  assert.ok(!text.includes("HSTS") && !text.includes("Outline:"));
+  assert.match(text, /Use the RFC\./);
+});
+
 // ---- outline ----------------------------------------------------------------------
 
 const ctx = { web: [], kb: [], files: [] };
