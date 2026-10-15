@@ -55,6 +55,49 @@ abstract final class PreviewStrings {
   static const renderedView = 'RENDERED';
   static const viewToggle = 'SWITCH VIEW';
 
+  // The two views of a file.
+  static const viewOriginal = 'ORIGINAL';
+  static const viewSparky = 'SPARKY';
+  static const viewSemantics = 'File view';
+  static const originalOfficeTitle = 'THIS FILE CAN’T BE SHOWN HERE';
+  static const originalOfficeHint =
+      'Office files open best in another app. Switch to the sparky view to '
+      'read what sparky found in it.';
+
+  // The sparky view.
+  static const sparkyLoading = 'sparky is reading…';
+  static const sparkySummary = 'SUMMARY';
+  static const sparkyKeyPoints = 'KEY POINTS';
+  static const sparkyText = 'TEXT';
+  static const sparkyCaption = 'WHAT’S IN THE PICTURE';
+  static const sparkyOcr = 'TEXT IN THE PICTURE';
+  static const sparkyTranscript = 'WHAT IS SAID';
+  static const sparkyTimeline = 'TIMELINE';
+  static const sparkyNotReadTitle = 'sparky hasn’t read this file yet';
+  static const sparkyNotReadHint =
+      'Let sparky take a look and it’ll keep a short reading of it here.';
+  static const sparkyReadNow = 'READ IT NOW';
+  static const sparkyReading = 'READING…';
+  static const sparkyNoSummaryTitle = 'No summary yet';
+  static const sparkyNoSummaryHint =
+      'sparky has the text. Ask for a short summary and key points.';
+  static const sparkySummarize = 'SUMMARIZE';
+  static const sparkyBusyTitle = 'sparky is still reading this file';
+  static const sparkyBusyHint = 'Give it a moment, then check again.';
+  static const sparkyCheckAgain = 'CHECK AGAIN';
+  static const sparkyNoTextTitle = 'sparky found no text in this file';
+  static const sparkyNoTextHint =
+      'It may be a scan or an empty file. The original view still works.';
+  static const sparkyErrorTitle = 'Couldn’t get sparky’s reading';
+  static const sparkyErrorHint = 'Check your connection and try again.';
+  static const sparkyReadFailed = 'sparky couldn’t read this just now';
+  static const sparkySilentVideo = 'Nothing was said in this video.';
+  static const sparkyNoAudio = 'This video has no sound.';
+  static const sparkyNoFrames = 'sparky couldn’t pick out frames.';
+  static const sparkyDescribeHint =
+      'Frames get described the first time sparky reads the video.';
+  static String sparkyMore(int left) => 'LOAD MORE · $left LEFT';
+
   // Pdf and loading.
   static const pdfPlaceholder = 'PDF';
   static const loadingFile = 'LOADING';
@@ -70,6 +113,9 @@ abstract final class PreviewIcons {
   static const more = AppIcons.more;
   static const rawView = AppIcons.code;
   static const unknown = HugeIcons.strokeRoundedFileView;
+  static const viewOriginal = HugeIcons.strokeRoundedFile01;
+  static const viewSparky = HugeIcons.strokeRoundedAiMagic;
+  static const timeline = HugeIcons.strokeRoundedTimeQuarter;
 }
 
 abstract final class PreviewSizes {
@@ -85,9 +131,22 @@ abstract final class PreviewSizes {
   static const infoLabelWidth = 96.0;
   static const progressHeight = 2.0;
   static const immersiveScrimAlpha = 0.55;
+  static const toggleHeight = 36.0;
+  static const toggleMaxWidth = 280.0;
+  static const toggleBarHeight = 44.0;
+  static const toggleIcon = 16.0;
+  static const timeColumn = 52.0;
+  static const timelineDot = 8.0;
+  static const timelineLine = 1.5;
+  static const sparkyMaxWidth = 640.0;
 }
 
 abstract final class PreviewConfig {
+  /// Characters of extracted text fetched per page in the sparky view.
+  static const sparkyPage = 20000;
+
+  /// Preferences key prefix: the last view picked for each type of file.
+  static const viewPrefsKey = 'preview.view.';
   /// Folder inside the app cache directory.
   static const cacheFolder = 'previews';
 

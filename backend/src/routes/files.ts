@@ -11,6 +11,7 @@ import { config } from "../config.js";
 import { deleteFile, getFileRow, INFO_SELECT, markAttachments, signedInfo, toFileRow } from "../files/store.js";
 import { cleanRename, listFiles, parseListQuery, usageByKind } from "../files/library.js";
 import { processFile } from "../files/process.js";
+import { ensureInsight, insightIo, insightPayload } from "../files/insight.js";
 import { OBJECT_OVERHEAD, putUserObject } from "../storage/s3.js";
 import { userOf } from "../auth/context.js";
 import { checkUpload, limitsFor, recordUpload, resetsAt, usageFor } from "../auth/limits.js";
@@ -176,15 +177,39 @@ filesRouter.get("/:id", async (req, res) => {
   res.json({ file: await signedInfo(row) });
 });
 
+/** Extracted text (or transcript), paged: `?offset=&limit=` in characters. `truncated` means more follows. */
 filesRouter.get("/:id/text", async (req, res) => {
   db();
   const raw = Number(req.query.limit ?? 200_000);
   const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.floor(raw), 1), 1_000_000) : 200_000;
+  const off = Number(req.query.offset ?? 0);
+  const offset = Number.isFinite(off) ? Math.max(Math.floor(off), 0) : 0;
   const row = await getFileRow(fileId(req.params.id), true);
   if (!row) throw new AppError(404, "not_found", "File not found");
   const text = row.text ?? "";
   if (row.status !== "ready" || !text) throw new AppError(404, "not_found", "No text available yet");
-  res.json({ text: text.slice(0, limit), truncated: text.length > limit, chars: text.length });
+  res.json({ text: text.slice(offset, offset + limit), offset, truncated: offset + limit < text.length, chars: text.length });
+});
+
+/** What sparky understands about a file, as stored (no model call): summary, key points, caption/OCR, video timeline. */
+filesRouter.get("/:id/insight", async (req, res) => {
+  db();
+  const row = await getFileRow(fileId(req.params.id), true);
+  if (!row) throw new AppError(404, "not_found", "File not found");
+  res.json(await insightPayload(row, row.text ?? ""));
+});
+
+/** Generates (once; `{force: true}` redoes it) and caches the insight of a ready file. */
+filesRouter.post("/:id/insight", async (req, res) => {
+  db();
+  const row = await getFileRow(fileId(req.params.id), true);
+  if (!row) throw new AppError(404, "not_found", "File not found");
+  if (row.status === "processing") throw new AppError(409, "conflict", USER_MSG.insightNotReady);
+  if (row.status !== "ready") throw new AppError(404, "not_found", USER_MSG.insightNoText);
+  const text = row.text ?? "";
+  if (row.kind === "document" && !text) throw new AppError(404, "not_found", USER_MSG.insightNoText);
+  await ensureInsight(row, text, insightIo.deps, { force: req.body?.force === true });
+  res.json(await insightPayload(row, text));
 });
 
 filesRouter.delete("/:id", async (req, res) => {

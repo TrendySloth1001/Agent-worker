@@ -8,6 +8,7 @@ import '../../../core/theme/app_palette.dart';
 import '../../../data/file_cache.dart';
 import '../../../data/files_api.dart';
 import 'preview_actions.dart';
+import 'preview_view.dart';
 
 /// In-app PDF viewer: vertical pages, pinch zoom, page indicator. The file
 /// is cached on disk, so reopening is instant and nothing is held in memory
@@ -21,7 +22,11 @@ class PdfPreviewScreen extends StatefulWidget {
   State<PdfPreviewScreen> createState() => _PdfPreviewScreenState();
 }
 
-class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
+class _PdfPreviewScreenState extends State<PdfPreviewScreen>
+    with PreviewViewMixin {
+  @override
+  FileInfo get viewFile => widget.file;
+
   final _controller = PdfViewerController();
   String? _path;
   bool _failed = false;
@@ -32,7 +37,16 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
   @override
   void initState() {
     super.initState();
+    loadSavedView();
     _resolve();
+  }
+
+  Future<void> _retry() async {
+    if (widget.file.id.isNotEmpty) {
+      await FileCache.instance.evict(widget.file.id);
+    }
+    if (mounted) setState(() => _path = null);
+    await _resolve();
   }
 
   Future<void> _resolve() async {
@@ -76,7 +90,7 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
               PreviewMessage(
                 title: AppStrings.previewLoadFailed,
                 error: true,
-                onRetry: _resolve,
+                onRetry: _retry,
               ),
         ),
       );
@@ -84,7 +98,7 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
       body = PreviewMessage(
         title: AppStrings.previewLoadFailed,
         error: true,
-        onRetry: _resolve,
+        onRetry: _retry,
       );
     } else {
       body = Center(
@@ -95,35 +109,46 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
       );
     }
     return Scaffold(
-      appBar: PreviewBar(file: widget.file),
-      body: Stack(
-        children: [
-          Positioned.fill(child: body),
-          if (_pages > 0)
-            Positioned(
-              right: AppSpacing.md,
-              bottom: AppSpacing.md,
-              child: SafeArea(
-                child: Semantics(
-                  label: AppStrings.previewPage(_page, _pages),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm,
-                      vertical: AppSpacing.xs,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                    ),
-                    child: Text(
-                      AppStrings.previewPage(_page, _pages),
-                      style: t.caption,
+      appBar: PreviewBar(
+        file: widget.file,
+        view: canSwitchView ? view : null,
+        onView: pickView,
+      ),
+      body: DualBody(
+        ready: viewReady,
+        view: view,
+        file: widget.file,
+        original: Stack(
+          children: [
+            Positioned.fill(child: body),
+            if (_pages > 0)
+              Positioned(
+                right: AppSpacing.md,
+                bottom: AppSpacing.md,
+                child: SafeArea(
+                  child: Semantics(
+                    label: AppStrings.previewPage(_page, _pages),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.xs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                      child: Text(
+                        AppStrings.previewPage(_page, _pages),
+                        style: t.caption,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

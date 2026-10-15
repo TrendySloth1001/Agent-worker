@@ -10,6 +10,7 @@ import '../core/constants/app_config.dart';
 import '../core/constants/error_copy.dart';
 import '../core/constants/app_files.dart';
 import 'chat_api.dart';
+import 'file_insight.dart';
 import 'api_client.dart';
 
 enum FileKind { image, document, video, audio }
@@ -81,6 +82,12 @@ class FileInfo {
     orElse: () => FileStatus.processing,
   );
 
+  /// Only the API's signed links (`/files/blob/…`) serve readable bytes:
+  /// stored objects are encrypted, so a storage link saved by an older
+  /// version is dropped and a fresh one is fetched by id.
+  static String? _apiLink(Object? v) =>
+      v is String && v.contains(AppFiles.blobPath) ? v : null;
+
   factory FileInfo.fromJson(Map<String, dynamic> j) {
     final conv = j['conversation'];
     return FileInfo(
@@ -95,8 +102,8 @@ class FileInfo {
         final String e => safeOr(e, ErrorCopy.fileFailed),
         _ => null,
       },
-      url: j['url'] as String?,
-      thumbUrl: j['thumbUrl'] as String?,
+      url: _apiLink(j['url']),
+      thumbUrl: _apiLink(j['thumbUrl']),
       meta: j['meta'] is Map<String, dynamic>
           ? j['meta'] as Map<String, dynamic>
           : const {},
@@ -221,10 +228,18 @@ class FileText {
     required this.text,
     required this.truncated,
     required this.chars,
+    this.offset = 0,
   });
   final String text;
+
+  /// More text follows this page.
   final bool truncated;
+
+  /// Characters in the whole text.
   final int chars;
+
+  /// Where this page starts, in characters.
+  final int offset;
 }
 
 /// Stops an upload in flight.
@@ -360,9 +375,13 @@ class FilesApi {
   Future<FileText> text(
     String id, {
     int limit = AppFiles.textPreviewLimit,
+    int offset = 0,
   }) async {
     final response = await _client
-        .get(_uri('/files/$id/text?limit=$limit'), headers: apiHeaders())
+        .get(
+          _uri('/files/$id/text?limit=$limit&offset=$offset'),
+          headers: apiHeaders(),
+        )
         .timeout(AppFiles.requestTimeout);
     if (response.statusCode >= 400) {
       throw ApiException.fromResponse(response.body, response.statusCode);
@@ -373,7 +392,37 @@ class FilesApi {
       text: j['text'] as String? ?? '',
       truncated: j['truncated'] == true,
       chars: (j['chars'] as num?)?.toInt() ?? 0,
+      offset: (j['offset'] as num?)?.toInt() ?? offset,
     );
+  }
+
+  /// What sparky understands about a file as stored (no model is called).
+  Future<InsightData> insight(String id) async {
+    final r = await _client
+        .get(_uri('/files/$id/insight'), headers: apiHeaders())
+        .timeout(AppFiles.requestTimeout);
+    if (r.statusCode >= 400) _fail(r);
+    return InsightData.fromJson(_object(r.body));
+  }
+
+  /// Has sparky read the file (summary, caption, frame descriptions) and
+  /// keeps the result. Slow: a model is called.
+  Future<InsightData> generateInsight(String id, {bool force = false}) async {
+    final r = await _client
+        .post(
+          _uri('/files/$id/insight'),
+          headers: apiHeaders(json: true),
+          body: jsonEncode({if (force) 'force': true}),
+        )
+        .timeout(AppFiles.insightTimeout);
+    if (r.statusCode >= 400) _fail(r);
+    return InsightData.fromJson(_object(r.body));
+  }
+
+  Map<String, dynamic> _object(String body) {
+    final j = jsonDecode(body);
+    if (j is! Map<String, dynamic>) throw const ApiException(ErrorCopy.generic);
+    return j;
   }
 
   Never _fail(http.Response r) =>

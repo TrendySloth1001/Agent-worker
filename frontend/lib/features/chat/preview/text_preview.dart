@@ -19,6 +19,7 @@ import 'csv_parse.dart';
 import 'file_info.dart';
 import 'preview_actions.dart';
 import 'preview_type.dart';
+import 'preview_view.dart';
 
 enum _TextState { loading, processing, failed, ready }
 
@@ -35,9 +36,13 @@ class TextPreviewScreen extends StatefulWidget {
   State<TextPreviewScreen> createState() => _TextPreviewScreenState();
 }
 
-class _TextPreviewScreenState extends State<TextPreviewScreen> {
+class _TextPreviewScreenState extends State<TextPreviewScreen>
+    with PreviewViewMixin {
+  @override
+  FileInfo get viewFile => widget.file;
+
   _TextState _state = _TextState.loading;
-  late final PreviewType _type = previewTypeOf(widget.file);
+  PreviewType get _type => viewType;
   List<String> _blocks = const [];
   List<List<String>> _rows = const [];
   String _text = '';
@@ -58,7 +63,13 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    loadSavedView();
+    // Office files have no original to draw; their text is the sparky view.
+    if (_type == PreviewType.office) {
+      _state = _TextState.ready;
+    } else {
+      _load();
+    }
   }
 
   @override
@@ -208,11 +219,16 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final original = view == PreviewView.original;
     return Scaffold(
       appBar: PreviewBar(
         file: widget.file,
+        view: canSwitchView ? view : null,
+        onView: pickView,
         extra: [
-          if (_state == _TextState.ready && _type == PreviewType.markdown)
+          if (original &&
+              _state == _TextState.ready &&
+              _type == PreviewType.markdown)
             IconButton(
               icon: AppIcon(
                 PreviewIcons.rawView,
@@ -229,7 +245,7 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
                 });
               },
             ),
-          if (_state == _TextState.ready && _searchable)
+          if (original && _state == _TextState.ready && _searchable)
             IconButton(
               icon: AppIcon(
                 _searching ? AppIcons.close : AppIcons.search,
@@ -251,35 +267,46 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
             ),
         ],
       ),
-      body: switch (_state) {
-        _TextState.loading => Center(
-          child: CircularProgressIndicator(value: _progress),
-        ),
-        _TextState.processing =>
-          _type == PreviewType.office
-              ? FileInfoCard(
-                  file: widget.file,
-                  title: AppStrings.previewProcessing,
-                  hint: AppStrings.previewProcessingHint,
-                  children: [FileActionButtons(file: widget.file)],
-                )
-              : PreviewMessage(
-                  title: AppStrings.previewProcessing,
-                  hint: AppStrings.previewProcessingHint,
-                  onRetry: _load,
-                ),
-        _TextState.failed => PreviewMessage(
-          title: AppStrings.previewLoadFailed,
-          error: true,
-          onRetry: _load,
-        ),
-        _TextState.ready => _content(p),
-      },
+      body: DualBody(
+        ready: viewReady,
+        view: view,
+        file: widget.file,
+        original: _original(p),
+      ),
     );
   }
 
+  /// The file as it is: raw text and code, or, for an Office file that
+  /// cannot be drawn here, a card that opens it in another app.
+  Widget _original(AppPalette p) {
+    if (_type == PreviewType.office) {
+      return FileInfoCard(
+        file: widget.file,
+        title: PreviewStrings.originalOfficeTitle,
+        hint: PreviewStrings.originalOfficeHint,
+        children: [FileActionButtons(file: widget.file)],
+      );
+    }
+    return switch (_state) {
+      _TextState.loading => Center(
+        child: CircularProgressIndicator(value: _progress),
+      ),
+      _TextState.processing => PreviewMessage(
+        title: AppStrings.previewProcessing,
+        hint: AppStrings.previewProcessingHint,
+        onRetry: _load,
+      ),
+      _TextState.failed => PreviewMessage(
+        title: AppStrings.previewLoadFailed,
+        error: true,
+        onRetry: _load,
+      ),
+      _TextState.ready => _content(p),
+    };
+  }
+
   Widget _content(AppPalette p) {
-    if (_text.trim().isEmpty && _type != PreviewType.office) {
+    if (_text.trim().isEmpty) {
       return PreviewMessage(title: PreviewStrings.emptyFile);
     }
     final t = context.text;
@@ -378,13 +405,12 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
     final count = searching ? _blocks.length : _shown.clamp(0, _blocks.length);
     final more = count < _blocks.length;
     final lang = codeLanguageOf(widget.file);
-    final header = _type == PreviewType.office ? 1 : 0;
+    const header = 0;
     return SelectionArea(
       child: ListView.builder(
         padding: const EdgeInsets.all(AppSpacing.screenPadding),
         itemCount: header + count + 1,
         itemBuilder: (context, i) {
-          if (header == 1 && i == 0) return _OfficeHeader(file: widget.file);
           final n = i - header;
           if (n == count) {
             return Column(
@@ -410,44 +436,6 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
             _highlight(block, style, p.accent.withValues(alpha: 0.35)),
           );
         },
-      ),
-    );
-  }
-}
-
-/// Top of an Office file's extracted text: what it is and how to open it.
-class _OfficeHeader extends StatelessWidget {
-  const _OfficeHeader({required this.file});
-
-  final FileInfo file;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.text;
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(PreviewStrings.textTitle, style: t.caption),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              PreviewStrings.textHint,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium!.copyWith(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            FileActionButtons(file: file, compact: true),
-          ],
-        ),
       ),
     );
   }

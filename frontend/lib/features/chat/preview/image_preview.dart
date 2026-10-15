@@ -15,6 +15,8 @@ import '../../../data/files_api.dart';
 import '../widgets/attachment_views.dart';
 import '../widgets/image_strip.dart';
 import 'preview_actions.dart';
+import 'preview_view.dart';
+import 'sparky_view.dart';
 
 /// Hero tag of a file's image tile; [scope] keeps tags unique when the same
 /// file is shown in more than one message.
@@ -42,9 +44,19 @@ class FileImageViewer extends StatefulWidget {
   State<FileImageViewer> createState() => _FileImageViewerState();
 }
 
-class _FileImageViewerState extends State<FileImageViewer> {
+class _FileImageViewerState extends State<FileImageViewer>
+    with PreviewViewMixin {
+  @override
+  FileInfo get viewFile => widget.files[_index];
+
   late final _pages = PageController(initialPage: widget.initial);
   late int _index = widget.initial;
+
+  @override
+  void initState() {
+    super.initState();
+    loadSavedView();
+  }
 
   @override
   void dispose() {
@@ -58,19 +70,31 @@ class _FileImageViewerState extends State<FileImageViewer> {
     final file = widget.files[_index];
     final hero =
         widget.heroScope != null && !MediaQuery.disableAnimationsOf(context);
+    // The stage is black for the picture and themed for sparky's reading.
+    final stage = view == PreviewView.original;
+    final fg = stage ? AppColors.white : null;
+    final switchable = canSwitchView;
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: stage ? AppColors.black : null,
       appBar: AppBar(
-        backgroundColor: AppColors.black,
-        foregroundColor: AppColors.white,
+        backgroundColor: stage ? AppColors.black : null,
+        foregroundColor: fg,
         elevation: 0,
         scrolledUnderElevation: 0,
+        bottom: switchable
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(
+                  PreviewSizes.toggleBarHeight,
+                ),
+                child: PreviewViewToggle(
+                  view: view,
+                  onChanged: pickView,
+                  dark: stage,
+                ),
+              )
+            : null,
         leading: IconButton(
-          icon: const AppIcon(
-            AppIcons.close,
-            size: AppIconSize.md,
-            color: AppColors.white,
-          ),
+          icon: AppIcon(AppIcons.close, size: AppIconSize.md, color: fg),
           tooltip: AppStrings.back,
           onPressed: () {
             Haptics.tap();
@@ -78,7 +102,7 @@ class _FileImageViewerState extends State<FileImageViewer> {
           },
         ),
         title: Text('${_index + 1} / ${widget.files.length}'),
-        actions: [PreviewMenu(file: file, color: AppColors.white)],
+        actions: [PreviewMenu(file: file, color: fg)],
       ),
       body: Column(
         children: [
@@ -90,13 +114,19 @@ class _FileImageViewerState extends State<FileImageViewer> {
                 Haptics.tick();
                 setState(() => _index = i);
               },
-              itemBuilder: (context, i) => _ImagePage(
-                key: ValueKey(widget.files[i].id + widget.files[i].name),
-                file: widget.files[i],
-                heroTag: hero
-                    ? fileHeroTag(widget.heroScope!, widget.files[i])
-                    : null,
-              ),
+              itemBuilder: (context, i) =>
+                  stage || !hasSparkyView(widget.files[i])
+                  ? _ImagePage(
+                      key: ValueKey(widget.files[i].id + widget.files[i].name),
+                      file: widget.files[i],
+                      heroTag: hero
+                          ? fileHeroTag(widget.heroScope!, widget.files[i])
+                          : null,
+                    )
+                  : SparkyView(
+                      key: ValueKey('sparky${widget.files[i].id}'),
+                      file: widget.files[i],
+                    ),
             ),
           ),
           SafeArea(
@@ -117,13 +147,13 @@ class _FileImageViewerState extends State<FileImageViewer> {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(
                         context,
-                      ).textTheme.bodyMedium!.copyWith(color: AppColors.white),
+                      ).textTheme.bodyMedium!.copyWith(color: fg),
                     ),
                   ),
                   if (file.size > 0)
                     Text(
                       formatBytes(file.size).toUpperCase(),
-                      style: t.caption.copyWith(color: AppColors.white),
+                      style: t.caption.copyWith(color: fg),
                     ),
                 ],
               ),
@@ -196,24 +226,37 @@ class _ImagePageState extends State<_ImagePage> {
     }
   }
 
-  Widget _content(AppPalette p) {
-    if (_failed) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppIcon(
-              AppIcons.imageMissing,
-              size: AppIconSize.lg,
-              color: AppColors.white,
-              semanticLabel: AppStrings.imageFailed,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(onPressed: _load, child: const Text(AppStrings.retry)),
-          ],
-        ),
-      );
+  /// A file that cannot be drawn may be a bad cached copy: the retry
+  /// forgets it and downloads again.
+  Future<void> _retry() async {
+    Haptics.tap();
+    if (widget.file.id.isNotEmpty) {
+      await FileCache.instance.evict(widget.file.id);
     }
+    if (mounted) {
+      setState(() => _image = null);
+      await _load();
+    }
+  }
+
+  Widget _failedView() => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIcon(
+          AppIcons.imageMissing,
+          size: AppIconSize.lg,
+          color: AppColors.white,
+          semanticLabel: AppStrings.imageFailed,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextButton(onPressed: _retry, child: const Text(AppStrings.retry)),
+      ],
+    ),
+  );
+
+  Widget _content(AppPalette p) {
+    if (_failed) return _failedView();
     final image = _image;
     if (image == null) {
       final thumb = widget.file.thumbUrl;
@@ -234,14 +277,7 @@ class _ImagePageState extends State<_ImagePage> {
       image,
       fit: BoxFit.contain,
       semanticLabel: widget.file.name,
-      errorBuilder: (context, _, _) => Center(
-        child: AppIcon(
-          AppIcons.imageMissing,
-          size: AppIconSize.lg,
-          color: AppColors.white,
-          semanticLabel: AppStrings.imageFailed,
-        ),
-      ),
+      errorBuilder: (context, _, _) => _failedView(),
     );
   }
 

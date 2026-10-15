@@ -60,8 +60,35 @@ class FileCache {
     final file = File(
       '${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}',
     );
-    return file.existsSync() && file.lengthSync() > 0 ? file : null;
+    if (!file.existsSync() || file.lengthSync() == 0) return null;
+    // A download that was ciphertext (an old storage link) must never be served again.
+    if (_isCiphertext(file)) {
+      file.deleteSync();
+      return null;
+    }
+    return file;
   }
+
+  /// Stored objects are encrypted (`SPKYENC1` header); only the API serves
+  /// them decrypted. Those bytes are not a file any viewer can open.
+  static bool _isCiphertext(File file) {
+    RandomAccessFile? raf;
+    try {
+      raf = file.openSync();
+      final head = raf.readSync(_cipherMagic.length);
+      if (head.length != _cipherMagic.length) return false;
+      for (var i = 0; i < head.length; i++) {
+        if (head[i] != _cipherMagic[i]) return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      raf?.closeSync();
+    }
+  }
+
+  static const _cipherMagic = [0x53, 0x50, 0x4b, 0x59, 0x45, 0x4e, 0x43, 0x31];
 
   /// The file's bytes on disk: the picked local file, the cache, or a
   /// download (streamed to disk, never held in memory). [onProgress] is 0..1.
@@ -139,6 +166,7 @@ class FileCache {
       } finally {
         await sink.close();
       }
+      if (_isCiphertext(part)) throw const _Refused(_cipherStatus);
       await part.rename(target.path);
       onProgress?.call(1);
     } catch (_) {
@@ -196,6 +224,9 @@ class FileCache {
     }
   }
 }
+
+/// Pseudo status for a body that is encrypted storage bytes, not the file.
+const _cipherStatus = 422;
 
 class _Refused implements Exception {
   const _Refused(this.status);
