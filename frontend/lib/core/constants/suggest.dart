@@ -45,10 +45,17 @@ abstract final class SuggestConfig {
   static const startersTtl = Duration(minutes: 10);
 
   /// Autocomplete.
-  static const debounce = Duration(milliseconds: 350);
+  static const debounce = Duration(milliseconds: 700);
   static const requestTimeout = Duration(milliseconds: 2500);
   static const backoff = Duration(seconds: 15);
   static const minChars = 3;
+
+  /// The server (a model call) is only asked for text at least this long;
+  /// shorter text gets the free local words only.
+  static const serverMinChars = 8;
+
+  /// Most server completions per minute from one composer.
+  static const maxPerMinute = 10;
   static const maxWords = 4;
   static const cacheSize = 60;
   static const contextChars = 400;

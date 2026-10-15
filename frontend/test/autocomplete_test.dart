@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:app/core/constants/suggest.dart';
 import 'package:app/data/suggest_api.dart';
 import 'package:app/features/chat/autocomplete/autocomplete_controller.dart';
 import 'package:app/features/chat/autocomplete/local_words.dart';
@@ -95,6 +96,19 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       c.update('Can you expla');
       expect(c.ghost, 'in it?');
+      c.dispose();
+    });
+
+    test('does not ask the server for short text or more than the cap', () async {
+      final c = make();
+      c.update('Write a');
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(asked, isEmpty);
+      for (var i = 0; i < SuggestConfig.maxPerMinute + 3; i++) {
+        c.update('Write a story number $i');
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      expect(asked.length, SuggestConfig.maxPerMinute);
       c.dispose();
     });
 

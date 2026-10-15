@@ -2,8 +2,11 @@ import type { Message } from "../providers.js";
 import { ask } from "./ask.js";
 import { log } from "../util/logger.js";
 
-// Small, fast models with generous quotas, so titles never spend the OpenRouter daily quota.
-const TITLE_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b", "ollama:gemma4:31b"];
+import { auxModels } from "../llm/auxPool.js";
+
+// The small-model pool (llm/auxPool.ts): generous quotas, never the OpenRouter daily quota or the reply models' windows.
+/** At most two models are asked; a title is never worth a third request. */
+const TITLE_ATTEMPTS = 2;
 const TIMEOUT_MS = 15_000;
 const MAX_LENGTH = 60;
 
@@ -44,7 +47,7 @@ export async function generateTitle(firstUser: string, firstAssistant: string): 
     { role: "system", content: PROMPT },
     { role: "user", content: `User: ${firstUser.slice(0, 1500)}\n\nAssistant: ${firstAssistant.slice(0, 1500)}` },
   ];
-  for (const model of TITLE_MODELS) {
+  for (const model of auxModels(700).slice(0, TITLE_ATTEMPTS)) {
     try {
       const title = clean(await ask(model, messages, TIMEOUT_MS, "title"));
       if (title) return { title, source: "ai" };
