@@ -129,6 +129,8 @@ class ChatApi {
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
     Map<String, Object>? deviceActions,
+    Map<String, String> locationHints = const {},
+    bool approxLocation = true,
   }) async* {
     final request =
         http.Request('POST', Uri.parse('${AppConfig.apiBaseUrl}/chat'))
@@ -148,6 +150,10 @@ class ChatApi {
             if (roundTable) 'roundTable': true,
             'conversationId': ?conversationId,
             if (!smartSuggestions) 'smartSuggestions': false,
+            // Approximate location: off, or on with the phone's coarse hints.
+            if (!approxLocation) 'approxLocation': false,
+            if (approxLocation && locationHints.isNotEmpty)
+              'locationHints': locationHints,
             if (suppressSuggest.isNotEmpty)
               'suppressSuggest': [for (final k in suppressSuggest) k.name],
             if (apps.isNotEmpty) 'apps': apps,

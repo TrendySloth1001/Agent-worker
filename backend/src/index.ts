@@ -1,3 +1,4 @@
+import { startGeoDb } from "./context/ipdb.js";
 import { primeKeysMiddleware } from "./keys/store.js";
 import { keysRouter, myUsageRouter } from "./routes/keys.js";
 import express from "express";
@@ -155,6 +156,8 @@ onDbUp(() => startAppErrorSweeper());
 onDbUp(() => void docStore.sweepInterrupted(liveDocIds()).then((n) => n && log.info("docs interrupted", { count: n })).catch(() => undefined));
 initDb();
 const server = app.listen(config.port, () => log.info(`Server listening on http://localhost:${config.port}`));
+// Offline IP-to-city database (DB-IP Lite): fetched or refreshed in the background; the server never waits for it.
+if (process.env.NODE_ENV !== "test") startGeoDb();
 
 // SIGTERM (redeploy): stop taking new requests, let in-flight answer streams finish, then exit.
 // The container's stop timeout must exceed SHUTDOWN_GRACE_MS (see docker-compose.coolify.yml).

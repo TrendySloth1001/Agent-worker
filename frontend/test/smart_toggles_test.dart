@@ -51,6 +51,8 @@ class _FakeChat extends ChatApi {
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
     Map<String, Object>? deviceActions,
+    Map<String, String> locationHints = const {},
+    bool approxLocation = true,
   }) async* {
     calls.add(_Call(webMode, knowledge, suppressSuggest, smartSuggestions));
     final i = calls.length - 1;

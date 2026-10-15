@@ -19,4 +19,6 @@ export type Candidate = {
   published?: string;
 };
 
-export type SearchCtx = { signal?: AbortSignal; fresh: Freshness; limit: number; /** BCP-47-ish language of the query ("hi" for Devanagari), when not English. */ lang?: string };
+export type SearchCtx = { signal?: AbortSignal; fresh: Freshness; limit: number; /** BCP-47-ish language of the query ("hi" for Devanagari), when not English. */ lang?: string;
+  /** Lower-case ISO country code to bias engines toward (only on location-relevant turns). */
+  region?: string };

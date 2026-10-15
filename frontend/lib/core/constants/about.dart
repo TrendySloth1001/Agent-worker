@@ -181,6 +181,12 @@ abstract final class AboutStrings {
       url: 'https://openfontlicense.org/',
     ),
     (
+      icon: AboutIcons.geoip,
+      label: 'LOCATION',
+      value: 'IP geolocation by DB-IP (CC BY 4.0)',
+      url: 'https://db-ip.com/',
+    ),
+    (
       icon: AboutIcons.flutter,
       label: 'BUILT WITH',
       value: 'Flutter',
@@ -288,6 +294,7 @@ abstract final class AboutIcons {
   static const illustrations = HugeIcons.strokeRoundedPaintBrush01;
   static const icons = HugeIcons.strokeRoundedStarSquare;
   static const fonts = HugeIcons.strokeRoundedTextFont;
+  static const geoip = HugeIcons.strokeRoundedLocation05;
   static const flutter = BrandLogos.flutter;
   static const logos = HugeIcons.strokeRoundedCheckmarkBadge01;
   static const peeps = HugeIcons.strokeRoundedUserMultiple;

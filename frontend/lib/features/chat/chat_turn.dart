@@ -7,6 +7,7 @@ import '../../data/chat_event.dart';
 import '../../data/chat_message.dart';
 import '../../data/docs_api.dart';
 import '../../data/files_api.dart';
+import '../../core/platform/phone_hints.dart';
 import '../actions/device_action_runner.dart';
 import '../settings/settings_controller.dart';
 
@@ -28,6 +29,7 @@ class ChatTurn {
     this.suppressSuggest = const {},
     this.apps = const [],
     this.deviceActions = false,
+    this.approxLocation = true,
   });
 
   /// The turn for [settings] with the composer's toggles.
@@ -54,6 +56,7 @@ class ChatTurn {
     suppressSuggest: Set.of(suppressSuggest),
     apps: apps,
     deviceActions: settings.assistActions && DeviceActionRunner.supported,
+    approxLocation: settings.approxLocation,
   );
 
   final String? modelId;
@@ -70,6 +73,10 @@ class ChatTurn {
 
   /// The phone can run proposed actions (Android, actions on in Settings).
   final bool deviceActions;
+
+  /// Send the phone's coarse hints (SIM / network country, time zone,
+  /// locale) so the server can guess a rough location for local questions.
+  final bool approxLocation;
 
   /// The model picked in Settings, only if the server still offers it
   /// (else Auto: the server routes).
@@ -93,14 +100,24 @@ class ChatTurn {
     http.Client client,
     List<ChatMessage> history, {
     Map<String, Object>? screen,
-  }) {
+  }) async* {
+    // A few milliseconds at most (and cached): no permission is involved.
+    final hints = approxLocation ? await PhoneHints.read() : const <String, String>{};
     if (!deviceActions || !DeviceActionRunner.supported) {
-      return _stream(api, client, history, screen: screen);
+      yield* _stream(api, client, history, screen: screen, hints: hints);
+      return;
     }
     // Never waits for the phone: the last answer goes, a fresh one is asked for.
     final installed = InstalledMediaApps.cached;
     InstalledMediaApps.warm();
-    return _stream(api, client, history, screen: screen, installed: installed);
+    yield* _stream(
+      api,
+      client,
+      history,
+      screen: screen,
+      installed: installed,
+      hints: hints,
+    );
   }
 
   Stream<ChatEvent> _stream(
@@ -109,6 +126,7 @@ class ChatTurn {
     List<ChatMessage> history, {
     Map<String, Object>? screen,
     List<String>? installed,
+    Map<String, String> hints = const {},
   }) => api.streamChat(
     client,
     history,
@@ -125,6 +143,8 @@ class ChatTurn {
     apps: apps,
     screen: screen,
     deviceActions: deviceActions ? deviceActionsRequest(null, installed) : null,
+    locationHints: hints,
+    approxLocation: approxLocation,
   );
 
   /// DOC: the document request for [prompt] with the same toggles.

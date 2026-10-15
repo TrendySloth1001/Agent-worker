@@ -408,7 +408,7 @@ export function fallbackUpiCard(userText: string): Card | null {
  * own buttons and links are never kept), invalid blocks removed, at most
  * [MAX_CARDS] kept. Places are looked up first (OpenStreetMap, cached, paced).
  */
-export async function finalizeCards(text: string, o: { userTexts: string[]; lookup?: typeof lookupPlace; signal?: AbortSignal }): Promise<string> {
+export async function finalizeCards(text: string, o: { userTexts: string[]; lookup?: typeof lookupPlace; signal?: AbortSignal; /** Looks places up in this country first (the turn asked for something near the user). */ countryCode?: string }): Promise<string> {
   if (!hasCardBlock(text)) return text;
   const lookup = o.lookup ?? lookupPlace;
   const found = [...text.matchAll(FENCE_RE)];
@@ -421,7 +421,7 @@ export async function finalizeCards(text: string, o: { userTexts: string[]; look
       const q = str(obj.query, 200) || str(obj.name, 120);
       if (q) {
         const stop = AbortSignal.timeout(6_000);
-        place = await lookup(q, { signal: o.signal ? AbortSignal.any([o.signal, stop]) : stop }).catch(() => null);
+        place = await lookup(q, { countryCode: o.countryCode, signal: o.signal ? AbortSignal.any([o.signal, stop]) : stop }).catch(() => null);
       }
     }
     const card = obj && kept < MAX_CARDS ? buildCard(obj, { userTexts: o.userTexts, place }) : null;

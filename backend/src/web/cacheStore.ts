@@ -30,8 +30,8 @@ export function termOverlap(a: Set<string>, b: Set<string>): number {
 }
 
 /** Cache identity: provider, freshness class, language and the query's identity (hashed before it is stored). */
-export function searchCacheKey(provider: string, fresh: Freshness, query: string, lang?: string): string {
-  return `${provider}|${fresh}${lang && lang !== "en" ? `|${lang}` : ""}|${queryIdentity(query)}`.slice(0, 400);
+export function searchCacheKey(provider: string, fresh: Freshness, query: string, lang?: string, region?: string): string {
+  return `${provider}|${fresh}${lang && lang !== "en" ? `|${lang}` : ""}${region ? `|r:${region}` : ""}|${queryIdentity(query)}`.slice(0, 400);
 }
 
 let lastPurge = 0;

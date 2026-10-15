@@ -64,6 +64,8 @@ class _Scripted extends ChatApi {
     List<Map<String, String>> apps = const [],
     Map<String, Object>? screen,
     Map<String, Object>? deviceActions,
+    Map<String, String> locationHints = const {},
+    bool approxLocation = true,
   }) async* {
     histories.add([for (final m in history) '${m.role.name}:${m.content}']);
     final i = histories.length - 1;

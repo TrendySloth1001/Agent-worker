@@ -40,6 +40,7 @@
     "google-auth-library": "^11.2.0",
     "linkedom": "^0.18.13",
     "mammoth": "^1.13.0",
+    "maxmind": "^5.0.7",
     "multer": "^2.4.0",
     "p-limit": "^7.3.3",
     "pdfjs-dist": "^6.4.299",
