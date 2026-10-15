@@ -10,11 +10,8 @@ import { log } from "../util/logger.js";
 import { buildChunks, diffChunks } from "./chunks.js";
 import { upsertSql } from "./sql.js";
 
-/** Wait this long after the last save of a chat before indexing it. */
-export const DEBOUNCE_MS = 20_000;
 const BACKFILL_BATCH = 300;
 const BACKFILL_PAUSE_MS = 400;
-const EMBED_BATCH = 16;
 
 /** Cross-chat recall switch of a user (default on; the dev bypass user without an id counts as on). */
 export async function chatRecallEnabled(userId: string | null): Promise<boolean> {
@@ -55,10 +52,8 @@ export async function indexConversation(id: string): Promise<number | null> {
   const rows = await db().$queryRaw<Array<{ ord: number; content_hash: string }>>`SELECT ord, content_hash FROM conversation_chunks WHERE conversation_id = ${id}::uuid`;
   const { remove, add } = diffChunks(new Map(rows.map((r) => [r.ord, r.content_hash])), wanted);
 
-  const vectors: number[][] = [];
-  for (let i = 0; i < add.length; i += EMBED_BATCH) {
-    vectors.push(...(await embedTexts(add.slice(i, i + EMBED_BATCH).map((c) => c.content), "document")));
-  }
+  // One request for all new chunks (embedTexts splits it by the provider's batch size, 64 by default).
+  const vectors = add.length ? await embedTexts(add.map((c) => c.content), "document") : [];
   await tx(async (c) => {
     // The chat may have been deleted or switched off while embedding: write nothing then.
     const still = await c.conversation.findUnique({ where: { id }, select: { userId: true } });
@@ -74,30 +69,82 @@ export async function indexConversation(id: string): Promise<number | null> {
 
 // ---- debounced scheduling ------------------------------------------------------------
 
-const timers = new Map<string, NodeJS.Timeout>();
-const running = new Set<string>();
+/** A chat is indexed once it has been idle this long (each save restarts the wait). */
+export const IDLE_MS = 3 * 60_000;
+/** ...but never later than this after its first unindexed save, even while the user keeps chatting. */
+export const MAX_WAIT_MS = 10 * 60_000;
+/** ...or as soon as this many saves piled up (a long burst), after a short settle. */
+export const MAX_SAVES = 8;
+const SETTLE_MS = 5_000;
+/** One user's chats are indexed at most this often (the embedding quota is shared by everyone). */
+export const USER_GAP_MS = 60_000;
 
-/** Indexes [id] shortly after the last save (each save restarts the timer). Fire and forget. */
-export function scheduleIndex(id: string, delayMs = DEBOUNCE_MS): void {
-  const prev = timers.get(id);
-  if (prev) clearTimeout(prev);
-  const t = setTimeout(() => {
-    timers.delete(id);
-    if (running.has(id)) return scheduleIndex(id, delayMs);
-    running.add(id);
-    indexConversation(id)
+type Pending = { timer: NodeJS.Timeout; firstAt: number; saves: number; userId?: string };
+
+/** Debounces and rate-limits indexing runs. Time and the run itself are injectable for tests. */
+export class IndexScheduler {
+  private pending = new Map<string, Pending>();
+  private running = new Set<string>();
+  private lastRun = new Map<string, number>();
+  constructor(
+    private run: (id: string) => Promise<unknown>,
+    private o: { idleMs?: number; maxWaitMs?: number; maxSaves?: number; settleMs?: number; userGapMs?: number } = {},
+  ) {}
+
+  /** Notes a save of chat [id]: it is indexed after the idle wait, the max wait or a burst of saves, whichever comes first. */
+  schedule(id: string, userId?: string): void {
+    const prev = this.pending.get(id);
+    if (prev) clearTimeout(prev.timer);
+    const now = Date.now();
+    const firstAt = prev?.firstAt ?? now;
+    const saves = (prev?.saves ?? 0) + 1;
+    const untilMax = Math.max(0, firstAt + (this.o.maxWaitMs ?? MAX_WAIT_MS) - now);
+    const burst = saves >= (this.o.maxSaves ?? MAX_SAVES);
+    const delay = Math.min(burst ? (this.o.settleMs ?? SETTLE_MS) : (this.o.idleMs ?? IDLE_MS), untilMax);
+    this.arm(id, { firstAt, saves, userId: userId ?? prev?.userId }, delay);
+  }
+
+  private arm(id: string, st: Omit<Pending, "timer">, delay: number): void {
+    const timer = setTimeout(() => this.fire(id), delay);
+    timer.unref();
+    this.pending.set(id, { ...st, timer });
+  }
+
+  private fire(id: string): void {
+    const st = this.pending.get(id);
+    if (!st) return;
+    // Busy with this chat, or its user indexed a chat a moment ago: try again shortly.
+    const gapLeft = st.userId ? (this.lastRun.get(st.userId) ?? -Infinity) + (this.o.userGapMs ?? USER_GAP_MS) - Date.now() : 0;
+    if (this.running.has(id) || gapLeft > 0) return this.arm(id, st, Math.max(gapLeft, this.o.settleMs ?? SETTLE_MS));
+    this.pending.delete(id);
+    this.running.add(id);
+    if (st.userId) this.lastRun.set(st.userId, Date.now());
+    this.run(id)
       .catch((e) => log.warn("chat recall indexing failed", { message: String((e as Error).message ?? e).slice(0, 140) }))
-      .finally(() => running.delete(id));
-  }, delayMs);
-  t.unref();
-  timers.set(id, t);
+      .finally(() => this.running.delete(id));
+  }
+
+  cancel(id: string): void {
+    const st = this.pending.get(id);
+    if (st) clearTimeout(st.timer);
+    this.pending.delete(id);
+  }
+
+  get size(): number {
+    return this.pending.size;
+  }
+}
+
+const scheduler = new IndexScheduler((id) => indexConversation(id));
+
+/** Indexes [id] once the chat has gone quiet (see [IndexScheduler]). Fire and forget. */
+export function scheduleIndex(id: string, userId?: string): void {
+  scheduler.schedule(id, userId);
 }
 
 /** Cancels a pending index run (the chat was deleted). */
 export function cancelIndex(id: string): void {
-  const t = timers.get(id);
-  if (t) clearTimeout(t);
-  timers.delete(id);
+  scheduler.cancel(id);
 }
 
 // ---- backfill ---------------------------------------------------------------------------

@@ -53,6 +53,8 @@ export class ProviderError extends Error {
 const UA = "AgentWorkerBot/1.0 (+https://sparky.cloudnsofts.com)";
 /** How long a scraped engine that started refusing us (429, bot check) is left alone. */
 const BLOCKED_COOLDOWN_MS = 10 * 60_000;
+/** Minimum time an engine that answered 429 is skipped. */
+const RATE_LIMIT_COOLDOWN_MS = 2 * 60_000;
 
 const off = (name: string) => config.webSearch.disabled.has(name);
 
@@ -469,7 +471,9 @@ async function callUncached(p: Provider, query: string, key: string, ctx: Search
     // 4xx other than 429 on a search request is our problem or a block, not an outage: only 401/403 trips at once.
     // A 429 with a long cooldown (an engine's bot check, an exhausted quota) also opens at once: retrying it only burns time.
     const countable = status === 0 || status === 429 || status >= 500 || timedOut;
-    if (status === 401 || status === 403 || (status === 429 && retryAfterMs >= 5 * 60_000)) breaker.failure(circuit, { hard: true, retryAfterMs });
+    // Any 429 means "slow down": the engine is left alone for a while at once instead of being asked again until it trips.
+    if (status === 429) breaker.failure(circuit, { hard: true, retryAfterMs: Math.max(retryAfterMs, RATE_LIMIT_COOLDOWN_MS) });
+    else if (status === 401 || status === 403) breaker.failure(circuit, { hard: true, retryAfterMs });
     else if (countable) breaker.failure(circuit, { retryAfterMs });
     if (!p.selfRecorded) {
       recordUsage({ provider: "web", model: p.name, kind: "search", ok: false, status: status || undefined, latencyMs: ms, errorMessage: timedOut ? "timeout" : (e as Error).message });

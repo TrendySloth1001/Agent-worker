@@ -380,7 +380,7 @@ conversationsRouter.put("/:id", async (req, res) => {
   });
   const row = openRow(crypto, await withParent(saved));
   // Cross-chat recall: index the new messages shortly after the last save (debounced, in the background).
-  scheduleIndex(id);
+  scheduleIndex(id, uid ?? undefined);
 
   // Name it once, after the first complete exchange.
   const firstReply = messages.find((m) => m.role === "assistant" && !m.isError && m.content.trim());

@@ -16,12 +16,13 @@ import { TtlLru } from "./lru.js";
 import { selectPassages, terms } from "./passages.js";
 import { planFromPreflight, planSearch, queryLang, type PlanContext, type SearchPlan } from "./plan.js";
 import { snippetAnswers } from "./budget.js";
-import { available, callProvider, CACHE_TTL_MS, PROVIDERS, type CallOutcome, type Provider } from "./providers.js";
+import { available, callProvider, PROVIDERS, type CallOutcome, type Provider } from "./providers.js";
 import type { Candidate, Freshness, SearchCtx, WebResult } from "./types.js";
 import { blendSemantic, mergeCandidates, mmr, type Merged, type MergeFocus } from "./rank.js";
 import { hostOf, normalizeUrl } from "./url.js";
-import { normalizeQuery, readPersistedValue, writePersisted } from "./cacheStore.js";
+import { queryIdentity, readPersistedValue, writePersisted } from "./cacheStore.js";
 import { recordResearch } from "./stats.js";
+import { ResearchMemo } from "./researchMemo.js";
 
 export type ResearchOpts = {
   question: string;
@@ -36,11 +37,13 @@ export type ResearchOpts = {
   maxQueries?: number;
   /** Queries and freshness already written by the turn preflight: skips query planning. */
   preplanned?: { queries: string[]; fresh?: Freshness | null };
+  /** The chat this search belongs to: a follow-up on the same topic reuses the previous turn's sources. */
+  conversationId?: string;
 };
 
 const PER_PROVIDER = 8;
 /** A web engine still silent after this long gets a hedge: the next engine in the chain starts too. */
-export const HEDGE_MS = 1_200;
+export const HEDGE_MS = 2_500;
 /** An engine answer with fewer hits than this is thin: the next engine is asked as well. */
 const MIN_WEB_HITS = 4;
 /** Once the web engines answered, topical sources may add for this long before the pipeline moves on. */
@@ -57,6 +60,15 @@ const FULL_CHARS = 12_000;
 const SEMANTIC_MS = 900;
 const SEMANTIC_POOL = 12;
 const PAGE_TTL_MS = 6 * 60 * 60_000;
+/** Pages asked for first when snippets are not enough; a further one only if those did not give enough evidence. */
+const FIRST_WAVE = 2;
+/** Evidence (characters of page text) after which no further page is read. */
+const ENOUGH_EVIDENCE_CHARS = 3_000;
+/** A host whose pages failed this often in a row is skipped for [BAD_HOST_MS]. */
+const BAD_HOST_FAILS = 2;
+const BAD_HOST_MS = 10 * 60_000;
+/** Topical sources asked next to the web engines (one more only when the web came up thin). */
+const MAX_TOPICAL = 1;
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -67,6 +79,38 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 // ---- pages ---------------------------------------------------------------------
 
 type Page = { title: string; text: string };
+type PageRead = { body: string; contentType: string; url: string; status: number };
+const realRead = (url: string): Promise<PageRead> => fetchText(url, { delayMs: 0, maxBytes: 1_500_000 });
+let readPageImpl: (url: string) => Promise<PageRead> = realRead;
+/** Test seam: replaces the network read behind page fetches. Returns a restore function. */
+export function setPageReader(fn: ((url: string) => Promise<PageRead>) | null): () => void {
+  const prev = readPageImpl;
+  readPageImpl = fn ?? realRead;
+  return () => void (readPageImpl = prev);
+}
+
+const badHosts = new Map<string, { fails: number; until: number }>();
+/** Whether pages of this host failed repeatedly just now (not worth another read). */
+export function hostIsBad(url: string): boolean {
+  const e = badHosts.get(hostOf(url));
+  return !!e && e.until > Date.now();
+}
+function noteHost(url: string, ok: boolean): void {
+  const host = hostOf(url);
+  if (!host) return;
+  if (ok) return void badHosts.delete(host);
+  const e = badHosts.get(host) ?? { fails: 0, until: 0 };
+  e.fails++;
+  if (e.fails >= BAD_HOST_FAILS) e.until = Date.now() + BAD_HOST_MS;
+  badHosts.set(host, e);
+  if (badHosts.size > 500) badHosts.delete(badHosts.keys().next().value as string);
+}
+/** Test hook: forget page and host health. */
+export function resetPageHealth(): void {
+  badHosts.clear();
+  pages.clear();
+}
+
 const pages = new TtlLru<Page | null>(200);
 const pageLimit = pLimit(PAGE_CONCURRENCY);
 const isPage = (v: unknown): v is Page => !!v && typeof (v as Page).text === "string" && typeof (v as Page).title === "string";
@@ -85,7 +129,7 @@ export async function fetchPage(url: string, signal?: AbortSignal, timeoutMs = P
   let timer: NodeJS.Timeout | undefined;
   try {
     const r = await Promise.race([
-      fetchText(url, { delayMs: 0, maxBytes: 1_500_000 }),
+      readPageImpl(url),
       new Promise<never>((_, rej) => {
         timer = setTimeout(() => rej(new Error("page fetch timed out")), timeoutMs);
         signal?.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
@@ -101,12 +145,14 @@ export async function fetchPage(url: string, signal?: AbortSignal, timeoutMs = P
     const out = text.trim().length >= 200 ? { title, text: text.trim().slice(0, 40_000) } : null;
     pages.set(key, out, out ? PAGE_TTL_MS : 5 * 60_000);
     if (out) writePersisted(`page|${key}`.slice(0, 400), out, PAGE_TTL_MS);
+    noteHost(url, !!out);
     recordUsage({ provider: "web", model: "page", kind: "fetch", ok: true, status: r.status, latencyMs: Date.now() - started });
     return out;
   } catch (e) {
     const msg = (e as Error).message ?? "";
     if (msg !== "aborted") {
       pages.set(key, null, 5 * 60_000);
+      noteHost(url, false);
       recordUsage({ provider: "web", model: "page", kind: "fetch", ok: false, latencyMs: Date.now() - started, errorMessage: msg });
     }
     return null;
@@ -167,7 +213,11 @@ export async function collect(plan: SearchPlan, signal: AbortSignal | undefined,
   const ctx: SearchCtx = { signal, fresh: plan.fresh, limit: PER_PROVIDER, lang: opts.lang };
   const pool = (opts.providers ?? PROVIDERS).filter(available);
   const web = pool.filter((p) => p.role === "web");
-  const topical = pool.filter((p) => p.role === "secondary" && (p.intents === "any" || p.intents.some((i) => plan.intents.includes(i))));
+  const matching = pool.filter((p) => p.role === "secondary" && (p.intents === "any" || p.intents.some((i) => plan.intents.includes(i))));
+  // The plan's intents are ordered by relevance: the source for the first one is asked, the others only if the web comes up short.
+  const rank = (p: Provider) => (p.intents === "any" ? plan.intents.length : Math.min(...p.intents.map((i) => (plan.intents.includes(i) ? plan.intents.indexOf(i) : plan.intents.length))));
+  const ordered = [...matching].sort((a, b) => rank(a) - rank(b));
+  const topical = ordered.slice(0, MAX_TOPICAL);
   const outcomes: CallOutcome[] = [];
   let wake: (() => void) | null = null;
   const poke = () => {
@@ -218,6 +268,12 @@ export async function collect(plan: SearchPlan, signal: AbortSignal | undefined,
 
   const got = new Set(snapshot.flatMap((o) => o.candidates.map((c) => normalizeUrl(c.url) ?? c.url)));
   if (got.size < 3 && !signal?.aborted) {
+    // Thin results: one more topical source before the last-resort fallbacks.
+    const more = ordered.slice(MAX_TOPICAL, MAX_TOPICAL + 1);
+    snapshot.push(...(await Promise.all(more.map((p) => callProvider(p, plan.queries[0], ctx)))));
+    for (const o of snapshot) for (const c of o.candidates) got.add(normalizeUrl(c.url) ?? c.url);
+  }
+  if (got.size < 3 && !signal?.aborted) {
     const fallbacks = pool.filter((p) => p.role === "fallback");
     snapshot.push(...(await Promise.all(fallbacks.map((p) => callProvider(p, plan.queries[0], ctx)))));
   }
@@ -261,16 +317,36 @@ async function semanticSims(query: string, items: Merged[], signal?: AbortSignal
 
 // ---- orchestration ----------------------------------------------------------------
 
-const results = new TtlLru<WebResult[]>(300);
+const memo = new ResearchMemo();
 
-/** Identity of a whole research run: the normalized queries, freshness, language and output shape. */
-export function researchCacheKey(plan: Pick<SearchPlan, "queries" | "fresh">, lang: string | undefined, maxResults: number, fetchTop: number): string {
-  return `${plan.fresh}|${lang ?? "en"}|${maxResults}|${fetchTop}|${plan.queries.map(normalizeQuery).join("||")}`;
+/** Identity of a whole research run: the queries' identity (word order, case, filler ignored), freshness and language. */
+export function researchCacheKey(plan: Pick<SearchPlan, "queries" | "fresh">, lang: string | undefined, _maxResults?: number, _fetchTop?: number): string {
+  return `${plan.fresh}|${lang ?? "en"}|${plan.queries.map(queryIdentity).join("||")}`;
 }
 
 /** Test hook. */
 export function clearResearchCache(): void {
-  results.clear();
+  memo.clear();
+}
+
+/**
+ * Reads the pages in two waves: the first [FIRST_WAVE] together, and the rest only when those did not
+ * give enough evidence (so a good answer costs two page reads, not three).
+ */
+async function readPages(need: Array<{ url: string }>, into: Map<string, Page>, signal?: AbortSignal): Promise<void> {
+  const evidence = () => [...into.values()].reduce((n, p) => n + p.text.length, 0);
+  const wave = (items: Array<{ url: string }>) =>
+    Promise.all(
+      items.map((c) =>
+        pageLimit(async () => {
+          if (signal?.aborted) return;
+          const page = await fetchPage(c.url, signal);
+          if (page) into.set(c.url, page);
+        }),
+      ),
+    );
+  await wave(need.slice(0, FIRST_WAVE));
+  if (need.length > FIRST_WAVE && !signal?.aborted && (into.size < 2 || evidence() < ENOUGH_EVIDENCE_CHARS)) await wave(need.slice(FIRST_WAVE));
 }
 
 /** The full pipeline. Throws only when every provider failed or none could be asked. */
@@ -284,12 +360,12 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   if (!plan.queries.length || !terms(plan.queries.join(" ")).length) return [];
   const lang = queryLang(`${plan.queries.join(" ")}`);
 
-  const key = researchCacheKey(plan, lang, maxResults, fetchTop);
-  const hit = results.get(key);
+  const memoQuery = { queries: plan.queries, fresh: plan.fresh, lang, conversationId: opts.conversationId, maxResults, fetched: fetchTop > 0 };
+  const hit = memo.get(memoQuery);
   if (hit) {
-    recordResearch({ ms: Date.now() - started, cached: true, results: hit.length });
-    log.info("web research", { via: plan.via, fresh: plan.fresh, intents: plan.intents.join(","), queries: plan.queries.length, providers: "research-cache", merged: hit.length });
-    return hit.map((r) => ({ ...r }));
+    recordResearch({ ms: Date.now() - started, cached: true, results: hit.results.length });
+    log.info("web research", { via: plan.via, fresh: plan.fresh, intents: plan.intents.join(","), queries: plan.queries.length, providers: `research-cache:${hit.via}`, merged: hit.results.length });
+    return hit.results.map((r) => ({ ...r }));
   }
 
   const focus: MergeFocus = { queries: plan.queries, question: opts.question };
@@ -306,23 +382,22 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   const focusText = [...plan.queries, opts.question].join(" ");
   // Lexical shortlist first: the pages worth reading are picked from it while the embedding rerank runs.
   const shortlist = mmr(merged, maxResults + 2);
-  const need = shortlist.filter((c) => (c.text?.length ?? 0) < 600 && !snippetAnswers(c, focusText)).slice(0, fetchTop);
+  // Pages worth reading: no body yet, the snippet does not answer, one per site, not from a host that keeps failing.
+  const seenHosts = new Set<string>();
+  const need = shortlist
+    .filter((c) => (c.text?.length ?? 0) < 600 && !snippetAnswers(c, focusText) && !hostIsBad(c.url))
+    .filter((c) => {
+      const h = hostOf(c.url);
+      if (seenHosts.has(h)) return false;
+      seenHosts.add(h);
+      return true;
+    })
+    .slice(0, fetchTop);
   const fetched = new Map<string, { title: string; text: string }>();
   const [sims] = await Promise.all([
-    merged.length > maxResults ? semanticSims(plan.queries[0], merged.slice(0, SEMANTIC_POOL), opts.signal) : Promise.resolve(new Map<string, number>()),
+    merged.length > maxResults + 2 ? semanticSims(plan.queries[0], merged.slice(0, SEMANTIC_POOL), opts.signal) : Promise.resolve(new Map<string, number>()),
     // The page-reading phase is time-boxed: the first token never waits on a slow site (late pages still warm the page cache).
-    Promise.race([
-      Promise.all(
-        need.map((c) =>
-          pageLimit(async () => {
-            if (opts.signal?.aborted) return;
-            const page = await fetchPage(c.url, opts.signal);
-            if (page) fetched.set(c.url, page);
-          }),
-        ),
-      ),
-      sleep(FETCH_PHASE_MS, opts.signal),
-    ]),
+    Promise.race([readPages(need, fetched, opts.signal), sleep(FETCH_PHASE_MS, opts.signal)]),
   ]);
 
   // Final pick: semantic blend (when available), then MMR; a hit that was read in full ranks as it did, one with nothing to cite is skipped.
@@ -341,7 +416,7 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   }
   const ms = Date.now() - started;
   // Only a complete answer is reused; an empty one is retried next time.
-  if (out.length) results.set(key, out, Math.min(CACHE_TTL_MS[plan.fresh], 60 * 60_000));
+  memo.set(memoQuery, out);
   recordResearch({ ms, results: out.length, early });
   log.info("web research done", { results: out.length, pagesRead: fetched.size, semantic: sims.size > 0, ms });
   return out;
