@@ -1,4 +1,5 @@
 import { Router, type Request } from "express";
+import { rewrapVault } from "../vault/service.js";
 import { z } from "zod";
 import { db } from "../db/prisma.js";
 import { AppError } from "../util/errors.js";
@@ -275,6 +276,8 @@ authRouter.post("/password", async (req, res) => {
   }
   await db().user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(b.next) } });
   await revokeOthers(user.id, userOf(req).sid);
+  // The owner's recovery vault is sealed under the password: re-wrap it old -> new (or mark it for re-seal).
+  if (user.role === "owner") await rewrapVault(user.id, b.current, b.next);
   res.status(204).end();
 });
 
