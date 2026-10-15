@@ -57,7 +57,7 @@ export type CardAction = { id: string; label: string; app: string; primary?: boo
 export type CardRow = { k: string; v: string };
 export type Card = { v: 1; type: CardType; title: string; subtitle?: string; rows?: CardRow[]; notice?: string; actions: CardAction[] };
 
-export const MAX_CARDS = 2;
+export const MAX_CARDS = 3;
 
 // ---- detection ---------------------------------------------------------------
 

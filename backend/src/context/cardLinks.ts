@@ -193,6 +193,15 @@ export function directionsIntent(destination: string, coords?: { lat: number; lo
   return { action: "view", uri: `google.navigation:q=${enc(target)}`, package: PKG.maps, fallback: mapsDirectionsUrl(coords ? `${coords.lat},${coords.lon}` : destination) };
 }
 
+export type TravelModeParam = "driving" | "transit" | "walking" | "bicycling";
+
+/** Google Maps directions link; `origin` only when the user named a starting point (Maps uses their location otherwise). */
+export const mapsDirUrl = (o: { destination: string; origin?: string; mode?: TravelModeParam }): string =>
+  `https://www.google.com/maps/dir/?api=1&destination=${enc(o.destination)}${o.origin ? `&origin=${enc(o.origin)}` : ""}&travelmode=${o.mode ?? "driving"}`;
+
+/** Live navigation from wherever the user is now: no origin needed. */
+export const navigateIntent = (destination: string): CardIntent => ({ action: "view", uri: `google.navigation:q=${enc(destination)}`, package: PKG.maps, fallback: mapsDirUrl({ destination }) });
+
 // ---- UPI --------------------------------------------------------------------
 
 /** A virtual payment address: name@handle. The handle has no dot, so an email address is not one. */

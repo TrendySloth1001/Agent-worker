@@ -42,6 +42,9 @@ import { generateFollowups, worthFollowups } from "../assist/suggest.js";
 import { screenContextMessage, screenSchema } from "../context/screen.js";
 import { deviceActionsMessage, deviceActionsSchema, tailNotes } from "../context/deviceActions.js";
 import { convertSongList } from "../context/playlist.js";
+import { buildDirections, directionsBlock, parseDirections, placesQuery, placesSearchCard, routeNote } from "../context/directions.js";
+import { guardAsk, stripDecorativeEmoji } from "../context/replyStyle.js";
+import { countNotes, scrubUnverified } from "../context/verify.js";
 import { cardBlock, cardsNote, detectCardTypes, fallbackUpiCard, finalizeCards, hasCardBlock } from "../context/cards.js";
 import { actionBlock, conversationLinks, hasActionBlock, openActionNote, openReply, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
@@ -239,7 +242,10 @@ chatRouter.post("/", async (req, res) => {
   });
   // Approximate location, worked out only for turns that need it (weather, "near me", prices...). The address is used for the lookup and dropped;
   // only the source and the country reach the log.
-  const geo = isLocationTurn(lastUserText) ? resolveLocation(req, { enabled: body.approxLocation, hints: body.locationHints, city: body.profile?.city }) : null;
+  // Route requests ("directions to X", a bare "Directions", "Nalasopara" after "where are you starting from?") are answered by the server.
+  const priorUsers = body.messages.filter((m) => m.role === "user").slice(0, -1).reverse().map((m) => m.content);
+  const dirAsk = lastUserText && latestIds.length === 0 && !body.roundTable ? parseDirections(lastUserText, priorUsers, [...body.messages].reverse().find((m) => m.role === "assistant")?.content) : null;
+  const geo = isLocationTurn(lastUserText) || dirAsk ? resolveLocation(req, { enabled: body.approxLocation, hints: body.locationHints, city: body.profile?.city }) : null;
   const geoRegion = regionOf(geo);
   if (geo) log.info("location", { requestId, ...locationLog(geo) });
   // Long-term memory: extraction runs in the background alongside generation; recall happens below.
@@ -302,6 +308,24 @@ chatRouter.post("/", async (req, res) => {
         summarize(Date.now());
         sse.send("done", { used: [], finishReason: "stop", latencyMs });
         log.info("chat", { requestId, model: "open-intent", latencyMs, status: 200 });
+        return;
+      }
+    }
+
+    // ---- directions: the Directions card straight away (no model, no questions; needs no device permission).
+    if (dirAsk?.pure) {
+      const deps = { countryCode: geo?.countryCode || undefined, approx: !dirAsk.origin && geo?.city ? { city: geo.city, region: geo.region } : null, signal: ctl.signal };
+      const built = await buildDirections(dirAsk, deps).catch(() => null);
+      if (ctl.signal.aborted) return;
+      if (built) {
+        log.info("directions card", { requestId, origin: dirAsk.origin ? "user" : deps.approx ? "approx" : "none", fromHistory: dirAsk.fromHistory });
+        sse.send("status", { phase: "generating" });
+        sse.send("delta", { text: directionsBlock(built) });
+        sse.send("usage", { promptTokens: 0, completionTokens: 0 });
+        const latencyMs = Date.now() - started;
+        summarize(Date.now());
+        sse.send("done", { used: [], finishReason: "stop", latencyMs });
+        log.info("chat", { requestId, model: "directions", latencyMs, status: 200 });
         return;
       }
     }
@@ -661,8 +685,12 @@ chatRouter.post("/", async (req, res) => {
     const actionsNote = deviceActionsMessage(body.deviceActions);
     if (actionsNote) prompt.push({ role: "system", content: actionsNote });
     // Action cards (place, event, alarm/timer, contact, product, ride, food, travel, UPI): each type's rule only when the turn's text calls for it.
-    const cardTypes = body.deviceActions && lastUserText ? detectCardTypes(lastUserText) : [];
-    const cardsRule = cardsNote(cardTypes);
+    // A route and/or a list of places (hotels in Lonavala) has its own rule and never depends on deviceActions (map links are read-only).
+    const placesQ = lastUserText ? placesQuery(lastUserText, dirAsk?.destination) : null;
+    const mapsTurn = !!dirAsk || !!placesQ;
+    const cardTypes = [...new Set([...(body.deviceActions && lastUserText ? detectCardTypes(lastUserText) : []), ...(mapsTurn ? (["place"] as const) : [])])];
+    const cardsRule = cardsNote(mapsTurn ? cardTypes.filter((t) => t !== "place") : cardTypes);
+    if (mapsTurn) prompt.push({ role: "system", content: routeNote({ directions: !!dirAsk, places: placesQ }) });
     if (cardsRule) prompt.push({ role: "system", content: cardsRule });
     const context = buildContextMessage(kbItems, webItems, docItems, githubItems);
     if (context) prompt.push({ role: "system", content: context });
@@ -893,6 +921,34 @@ chatRouter.post("/", async (req, res) => {
       }
       if (cardText !== text) {
         text = cardText;
+        sse.send("reset", { reason: "cards" });
+        sse.send("delta", { text });
+      }
+    }
+    // Reply rules the models keep breaking, enforced here: no repeated ask widget, no invented contact details, no heading emoji.
+    {
+      const lastReply = [...body.messages].reverse().find((m) => m.role === "assistant")?.content;
+      const sourceTexts = [
+        ...[...kbItems, ...webItems, ...docItems, ...githubItems].map((i) => `${i.title}\n${i.url}\n${i.text}\n${i.full ?? ""}`),
+        ...citations.map((c) => c.url),
+        ...body.messages.filter((m) => m.role === "user").map((m) => m.content),
+        body.screen?.text ?? "",
+        body.context ?? "",
+      ];
+      let cleaned = guardAsk(text, { userText: lastUserText, prevAssistant: lastReply });
+      cleaned = scrubUnverified(cleaned, sourceTexts);
+      cleaned = stripDecorativeEmoji(cleaned, lastUserText);
+      // The cards the server adds itself: the route (a mixed question) and a Maps search for a list of places.
+      if (dirAsk) {
+        const built = await buildDirections(dirAsk, { countryCode: geo?.countryCode || undefined, approx: !dirAsk.origin && geo?.city ? { city: geo.city, region: geo.region } : null, signal: ctl.signal }).catch(() => null);
+        if (built) cleaned = `${cleaned}\n\n${cardBlock(built.card)}`.trim();
+      }
+      const search = placesQ ? placesSearchCard(placesQ) : null;
+      if (search) cleaned = `${cleaned}\n\n${cardBlock(search)}`.trim();
+      if (cleaned !== text) {
+        const notes = countNotes(cleaned) - countNotes(text);
+        if (notes > 0) log.info("unverified contacts removed", { requestId, count: notes });
+        text = cleaned;
         sse.send("reset", { reason: "cards" });
         sse.send("delta", { text });
       }
