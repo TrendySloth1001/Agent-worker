@@ -482,6 +482,7 @@ chatRouter.post("/", async (req, res) => {
                 standalone: ctx.rewrittenBy === "model" ? ctx.standalone : undefined,
                 topics: topicTerms(ctx, "web"),
               },
+              conversationId: body.conversationId,
               signal: ctl.signal,
             })
           : Promise.resolve([]),

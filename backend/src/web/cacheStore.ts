@@ -10,9 +10,28 @@ import type { Candidate, Freshness } from "./types.js";
 /** Query text as a cache identity: case, punctuation, quotes and spacing removed. */
 export const normalizeQuery = (query: string) => query.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
-/** Cache identity: provider, freshness class, language and the normalized query. */
+const STOP = new Set(["a", "an", "the", "of", "in", "on", "at", "to", "for", "is", "are", "was", "were", "and", "or", "do", "does", "did", "what", "whats", "who", "how", "me", "about", "please", "tell"]);
+
+/** The meaningful words of a query (no stop words), as a set: the basis of near-same query matching. */
+export const queryTerms = (query: string): Set<string> => new Set(normalizeQuery(query).split(" ").filter((t) => t && !STOP.has(t)));
+
+/** Word-order and filler independent query identity: "the price of X" and "X price" share a cache entry. */
+export function queryIdentity(query: string): string {
+  const t = [...queryTerms(query)].sort();
+  return t.length ? t.join(" ") : normalizeQuery(query);
+}
+
+/** Jaccard similarity of two term sets. */
+export function termOverlap(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let n = 0;
+  for (const t of a) if (b.has(t)) n++;
+  return n / (a.size + b.size - n);
+}
+
+/** Cache identity: provider, freshness class, language and the query's identity (hashed before it is stored). */
 export function searchCacheKey(provider: string, fresh: Freshness, query: string, lang?: string): string {
-  return `${provider}|${fresh}${lang && lang !== "en" ? `|${lang}` : ""}|${normalizeQuery(query)}`.slice(0, 400);
+  return `${provider}|${fresh}${lang && lang !== "en" ? `|${lang}` : ""}|${queryIdentity(query)}`.slice(0, 400);
 }
 
 let lastPurge = 0;
