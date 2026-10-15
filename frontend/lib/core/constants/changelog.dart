@@ -117,6 +117,29 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.12.2',
+      date: '15 Oct 2026',
+      headline: 'Drive, opened up',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Drive previews',
+          detail:
+              'Drive files open right in sparky, with the original and '
+              "sparky's view side by side.",
+          icon: HugeIcons.strokeRoundedGoogleDrive,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Pick folders',
+          detail:
+              'Select folders and many files at once. If Google keeps a '
+              'folder closed, sparky opens it so you can pick inside.',
+          icon: HugeIcons.strokeRoundedFolderAdd,
+        ),
+      ],
+    ),
+    (
       version: '1.12.1',
       date: '15 Oct 2026',
       headline: 'Two ways to look',
