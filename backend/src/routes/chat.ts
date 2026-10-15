@@ -773,7 +773,7 @@ chatRouter.post("/", async (req, res) => {
     const turnSends = { sends: 0 };
     const generate = (models: string[], messages: Message[]) =>
       withTelemetry({ purpose: table ? "table-chair" : "chat" }, async () => {
-        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs, ...(factualTurn ? { temperature: FACTUAL_TEMPERATURE } : {}) });
+        const r = await runChat(models, messages, ctl.signal, chatHooks, auto || !!table, { maxTokens, firstTokenMs, turn: turnSends, ...(factualTurn ? { temperature: FACTUAL_TEMPERATURE } : {}) });
         const held = toolGuard.flush();
         if (held) show(held);
         return r;

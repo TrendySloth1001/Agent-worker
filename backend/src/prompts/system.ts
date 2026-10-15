@@ -174,12 +174,12 @@ export type PromptNeeds = {
 const HTML_NEED_RE = /\b(html|web ?page|landing|dashboard|cheat ?sheet|mock-?up|demo|interactive|website|\bui\b|form|game|calculator app)\b/i;
 // An owner/repo needs letters on both sides ("24/7" and "w/o" are not repos); links other than github.com are ignored
 // (a YouTube or Spotify link must not pull in the GitHub rules).
-const GITHUB_NEED_RE = /\b(github|git|repos?|repositor(y|ies)|commits?|branch(es)?|pull requests?|prs?|issues?|merge[ds]?|fork(s|ed)?|diff)\b|(?<![\w./])[A-Za-z][\w.-]+\/[A-Za-z][\w.-]+/i;
+const GITHUB_NEED_RE = /\b(github|git (graph|log|history|blame|branches)|repos?|repositor(y|ies)|commits?|branch(es)?|pull requests?|prs?|(open|closed|github) issues?|issues? (tracker|list)|forks?|forked)\b|(?<![\w./])[A-Za-z][\w.-]+\/[A-Za-z][\w.-]+/i;
 const NON_GITHUB_URL = /\bhttps?:\/\/(?!(?:www\.)?github\.com\/)\S+|\b(?!github\.com)(?:[\w-]+\.)+[a-z]{2,}\/\S*/gi;
 
 /** Whether [text] is about GitHub (its rules and live cards are worth the prompt space). */
 export const needsGithub = (text: string): boolean => GITHUB_NEED_RE.test(text.replace(NON_GITHUB_URL, " "));
-const WIDGET_NEED_RE = /\b(quiz|test me|flash ?cards?|calculat\w*|chart|graph|plot|visuali[sz]\w*|timeline|history of|roadmap|stats|kpi|metrics|checklist|to-?do|compare|comparison|vs\.?|versus|pros|cons|tree|hierarch\w*|structure|progress|rating|score|flow|diagram|steps?|process|trend|breakdown|share)\b/i;
+const WIDGET_NEED_RE = /\b(quiz|test me|flash ?cards?|calculat\w*|chart|graph|plot|visuali[sz]\w*|timeline|history of|roadmap|stats|kpi|metrics|checklist|to-?do|compare|comparison|vs\.?|versus|pros|cons|tree|hierarch\w*|progress|rating|flow|diagram|steps?|trend|breakdown)\b/i;
 
 /** Whether the user's text asks for a widget (chart, quiz, checklist...) by name. */
 export const asksForWidget = (text: string): boolean => WIDGET_NEED_RE.test(text);
@@ -187,7 +187,8 @@ export const asksForWidget = (text: string): boolean => WIDGET_NEED_RE.test(text
 /** Which optional sections a request needs, from the user's recent text. */
 export function promptNeeds(text: string, hasGithubContext = false, intent?: IntentResult): PromptNeeds {
   // Small talk needs none of the optional sections.
-  if (intent && intent.top === "chitchat" && !intent.uncertain && intent.confidence >= 0.6) return { html: false, github: hasGithubContext, widgetExamples: false };
+  // (the rich-block catalogue goes too: ~5.6k characters, about 30% of the prompt, that a greeting never uses).
+  if (intent && intent.top === "chitchat" && !intent.uncertain && intent.confidence >= 0.6) return { html: false, github: hasGithubContext, widgetExamples: false, compact: !hasGithubContext };
   const i = (l: Parameters<typeof hasIntent>[1]) => !!intent && hasIntent(intent, l, 0.6);
   return {
     html: HTML_NEED_RE.test(text) || i("ui"),

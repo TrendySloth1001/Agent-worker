@@ -89,7 +89,7 @@ test("two providers saturated: the turn is still answered within 3 sends", async
 
 test("429 storm on the first candidates: a cold turn sends at most 3 full prompts", async () => {
   // Everything except one late Ollama model is rate limited.
-  const open = new Set(["ollama:nemotron-3-ultra"]);
+  const open = new Set(["groq:openai/gpt-oss-20b"]);
   const t: Tally = { sends: 0, tokens: 0, failed429: 0 };
   await runTurn("coding", t, (id) => !open.has(id));
   console.log(`[turn-cost] storm cold turn: sends=${t.sends} tokens=${t.tokens} 429s=${t.failed429}`);
@@ -97,7 +97,7 @@ test("429 storm on the first candidates: a cold turn sends at most 3 full prompt
 });
 
 test("429 storm: later turns skip cooling models and cost <= 4 sends", async () => {
-  const open = new Set(["ollama:nemotron-3-ultra"]);
+  const open = new Set(["groq:openai/gpt-oss-20b"]);
   const total: Tally = { sends: 0, tokens: 0, failed429: 0 };
   let answered = 0;
   let maxSends = 0;
