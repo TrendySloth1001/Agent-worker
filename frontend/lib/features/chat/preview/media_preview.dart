@@ -11,8 +11,10 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../data/drive_ref.dart';
 import '../../../data/file_cache.dart';
 import '../../../data/files_api.dart';
+import '../../auth/auth_controller.dart';
 import '../widgets/attachment_views.dart';
 import '../widgets/image_strip.dart';
 import 'preview_actions.dart';
@@ -60,6 +62,16 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen>
         : await FileCache.instance.cached(f);
     if (cached != null) {
       c = VideoPlayerController.file(cached);
+    } else if (f.isDrive) {
+      // Streams from sparky's Drive proxy (ranges supported) with the app's
+      // own session; Google's token never leaves the server.
+      final auth = AuthController.instance;
+      await auth.ensureFresh();
+      final token = auth.accessToken;
+      c = VideoPlayerController.networkUrl(
+        Uri.parse(DriveRef.proxyUrl(f.id)),
+        httpHeaders: {if (token != null) 'Authorization': 'Bearer $token'},
+      );
     } else {
       final url = await _readyUrl(f, force: force);
       if (!mounted) return;

@@ -11,6 +11,7 @@ abstract final class PreviewStrings {
   static const download = 'DOWNLOAD';
   static const openWith = 'OPEN WITH…';
   static const info = 'FILE INFO';
+  static const addToKb = 'ADD TO KNOWLEDGE';
   static const delete = 'DELETE';
   static const more = 'MORE';
 
@@ -147,6 +148,7 @@ abstract final class PreviewConfig {
 
   /// Preferences key prefix: the last view picked for each type of file.
   static const viewPrefsKey = 'preview.view.';
+
   /// Folder inside the app cache directory.
   static const cacheFolder = 'previews';
 

@@ -9,10 +9,11 @@ import '../../core/time_ago.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/m3_kit_extras.dart';
 import '../../data/connect_api.dart';
+import '../../data/drive_ref.dart';
+import '../chat/preview/file_preview.dart';
 import '../github/widgets/gh_rows.dart';
 import '../settings/widgets/settings_kit.dart';
 import 'connector_controllers.dart';
-import 'drive_file_screen.dart';
 import 'widgets/connector_kit.dart';
 
 enum DriveFilter { all, docs, sheets, pdfs, other }
@@ -25,7 +26,8 @@ const _gslides = 'application/vnd.google-apps.presentation';
 const _pdf = 'application/pdf';
 const _docx =
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const _xlsx = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const _xlsx =
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const _pptx =
     'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
@@ -61,11 +63,10 @@ bool driveMatches(DriveFile f, DriveFilter filter) => switch (filter) {
   DriveFilter.other => !{_gdoc, _gsheet, _pdf}.contains(f.mimeType),
 };
 
+/// Opens a Drive file in the unified preview (Original | sparky).
 void openDriveFile(BuildContext context, DriveFile f) {
-  Haptics.tap();
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (_) => DriveFileScreen(file: f)));
+  final info = DriveRef.toFileInfo(f);
+  openFilePreview(context, [info], info);
 }
 
 /// One file row: type icon, name, "Google Doc · 3h ago", chevron.
@@ -82,10 +83,7 @@ class DriveFileTile extends StatelessWidget {
     final m = file.modified;
     return SettingsTile(
       icon: driveIcon(file),
-      leading: ConnectorRowIcon(
-        icon: driveIcon(file),
-        imageUrl: file.iconLink,
-      ),
+      leading: ConnectorRowIcon(icon: driveIcon(file), imageUrl: file.iconLink),
       title: file.name,
       summary: m == null
           ? kind

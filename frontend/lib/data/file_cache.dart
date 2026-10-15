@@ -7,7 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import '../core/constants/app_files.dart';
 import '../core/constants/error_copy.dart';
 import '../core/constants/preview.dart';
+import 'api_client.dart';
 import 'chat_api.dart';
+import 'drive_ref.dart';
 import 'files_api.dart';
 
 /// Which stored copy of a file: the original or the small poster.
@@ -44,9 +46,12 @@ class FileCache {
   Future<Directory> _dir(String id, FileVariant v) async {
     final root = await _root();
     return Directory(
-      '${root.path}${Platform.pathSeparator}$id${Platform.pathSeparator}${v.name}',
+      '${root.path}${Platform.pathSeparator}${_folder(id)}${Platform.pathSeparator}${v.name}',
     );
   }
+
+  static String _folder(String id) =>
+      DriveRef.isDrive(id) ? DriveRef.dirName(id) : id;
 
   /// The cached file when it is already on disk.
   Future<File?> cached(
@@ -124,6 +129,16 @@ class FileCache {
       '${dir.path}${Platform.pathSeparator}${safeFileName(f.name)}',
     );
     Object? last;
+    if (DriveRef.isDrive(f.id)) {
+      // Drive bytes come through sparky's backend (signed in, per user).
+      try {
+        await _write(DriveRef.proxyUrl(f.id), target, onProgress, authed: true);
+        unawaited(_trim());
+        return target;
+      } on _Refused catch (e) {
+        throw ApiException(ErrorCopy.downloadFailed, status: e.status);
+      }
+    }
     for (final force in const [false, true]) {
       final info = await _info(f.id, force: force);
       final url = variant == FileVariant.thumb ? info.thumbUrl : info.url;
@@ -145,10 +160,12 @@ class FileCache {
   Future<void> _write(
     String url,
     File target,
-    void Function(double)? onProgress,
-  ) async {
+    void Function(double)? onProgress, {
+    bool authed = false,
+  }) async {
     final part = File('${target.path}.part');
-    final client = _client();
+    final inner = _client();
+    final http.Client client = authed ? AuthClient(inner) : inner;
     try {
       final r = await client
           .send(http.Request('GET', Uri.parse(url)))
@@ -174,6 +191,7 @@ class FileCache {
       rethrow;
     } finally {
       client.close();
+      if (authed) inner.close();
     }
   }
 
@@ -196,7 +214,9 @@ class FileCache {
   /// Forgets what is cached for one file (after it was deleted or renamed).
   Future<void> evict(String id) async {
     final root = await _root();
-    final dir = Directory('${root.path}${Platform.pathSeparator}$id');
+    final dir = Directory(
+      '${root.path}${Platform.pathSeparator}${_folder(id)}',
+    );
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 

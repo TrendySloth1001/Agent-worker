@@ -14,6 +14,9 @@ import '../../../data/files_api.dart';
 import '../../settings/widgets/dot_matrix.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/constants/preview.dart';
+import '../../../core/constants/connectors.dart';
+import '../../../data/drive_ref.dart';
+import '../../connectors/connector_actions.dart';
 import 'file_actions.dart';
 import 'file_info.dart';
 import 'preview_view.dart';
@@ -174,7 +177,7 @@ class PreviewMessage extends StatelessWidget {
   }
 }
 
-enum _MenuAction { share, download, openWith, copyLink, info, delete }
+enum _MenuAction { share, download, openWith, copyLink, info, addToKb, delete }
 
 /// ASK SPARKY button and the overflow menu (share, download, open with,
 /// copy link, info, delete) shared by every preview app bar.
@@ -208,6 +211,11 @@ class PreviewMenu extends StatelessWidget {
             _MenuAction.openWith => openFileWith(context, file),
             _MenuAction.copyLink => _copyLink(context, file),
             _MenuAction.info => showFileInfoSheet(context, file),
+            _MenuAction.addToKb => addItemToKnowledge(
+              context,
+              provider: ConnectorIds.drive,
+              id: file.driveFileId ?? '',
+            ),
             _MenuAction.delete => deleteFileWithConfirm(context, file),
           },
           itemBuilder: (_) => [
@@ -225,6 +233,12 @@ class PreviewMenu extends StatelessWidget {
               ),
               (_MenuAction.copyLink, AppIcons.link, AppStrings.previewCopyLink),
               (_MenuAction.info, PreviewIcons.info, PreviewStrings.info),
+              if (file.isDrive)
+                (
+                  _MenuAction.addToKb,
+                  AppIcons.knowledge,
+                  PreviewStrings.addToKb,
+                ),
             ])
               if (a != _MenuAction.copyLink || file.id.isNotEmpty)
                 PopupMenuItem(

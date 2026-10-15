@@ -621,7 +621,8 @@ test("picker: start, page without API key, done verifies picked files once", asy
     apiKey: () => key,
     clientId: () => CLIENT,
     baseUrl: () => "https://sparky.example",
-    verify: async (_u, id) => id !== "gone123456789",
+    inspect: async (_u, id) => (id === "gone123456789" ? null : { id, name: id, folder: false, supported: true }),
+    children: async () => ({ ok: false, status: 403, items: [] }),
   });
   const s = await p.start("u1");
   const ticket = new URL(s.url).searchParams.get("ticket")!;

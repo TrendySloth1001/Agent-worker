@@ -12,6 +12,8 @@ import '../core/constants/app_files.dart';
 import 'chat_api.dart';
 import 'file_insight.dart';
 import 'api_client.dart';
+import 'connect_api.dart';
+import 'drive_ref.dart';
 
 enum FileKind { image, document, video, audio }
 
@@ -344,6 +346,13 @@ class FilesApi {
 
   /// Fresh signed URLs; cached for most of an hour.
   Future<FileInfo> get(String id, {bool force = false}) {
+    if (DriveRef.isDrive(id)) {
+      // A Drive item is built by the Drive screens; its link is Google's.
+      final known = DriveRef.known(id);
+      return known == null
+          ? Future.error(const ApiException(ErrorCopy.generic, status: 404))
+          : Future.value(known);
+    }
     final hit = _cache[id];
     // A file still processing gets its poster and duration later: refetch.
     if (!force &&
@@ -377,6 +386,13 @@ class FilesApi {
     int limit = AppFiles.textPreviewLimit,
     int offset = 0,
   }) async {
+    if (DriveRef.isDrive(id)) {
+      return ConnectApi.instance.driveText(
+        DriveRef.fileIdOf(id),
+        offset: offset,
+        limit: limit,
+      );
+    }
     final response = await _client
         .get(
           _uri('/files/$id/text?limit=$limit&offset=$offset'),
@@ -398,6 +414,9 @@ class FilesApi {
 
   /// What sparky understands about a file as stored (no model is called).
   Future<InsightData> insight(String id) async {
+    if (DriveRef.isDrive(id)) {
+      return ConnectApi.instance.driveInsight(DriveRef.fileIdOf(id));
+    }
     final r = await _client
         .get(_uri('/files/$id/insight'), headers: apiHeaders())
         .timeout(AppFiles.requestTimeout);
@@ -408,6 +427,12 @@ class FilesApi {
   /// Has sparky read the file (summary, caption, frame descriptions) and
   /// keeps the result. Slow: a model is called.
   Future<InsightData> generateInsight(String id, {bool force = false}) async {
+    if (DriveRef.isDrive(id)) {
+      return ConnectApi.instance.driveGenerateInsight(
+        DriveRef.fileIdOf(id),
+        force: force,
+      );
+    }
     final r = await _client
         .post(
           _uri('/files/$id/insight'),

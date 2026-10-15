@@ -21,6 +21,14 @@ import { userMessage } from "../../util/userMessages.js";
 export const PICKER_PATH = "/connect/google_drive/picker";
 export const PICKER_TTL_MS = 10 * 60_000;
 export const MAX_PICKED = 50;
+/** Files imported from picked folders (all folders together). */
+export const MAX_IMPORT = 50;
+export const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+/** A Drive item as the picker sees it. */
+export type PickedItem = { id: string; name: string; folder: boolean; supported: boolean };
+/** What the picked set came to. [fallback] are folders sparky cannot list: the user picks inside them. */
+export type Expansion = { picked: number; imported: number; skipped: number; folders: number; fallback: Array<{ id: string; name: string }> };
 
 /** The Cloud project number, the leading digits of the OAuth client id (Picker's appId). */
 export function projectNumber(clientId: string | undefined): string | null {
@@ -35,8 +43,10 @@ export type PickerDeps = {
   apiKey: () => string | undefined;
   clientId: () => string | undefined;
   baseUrl: () => string;
-  /** Confirms sparky can see [id] now (the Picker granted it). */
-  verify: (userId: string, id: string) => Promise<boolean>;
+  /** The item behind [id] when sparky can see it now (the Picker granted it), else null. */
+  inspect: (userId: string, id: string) => Promise<PickedItem | null>;
+  /** Lists a folder's direct children the token can see. Under drive.file this is usually denied or empty. */
+  children: (userId: string, folderId: string) => Promise<{ ok: boolean; status: number; items: PickedItem[] }>;
 };
 
 export type PickerView =
@@ -83,19 +93,71 @@ export function createPicker(deps: PickerDeps) {
     }
   }
 
-  /** The page reports the picked ids (none = cancelled). Returns the deep link back. */
-  async function done(ticket: string, ids: string[]): Promise<{ link: string; picked: number }> {
-    const row = await deps.store.claim("google_drive", "picker", sha256(ticket), new Date(deps.now())).catch(() => null);
-    if (!row) throw new AppError(400, "invalid_ticket", "This picker link expired. Start again from sparky.");
-    const unique = [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{10,200}$/.test(id)))].slice(0, MAX_PICKED);
-    let picked = 0;
-    for (const id of unique) if (await deps.verify(row.userId, id).catch(() => false)) picked++;
-    await deps.store.ready(row.id, sha256(randomBytes(16).toString("hex")), new Date(deps.now()), { login: "", picked }).catch(() => undefined);
-    log.info("drive picker done", { picked, asked: unique.length });
-    return { picked, link: connectDeepLink({ provider: "google_drive", mode: "picker", picked: String(picked), state: row.codeVerifier }) };
+  const cleanIds = (ids: string[]) => [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{10,200}$/.test(id)))].slice(0, MAX_PICKED);
+
+  /**
+   * Turns the picked ids into counts: files sparky can see, folders listed (files inside imported up to
+   * MAX_IMPORT, unsupported types skipped) and folders it cannot list (the fallback). [handled] folders had
+   * their files picked inside them already. Logs only whether listing worked, never names or ids.
+   */
+  async function expand(userId: string, ids: string[], handled: string[] = []): Promise<Expansion> {
+    const items = (await Promise.all(cleanIds(ids).map((id) => deps.inspect(userId, id).catch(() => null)))).filter((i): i is PickedItem => !!i);
+    const seen = new Set(items.filter((i) => !i.folder).map((i) => i.id));
+    const folders = items.filter((i) => i.folder);
+    const out: Expansion = { picked: seen.size, imported: 0, skipped: 0, folders: folders.length, fallback: [] };
+    for (const f of folders) {
+      if (handled.includes(f.id)) continue;
+      const r = await deps.children(userId, f.id).catch(() => ({ ok: false, status: 0, items: [] as PickedItem[] }));
+      const kids = r.items.filter((i) => !i.folder);
+      log.info("drive folder listing", { ok: r.ok, status: r.status, children: kids.length });
+      if (!r.ok || kids.length === 0) {
+        out.fallback.push({ id: f.id, name: f.name });
+        continue;
+      }
+      for (const k of kids) {
+        if (seen.has(k.id)) continue;
+        if (!k.supported || out.imported >= MAX_IMPORT) {
+          out.skipped++;
+          continue;
+        }
+        seen.add(k.id);
+        out.imported++;
+      }
+    }
+    return out;
   }
 
-  return { start, view, done };
+  /** The folders still to open in the picker, without ending the session (the ticket stays valid). */
+  async function resolve(ticket: string, ids: string[]): Promise<Expansion> {
+    const row = await deps.store.peek("google_drive", "picker", sha256(ticket), new Date(deps.now())).catch(() => null);
+    if (!row) throw new AppError(400, "invalid_ticket", "This picker link expired. Start again from sparky.");
+    return expand(row.userId, ids);
+  }
+
+  /** The page reports the picked ids (none = cancelled). Returns the deep link back. */
+  async function done(ticket: string, ids: string[], handled: string[] = []): Promise<Expansion & { link: string }> {
+    const row = await deps.store.claim("google_drive", "picker", sha256(ticket), new Date(deps.now())).catch(() => null);
+    if (!row) throw new AppError(400, "invalid_ticket", "This picker link expired. Start again from sparky.");
+    const e = await expand(row.userId, ids, handled);
+    await deps.store.ready(row.id, sha256(randomBytes(16).toString("hex")), new Date(deps.now()), { login: "", picked: e.picked + e.imported }).catch(() => undefined);
+    log.info("drive picker done", { picked: e.picked, imported: e.imported, skipped: e.skipped, folders: e.folders, limited: e.fallback.length, asked: cleanIds(ids).length });
+    const n = (v: number) => (v > 0 ? String(v) : null);
+    return {
+      ...e,
+      link: connectDeepLink({
+        provider: "google_drive",
+        mode: "picker",
+        picked: String(e.picked),
+        imported: n(e.imported),
+        skipped: n(e.skipped),
+        folders: n(e.folders),
+        limited: n(e.fallback.length),
+        state: row.codeVerifier,
+      }),
+    };
+  }
+
+  return { start, view, resolve, done };
 }
 
 export type Picker = ReturnType<typeof createPicker>;
@@ -147,7 +209,7 @@ export function pickerPage(v: PickerView, nonce: string): string {
       v.link ? `<a class="btn" href="${esc(v.link)}">RETURN TO SPARKY</a>` : ""
     }</main></body></html>`;
   }
-  const cfg = { token: v.token, key: v.apiKey, appId: v.appId, origin: v.origin, ticket: v.ticket, done: `${v.origin}${PICKER_PATH}/done` };
+  const cfg = { token: v.token, key: v.apiKey, appId: v.appId, origin: v.origin, ticket: v.ticket, base: `${v.origin}${PICKER_PATH}` };
   return `${head("Pick files from Drive")}<body><main><div class="mark">● sparky · google drive</div><h1>Pick files for sparky</h1>
 <div class="spin" id="spin" aria-hidden="true"></div><p id="lead">Opening Google Drive… sparky will only see the files you choose here.</p>
 <button id="again" type="button" hidden>OPEN DRIVE AGAIN</button></main>
@@ -156,18 +218,51 @@ export function pickerPage(v: PickerView, nonce: string): string {
 (function(){
   var cfg=JSON.parse(document.getElementById("cfg").textContent);
   var lead=document.getElementById("lead"), again=document.getElementById("again"), spin=document.getElementById("spin"), sent=false;
+  var FOLDER="application/vnd.google-apps.folder", all=[], handled=[];
+  function post(path,body){
+    return fetch(cfg.base+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();});
+  }
   function finish(ids){
     if(sent)return; sent=true; lead.textContent=ids.length?"Saving your picks…":"Going back to sparky…";
-    fetch(cfg.done,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:cfg.ticket,ids:ids})})
-      .then(function(r){return r.json();})
+    post("/done",{ticket:cfg.ticket,ids:ids,handled:handled})
       .then(function(j){ if(j&&j.link){location.replace(j.link);} else {lead.textContent=(j&&j.error&&j.error.message)||"Something went wrong. Go back to sparky and try again.";} })
       .catch(function(){lead.textContent="Could not reach sparky. Go back to the app and try again.";});
   }
+  function busy(text){document.body.classList.remove("picking");spin.hidden=false;lead.textContent=text;}
+  // Google lets sparky open only what is picked: for a folder it cannot list, open the picker inside it.
+  function pickInFolders(queue){
+    if(!queue.length){finish(all);return;}
+    var f=queue.shift(), P=google.picker;
+    var view=new P.DocsView(P.ViewId.DOCS).setMode(P.DocsViewMode.LIST).setParent(f.id).setIncludeFolders(false);
+    new P.PickerBuilder().setOAuthToken(cfg.token).setDeveloperKey(cfg.key).addView(view)
+      .enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
+      .setOrigin(cfg.origin).setTitle("Pick files in "+f.name)
+      .setSize(Math.max(320,window.innerWidth),Math.max(400,window.innerHeight))
+      .setCallback(function(d){
+        if(d.action===P.Action.LOADED){document.body.classList.add("picking");}
+        else if(d.action===P.Action.PICKED){
+          busy("Next…");
+          var got=(d.docs||[]).map(function(x){return x.id;});
+          if(got.length){all=all.concat(got);handled.push(f.id);}
+          pickInFolders(queue);
+        }
+        else if(d.action===P.Action.CANCEL){busy("Next…");pickInFolders(queue);}
+      }).build().setVisible(true);
+  }
+  function picked(docs){
+    var ids=docs.map(function(x){return x.id;});
+    all=ids;
+    if(!docs.some(function(x){return x.mimeType===FOLDER;})){finish(ids);return;}
+    busy("Looking inside your folders…");
+    post("/resolve",{ticket:cfg.ticket,ids:ids})
+      .then(function(j){pickInFolders(((j&&j.fallback)||[]).slice());})
+      .catch(function(){finish(ids);});
+  }
   function open(){
     var P=google.picker, list=P.DocsViewMode.LIST;
-    // Files first (newest on top, list rows read well on a phone), then folders to browse, then upload.
+    // Files first (newest on top, list rows read well on a phone), then folders (selectable: sparky lists what Google allows, else asks for the files inside), then upload.
     var files=new P.DocsView(P.ViewId.DOCS).setMode(list).setIncludeFolders(false).setLabel("Files");
-    var folders=new P.DocsView(P.ViewId.FOLDERS).setMode(list).setIncludeFolders(true).setSelectFolderEnabled(false).setLabel("Folders");
+    var folders=new P.DocsView(P.ViewId.FOLDERS).setMode(list).setIncludeFolders(true).setSelectFolderEnabled(true).setLabel("Folders");
     var shared=new P.DocsView(P.ViewId.DOCS).setMode(list).setOwnedByMe(false).setLabel("Shared with me");
     var b=new P.PickerBuilder().setOAuthToken(cfg.token).setDeveloperKey(cfg.key)
       .addView(files).addView(folders).addView(shared).addView(new P.DocsUploadView())
@@ -176,8 +271,8 @@ export function pickerPage(v: PickerView, nonce: string): string {
       .setSize(Math.max(320,window.innerWidth),Math.max(400,window.innerHeight))
       .setCallback(function(d){
         if(d.action===P.Action.LOADED){document.body.classList.add("picking");}
-        if(d.action===P.Action.PICKED){document.body.classList.remove("picking");spin.hidden=false;finish((d.docs||[]).map(function(x){return x.id;}));}
-        else if(d.action===P.Action.CANCEL){document.body.classList.remove("picking");spin.hidden=false;finish([]);}
+        if(d.action===P.Action.PICKED){busy("Saving your picks…");picked(d.docs||[]);}
+        else if(d.action===P.Action.CANCEL){busy("Going back to sparky…");finish([]);}
       });
     if(cfg.appId)b.setAppId(cfg.appId);
     b.build().setVisible(true);
@@ -191,6 +286,16 @@ export function pickerPage(v: PickerView, nonce: string): string {
 </script></body></html>`;
 }
 
+/** A Drive file as the picker counts it: folders apart, and only readable kinds or images/media are worth importing. */
+export function pickedItem(f: { id: string; name: string; mimeType: string; kind: string }): PickedItem {
+  return {
+    id: f.id,
+    name: f.name,
+    folder: f.mimeType === FOLDER_MIME,
+    supported: f.kind !== "none" || /^(image|video|audio)\//.test(f.mimeType),
+  };
+}
+
 export const picker = createPicker({
   store: prismaFlowStore,
   tokens: connectorTokens,
@@ -198,9 +303,13 @@ export const picker = createPicker({
   apiKey: () => config.googlePickerApiKey,
   clientId: () => config.google.webClientId,
   baseUrl: () => config.publicBaseUrl,
-  verify: async (userId, id) => {
+  inspect: async (userId, id) => {
     const { drive } = await import("./drive.js");
-    await drive.meta(userId, id);
-    return true;
+    return pickedItem(await drive.meta(userId, id));
+  },
+  children: async (userId, folderId) => {
+    const { drive } = await import("./drive.js");
+    const r = await drive.children(userId, folderId, MAX_IMPORT * 2);
+    return { ok: r.ok, status: r.status, items: r.files.map(pickedItem) };
   },
 });
