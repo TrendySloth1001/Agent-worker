@@ -2,6 +2,7 @@ package com.sparky.app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -136,6 +137,17 @@ class MainActivity : FlutterActivity() {
         // In-app updates: install permission and the PackageInstaller hand-over.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Updater.CHANNEL)
             .setMethodCallHandler(Updater(this))
+        // Recovery vault: FLAG_SECURE while the key is on screen (no screenshots).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sparky/secure_screen")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "setSecure") return@setMethodCallHandler result.notImplemented()
+                if (call.argument<Boolean>("on") == true) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+                result.success(null)
+            }
         // Crash reports: the saved uncaught exception and the previous process's exit reason.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CrashRecorder.CHANNEL)
             .setMethodCallHandler(CrashRecorder(this))
