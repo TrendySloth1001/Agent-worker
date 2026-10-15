@@ -84,6 +84,9 @@ export class WriterPool {
 
   /** The best free model for [tokens], or the shortest wait until one frees up. */
   private pick(tokens: number, excluded: Set<string>): { model: string } | { waitMs: number } {
+    // When every candidate is burned, waiting helps nobody: go on with them (the provider decides).
+    const open = this.models.filter((m) => !excluded.has(m));
+    const allBurned = open.length > 0 && open.every((m) => this.isBurned(m));
     let wait = Number.POSITIVE_INFINITY;
     let best: { model: string; load: number; used: number; idx: number } | null = null;
     this.models.forEach((model, idx) => {
@@ -91,7 +94,7 @@ export class WriterPool {
       const p = providerOf(model);
       const load = this.inFlight.get(p) ?? 0;
       if (load >= this.perProvider) return void (wait = Math.min(wait, 250));
-      if (this.isBurned(model)) return void (wait = Math.min(wait, (this.burned.get(scopeOf(model)) ?? 0) - this.deps.now()));
+      if (!allBurned && this.isBurned(model)) return void (wait = Math.min(wait, (this.burned.get(scopeOf(model)) ?? 0) - this.deps.now()));
       const h = this.deps.headroom(model, tokens);
       if (!h.ok) return void (wait = Math.min(wait, Math.max(h.waitMs, 100)));
       const cand = { model, load, used: this.lastUsed.get(p) ?? 0, idx };
