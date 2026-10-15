@@ -86,6 +86,21 @@ abstract final class Browsers {
     }
   }
 
+  /// "Open with…" for a file cached under the app's previews folder.
+  /// False when no app can open it (or off Android).
+  static Future<bool> openFile(String path, String mime) async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('openFile', {
+            'path': path,
+            'mime': mime,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Opens an HTML document in [package]. False when nothing could show it.
   static Future<bool> openHtml(
     String html, {
