@@ -25,7 +25,9 @@ export type PlaceInfo = {
 /** Sent with every request; override the contact with NOMINATIM_CONTACT (a URL or e-mail). */
 export const userAgent = (): string => `sparky-chat/1.0 (${process.env.NOMINATIM_CONTACT?.trim() || "https://sparky.cloudnsofts.com"})`;
 
-export const searchUrl = (query: string) => `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=1&addressdetails=1&extratags=1&accept-language=en`;
+/** [countryCode] (ISO alpha-2) biases the answer to that country (`countrycodes`); coordinates are never used. */
+export const searchUrl = (query: string, countryCode?: string) =>
+  `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=1&addressdetails=1&extratags=1&accept-language=en${countryCode ? `&countrycodes=${countryCode.toLowerCase()}` : ""}`;
 
 type Row = {
   lat?: string;
@@ -105,16 +107,27 @@ const mem = new TtlLru<PlaceInfo | null>(500);
 const isStored = (v: unknown): v is { place: PlaceInfo | null } => !!v && typeof v === "object" && "place" in (v as object);
 
 /** Cache identity of a query. */
-export const placeKey = (query: string) => `nominatim|${normalizeQuery(query).slice(0, 200)}`;
+export const placeKey = (query: string, countryCode?: string) => `nominatim|${countryCode ? `${countryCode.toLowerCase()}|` : ""}${normalizeQuery(query).slice(0, 200)}`;
 
 /**
  * The place for [query]: cache first, else one paced live request. Null when
  * unknown or when the request fails (a failure is not cached).
  */
-export async function lookupPlace(query: string, o: { fetch?: GeoFetch; signal?: AbortSignal; shared?: boolean; sleep?: (ms: number) => Promise<void>; now?: () => number } = {}): Promise<PlaceInfo | null> {
+export async function lookupPlace(query: string, o: LookupOpts = {}): Promise<PlaceInfo | null> {
   const q = clip(query, 200);
   if (q.length < 2) return null;
-  const key = placeKey(q);
+  // Near the user first (their country), then anywhere: asking about a place abroad still works.
+  if (o.countryCode) {
+    const near = await lookupOnce(q, o, o.countryCode);
+    if (near) return near;
+  }
+  return lookupOnce(q, o);
+}
+
+export type LookupOpts = { fetch?: GeoFetch; signal?: AbortSignal; shared?: boolean; sleep?: (ms: number) => Promise<void>; now?: () => number; countryCode?: string };
+
+async function lookupOnce(q: string, o: LookupOpts, countryCode?: string): Promise<PlaceInfo | null> {
+  const key = placeKey(q, countryCode);
   const shared = o.shared ?? !o.fetch;
   if (shared) {
     const hit = mem.get(key);
@@ -126,7 +139,7 @@ export async function lookupPlace(query: string, o: { fetch?: GeoFetch; signal?:
     }
   }
   try {
-    const json = await paced(() => (o.fetch ?? defaultFetch)(searchUrl(q), { "User-Agent": userAgent(), Accept: "application/json" }, o.signal), { sleep: o.sleep, now: o.now });
+    const json = await paced(() => (o.fetch ?? defaultFetch)(searchUrl(q, countryCode), { "User-Agent": userAgent(), Accept: "application/json" }, o.signal), { sleep: o.sleep, now: o.now });
     const place = mapNominatim(json);
     if (shared) {
       mem.set(key, place, place ? HIT_TTL : MISS_TTL);

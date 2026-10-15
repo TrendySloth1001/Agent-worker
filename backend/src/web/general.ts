@@ -156,16 +156,21 @@ export function parseBraveHtml(html: string, now = Date.now()): Candidate[] {
 }
 
 /** Bing News RSS parameters. */
-export function bingParams(query: string, lang?: string): URLSearchParams {
+export function bingParams(query: string, lang?: string, region?: string): URLSearchParams {
   const qs = new URLSearchParams({ q: query, format: "rss" });
   if (lang === "hi") qs.set("setlang", "hi");
+  if (region) qs.set("cc", region.toUpperCase());
   return qs;
 }
 
 /** DuckDuckGo form fields; df=w limits breaking news to the past week. */
-export function duckDuckGoForm(query: string, fresh: Freshness, lang?: string): URLSearchParams {
+/** DuckDuckGo region code ("in-en", "uk-en"); Great Britain is "uk" there. */
+export const ddgRegion = (region: string): string => `${region === "gb" ? "uk" : region}-en`;
+
+export function duckDuckGoForm(query: string, fresh: Freshness, lang?: string, region?: string): URLSearchParams {
   const f = new URLSearchParams({ q: engineQuery(query), b: "" });
   if (fresh === "breaking") f.set("df", "w");
   if (lang === "hi") f.set("kl", "in-en");
+  else if (region) f.set("kl", ddgRegion(region));
   return f;
 }

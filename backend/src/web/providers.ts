@@ -90,7 +90,7 @@ const brave: Provider = {
   timeoutMs: 4_000,
   enabled: () => !!config.webSearch.braveKey && !off("brave"),
   async search(query, ctx) {
-    const qs = new URLSearchParams({ q: query, count: String(Math.min(ctx.limit + 2, 10)), extra_snippets: "1", ...(ctx.fresh === "breaking" ? { freshness: "pw" } : {}) });
+    const qs = new URLSearchParams({ q: query, count: String(Math.min(ctx.limit + 2, 10)), extra_snippets: "1", ...(ctx.region ? { country: ctx.region.toUpperCase() } : {}), ...(ctx.fresh === "breaking" ? { freshness: "pw" } : {}) });
     const data = await json(`https://api.search.brave.com/res/v1/web/search?${qs}`, ctx, this.timeoutMs, {
       headers: { "X-Subscription-Token": config.webSearch.braveKey!, "Accept-Encoding": "gzip" },
     });
@@ -125,7 +125,7 @@ async function duckDuckGoPost(url: string, query: string, ctx: SearchCtx, timeou
   try {
     res = await http(url, ctx, timeoutMs, {
       method: "POST",
-      body: duckDuckGoForm(query, ctx.fresh, ctx.lang),
+      body: duckDuckGoForm(query, ctx.fresh, ctx.lang, ctx.region),
       headers: { "User-Agent": TEXT_BROWSER_UA, Accept: "text/html", "Content-Type": "application/x-www-form-urlencoded", Referer: new URL(url).origin + "/" },
     });
   } catch (e) {
@@ -220,7 +220,7 @@ const bingNews: Provider = {
   timeoutMs: 3_500,
   enabled: () => !off("bingnews"),
   async search(query, ctx) {
-    const res = await http(`https://www.bing.com/news/search?${bingParams(query, ctx.lang)}`, ctx, this.timeoutMs, { headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, text/xml" } });
+    const res = await http(`https://www.bing.com/news/search?${bingParams(query, ctx.lang, ctx.region)}`, ctx, this.timeoutMs, { headers: { "User-Agent": BROWSER_UA, Accept: "application/rss+xml, text/xml" } });
     const xml = await res.text();
     if (!/<rss\b/i.test(xml.slice(0, 500))) throw new ProviderError("bing news returned no RSS (bot check?)", 429, BLOCKED_COOLDOWN_MS);
     return parseBingRss(xml, "bingnews");
@@ -390,7 +390,7 @@ const searxng: Provider[] = config.webSearch.searxngUrls.map((base) => ({
   timeoutMs: 6_000,
   enabled: () => true,
   async search(query: string, ctx: SearchCtx) {
-    const qs = new URLSearchParams({ q: query, format: "json", language: ctx.lang ?? "en", ...(ctx.fresh === "breaking" ? { time_range: "week" } : {}) });
+    const qs = new URLSearchParams({ q: query, format: "json", language: ctx.lang ?? (ctx.region ? `en-${ctx.region.toUpperCase()}` : "en"), ...(ctx.fresh === "breaking" ? { time_range: "week" } : {}) });
     const data = await json(`${base}/search?${qs}`, ctx, 6_000);
     return (Array.isArray(data?.results) ? data.results : []).slice(0, ctx.limit).map((r: any, rank: number): Candidate => ({
       title: clip(r.title, 200) || r.url,
@@ -427,7 +427,7 @@ const inflight = new Map<string, Promise<CallOutcome>>();
 export function callProvider(p: Provider, rawQuery: string, ctx: SearchCtx): Promise<CallOutcome> {
   // Third-party search engines never see emails, phone numbers, cards or keys.
   const query = redactForExternal(rawQuery);
-  const key = searchCacheKey(p.name, ctx.fresh, query, ctx.lang);
+  const key = searchCacheKey(p.name, ctx.fresh, query, ctx.lang, ctx.region);
   const hit = cache.get(key);
   if (hit) {
     const o = { provider: p.name, candidates: hit, ms: 0, cached: true };

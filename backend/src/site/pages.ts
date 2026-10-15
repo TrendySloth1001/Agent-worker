@@ -9,7 +9,7 @@ export const SITE = {
   name: "sparky",
   tagline: "Your engineering sidekick.",
   contact: "nkumawat8956@gmail.com",
-  effective: "13 October 2026",
+  effective: "15 October 2026",
 } as const;
 
 const esc = (s: string) =>
@@ -102,6 +102,10 @@ export function privacyPage(): string {
 <li><strong>Usage and diagnostics:</strong> which AI model answered, token counts, timings and errors, used to run and improve the service. These records do not contain your message text.</li>
 <li><strong>Device:</strong> the device name and app version shown in your list of signed-in sessions.</li>
 </ul>
+
+<h2>Approximate location</h2>
+<p>To answer things like weather, local news, prices or "near me", sparky works out a rough location (city, state and country) when you ask about something local, and only then. It does this without the Android location permission and without GPS. It uses your network address (looked up on the server in an offline database), your phone's SIM and network country, time zone and language, and the city you type under Profile &rarr; My city, if you do. The address is used for that one lookup and is not saved: we do not store your IP address or your location in your chats, usage records or logs, and we only keep which kind of signal was used and the country for diagnostics. The rough location is added to what the AI model receives for that question, and may be off (a mobile network can place you in another city); sparky treats it as a hint. You can switch it off in Settings &rarr; Privacy &rarr; Use approximate location; the city you type yourself is still used if you set one.</p>
+<p>IP geolocation by <a href="https://db-ip.com">DB-IP</a> (IP to City Lite, licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>).</p>
 
 <h2>How we use it</h2>
 <ul>

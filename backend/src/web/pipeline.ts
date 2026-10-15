@@ -39,6 +39,8 @@ export type ResearchOpts = {
   preplanned?: { queries: string[]; fresh?: Freshness | null };
   /** The chat this search belongs to: a follow-up on the same topic reuses the previous turn's sources. */
   conversationId?: string;
+  /** Lower-case ISO country code to bias engines toward (location-relevant turns only). */
+  region?: string;
 };
 
 const PER_PROVIDER = 8;
@@ -209,8 +211,8 @@ export type CollectResult = { outcomes: CallOutcome[]; early: boolean };
  * had [TOPICAL_GRACE_MS] more. Unavailable providers (disabled, quota-blocked,
  * circuit-open) are never called.
  */
-export async function collect(plan: SearchPlan, signal: AbortSignal | undefined, opts: { want: number; lang?: string; focus: MergeFocus; providers?: Provider[]; graceMs?: number; hedgeMs?: number }): Promise<CollectResult> {
-  const ctx: SearchCtx = { signal, fresh: plan.fresh, limit: PER_PROVIDER, lang: opts.lang };
+export async function collect(plan: SearchPlan, signal: AbortSignal | undefined, opts: { want: number; lang?: string; region?: string; focus: MergeFocus; providers?: Provider[]; graceMs?: number; hedgeMs?: number }): Promise<CollectResult> {
+  const ctx: SearchCtx = { signal, fresh: plan.fresh, limit: PER_PROVIDER, lang: opts.lang, region: opts.region };
   const pool = (opts.providers ?? PROVIDERS).filter(available);
   const web = pool.filter((p) => p.role === "web");
   const matching = pool.filter((p) => p.role === "secondary" && (p.intents === "any" || p.intents.some((i) => plan.intents.includes(i))));
@@ -360,7 +362,7 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   if (!plan.queries.length || !terms(plan.queries.join(" ")).length) return [];
   const lang = queryLang(`${plan.queries.join(" ")}`);
 
-  const memoQuery = { queries: plan.queries, fresh: plan.fresh, lang, conversationId: opts.conversationId, maxResults, fetched: fetchTop > 0 };
+  const memoQuery = { queries: plan.queries, fresh: plan.fresh, lang: opts.region ? `${lang ?? "en"}-${opts.region}` : lang, conversationId: opts.conversationId, maxResults, fetched: fetchTop > 0 };
   const hit = memo.get(memoQuery);
   if (hit) {
     recordResearch({ ms: Date.now() - started, cached: true, results: hit.results.length });
@@ -369,7 +371,7 @@ export async function researchWeb(opts: ResearchOpts): Promise<WebResult[]> {
   }
 
   const focus: MergeFocus = { queries: plan.queries, question: opts.question };
-  const { outcomes, early } = await collect(plan, opts.signal, { want: maxResults + 1, lang, focus });
+  const { outcomes, early } = await collect(plan, opts.signal, { want: maxResults + 1, lang, region: opts.region, focus });
   const served = outcomes.filter((o) => !o.error && !o.skipped);
   const merged = mergeCandidates(outcomes.map((o) => o.candidates), plan.fresh, focus);
   log.info("web research", { via: plan.via, fresh: plan.fresh, intents: plan.intents.join(","), queries: plan.queries.length, providers: summarize(outcomes), merged: merged.length, early });

@@ -45,6 +45,7 @@ import { convertSongList } from "../context/playlist.js";
 import { cardBlock, cardsNote, detectCardTypes, fallbackUpiCard, finalizeCards, hasCardBlock } from "../context/cards.js";
 import { actionBlock, conversationLinks, hasActionBlock, openActionNote, openReply, parseOpenIntent, resolveOpenAction, type OpenAction } from "../context/openIntent.js";
 import { decideWeb, embedTextsForTurn, preflightNeeds, runPreflight, type Preflight } from "../context/preflight.js";
+import { isLocationTurn, isNearMe, locationHintsSchema, locationLine, locationLog, regionOf, resolveLocation } from "../context/geo.js";
 import { buildTurnContext, imageQuery, renderContext, topicTerms, type AttachmentInfo } from "../context/turnContext.js";
 import { recallPastChats, recallQueryText, type PastCitation } from "../recall/search.js";
 import { isUuid } from "../docs/store.js";
@@ -85,6 +86,8 @@ const profileSchema = z
     language: text(40),
     instructions: text(1500),
     signature: text(300),
+    // "My city": typed by the user, overrides every guess, honoured even with approximate location off. Never stored server-side.
+    city: text(60),
   })
   .catch({});
 
@@ -114,6 +117,10 @@ const bodySchema = z.object({
   sourceIds: z.array(z.string()).max(50).optional(),
   mode: z.enum(MODES as [string, ...string[]]).default("default"),
   profile: profileSchema.optional(),
+  // Approximate location (settings → Privacy). Off: nothing is guessed from the network or phone; only the typed "My city" is used.
+  approxLocation: z.boolean().default(true),
+  // Phone hints (SIM / network country, time zone id, locale): no permission needed; used only on location-relevant turns.
+  locationHints: locationHintsSchema.optional(),
   // Round Table: several models draft and cross-review, a chair writes the answer.
   roundTable: z.boolean().default(false),
   // Briefing from a merged chat, sent as background (never as a user/assistant turn).
@@ -230,6 +237,11 @@ chatRouter.post("/", async (req, res) => {
     entities: nlp.entities.length,
     ms: nlp.ms,
   });
+  // Approximate location, worked out only for turns that need it (weather, "near me", prices...). The address is used for the lookup and dropped;
+  // only the source and the country reach the log.
+  const geo = isLocationTurn(lastUserText) ? resolveLocation(req, { enabled: body.approxLocation, hints: body.locationHints, city: body.profile?.city }) : null;
+  const geoRegion = regionOf(geo);
+  if (geo) log.info("location", { requestId, ...locationLog(geo) });
   // Long-term memory: extraction runs in the background alongside generation; recall happens below.
   const memTurn = startMemoryTurn({
     userText: lastUserText,
@@ -485,6 +497,7 @@ chatRouter.post("/", async (req, res) => {
                 topics: topicTerms(ctx, "web"),
               },
               conversationId: body.conversationId,
+              region: geoRegion,
               signal: ctl.signal,
             })
           : Promise.resolve([]),
@@ -632,6 +645,8 @@ chatRouter.post("/", async (req, res) => {
       needs.compact = !needs.widgetExamples && !needs.html && !needs.github;
     }
     const prompt: Message[] = [{ role: "system", content: buildSystemPrompt(body.mode as never, body.profile, undefined, needs) }];
+    const geoNote = locationLine(geo);
+    if (geoNote) prompt.push({ role: "system", content: geoNote });
     if (ctx.memory) prompt.push({ role: "system", content: ctx.memory });
     if (compacted) prompt.push({ role: "system", content: summaryMessage(compacted.summary) });
     if (pastBlock) prompt.push({ role: "system", content: pastBlock });
@@ -817,7 +832,7 @@ chatRouter.post("/", async (req, res) => {
       const extra: Message[] = [];
       if (call.query && webMode !== "off") {
         sse.send("status", { phase: "searching" });
-        const found = await researchWeb({ question: call.query, focused: call.query, signal: ctl.signal, context: { language: nlp.language } }).catch(() => []);
+        const found = await researchWeb({ question: call.query, focused: call.query, signal: ctl.signal, region: geoRegion, context: { language: nlp.language } }).catch(() => []);
         const known = new Set(webItems.map((w) => urlKey(w.url)));
         const added: ContextItem[] = [];
         for (const r of found) {
@@ -871,7 +886,7 @@ chatRouter.post("/", async (req, res) => {
     // Action cards: rebuilt from the model's block (buttons and links are made here, never taken from it); a payment message always gets its UPI card.
     if (cardTypes.length > 0) {
       const userTexts = body.messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
-      let cardText = await finalizeCards(text, { userTexts, signal: ctl.signal }).catch(() => text);
+      let cardText = await finalizeCards(text, { userTexts, signal: ctl.signal, countryCode: geo?.countryCode && isNearMe(lastUserText) ? geo.countryCode : undefined }).catch(() => text);
       if (cardTypes.includes("upi") && !hasCardBlock(cardText)) {
         const upi = fallbackUpiCard(lastUserText);
         if (upi) cardText = `${cardText}\n\n${cardBlock(upi)}`.trim();
