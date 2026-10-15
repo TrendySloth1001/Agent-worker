@@ -122,7 +122,7 @@ export function normalizeSection(md: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-export type RunChatFn = (candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean) => Promise<RunResult>;
+export type RunChatFn = (candidates: string[], messages: Message[], signal: AbortSignal, hooks: RunHooks, auto: boolean, opts?: { maxTokens?: number }) => Promise<RunResult>;
 export type ImagesFn = (query: string, limit: number) => Promise<ImageResult[]>;
 
 export type SectionEvents = {
@@ -157,6 +157,8 @@ export async function writeSection(args: {
   runChat: RunChatFn;
   images: ImagesFn;
   canContinue: () => boolean;
+  /** Reply cap for the section (keeps the writer inside its brief and the provider's token window). */
+  maxTokens?: number;
 }): Promise<SectionResult> {
   const valid = new Set(args.sources.map((s) => s.id));
   const tags = new TagStream();
@@ -194,7 +196,7 @@ export async function writeSection(args: {
   });
 
   calls++;
-  let result = await args.runChat(args.candidates, args.messages, args.signal, hooks(false), true);
+  let result = await args.runChat(args.candidates, args.messages, args.signal, hooks(false), true, { maxTokens: args.maxTokens });
   emitText(keepValidTags(filter.push(tags.flush()), valid));
   emitText(keepValidTags(filter.flush(), valid));
   let summary = filter.summary();
@@ -205,7 +207,7 @@ export async function writeSection(args: {
     const messages = [...args.messages, { role: "assistant" as const, content: text }, continueMessage(text.slice(-400))];
     try {
       calls++;
-      const cont = await args.runChat([result.model, ...args.candidates.filter((c) => c !== result.model)], messages, args.signal, hooks(true), true);
+      const cont = await args.runChat([result.model, ...args.candidates.filter((c) => c !== result.model)], messages, args.signal, hooks(true), true, { maxTokens: args.maxTokens });
       emitText(keepValidTags(filter.push(tags.flush()), valid));
       emitText(keepValidTags(filter.flush(), valid));
       summary = filter.summary() || summary;

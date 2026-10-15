@@ -30,6 +30,10 @@ export type OutlineSection = {
   queries: string[];
   visual: Visual;
   words: number;
+  /** Planner's brief for the writer: style and evidence guidance for this section only. */
+  notes?: string;
+  /** Glossary terms this section uses (the writer sees only these definitions). */
+  terms?: string[];
   /** Set on the two server-built sections. */
   kind?: "takeaways" | "references";
 };

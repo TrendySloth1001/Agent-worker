@@ -41,6 +41,8 @@ export function normalizeOutline(raw: any, length: DocLength, fallbackTitle: str
       queries: (Array.isArray(s.queries) ? s.queries : []).map((q: unknown) => str(q, 120)).filter(Boolean).slice(0, 2),
       visual: (VISUALS as readonly string[]).includes(s.visual) ? (s.visual as Visual) : "none",
       words: clampWords(s.words),
+      ...(str(s.notes, 240) ? { notes: str(s.notes, 240) } : {}),
+      ...(Array.isArray(s.terms) ? { terms: s.terms.map((t: unknown) => str(t, 80)).filter(Boolean).slice(0, 5) } : {}),
     });
     if (sections.length >= max) break;
   }

@@ -2,14 +2,20 @@ import { MODELS } from "../models.js";
 import type { Message } from "../providers.js";
 import { ask } from "../llm/ask.js";
 import { pickCandidates, preferForPrompt } from "../llm/router.js";
+import { check as budgetCheck } from "../llm/budget.js";
+import { slotsFor } from "../llm/slots.js";
 import { log } from "../util/logger.js";
-import { CHAIR_PROMPT, DRAFT_NO_SOURCES, DRAFT_PROMPT, JUDGE_PROMPT, REVIEW_PROMPT, seatResearchIntro } from "../prompts/table.js";
+import { CHAIR_PROMPT, DRAFT_NO_SOURCES, DRAFT_PROMPT, seatResearchIntro } from "../prompts/table.js";
 import { expectedMs, recordLatency, type StepKind } from "./latency.js";
 import { computeSupport, type SupportItem } from "./support.js";
 
 // ---- configuration ---------------------------------------------------------
 
-/** One model family per seat, best first. Seat A chairs. */
+/**
+ * Two drafting seats; seat A also chairs. Models are picked per seat from
+ * these families, best first, preferring different providers and the ones
+ * with headroom (minute budget, free slot) right now.
+ */
 const FAMILIES: Record<SeatId, string[]> = {
   // Ollama serves Nemotron Ultra ~2.5x faster than NVIDIA's endpoint (measured).
   A: [
@@ -20,34 +26,25 @@ const FAMILIES: Record<SeatId, string[]> = {
     "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
     "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
   ],
-  B: ["groq:openai/gpt-oss-120b", "ollama:gpt-oss:120b", "nvidia:z-ai/glm-5.3-flash"],
-  C: ["ollama:gemma4:31b", "groq:qwen/qwen3.8-27b", "nvidia:z-ai/glm-5.3-flash", "openrouter:google/gemma-4-31b-it:free"],
+  B: ["groq:openai/gpt-oss-120b", "ollama:gpt-oss:120b", "nvidia:z-ai/glm-5.3-flash", "ollama:gemma4:31b", "groq:qwen/qwen3.8-27b", "openrouter:google/gemma-4-31b-it:free"],
 };
-const SEAT_IDS = ["A", "B", "C"] as const;
+const SEAT_IDS = ["A", "B"] as const;
 // Concurrent requests per provider (mirrors llm/router.ts): seats prefer a
 // provider with a free slot so drafts run in parallel, not in line.
 const PROVIDER_SLOTS: Record<string, number> = { ollama: 1, openrouter: 2, groq: 3, nvidia: 2 };
-const JUDGE_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
 
-const DRAFT_MS = 45_000;
-const DRAFT_TOKENS = 1200;
-const DRAFT_MAX_CHARS = 4_000;
-const REVIEW_MS = 25_000;
-// Reasoning models (gpt-oss, nemotron) spend part of max_tokens on hidden
-// reasoning; 600 often left the JSON empty, so reviews get more room.
-const REVIEW_TOKENS = 1500;
-const JUDGE_MS = 8_000;
-const BUDGET_MS = 90_000;
-const MIN_REVIEW_MS = 6_000;
+// Short drafts: the chair only needs the substance of each, and every token
+// counts against the providers' per-minute windows.
+const DRAFT_MS = 30_000;
+const DRAFT_TOKENS = 700;
+const DRAFT_MAX_CHARS = 2_400;
+const BUDGET_MS = 60_000;
+const MIN_CHAIR_MS = 6_000;
 const QUORUM = 2;
 const SUMMARY_MAX = 160;
-const TRANSCRIPT_DRAFT_MAX = 3_000;
-const MAX_POINTS = 6;
-// ETA: share of runs expected to need cross-review, and the floor for a step
-// that is already over its usual time.
-const REVIEW_LIKELIHOOD = 0.6;
+const TRANSCRIPT_DRAFT_MAX = 2_400;
+// ETA: floor for a step that is already over its usual time.
 const MIN_LEFT_MS = 2_000;
-const DIGEST_SNIPPET = 300;
 
 // ---- types -----------------------------------------------------------------
 
@@ -177,27 +174,6 @@ export function parseJson(raw: string, key: string): any {
   return found;
 }
 
-function parsePoints(raw: unknown, valid: Set<string>): ReviewPoint[] {
-  if (!Array.isArray(raw)) return [];
-  const out: ReviewPoint[] = [];
-  for (const p of raw) {
-    if (!p || typeof p !== "object") continue;
-    const kind = ["error", "disagree", "missing"].includes(p.kind) ? p.kind : "disagree";
-    const claim = typeof p.claim === "string" ? clip(p.claim.trim(), 200) : "";
-    if (!claim) continue;
-    const seat = typeof p.seat === "string" ? p.seat.trim().toUpperCase().replace(/^(DRAFT|SEAT|EXPERT)\s*/, "").slice(0, 1) : "";
-    out.push({
-      seat: valid.has(seat) ? seat : "",
-      kind,
-      claim,
-      detail: typeof p.detail === "string" ? clip(p.detail.trim(), 300) : "",
-      sources: Array.isArray(p.sources) ? p.sources.filter((s: unknown): s is string => typeof s === "string" && /^[KWDC]\d+$/.test(s.replace(/[[\]]/g, ""))).map((s: string) => s.replace(/[[\]]/g, "")).slice(0, 5) : [],
-    });
-    if (out.length >= MAX_POINTS) break;
-  }
-  return out;
-}
-
 function draftsBlock(drafts: Draft[]): string {
   return drafts.map((d) => `### Draft ${d.seat} (${nameOf(d.model)})\n${d.text.trim()}`).join("\n\n");
 }
@@ -217,50 +193,57 @@ function researchMessage(r: SeatResearchInput): Message | null {
   return { role: "system", content: `${seatResearchIntro(r.queries)}\n<web_results>\n${items}\n</web_results>` };
 }
 
-/** Short list of every seat's own sources, for the reviewers. */
-function researchDigest(research: SeatResearchInput[]): Message | null {
-  const items = research.flatMap((r) => r.items);
-  if (items.length === 0) return null;
-  return {
-    role: "system",
-    content: `More sources the experts found (excerpts):\n${items.map((i) => `[${i.id}] ${i.title} - ${i.url}\n${clip(i.text.replace(/\s+/g, " "), DIGEST_SNIPPET)}`).join("\n\n")}`,
-  };
-}
-
 /** Whole-table estimate before seating, from the usual first models. */
 export function initialEtaMs(withResearch: boolean): number {
-  const seatMax = (kind: StepKind) => Math.max(...SEAT_IDS.map((s) => expectedMs(kind, FAMILIES[s][0])));
-  return (
-    (withResearch ? expectedMs("research", "plan") + expectedMs("research", "search") : 0) +
-    seatMax("draft") +
-    expectedMs("judge", JUDGE_MODELS[0]) +
-    REVIEW_LIKELIHOOD * seatMax("review") +
-    expectedMs("chair", FAMILIES.A[0])
-  );
+  const seatMax = Math.max(...SEAT_IDS.map((s) => expectedMs("draft", FAMILIES[s][0])));
+  return (withResearch ? expectedMs("research", "plan") + expectedMs("research", "search") : 0) + seatMax + expectedMs("chair", FAMILIES.A[0]);
 }
 
-const withoutImages = (msgs: Message[]): Message[] => msgs.map((m) => (m.images?.length ? { role: m.role, content: m.content } : m));
+const providerOf = (id: string) => id.slice(0, id.indexOf(":"));
 
-/** Seats one model per family, skipping models in cooldown or otherwise unavailable. */
-async function seat(promptChars: number, vision: string[] | null): Promise<Plan[]> {
+export type TableDeps = {
+  ask: typeof ask;
+  candidates: () => Promise<string[]>;
+  /** Whether a call of about [tokens] fits [id] right now (minute budget, free slot). */
+  headroom: (id: string, tokens: number) => boolean;
+};
+
+export const defaultTableDeps: TableDeps = {
+  ask,
+  candidates: () => pickCandidates(undefined),
+  headroom: (id, tokens) => budgetCheck(id, tokens).ok && (slotsFor(id)?.available ?? true),
+};
+
+/**
+ * Seats one model per seat on DIFFERENT providers where possible, preferring
+ * models with headroom right now (so the two drafts never queue behind each
+ * other or hit the same per-minute window). Each seat gets one fallback from
+ * yet another provider.
+ */
+export async function seat(promptChars: number, vision: string[] | null, deps: TableDeps = defaultTableDeps): Promise<Plan[]> {
   if (vision) {
     // Images: every seat must see them, so the seats come from the vision list.
     return vision.slice(0, SEAT_IDS.length).map((id, i) => ({ seat: SEAT_IDS[i], models: [id] }));
   }
-  const avail = preferForPrompt(await pickCandidates(undefined), promptChars);
+  const avail = preferForPrompt(await deps.candidates(), promptChars);
+  const need = Math.ceil(promptChars / 3.5) + DRAFT_TOKENS;
   const used = new Set<string>();
   const load = new Map<string, number>();
-  const providerOf = (id: string) => id.slice(0, id.indexOf(":"));
+  const usedProviders = new Set<string>();
   const hasSlot = (id: string) => (load.get(providerOf(id)) ?? 0) < (PROVIDER_SLOTS[providerOf(id)] ?? 1);
   const plans: Plan[] = [];
   for (const s of SEAT_IDS) {
-    const open = FAMILIES[s].filter((id) => avail.includes(id) && !used.has(id));
-    const family = [...open.filter(hasSlot), ...open.filter((id) => !hasSlot(id))];
-    const models = family.length > 0 ? family.slice(0, 2) : avail.filter((id) => !used.has(id)).slice(0, 2);
-    if (models.length === 0) continue;
-    used.add(models[0]);
-    load.set(providerOf(models[0]), (load.get(providerOf(models[0])) ?? 0) + 1);
-    plans.push({ seat: s, models });
+    const open = [...FAMILIES[s].filter((id) => avail.includes(id)), ...avail.filter((id) => !FAMILIES[s].includes(id))].filter((id) => !used.has(id));
+    // Best first: a new provider with headroom, then any with headroom, then a new provider, then the rest.
+    const rank = (id: string) => (deps.headroom(id, need) && hasSlot(id) ? 0 : 2) + (usedProviders.has(providerOf(id)) ? 1 : 0);
+    const family = open.map((id, i) => ({ id, i, r: rank(id) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.id);
+    if (family.length === 0) continue;
+    const primary = family[0];
+    const fallback = family.find((id) => id !== primary && providerOf(id) !== providerOf(primary));
+    used.add(primary);
+    usedProviders.add(providerOf(primary));
+    load.set(providerOf(primary), (load.get(providerOf(primary)) ?? 0) + 1);
+    plans.push({ seat: s, models: fallback ? [primary, fallback] : [primary] });
   }
   // A fallback must not be another seat's primary.
   for (const p of plans) p.models = [p.models[0], ...p.models.slice(1).filter((id) => !plans.some((o) => o !== p && o.models[0] === id))];
@@ -321,12 +304,25 @@ export class UnresolvedFilter {
 // ---- the table ---------------------------------------------------------------
 
 /**
- * Rounds 1 and 2 of the table: independent drafts, an agreement check and,
- * when needed, cross-review. Returns null when fewer than two drafts came
- * back (the caller then answers the normal way). Round 3 (the chair) is
- * streamed by the caller with the returned message and candidates.
+ * Round 1: two independent short drafts from models on different providers.
+ * Round 2: the chair (streamed by the caller with the returned message and
+ * candidates) compares the drafts, settles disagreements against the sources
+ * and writes the answer; there is no separate judge or review step. Returns
+ * null when fewer than two drafts came back or anything unexpected failed
+ * (the caller then answers the normal way, the turn never fails because of
+ * the table).
  */
-export async function runRoundTable(input: TableInput): Promise<TableRun | null> {
+export async function runRoundTable(input: TableInput, deps: TableDeps = defaultTableDeps): Promise<TableRun | null> {
+  try {
+    return await runTable(input, deps);
+  } catch (e) {
+    if (input.signal.aborted) throw e;
+    log.warn("round table failed, answering normally", { message: (e as Error).message?.slice(0, 160) });
+    return null;
+  }
+}
+
+async function runTable(input: TableInput, deps: TableDeps): Promise<TableRun | null> {
   const started = Date.now();
   const deadline = started + BUDGET_MS;
   const { signal } = input;
@@ -338,29 +334,20 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
   let phaseAt = Date.now();
   let seatModels: string[] = [];
   let chairModel: string = FAMILIES.A[0];
-  let reviewShare = REVIEW_LIKELIHOOD;
-  /** Steps in flight: seat -> model and start time. */
   const inFlight = new Map<SeatId, { model: string; at: number }>();
-  const seatMax = (kind: StepKind) => (seatModels.length ? Math.max(...seatModels.map((m) => expectedMs(kind, m))) : expectedMs(kind));
-  const stepLeft = (kind: StepKind) => {
+  const seatMax = () => (seatModels.length ? Math.max(...seatModels.map((m) => expectedMs("draft", m))) : expectedMs("draft"));
+  const draftLeft = () => {
     const now = Date.now();
-    const left = inFlight.size
-      ? Math.max(...[...inFlight.values()].map((w) => expectedMs(kind, w.model) - (now - w.at)))
-      : seatMax(kind) - (now - phaseAt);
+    const left = inFlight.size ? Math.max(...[...inFlight.values()].map((w) => expectedMs("draft", w.model) - (now - w.at))) : seatMax() - (now - phaseAt);
     return Math.max(left, MIN_LEFT_MS);
   };
   const etaMs = (): number => {
-    const judge = expectedMs("judge", JUDGE_MODELS[0]);
     const chair = expectedMs("chair", chairModel);
     switch (phase) {
       case "seating":
-        return seatMax("draft") + judge + reviewShare * seatMax("review") + chair;
+        return seatMax() + chair;
       case "drafting":
-        return stepLeft("draft") + judge + reviewShare * seatMax("review") + chair;
-      case "checking":
-        return Math.max(judge - (Date.now() - phaseAt), MIN_LEFT_MS) + reviewShare * seatMax("review") + chair;
-      case "reviewing":
-        return stepLeft("review") + chair;
+        return draftLeft() + chair;
       case "synthesizing":
         return chair;
       default:
@@ -379,7 +366,7 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
   };
 
   const research = new Map((input.research ?? []).map((r) => [r.seat, r]));
-  const plans = await seat(input.promptChars, input.vision);
+  const plans = await seat(input.promptChars, input.vision, deps);
   if (plans.length < QUORUM) return null;
   seatModels = plans.map((p) => p.models[0]);
   chairModel = plans.find((p) => p.seat === "A")?.models[0] ?? seatModels[0];
@@ -405,13 +392,13 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
       ];
       const queries = own?.queries ?? [];
       for (const model of p.models) {
-        const left = deadline - Date.now() - MIN_REVIEW_MS;
+        const left = deadline - Date.now() - MIN_CHAIR_MS;
         if (left < 5_000 || signal.aborted) break;
         emit({ phase: "drafting", seat: p.seat, model, status: "working" });
         calls++;
         const at = Date.now();
         try {
-          const raw = await ask(model, draftMsgs, { timeoutMs: Math.min(DRAFT_MS, left), maxTokens: DRAFT_TOKENS, maxChars: DRAFT_MAX_CHARS, signal, purpose: "table-draft" });
+          const raw = await deps.ask(model, draftMsgs, { timeoutMs: Math.min(DRAFT_MS, left), maxTokens: DRAFT_TOKENS, maxChars: DRAFT_MAX_CHARS, signal, purpose: "table-draft" });
           recordLatency("draft", model, Date.now() - at);
           const text = stripTags(raw.replace(/【/g, "[").replace(/】/g, "]"), valid);
           const summary = summaryOf(text);
@@ -433,103 +420,18 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
   if (signal.aborted) throw new DOMException("aborted", "AbortError");
   seats.sort((a, b) => a.seat.localeCompare(b.seat));
   drafts.sort((a, b) => a.seat.localeCompare(b.seat));
+  // A drafter failed: give up gracefully, one model answers the normal way.
   if (drafts.length < QUORUM) return null;
 
-  // ---- agreement check ----------------------------------------------------
-  emit({ phase: "checking" });
-  let agreed = false;
-  let conflicts: string[] = [];
-  const judgeMsgs: Message[] = [
-    { role: "system", content: JUDGE_PROMPT },
-    { role: "user", content: `Question: ${clip(input.question, 1500)}\n\n${drafts.map((d) => `### Answer ${d.seat}\n${clip(d.text.trim(), 2500)}`).join("\n\n")}` },
-  ];
-  const judges = (await pickCandidates(undefined)).filter((id) => JUDGE_MODELS.includes(id));
-  for (const model of JUDGE_MODELS.filter((id) => judges.includes(id))) {
-    if (signal.aborted) break;
-    calls++;
-    const at = Date.now();
-    try {
-      const parsed = parseJson(await ask(model, judgeMsgs, { timeoutMs: JUDGE_MS, signal, purpose: "table-judge" }), "agree");
-      recordLatency("judge", model, Date.now() - at);
-      conflicts = Array.isArray(parsed.conflicts) ? parsed.conflicts.filter((c: unknown): c is string => typeof c === "string" && !!c.trim()).map((c: string) => clip(c.trim(), 140)).slice(0, 5) : [];
-      agreed = parsed.agree === true && conflicts.length === 0;
-      break;
-    } catch (e) {
-      if (signal.aborted) break;
-      log.warn("table judge failed", { model, message: (e as Error).message?.slice(0, 120) });
-    }
-  }
-  if (signal.aborted) throw new DOMException("aborted", "AbortError");
-  // ---- round 2: cross-review ----------------------------------------------
-  const reviews: TableReview[] = [];
-  const reviewMs = Math.min(REVIEW_MS, deadline - Date.now());
-  reviewShare = !agreed && reviewMs >= MIN_REVIEW_MS ? 1 : 0;
-  emit({ phase: "checking", status: agreed ? "agreed" : "disputed", conflicts });
-
-  if (!agreed && reviewMs >= MIN_REVIEW_MS) {
-    emit({ phase: "reviewing" });
-    const textHistory = withoutImages(input.history);
-    const valid = new Set(drafts.map((d) => d.seat));
-    const digest = researchDigest(input.research ?? []);
-    await Promise.allSettled(
-      drafts.map(async (own) => {
-        const others = drafts.filter((d) => d !== own);
-        emit({ phase: "reviewing", seat: own.seat, model: own.model, status: "working" });
-        const msgs: Message[] = [
-          { role: "system", content: REVIEW_PROMPT },
-          ...(input.context ? [{ role: "system" as const, content: input.context }] : []),
-          ...(digest ? [digest] : []),
-          ...textHistory,
-          {
-            role: "user",
-            content: `You are expert ${own.seat}. Your own draft:\n${clip(own.text.trim(), 2500)}\n\nReview these drafts from the other experts:\n\n${draftsBlock(others)}\n\nReply with the JSON only.`,
-          },
-        ];
-        calls++;
-        let review: TableReview = { seat: own.seat, model: own.model, verdict: "unknown", points: [] };
-        const at = Date.now();
-        try {
-          const parsed = parseJson(await ask(own.model, msgs, { timeoutMs: reviewMs, maxTokens: REVIEW_TOKENS, signal, purpose: "table-review" }), "verdict");
-          recordLatency("review", own.model, Date.now() - at);
-          const points = parsePoints(parsed.points, valid).filter((p) => p.seat !== own.seat);
-          const verdict = ["agree", "minor", "major"].includes(parsed.verdict) ? parsed.verdict : points.length ? "minor" : "agree";
-          review = { seat: own.seat, model: own.model, verdict, points: verdict === "agree" ? [] : points };
-        } catch (e) {
-          if (signal.aborted) throw e;
-          log.warn("table review failed", { seat: own.seat, model: own.model, message: (e as Error).message?.slice(0, 120) });
-        }
-        reviews.push(review);
-        emit({
-          phase: "reviewing",
-          seat: own.seat,
-          model: own.model,
-          status: review.verdict === "unknown" ? "failed" : review.verdict === "agree" ? "agreed" : "disputed",
-          points: review.points,
-        });
-      }),
-    );
-    if (signal.aborted) throw new DOMException("aborted", "AbortError");
-    reviews.sort((a, b) => a.seat.localeCompare(b.seat));
-  }
-
-  // ---- round 3 setup: the chair -----------------------------------------
+  // ---- round 2 setup: the chair compares the drafts itself -------------------
   const chairSeat = drafts.find((d) => d.seat === "A") ?? drafts[0];
-  const reviewLines = reviews.flatMap((r) =>
-    r.verdict === "unknown"
-      ? []
-      : r.points.length === 0
-        ? [`- Expert ${r.seat}: agrees with the other drafts.`]
-        : r.points.map((p) => `- Expert ${r.seat} on draft ${p.seat || "?"} [${p.kind}]: ${p.claim}${p.detail ? ` — ${p.detail}` : ""}${p.sources.length ? ` (${p.sources.join(", ")})` : ""}`),
-  );
-  const parts = [
-    tags.size > 0 ? CHAIR_PROMPT : `${CHAIR_PROMPT} ${DRAFT_NO_SOURCES}`,
-    `<drafts>\n${draftsBlock(drafts)}\n</drafts>`,
-    agreed ? "Agreement check: the drafts agree on the key facts, so leave the <unresolved> block empty unless a draft is plainly wrong." : conflicts.length ? `Agreement check found conflicts:\n${conflicts.map((c) => `- ${c}`).join("\n")}` : "",
-    reviewLines.length ? `<reviews>\n${reviewLines.join("\n")}\n</reviews>` : "",
-  ].filter(Boolean);
-  const chairMessage: Message = { role: "system", content: parts.join("\n\n") };
+  const hasSources = tags.size > 0 || (input.research ?? []).some((r) => r.tags.length > 0);
+  const chairMessage: Message = {
+    role: "system",
+    content: [hasSources ? CHAIR_PROMPT : `${CHAIR_PROMPT} ${DRAFT_NO_SOURCES}`, `<drafts>\n${draftsBlock(drafts)}\n</drafts>`].join("\n\n"),
+  };
 
-  const auto = input.vision ?? preferForPrompt(await pickCandidates(undefined), input.promptChars + chairMessage.content.length);
+  const auto = input.vision ?? preferForPrompt(await deps.candidates(), input.promptChars + chairMessage.content.length);
   const candidates = [...new Set([chairSeat.model, ...drafts.filter((d) => d !== chairSeat).map((d) => d.model), ...auto])];
   chairModel = chairSeat.model;
   emit({ phase: "synthesizing", seat: chairSeat.seat, model: chairSeat.model });
@@ -539,18 +441,16 @@ export async function runRoundTable(input: TableInput): Promise<TableRun | null>
     chairMessage,
     candidates,
     finish(chair, chairCalls, unresolved, answer = "") {
-      const disputedReviews = reviews.some((r) => r.verdict === "minor" || r.verdict === "major");
-      const consensus = unresolved.length > 0 ? "disputed" : agreed || !disputedReviews ? "agreed" : "resolved";
+      const consensus = unresolved.length > 0 ? "disputed" : "agreed";
       let support: SupportItem[] = [];
       try {
-        const disputes = [...conflicts, ...unresolved, ...reviews.flatMap((r) => r.points.filter((p) => p.kind !== "missing").map((p) => p.claim))];
-        support = computeSupport(answer, drafts, disputes);
+        support = computeSupport(answer, drafts, unresolved);
       } catch (e) {
         log.warn("table support failed", { message: (e as Error).message?.slice(0, 120) });
       }
       const transcript: TableTranscript = {
         seats,
-        reviews,
+        reviews: [],
         consensus,
         unresolved,
         chair,

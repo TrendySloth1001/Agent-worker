@@ -145,11 +145,11 @@ test("dedupeSeatQueries maps equivalent queries to one search", () => {
 test("runSeatResearch searches each distinct query once and fans the result out to the seats", async () => {
   const asked: string[] = [];
   const search = async (q: string) => (asked.push(q), [{ title: q, url: `https://x.test/${asked.length}`, content: `about ${q}` }]);
-  const out = await runSeatResearch(["same thing", "Same thing.", "SAME   thing"], new AbortController().signal, search);
+  const out = await runSeatResearch(["same thing", "Same thing."], new AbortController().signal, search);
   assert.equal(asked.length, 1);
-  assert.equal(out.length, 3);
+  assert.equal(out.length, 2);
   assert.ok(out.every((s) => s.results.length === 1 && s.results[0].url === "https://x.test/1"));
-  assert.deepEqual(out.map((s) => s.seat), ["A", "B", "C"]);
+  assert.deepEqual(out.map((s) => s.seat), ["A", "B"]);
   // A failing shared search leaves every seat that asked it without research.
   const failing = await runSeatResearch(["q one", "q one"], new AbortController().signal, async () => {
     throw new Error("rate limited");

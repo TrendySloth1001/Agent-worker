@@ -7,6 +7,8 @@ import { MSG } from "../conversations/codec.js";
 import pLimit from "p-limit";
 import type { NextFunction } from "express";
 import { ask } from "../llm/ask.js";
+import { AUX_POOL } from "../llm/auxPool.js";
+import { estimateRequestTokens } from "../llm/budget.js";
 import { pickCandidates, preferForPrompt, runChat, ChatFailure } from "../llm/router.js";
 import { webSearch, webFetch, type WebResult } from "../web/search.js";
 import { imagesForQuery } from "../web/images.js";
@@ -14,7 +16,7 @@ import { scheduleIndex } from "../ingest/indexer.js";
 import { retrieve, type KbHit } from "../retrieval/search.js";
 import { loadRows, prepareMessages, waitForFiles } from "../files/context.js";
 import { buildContextMessage, buildSystemPrompt, type ContextItem, type Profile } from "../prompts/system.js";
-import { finishMessages, sectionMessages } from "../prompts/doc.js";
+import { editorMessages, finishMessages, sectionMessages } from "../prompts/doc.js";
 import { parseJson } from "../table/roundTable.js";
 import { expectedMs, recordLatency } from "../table/latency.js";
 import { withTelemetry } from "../db/usage.js";
@@ -24,7 +26,8 @@ import { log } from "../util/logger.js";
 import { computeEvidence } from "../web/evidence.js";
 import { emit, finishJob, registerJob, sectionSlots, Semaphore, type DocEventName, type LiveJob } from "./registry.js";
 import { makeOutline, OUTLINE_MODELS, type AskFn } from "./outline.js";
-import { pickSectionSources, researchSections, SourceBook, type SearchFn } from "./research.js";
+import { excerptFor, pickSectionSources, researchSections, SourceBook, WRITER_SOURCES, type SearchFn } from "./research.js";
+import { WriterPool, type PoolDeps } from "./dispatch.js";
 import { keepValidTags, writeSection, type ImagesFn, type RunChatFn, type SectionEvents } from "./section.js";
 import { prismaStore, type DocStore } from "./store.js";
 import { userMessage } from "../util/userMessages.js";
@@ -54,15 +57,17 @@ export type DocLimits = {
   staggerMs: number;
   searchTimeoutMs: number;
   perDoc: number;
+  /** Writer sections in flight per provider. */
+  perProvider?: number;
 };
 
-export const DEFAULT_LIMITS: DocLimits = { maxCalls: 13, maxSearches: 16, wallMs: 8 * 60_000, sectionMs: 150_000, staggerMs: 600, searchTimeoutMs: 12_000, perDoc: 2 };
+export const DEFAULT_LIMITS: DocLimits = { maxCalls: 20, maxSearches: 16, wallMs: 8 * 60_000, sectionMs: 150_000, staggerMs: 600, searchTimeoutMs: 12_000, perDoc: 2, perProvider: 2 };
 
 export type DocDeps = {
   store: DocStore;
   ask: AskFn;
   runChat: RunChatFn;
-  /** Section models, best first (≤3 attempts per section). */
+  /** Writer models, small/fast first; the dispatcher spreads sections over their providers. */
   candidates: (requested: string | undefined, promptChars: number) => Promise<string[]>;
   outlineModels: () => Promise<string[]>;
   finishModels: () => Promise<string[]>;
@@ -75,6 +80,8 @@ export type DocDeps = {
   linkMessage: (doc: DocState) => Promise<void>;
   limits: DocLimits;
   slots: Semaphore;
+  /** Test hook: headroom, clock and sleep of the writer dispatcher. */
+  poolDeps?: PoolDeps;
 };
 
 async function available(): Promise<Set<string>> {
@@ -88,7 +95,10 @@ export function defaultDeps(): DocDeps {
     runChat,
     candidates: async (requested, chars) => {
       const auto = preferForPrompt(await pickCandidates(undefined), chars);
-      return (requested ? [requested, ...auto.filter((m) => m !== requested)] : auto).slice(0, 3);
+      // Small, fast models write the sections (the strong ones plan and edit); the rest stay as last resort.
+      const small = AUX_POOL.filter((m) => auto.includes(m));
+      const ordered = [...small, ...auto.filter((m) => !small.includes(m))];
+      return (requested ? [requested, ...ordered.filter((m) => m !== requested)] : ordered).slice(0, 8);
     },
     outlineModels: async () => {
       const avail = await available();
@@ -218,6 +228,7 @@ type Ctx = {
   phase: string;
   lastModel?: string;
   deadline: AbortSignal;
+  pool?: WriterPool;
 };
 
 function send(c: Ctx, event: DocEventName, data: unknown) {
@@ -428,7 +439,8 @@ async function writeAll(c: Ctx, mode: StartMode) {
 
   // ---- sections ----
   await setPhase(c, "writing", "writing");
-  const limit = pLimit(deps.limits.perDoc);
+  c.pool = new WriterPool(await deps.candidates(st.options.model, 12_000), { perProvider: deps.limits.perProvider ?? 2 }, deps.poolDeps);
+  const limit = pLimit(Math.max(deps.limits.perDoc, c.pool.capacity));
   await Promise.all(todo.map((s) => limit(() => writeOne(c, s))));
 }
 
@@ -447,6 +459,21 @@ function sectionEvents(c: Ctx, sec: DocSection): SectionEvents {
   };
 }
 
+/** The writer's sources: the section's own ranking, capped. */
+function writerSources(_os: OutlineSection, sources: DocSource[]): DocSource[] {
+  return sources.slice(0, WRITER_SOURCES);
+}
+
+/** The section just before [id]: its real summary once written, else what the plan says it covers. */
+export function prevOf(doc: DocState, id: string): { heading: string; summary: string } | undefined {
+  const body = (doc.outline?.sections ?? []).filter((s) => !s.kind);
+  const i = body.findIndex((s) => s.id === id);
+  if (i <= 0) return undefined;
+  const p = body[i - 1];
+  const done = doc.sections.find((x) => x.sectionId === p.id && x.status === "done" && x.summary);
+  return { heading: p.heading, summary: done ? done.summary : p.goal };
+}
+
 async function writeOne(c: Ctx, os: OutlineSection) {
   const { st, deps, book } = c;
   const sec = st.sections.find((s) => s.sectionId === os.id)!;
@@ -460,43 +487,50 @@ async function writeOne(c: Ctx, os: OutlineSection) {
   // One call is kept back for the takeaways.
   if (c.budget.calls <= 1) return fail("The document reached its model-call budget; resume to finish this section.", true);
 
-  const sources = sec.sourceIds.map((id) => book.get(id)).filter((s): s is DocSource => !!s);
-  const items = sourceItems(sources);
-  const summaries = bodySections(st)
-    .filter((s) => s.status === "done" && s.summary)
-    .map((s) => ({ heading: s.heading, summary: s.summary }));
+  const sources = writerSources(os, sec.sourceIds.map((id) => book.get(id)).filter((s): s is DocSource => !!s));
+  const items = sourceItems(sources.map((x) => ({ ...x, text: excerptFor(os, x.text) })));
   const messages = sectionMessages({
     preamble: preambleFor(st.options.profile, st.options.chatContext),
     outline: st.outline!,
     glossary: st.glossary,
     section: os,
-    summaries,
+    prev: prevOf(st, os.id),
     context: buildContextMessage(items.kb, items.web, items.files),
     validTags: sources.map((s) => s.id),
   });
-  const chars = messages.reduce((n, m) => n + m.content.length, 0);
-  const candidates = await deps.candidates(st.options.model, chars);
+  const maxTokens = Math.min(4_000, Math.round(os.words * 2.2) + 600);
+  const est = estimateRequestTokens(messages, maxTokens);
   const secSignal = AbortSignal.any([c.signal, AbortSignal.timeout(deps.limits.sectionMs)]);
+  const pool = c.pool ?? new WriterPool(await deps.candidates(st.options.model, est * 3.5), { perProvider: deps.limits.perProvider ?? 2 }, deps.poolDeps);
   let release: (() => void) | null = null;
   try {
     release = await deps.slots.acquire(secSignal);
-    c.budget.calls--;
-    sec.status = "writing";
-    sec.markdown = "";
-    send(c, "doc_section_start", { sectionId: sec.sectionId, model: candidates[0] ?? null, sourceIds: sec.sourceIds });
-    statusEvent(c);
     const at = Date.now();
-    const res = await withTelemetry({ purpose: "doc-section", conversationId: st.conversationId ?? undefined }, () =>
-      writeSection({
-        messages,
-        candidates,
-        sources,
-        signal: secSignal,
-        events: sectionEvents(c, sec),
-        runChat: deps.runChat,
-        images: deps.images,
-        canContinue: () => (c.budget.calls > 1 ? (c.budget.calls--, true) : false),
-      }),
+    const { value: res } = await pool.run(
+      est,
+      async (model, attempt) => {
+        // A retry on another provider starts the section afresh.
+        c.budget.calls--;
+        sec.status = "writing";
+        sec.markdown = "";
+        if (attempt > 0) send(c, "doc_section_reset", { sectionId: sec.sectionId });
+        send(c, "doc_section_start", { sectionId: sec.sectionId, model, sourceIds: sec.sourceIds });
+        statusEvent(c);
+        return withTelemetry({ purpose: "doc-section", conversationId: st.conversationId ?? undefined }, () =>
+          writeSection({
+            messages,
+            candidates: [model],
+            maxTokens,
+            sources,
+            signal: secSignal,
+            events: sectionEvents(c, sec),
+            runChat: deps.runChat,
+            images: deps.images,
+            canContinue: () => (c.budget.calls > 1 ? (c.budget.calls--, true) : false),
+          }),
+        );
+      },
+      secSignal,
     );
     recordLatency("doc_section", res.model, Date.now() - at);
     c.lastModel = res.model;
@@ -526,6 +560,43 @@ async function addRevision(store: DocStore, st: DocState, sectionId: string, mar
   }
 }
 
+/** The first or last ~200 characters of a section body, for the editor. */
+function boundary(md: string, end: "head" | "tail"): string {
+  const t = md.replace(/\s+/g, " ").trim();
+  return end === "head" ? t.slice(0, 200) : t.slice(-200);
+}
+
+export const MAX_EDITOR_FIXES = 4;
+
+/** Applies the editor's patches: only exact matches in a finished body section, small replacements, valid tags. */
+async function applyFixes(c: Ctx, raw: unknown): Promise<number> {
+  if (!Array.isArray(raw)) return 0;
+  const { st } = c;
+  const valid = new Set(st.sources.map((s) => s.id));
+  let applied = 0;
+  for (const f of raw.slice(0, MAX_EDITOR_FIXES)) {
+    const sec = bodySections(st).find((s) => s.sectionId === f?.sectionId && s.status === "done");
+    const find = typeof f?.find === "string" ? f.find.trim() : "";
+    const replace = typeof f?.replace === "string" ? keepValidTags(f.replace.trim(), valid) : "";
+    if (!sec || find.length < 8 || !replace || replace === find || replace.length > find.length * 2 + 200 || !sec.markdown.includes(find)) continue;
+    const md = sec.markdown.replace(find, () => replace);
+    const used = citedIds(md).filter((id) => valid.has(id));
+    let evidence = sec.evidence;
+    try {
+      const byId = new Map(st.sources.map((x) => [x.id, x]));
+      evidence = computeEvidence(md, used.map((id) => ({ id, text: byId.get(id)?.full ?? byId.get(id)?.text ?? "" })));
+    } catch {
+      /* keep the old evidence */
+    }
+    Object.assign(sec, { markdown: md, usedIds: used, evidence, words: countWords(md) });
+    await persistSection(c, sec);
+    await addRevision(c.deps.store, st, sec.sectionId, md, "edit");
+    send(c, "doc_section_done", { sectionId: sec.sectionId, markdown: md, words: sec.words, used, evidence, images: sec.images, model: sec.model, summary: sec.summary });
+    applied++;
+  }
+  return applied;
+}
+
 /** Takeaways + abstract (one small model call), references (code), final status. */
 async function finish(c: Ctx) {
   const { st, deps } = c;
@@ -545,16 +616,23 @@ async function finish(c: Ctx) {
     let takeaways: string[] = [];
     let abstract = "";
     if (!c.job.cancelled && c.budget.calls > 0) {
-      for (const model of (await deps.finishModels()).slice(0, 2)) {
+      // One editor call: takeaways + abstract + a few surgical fixes, from summaries and section boundaries only.
+      const strong = await deps.outlineModels();
+      const models = [...new Set([...strong.slice(0, 1), ...(await deps.finishModels()), ...strong.slice(1)])].slice(0, 2);
+      const edSections = done.map((s) => ({ id: s.sectionId, heading: s.heading, summary: s.summary, head: boundary(s.markdown, "head"), tail: boundary(s.markdown, "tail") }));
+      for (const model of models) {
         try {
           c.budget.calls--;
-          const raw = await withTelemetry({ purpose: "doc-finish" }, () =>
-            deps.ask(model, finishMessages(st.outline!.title, summaries, preambleFor(st.options.profile)), { timeoutMs: 25_000, maxTokens: 1200, purpose: "doc-finish" }),
+          const raw = await withTelemetry({ purpose: "doc-edit" }, () =>
+            deps.ask(model, editorMessages(st.outline!.title, edSections, st.glossary, preambleFor(st.options.profile)), { timeoutMs: 30_000, maxTokens: 1800, purpose: "doc-edit" }),
           );
           const j = parseJson(raw, "takeaways");
           takeaways = (Array.isArray(j.takeaways) ? j.takeaways : []).filter((t: unknown) => typeof t === "string" && t.trim()).map((t: string) => t.replace(/\s+/g, " ").trim()).slice(0, 5);
           abstract = typeof j.abstract === "string" ? j.abstract.replace(/\s+/g, " ").trim() : "";
-          if (takeaways.length) break;
+          if (takeaways.length) {
+            if (done.length > 1 && !c.job.cancelled) await applyFixes(c, j.fixes);
+            break;
+          }
         } catch {
           /* next model, or the fallback below */
         }
@@ -636,15 +714,12 @@ export async function runRewrite(job: LiveJob, sectionId: string, op: RewriteOp,
   }
   const sources = sec.sourceIds.map((id) => c.book.get(id)).filter((s): s is DocSource => !!s);
   const items = sourceItems(sources);
-  const summaries = bodySections(st)
-    .filter((s) => s.status === "done" && s.summary && s.sectionId !== sectionId)
-    .map((s) => ({ heading: s.heading, summary: s.summary }));
   const messages = sectionMessages({
     preamble: preambleFor(st.options.profile, st.options.chatContext),
     outline: st.outline!,
     glossary: st.glossary,
     section: os,
-    summaries,
+    prev: prevOf(st, sectionId),
     context: buildContextMessage(items.kb, items.web, items.files),
     validTags: sources.map((s) => s.id),
     rewrite: { op, current: before.markdown, instruction: opts.instruction, selection: opts.selection },

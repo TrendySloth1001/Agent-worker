@@ -25,7 +25,7 @@ export function outlineMessages(prompt: string, length: DocLength, ctx: OutlineC
 Return ONLY a JSON object, no prose and no code fence, in this shape:
 {"title":"","subtitle":"","audience":"","style":"report|guide|explainer|tutorial|brief",
  "glossary":[{"term":"","definition":""}],
- "sections":[{"id":"s1","heading":"","goal":"one sentence","keyPoints":["…"],"queries":["web search query"],"visual":"none|mermaid|table|image|math","words":250}]}
+ "sections":[{"id":"s1","heading":"","goal":"one sentence","keyPoints":["…"],"queries":["web search query"],"visual":"none|mermaid|table|image|math","words":250,"notes":"","terms":["glossary term used here"]}]}
 
 Rules:
 - ${count} body sections, in a logical reading order (foundations first, advanced topics later). Do NOT include an introduction-only, "Conclusion", "Summary", "Key takeaways" or "References" section; the app adds takeaways and references itself.
@@ -33,6 +33,7 @@ Rules:
 - "queries": 1-2 precise web search queries per section that would find authoritative facts for it (specs, docs, papers, reputable explainers).
 - "visual": choose the one visual that genuinely helps that section: "mermaid" for a process, protocol exchange or architecture; "table" for comparisons; "math" for formulas; "image" for something with a recognizable picture; otherwise "none". Use mermaid at most twice in the whole document.
 - "words": 250-900 per section; important sections get more.
+- Each section is written later by a different, smaller writer that sees ONLY its own brief, so make every brief self-sufficient. "notes": one or two sentences for that writer: the angle, what kind of evidence to lean on (specs, benchmarks, official docs), how it connects to the section before it, and any wording to keep consistent. "terms": the glossary terms (exact spelling) that section uses.
 - glossary: 3-8 key terms the reader needs, one-sentence definitions.
 - title: a clear document title; subtitle: one line saying what the document covers and for whom.`;
 
@@ -60,8 +61,8 @@ export type SectionPromptInput = {
   outline: Outline;
   glossary: GlossaryItem[];
   section: OutlineSection;
-  /** Summaries of finished sections, in document order. */
-  summaries: Array<{ heading: string; summary: string }>;
+  /** The section just before this one: its real summary once written, else what the plan says it covers. */
+  prev?: { heading: string; summary: string };
   /** The <web_results>/<knowledge>/<documents> block with the citation rule (buildContextMessage), or null. */
   context: string | null;
   validTags: string[];
@@ -95,10 +96,7 @@ export function sectionMessages(input: SectionPromptInput): Message[] {
   const { outline, section } = input;
   const body = outline.sections.filter((s) => !s.kind);
   const k = body.findIndex((s) => s.id === section.id);
-  const plan = body
-    .map((s, i) => `${i === k ? "YOU WRITE: " : ""}§${i + 1} ${s.heading} - ${s.goal}`)
-    .join("\n");
-  const later = body.slice(k + 1).map((s) => `- §${body.indexOf(s) + 1} ${s.heading}: ${s.goal}`);
+  const next = body[k + 1];
   const tags = input.validTags.length ? input.validTags.join(", ") : "none";
 
   const system = `You are writing ONE section of a long-form, cited document. ${input.preamble}
@@ -115,13 +113,14 @@ Rules:
 - Stay within this section's goal; do not cover topics that belong to later sections.
 - The very last line must be an HTML comment with a two-sentence summary of what this section established (it is hidden from the reader and helps the writers of later sections): <!--summary: two sentences-->`;
 
-  const ctx: string[] = [
-    `Document: ${outline.title}${outline.subtitle ? ` - ${outline.subtitle}` : ""}`,
-    `Outline:\n${plan}`,
-  ];
-  if (input.glossary.length) ctx.push(`Glossary (use these terms consistently):\n${input.glossary.map((g) => `- ${g.term}: ${g.definition}`).join("\n")}`);
-  if (input.summaries.length) ctx.push(`Already written (do not repeat):\n${input.summaries.map((s) => `- ${s.heading}: ${s.summary}`).join("\n")}`);
-  if (later.length) ctx.push(`Covered later by other sections (do not cover these here):\n${later.join("\n")}`);
+  // The writer sees only its own brief: no full outline, no running summary of everything before it.
+  const ctx: string[] = [`Document: ${outline.title}${outline.subtitle ? ` - ${outline.subtitle}` : ""}. You write §${k + 1} of ${body.length}.`];
+  if (input.prev) ctx.push(`Section before yours (§${k}) - ${input.prev.heading}: ${input.prev.summary} Do not repeat it; connect to it naturally.`);
+  if (next) ctx.push(`Section after yours (§${k + 2}) - ${next.heading}: ${next.goal} Do not cover that here.`);
+  const own = new Set((section.terms ?? []).map((t) => t.toLowerCase()));
+  const terms = input.glossary.filter((g) => own.has(g.term.toLowerCase())).slice(0, 5);
+  if (terms.length) ctx.push(`Glossary (use these terms consistently):\n${terms.map((g) => `- ${g.term}: ${g.definition}`).join("\n")}`);
+  if (section.notes) ctx.push(`Planner's notes for this section: ${section.notes}`);
 
   const messages: Message[] = [
     { role: "system", content: system },
@@ -152,6 +151,19 @@ export function continueMessage(tail: string): Message {
     role: "user",
     content: `You were cut off. Continue exactly from where you stopped; the text so far ends with:\n"""\n${tail}\n"""\nDo not repeat any of it (continue mid-sentence if needed), keep the same rules, and finish the section with the <!--summary: two sentences--> line.`,
   };
+}
+
+export type EditorSection = { id: string; heading: string; summary: string; head: string; tail: string };
+
+/** The editor sees summaries and section boundaries only, never the whole text. */
+export function editorMessages(title: string, sections: EditorSection[], glossary: GlossaryItem[], preamble: string): Message[] {
+  const system = `You are the editor of a long-form document written by several writers who each saw only their own brief. ${preamble} Return ONLY JSON: {"takeaways":["3-5 crisp, specific key takeaways, one sentence each"],"abstract":"one paragraph (3-5 sentences) abstract of the whole document","fixes":[{"sectionId":"","find":"exact text copied from the start or end of that section","replace":"corrected text","reason":""}]}. Use "fixes" ONLY for real problems: a missing or jarring transition between neighbouring sections, inconsistent terminology, or a repeated point. At most 4 fixes, each changing at most 2 sentences; "find" must be copied exactly from the given boundary text and "replace" must keep any [W1]-style citation tags in it. If the document reads well use "fixes":[]. No emoji.`;
+  const glos = glossary.length ? `\n\nGlossary:\n${glossary.map((g) => `- ${g.term}: ${g.definition}`).join("\n")}` : "";
+  const body = sections.map((s, i) => `§${i + 1} [${s.id}] ${s.heading}\nSummary: ${s.summary}\nStarts: ${s.head}\nEnds: ${s.tail}`).join("\n\n");
+  return [
+    { role: "system", content: system },
+    { role: "user", content: `Document: ${title}${glos}\n\n${body}` },
+  ];
 }
 
 export function finishMessages(title: string, summaries: Array<{ heading: string; summary: string }>, preamble: string): Message[] {
