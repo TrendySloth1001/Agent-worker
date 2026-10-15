@@ -1,4 +1,5 @@
 import 'package:app/assist/assistant_setup.dart';
+import 'package:app/core/constants/app_prefs.dart';
 import 'package:app/core/constants/assist.dart';
 import 'package:app/core/haptics.dart';
 import 'package:app/core/theme/app_theme.dart';
@@ -130,4 +131,34 @@ void main() {
       expect(settings.assistLive, isFalse);
     });
   }
+
+  testWidgets('sound on open switch: shown, default on, persists', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final settings = await SettingsController.load();
+    expect(settings.assistOpenSound, isTrue);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: AssistantSettingsScreen(
+          setup: FakeSetup(
+            const AssistantStatus(isDefault: true, manufacturer: 'Nothing'),
+          ),
+          settings: settings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(AssistStrings.soundTitle), findsOneWidget);
+    await tester.tap(find.text(AssistStrings.soundTitle));
+    await tester.pumpAndSettle();
+    expect(settings.assistOpenSound, isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(AppPrefs.assistOpenSound), isFalse);
+    expect((await SettingsController.load()).assistOpenSound, isFalse);
+  });
 }

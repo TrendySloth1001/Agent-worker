@@ -37,6 +37,8 @@ class AssistActivity : FlutterActivity() {
         // The engine must be in the cache before FlutterActivity looks it up.
         AssistEngine.ensure(this)
         AssistEngine.attach(this)
+        // Once per open, as early as possible (not on onNewIntent re-entry).
+        if (!ShareIntake.isShare(intent)) AssistSound.play(this)
         announce(intent)
         super.onCreate(savedInstanceState)
         noAnimation()

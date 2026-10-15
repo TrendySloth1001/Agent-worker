@@ -27,6 +27,7 @@ class SettingsController extends ChangeNotifier {
     assistActions = _prefs?.getBool(AppPrefs.assistActions) ?? true;
     assistLive = _prefs?.getBool(AppPrefs.assistLive) ?? true;
     assistSaveHistory = _prefs?.getBool(AppPrefs.assistSaveHistory) ?? true;
+    assistOpenSound = _prefs?.getBool(AppPrefs.assistOpenSound) ?? true;
     sendCrashReports = _prefs?.getBool(ErrorsPrefs.sendReports) ?? true;
     mode = _readMode();
     name = _prefs?.getString(AppPrefs.profileName) ?? '';
@@ -93,6 +94,9 @@ class SettingsController extends ChangeNotifier {
 
   /// Assistant overlay chats are saved to the history on their own.
   late bool assistSaveHistory;
+
+  /// A short chime when the assistant overlay opens (read by Kotlin).
+  late bool assistOpenSound;
 
   /// Crash reports are sent (the owner's always are, whatever this says).
   late bool sendCrashReports;
@@ -212,6 +216,12 @@ class SettingsController extends ChangeNotifier {
   void setAssistSaveHistory(bool value) {
     assistSaveHistory = value;
     _prefs?.setBool(AppPrefs.assistSaveHistory, value);
+    notifyListeners();
+  }
+
+  void setAssistOpenSound(bool value) {
+    assistOpenSound = value;
+    _prefs?.setBool(AppPrefs.assistOpenSound, value);
     notifyListeners();
   }
 
@@ -390,6 +400,7 @@ class SettingsController extends ChangeNotifier {
     assistActions = true;
     assistLive = true;
     assistSaveHistory = true;
+    assistOpenSound = true;
     for (final key in [
       AppPrefs.themeMode,
       AppPrefs.haptics,
@@ -411,6 +422,7 @@ class SettingsController extends ChangeNotifier {
       AppPrefs.assistActions,
       AppPrefs.assistLive,
       AppPrefs.assistSaveHistory,
+      AppPrefs.assistOpenSound,
     ]) {
       _prefs?.remove(key);
     }
