@@ -98,7 +98,7 @@ export function vaultRouter(deps: Partial<VaultDeps> = {}): Router {
     const { password } = body.parse(req.body ?? {});
     await recheck(d, uid, "seed", password);
     const key = d.dataKey();
-    if (!key) throw new AppError(409, "no_data_key", "The server has no DATA_KEY to store");
+    if (!key) throw new AppError(409, "no_data_key", "The server has no key configured to store");
     await d.store.put(uid, VAULT_KIND, await serialized(() => sealVault(password, key, uid, VAULT_KIND)));
     const row = await d.store.get(uid, VAULT_KIND);
     res.json({ exists: true, kind: VAULT_KIND, updatedAt: row?.updatedAt.toISOString() ?? null, needsReseal: false });
