@@ -117,6 +117,37 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.12.0',
+      date: '15 Oct 2026',
+      headline: 'See it before you ask',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'File previews',
+          detail:
+              'Tap any file to open it right in sparky: images, PDFs, code, '
+              'tables, notes and videos.',
+          icon: HugeIcons.strokeRoundedFileView,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Ask about a file',
+          detail:
+              'From any preview, one tap starts a chat with that file '
+              'attached.',
+          icon: HugeIcons.strokeRoundedAiChat01,
+        ),
+        (
+          kind: ChangeKind.improved,
+          title: 'Smoother Drive picking',
+          detail:
+              'The Google Drive picker fills the screen, with files, '
+              'folders and shared items in their own tabs.',
+          icon: HugeIcons.strokeRoundedFolder01,
+        ),
+      ],
+    ),
+    (
       version: '1.11.1',
       date: '15 Oct 2026',
       headline: 'Facts first',
