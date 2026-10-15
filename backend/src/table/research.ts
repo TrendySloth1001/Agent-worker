@@ -1,5 +1,5 @@
 // Per-seat web research for Round Table: one cheap planning call turns the
-// question into up to three search angles (one per seat), then every angle
+// question into up to two search angles (one per seat), then every angle
 // is searched in parallel through the normal web search.
 
 import type { Message } from "../providers.js";
@@ -10,9 +10,9 @@ import { log } from "../util/logger.js";
 import { RESEARCH_PLAN_PROMPT } from "../prompts/table.js";
 import { recordLatency } from "./latency.js";
 
-export type SeatResearch = { seat: "A" | "B" | "C"; queries: string[]; results: WebResult[] };
+export type SeatResearch = { seat: "A" | "B"; queries: string[]; results: WebResult[] };
 
-const SEATS = ["A", "B", "C"] as const;
+const SEATS = ["A", "B"] as const;
 const PLAN_MODELS = ["groq:openai/gpt-oss-20b", "ollama:gpt-oss:20b"];
 const PLAN_MS = 5_000;
 const PLAN_TOKENS = 1_200;
@@ -47,7 +47,7 @@ function deterministic(base: string): string[] {
   return [`${base} official source`, `${base} latest ${year}`, `${base} analysis`];
 }
 
-/** Up to three distinct queries, different from `base` (already searched). */
+/** Up to two distinct queries, different from `base` (already searched). */
 export async function planQueries(question: string, base: string, signal: AbortSignal, seed: string[] = []): Promise<string[]> {
   const started = Date.now();
   // The turn preflight already wrote more than one angle (a comparison): no planning call.
@@ -93,7 +93,7 @@ export async function runSeatResearch(queries: string[], signal: AbortSignal, se
   const seatQueries = queries.slice(0, SEATS.length);
   const { unique, seatToUnique } = dedupeSeatQueries(seatQueries);
   const settled = await Promise.allSettled(
-    // Staggered starts: three searches in the same instant trip Ollama's rate limit.
+    // Staggered starts: searches in the same instant trip Ollama's rate limit.
     unique.map(async (q, i) => {
       if (i > 0) await new Promise((r) => setTimeout(r, i * STAGGER_MS));
       return search(q, AbortSignal.any([signal, AbortSignal.timeout(SEARCH_MS)]));
