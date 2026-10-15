@@ -31,7 +31,7 @@ File _write(String name, List<int> bytes) =>
 
 File _text(String name, String text) => _write(name, text.codeUnits);
 
-FileInfo _local(File f, {String? mime, int id = 0}) => FileInfo(
+FileInfo _local(File f, {String? mime}) => FileInfo(
   id: '',
   name: f.uri.pathSegments.last,
   mime: mime ?? mimeFor(f.path),
