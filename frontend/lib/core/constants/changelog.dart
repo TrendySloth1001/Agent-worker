@@ -117,6 +117,21 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.12.3',
+      date: '15 Oct 2026',
+      headline: 'A little tick',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Sound on open',
+          detail:
+              'A soft tick when the assistant opens. Quiet on silent and Do '
+              'Not Disturb; turn it off in Assistant settings.',
+          icon: HugeIcons.strokeRoundedVolumeHigh,
+        ),
+      ],
+    ),
+    (
       version: '1.12.2',
       date: '15 Oct 2026',
       headline: 'Drive, opened up',
