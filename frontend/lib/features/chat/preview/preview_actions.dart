@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/platform/browsers.dart';
+import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
@@ -269,6 +270,57 @@ Future<void> _copyLink(BuildContext context, FileInfo file) async {
   if (context.mounted) previewNotice(context, AppStrings.previewLinkCopied);
 }
 
+/// SHARE, OPEN WITH… and DOWNLOAD as buttons, for cards that have nothing
+/// to draw (unknown types, Office files).
+class FileActionButtons extends StatelessWidget {
+  const FileActionButtons({
+    super.key,
+    required this.file,
+    this.compact = false,
+  });
+
+  final FileInfo file;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(AppIconData icon, String label, VoidCallback onTap) =>
+        FilledButton.tonalIcon(
+          style: FilledButton.styleFrom(
+            minimumSize: Size(
+              0,
+              compact ? PreviewSizes.compactButton : AppSizes.buttonHeight,
+            ),
+          ),
+          icon: AppIcon(icon, size: AppIconSize.md),
+          label: Text(label),
+          onPressed: onTap,
+        );
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        button(
+          PreviewIcons.openWith,
+          PreviewStrings.openWith,
+          () => openFileWith(context, file),
+        ),
+        button(
+          PreviewIcons.share,
+          PreviewStrings.share,
+          () => shareFile(context, file),
+        ),
+        button(
+          PreviewIcons.download,
+          PreviewStrings.download,
+          () => downloadFile(context, file),
+        ),
+      ],
+    );
+  }
+}
+
 /// Standard preview app bar: back, file name, actions. [immersive] gives
 /// the dark transparent bar used over images and video.
 class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
@@ -288,7 +340,7 @@ class PreviewBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = immersive ? Colors.white : null;
+    final fg = immersive ? AppColors.white : null;
     return AppBar(
       backgroundColor: immersive ? Colors.transparent : null,
       foregroundColor: fg,

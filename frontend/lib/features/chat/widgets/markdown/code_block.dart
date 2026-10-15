@@ -138,7 +138,18 @@ class CodeBlock extends StatelessWidget {
   static const _number = {'number', 'params', 'class'};
   static const _comment = {'comment', 'doctag', 'quote', 'formula'};
 
-  Color? _color(String? className, AppPalette p) {
+  /// Syntax-colored spans for [code], or null when the language is unknown
+  /// or the parser fails (the caller then shows plain text).
+  static List<InlineSpan>? highlightSpans(
+    String code,
+    String language,
+    AppPalette p,
+  ) {
+    final nodes = _parse(code, language);
+    return nodes == null ? null : _spans(nodes, p);
+  }
+
+  static Color? _color(String? className, AppPalette p) {
     if (className == null) return null;
     for (final part in className.split(' ')) {
       if (_comment.contains(part)) return p.synComment;
@@ -149,7 +160,7 @@ class CodeBlock extends StatelessWidget {
     return null;
   }
 
-  List<InlineSpan> _spans(List<hl.Node> nodes, AppPalette p) {
+  static List<InlineSpan> _spans(List<hl.Node> nodes, AppPalette p) {
     return [
       for (final node in nodes)
         TextSpan(

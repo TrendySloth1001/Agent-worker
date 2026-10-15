@@ -1,22 +1,31 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/constants/preview.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../data/chat_api.dart';
+import '../../../data/file_cache.dart';
 import '../../../data/files_api.dart';
+import '../widgets/markdown/app_markdown.dart';
+import '../widgets/markdown/code_block.dart';
+import 'csv_parse.dart';
+import 'file_info.dart';
 import 'preview_actions.dart';
+import 'preview_type.dart';
 
 enum _TextState { loading, processing, failed, ready }
 
-/// Text preview for documents: extracted text from the server (or the
-/// local file when it is plain text and still on this phone).
+/// Preview for text-like files: markdown rendered, code and JSON with the
+/// syntax palette, CSV as a table, plain and Office text as paged blocks.
+/// Raw text comes from the cached bytes; Office files show the text the
+/// server extracted.
 class TextPreviewScreen extends StatefulWidget {
   const TextPreviewScreen({super.key, required this.file});
 
@@ -28,15 +37,24 @@ class TextPreviewScreen extends StatefulWidget {
 
 class _TextPreviewScreenState extends State<TextPreviewScreen> {
   _TextState _state = _TextState.loading;
+  late final PreviewType _type = previewTypeOf(widget.file);
   List<String> _blocks = const [];
+  List<List<String>> _rows = const [];
+  String _text = '';
   bool _truncated = false;
+  bool _source = false;
+  int _shown = PreviewConfig.firstBlocks;
+  int _csvShown = PreviewConfig.csvFirstRows;
+  double? _progress;
   bool _searching = false;
   String _query = '';
   int _matches = 0;
   final _search = TextEditingController();
 
-  bool get _mono =>
-      AppFiles.monoExtensions.contains(extensionOf(widget.file.name));
+  bool get _mono => _type == PreviewType.code || _type == PreviewType.json;
+  bool get _searchable =>
+      _type != PreviewType.csv &&
+      !(_type == PreviewType.markdown && !_source);
 
   @override
   void initState() {
@@ -53,41 +71,87 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
   List<String> _split(String text) {
     final lines = text.split('\n');
     return [
-      for (var i = 0; i < lines.length; i += AppFiles.textBlockLines)
+      for (var i = 0; i < lines.length; i += PreviewConfig.blockLines)
         lines
-            .sublist(i, (i + AppFiles.textBlockLines).clamp(0, lines.length))
+            .sublist(
+              i,
+              (i + PreviewConfig.blockLines).clamp(0, lines.length),
+            )
             .join('\n'),
     ];
   }
 
-  Future<void> _load() async {
-    setState(() => _state = _TextState.loading);
+  Future<({String text, bool truncated})> _serverText() async {
+    final r = await FilesApi.instance.text(
+      widget.file.id,
+      limit: PreviewConfig.extractedTextLimit,
+    );
+    return (text: r.text, truncated: r.truncated);
+  }
+
+  Future<({String text, bool truncated})> _rawText() async {
     final f = widget.file;
-    final ext = extensionOf(f.name);
+    final local = f.localPath;
+    final hasLocal = local != null && File(local).existsSync();
+    if (!hasLocal && f.size > PreviewConfig.maxTextBytes && f.id.isNotEmpty) {
+      return _serverText();
+    }
+    final File file;
     try {
-      final local = f.localPath;
-      String text;
-      var truncated = false;
-      if (local != null &&
-          AppFiles.localTextExtensions.contains(ext) &&
-          File(local).existsSync()) {
-        text = await File(local).readAsString();
-        if (text.length > AppFiles.textPreviewLimit) {
-          text = text.substring(0, AppFiles.textPreviewLimit);
-          truncated = true;
-        }
-      } else if (f.id.isEmpty) {
+      file = await FileCache.instance.fetch(
+        f,
+        onProgress: (p) {
+          if (mounted) setState(() => _progress = p);
+        },
+      );
+    } catch (_) {
+      if (f.id.isNotEmpty) return _serverText();
+      rethrow;
+    }
+    final length = await file.length();
+    final cut = length > PreviewConfig.maxTextBytes;
+    final bytes = cut
+        ? await file.openRead(0, PreviewConfig.maxTextBytes).expand((c) => c).toList()
+        : await file.readAsBytes();
+    return (text: utf8.decode(bytes, allowMalformed: true), truncated: cut);
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _state = _TextState.loading;
+      _progress = null;
+    });
+    final f = widget.file;
+    try {
+      final r = isRawText(_type)
+          ? await _rawText()
+          : f.id.isEmpty
+          ? null
+          : await _serverText();
+      if (r == null) {
         if (mounted) setState(() => _state = _TextState.processing);
         return;
-      } else {
-        final r = await FilesApi.instance.text(f.id);
-        text = r.text;
-        truncated = r.truncated;
+      }
+      var text = r.text;
+      if (_type == PreviewType.json &&
+          text.length <= PreviewConfig.jsonPrettyBytes) {
+        try {
+          text = const JsonEncoder.withIndent('  ').convert(jsonDecode(text));
+        } catch (_) {
+          /* not valid JSON: shown as it is */
+        }
+      }
+      var rows = const <List<String>>[];
+      if (_type == PreviewType.csv &&
+          text.length <= PreviewConfig.csvMaxBytes) {
+        rows = parseCsv(text);
       }
       if (!mounted) return;
       setState(() {
+        _text = text;
         _blocks = _split(text);
-        _truncated = truncated;
+        _rows = rows;
+        _truncated = r.truncated;
         _state = _TextState.ready;
       });
       _recount();
@@ -149,7 +213,24 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
       appBar: PreviewBar(
         file: widget.file,
         extra: [
-          if (_state == _TextState.ready)
+          if (_state == _TextState.ready && _type == PreviewType.markdown)
+            IconButton(
+              icon: AppIcon(
+                PreviewIcons.rawView,
+                size: AppIconSize.md,
+                color: _source ? p.accent : null,
+              ),
+              tooltip: PreviewStrings.viewToggle,
+              onPressed: () {
+                Haptics.tap();
+                setState(() {
+                  _source = !_source;
+                  _searching = false;
+                  _query = '';
+                });
+              },
+            ),
+          if (_state == _TextState.ready && _searchable)
             IconButton(
               icon: AppIcon(
                 _searching ? AppIcons.close : AppIcons.search,
@@ -172,12 +253,22 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
         ],
       ),
       body: switch (_state) {
-        _TextState.loading => const Center(child: CircularProgressIndicator()),
-        _TextState.processing => PreviewMessage(
-          title: AppStrings.previewProcessing,
-          hint: AppStrings.previewProcessingHint,
-          onRetry: _load,
+        _TextState.loading => Center(
+          child: CircularProgressIndicator(value: _progress),
         ),
+        _TextState.processing =>
+          _type == PreviewType.office
+              ? FileInfoCard(
+                  file: widget.file,
+                  title: AppStrings.previewProcessing,
+                  hint: AppStrings.previewProcessingHint,
+                  children: [FileActionButtons(file: widget.file)],
+                )
+              : PreviewMessage(
+                  title: AppStrings.previewProcessing,
+                  hint: AppStrings.previewProcessingHint,
+                  onRetry: _load,
+                ),
         _TextState.failed => PreviewMessage(
           title: AppStrings.previewLoadFailed,
           error: true,
@@ -189,8 +280,19 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
   }
 
   Widget _content(AppPalette p) {
+    if (_text.trim().isEmpty && _type != PreviewType.office) {
+      return PreviewMessage(title: PreviewStrings.emptyFile);
+    }
     final t = context.text;
-    final style = (_mono ? t.code : t.body).copyWith(color: p.textPrimary);
+    final body = switch (_type) {
+      PreviewType.markdown when !_source => _markdown(),
+      PreviewType.csv when _rows.isNotEmpty => _CsvTable(
+        rows: _rows,
+        shown: _csvShown,
+        onMore: () => setState(() => _csvShown += PreviewConfig.csvMoreRows),
+      ),
+      _ => _blocksList(p),
+    };
     return Column(
       children: [
         if (_searching)
@@ -225,30 +327,258 @@ class _TextPreviewScreenState extends State<TextPreviewScreen> {
               },
             ),
           ),
-        Expanded(
-          child: SelectionArea(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(AppSpacing.screenPadding),
-              itemCount: _blocks.length + (_truncated ? 1 : 0),
-              itemBuilder: (context, i) {
-                if (i == _blocks.length) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.md),
-                    child: Text(AppStrings.previewTruncated, style: t.caption),
-                  );
-                }
-                return Text.rich(
-                  _highlight(
-                    _blocks[i],
-                    style,
-                    p.accent.withValues(alpha: 0.35),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+        Expanded(child: body),
       ],
+    );
+  }
+
+  Widget _loadMore(VoidCallback onTap) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+    child: Center(
+      child: FilledButton.tonal(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(0, AppSizes.buttonHeight),
+        ),
+        onPressed: () {
+          Haptics.tap();
+          onTap();
+        },
+        child: const Text(PreviewStrings.loadMore),
+      ),
+    ),
+  );
+
+  /// Markdown through the chat renderer; LOAD MORE grows the prefix.
+  Widget _markdown() {
+    final lines = _text.split('\n');
+    final limit = _shown * PreviewConfig.blockLines;
+    final more = lines.length > limit;
+    final data = more ? lines.take(limit).join('\n') : _text;
+    return SelectionArea(
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.screenPadding),
+        children: [
+          AppMarkdown(data: data, citations: const [], streaming: false),
+          if (more)
+            _loadMore(() => setState(() => _shown += PreviewConfig.moreBlocks)),
+          if (_truncated && !more) _truncatedNote(),
+        ],
+      ),
+    );
+  }
+
+  Widget _truncatedNote() => Padding(
+    padding: const EdgeInsets.only(top: AppSpacing.md),
+    child: Text(AppStrings.previewTruncated, style: context.text.caption),
+  );
+
+  Widget _blocksList(AppPalette p) {
+    final t = context.text;
+    final style = (_mono ? t.code : t.body).copyWith(color: p.textPrimary);
+    final searching = _query.isNotEmpty;
+    final count = searching ? _blocks.length : _shown.clamp(0, _blocks.length);
+    final more = count < _blocks.length;
+    final lang = codeLanguageOf(widget.file);
+    final header = _type == PreviewType.office ? 1 : 0;
+    return SelectionArea(
+      child: ListView.builder(
+        padding: const EdgeInsets.all(AppSpacing.screenPadding),
+        itemCount: header + count + 1,
+        itemBuilder: (context, i) {
+          if (header == 1 && i == 0) return _OfficeHeader(file: widget.file);
+          final n = i - header;
+          if (n == count) {
+            return Column(
+              children: [
+                if (more)
+                  _loadMore(
+                    () => setState(() => _shown += PreviewConfig.moreBlocks),
+                  ),
+                if (_truncated && !more) _truncatedNote(),
+              ],
+            );
+          }
+          final block = _blocks[n];
+          if (lang != null &&
+              !searching &&
+              block.length <= AppSizes.codeMaxHighlightChars) {
+            final spans = CodeBlock.highlightSpans(block, lang, p);
+            if (spans != null) {
+              return Text.rich(TextSpan(style: style, children: spans));
+            }
+          }
+          return Text.rich(
+            _highlight(block, style, p.accent.withValues(alpha: 0.35)),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Top of an Office file's extracted text: what it is and how to open it.
+class _OfficeHeader extends StatelessWidget {
+  const _OfficeHeader({required this.file});
+
+  final FileInfo file;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.text;
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(PreviewStrings.textTitle, style: t.caption),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              PreviewStrings.textHint,
+              style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            FileActionButtons(file: file, compact: true),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small CSV as a scrollable table: a header row, a row-number gutter and
+/// LOAD MORE for the rest.
+class _CsvTable extends StatelessWidget {
+  const _CsvTable({
+    required this.rows,
+    required this.shown,
+    required this.onMore,
+  });
+
+  final List<List<String>> rows;
+  final int shown;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final t = context.text;
+    final cols = rows
+        .take(shown)
+        .fold<int>(0, (m, r) => r.length > m ? r.length : m)
+        .clamp(1, PreviewConfig.csvMaxColumns);
+    final visible = rows.take(shown).toList();
+    // Column width from the longest of the first rows, within the limits.
+    final widths = [
+      for (var c = 0; c < cols; c++)
+        (visible
+                    .take(PreviewConfig.csvFirstRows)
+                    .fold<int>(
+                      0,
+                      (m, r) => c < r.length && r[c].length > m ? r[c].length : m,
+                    ) *
+                PreviewSizes.csvCharWidth +
+            AppSpacing.lg * 2)
+            .clamp(PreviewSizes.csvCellMinWidth, PreviewSizes.csvCellMaxWidth),
+    ];
+    final total = widths.fold<double>(0, (a, b) => a + b);
+    final more = rows.length > shown;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SizedBox(
+        width: total + PreviewSizes.csvGutterWidth,
+        child: Column(
+          children: [
+            Expanded(
+              child: SelectionArea(
+                child: ListView.builder(
+                  itemCount: visible.length + 1,
+                  itemBuilder: (context, i) {
+                    if (i == visible.length) {
+                      return Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: AppSpacing.xs),
+                            child: Text(
+                              PreviewStrings.rows(visible.length, rows.length),
+                              style: t.caption,
+                            ),
+                          ),
+                          if (more)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppSpacing.md,
+                              ),
+                              child: FilledButton.tonal(
+                                onPressed: () {
+                                  Haptics.tap();
+                                  onMore();
+                                },
+                                child: const Text(PreviewStrings.loadMore),
+                              ),
+                            ),
+                        ],
+                      );
+                    }
+                    final header = i == 0;
+                    final row = visible[i];
+                    return Container(
+                      height: PreviewSizes.csvRowHeight,
+                      decoration: BoxDecoration(
+                        color: header
+                            ? Theme.of(context).colorScheme.surfaceContainerHigh
+                            : null,
+                        border: Border(bottom: BorderSide(color: p.border)),
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: PreviewSizes.csvGutterWidth,
+                            child: Center(
+                              child: Text(
+                                header ? '' : '$i',
+                                style: t.caption,
+                              ),
+                            ),
+                          ),
+                          for (var c = 0; c < cols; c++)
+                            SizedBox(
+                              width: widths[c],
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.md,
+                                ),
+                                child: Text(
+                                  c < row.length ? row[c] : '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: (header ? t.label : t.code).copyWith(
+                                    color: p.textPrimary,
+                                    fontWeight: header
+                                        ? FontWeight.w700
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

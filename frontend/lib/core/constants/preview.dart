@@ -79,6 +79,8 @@ abstract final class PreviewSizes {
   static const csvCellMinWidth = 96.0;
   static const csvCellMaxWidth = 240.0;
   static const csvRowHeight = 36.0;
+  static const csvCharWidth = 7.5;
+  static const compactButton = 36.0;
   static const csvGutterWidth = 44.0;
   static const infoLabelWidth = 96.0;
   static const progressHeight = 2.0;

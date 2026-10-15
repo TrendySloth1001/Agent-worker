@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_files.dart';
 import '../../../core/constants/app_icons.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -10,6 +11,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../data/file_cache.dart';
 import '../../../data/files_api.dart';
 import '../widgets/attachment_views.dart';
 import '../widgets/image_strip.dart';
@@ -47,8 +49,11 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
     final f = widget.file;
     VideoPlayerController? c;
     final local = f.localPath;
-    if (local != null && File(local).existsSync()) {
-      c = VideoPlayerController.file(File(local));
+    final cached = local != null && File(local).existsSync()
+        ? File(local)
+        : await FileCache.instance.cached(f);
+    if (cached != null) {
+      c = VideoPlayerController.file(cached);
     } else {
       final url = await _readyUrl(f, force: force);
       if (!mounted) return;
@@ -75,7 +80,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
       await c.play();
     } catch (_) {
       // A stale signed URL: fetch a fresh one once.
-      if (!force && local == null && mounted) {
+      if (!force && cached == null && mounted) {
         c.removeListener(_tick);
         await c.dispose();
         _video = null;
@@ -153,14 +158,18 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    return Scaffold(
-      appBar: PreviewBar(file: widget.file),
-      body: Column(
+    // Video is immersive: black stage, light controls. Audio is a document.
+    final dark = !_isAudio;
+    final body = Column(
         children: [
           Expanded(child: _isAudio ? _audioBody(p) : _videoBody(p)),
           _controls(p),
         ],
-      ),
+      );
+    return Scaffold(
+      backgroundColor: dark ? AppColors.black : null,
+      appBar: PreviewBar(file: widget.file, immersive: dark),
+      body: body,
     );
   }
 
@@ -202,7 +211,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                           Text(
                             AppStrings.previewProcessing,
                             style: Theme.of(context).textTheme.bodyMedium!
-                                .copyWith(color: p.textSecondary),
+                                .copyWith(color: AppColors.white),
                           ),
                         ],
                       ],
@@ -214,7 +223,7 @@ class _MediaPreviewScreenState extends State<MediaPreviewScreen> {
                     child: AppIcon(
                       AppIcons.play,
                       size: AppSizes.previewAudioIcon,
-                      color: p.textPrimary,
+                      color: AppColors.white,
                     ),
                   ),
               ],
