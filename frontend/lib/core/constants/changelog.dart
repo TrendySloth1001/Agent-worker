@@ -117,6 +117,27 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.12.1',
+      date: '15 Oct 2026',
+      headline: 'Two ways to look',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Original or sparky view',
+          detail:
+              'Switch any preview between the file itself and what sparky '
+              'read from it: a summary, key points and the text.',
+          icon: HugeIcons.strokeRoundedView,
+        ),
+        (
+          kind: ChangeKind.fixed,
+          title: 'Previews that open',
+          detail: 'Images, PDFs and documents open reliably again.',
+          icon: HugeIcons.strokeRoundedImage01,
+        ),
+      ],
+    ),
+    (
       version: '1.12.0',
       date: '15 Oct 2026',
       headline: 'See it before you ask',
