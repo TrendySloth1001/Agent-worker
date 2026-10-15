@@ -117,6 +117,37 @@ abstract final class Changelog {
 
   static const releases = <Release>[
     (
+      version: '1.13.0',
+      date: '15 Oct 2026',
+      headline: 'Tap to do it',
+      items: [
+        (
+          kind: ChangeKind.added,
+          title: 'Playlists',
+          detail:
+              'Song suggestions arrive as a playlist: covers, 30-second '
+              'previews, open in your music app, or play them all.',
+          icon: HugeIcons.strokeRoundedPlayList,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'Action cards',
+          detail:
+              'Directions, calendar events, alarms, timers, calls, rides, '
+              'food and travel searches, ready in one tap.',
+          icon: HugeIcons.strokeRoundedTouch01,
+        ),
+        (
+          kind: ChangeKind.added,
+          title: 'UPI, prefilled',
+          detail:
+              'Ask to pay someone and sparky opens your UPI app with the '
+              'details filled in. You confirm and pay there.',
+          icon: HugeIcons.strokeRoundedPayment01,
+        ),
+      ],
+    ),
+    (
       version: '1.12.3',
       date: '15 Oct 2026',
       headline: 'A little tick',
