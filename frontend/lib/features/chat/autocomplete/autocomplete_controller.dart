@@ -37,6 +37,7 @@ class AutocompleteController extends ChangeNotifier {
   CompleteCall? _call;
   int _generation = 0;
   DateTime? _blockedUntil;
+  final _sent = <DateTime>[];
   bool _disposed = false;
   final _cache = <String, Completion>{};
 
@@ -102,6 +103,7 @@ class AutocompleteController extends ChangeNotifier {
     }
     _set(keep, _merge(text, const []));
     if (keep.isNotEmpty) return;
+    if (text.trim().length < SuggestConfig.serverMinChars) return;
     final blocked = _blockedUntil;
     if (blocked != null && _now().isBefore(blocked)) return;
     _timer = Timer(debounce, () => _request(text));
@@ -109,6 +111,10 @@ class AutocompleteController extends ChangeNotifier {
 
   void _request(String text) {
     if (_disposed || text != _text) return;
+    final now = _now();
+    _sent.removeWhere((t) => now.difference(t) >= const Duration(minutes: 1));
+    if (_sent.length >= SuggestConfig.maxPerMinute) return;
+    _sent.add(now);
     final generation = ++_generation;
     final call = fetch(text, conversationId);
     _call = call;
