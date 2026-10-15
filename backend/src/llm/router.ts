@@ -22,8 +22,8 @@ export const MAX_AUTO_ATTEMPTS = 3;
 export const MAX_TURN_SENDS = 4;
 /** One provider family gets at most one retry per turn: a second failure there says the rest of it is just as saturated. */
 export const MAX_SENDS_PER_PROVIDER = 2;
-/** Cooling models are only tried when nothing healthy is left, and then just once. */
-const MAX_COOLING_SENDS = 1;
+/** Cooling models are only tried when nothing healthy is left, and then at most twice. */
+const MAX_COOLING_SENDS = 2;
 /** A short Retry-After below this is waited out (jittered) instead of switching to a model that has to be primed from scratch. */
 const BACKOFF_MAX_MS = 2_000;
 /** The longest a turn waits for a minute window to free up rather than failing. */
