@@ -26,7 +26,9 @@ export const readPreferences = (): Preferences => {
 };
 
 export const applyTextSize = (size: Preferences["textSize"]): void => {
-  document.documentElement.style.setProperty("zoom", String(TEXT_SCALE[size]));
+  const root = document.documentElement.style;
+  root.setProperty("zoom", String(TEXT_SCALE[size]));
+  root.setProperty("--ui-zoom", String(TEXT_SCALE[size]));
 };
 
 export const writePreferences = (patch: Partial<Preferences>): Preferences => {

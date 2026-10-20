@@ -68,7 +68,7 @@ export function ChatView({ chat, models, userName, starters, onNewChat }: ChatVi
             onDismissToggle={chat.dismissToggle}
           />
         )}
-        <div className="mx-auto w-full max-w-[46rem] shrink-0 px-lg pt-sm pb-lg">
+        <div className="mx-auto w-full max-w-[52rem] shrink-0 px-lg pt-sm pb-lg 2xl:max-w-[60rem]">
           <Composer
             inputRef={input}
             streaming={streaming}

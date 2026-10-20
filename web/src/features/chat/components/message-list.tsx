@@ -65,7 +65,7 @@ export function MessageList({
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-xl px-lg py-xl">
+        <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-xl px-lg py-xl 2xl:max-w-[60rem]">
           {visible.map((m, i) => {
             if (m.role === "user") return <UserBubble key={m.id} message={m} />;
             const prompt = visible.slice(0, i).findLast((x) => x.role === "user")?.content;

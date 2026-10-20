@@ -19,7 +19,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const providers = await fetchProviders();
   const key = params.error ?? params.notice;
   return (
-    <DotBackdrop matrix className="min-h-dvh">
+    <DotBackdrop matrix className="min-h-app">
       <header className="mx-auto flex max-w-[64rem] items-center justify-between px-lg py-lg">
         <Wordmark className="text-title" />
         <ThemeToggle />

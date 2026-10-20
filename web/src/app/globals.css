@@ -132,3 +132,11 @@
     scroll-behavior: auto !important;
   }
 }
+
+@utility h-app {
+  height: calc(100dvh / var(--ui-zoom, 1));
+}
+
+@utility min-h-app {
+  min-height: calc(100dvh / var(--ui-zoom, 1));
+}

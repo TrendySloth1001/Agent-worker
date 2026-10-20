@@ -19,6 +19,7 @@ export const RICH_LANGS = [
   "mermaid",
   "sparky-card",
   "sparky-playlist",
+  "sparky-action",
 ] as const;
 
 export type RichLang = (typeof RICH_LANGS)[number];

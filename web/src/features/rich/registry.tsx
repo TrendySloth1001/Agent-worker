@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChecklistCard } from "./components/checklist-card";
 import { AskCard, EmailCard, MessageCard, SpecCard } from "./components/draft-cards";
+import { DeviceActionCard } from "./components/device-action-card";
 import { DiffBlock } from "./components/diff-block";
 import { FlashcardsCard } from "./components/flashcards-card";
 import { IntentCard } from "./components/intent-card";
@@ -15,6 +16,7 @@ import { CompareCard, FlowCard, ProgressCard, TreeCard } from "./components/stru
 import { TimelineCard } from "./components/timeline-card";
 import { asRichLang, type RichLang } from "./langs";
 import { parseChart } from "./parsers/chart";
+import { parseDeviceAction } from "./parsers/device-action";
 import { parseAsk, parseEmail, parseMessage, parseSpec } from "./parsers/drafts";
 import { parseIntentCard } from "./parsers/intent-card";
 import { parsePlaylist } from "./parsers/playlist";
@@ -75,6 +77,7 @@ export const RENDERERS: Readonly<Record<RichLang, Renderer>> = {
   mermaid: (code) => (code.trim() ? <MermaidCard code={code} /> : null),
   "sparky-card": from(parseIntentCard, (data) => <IntentCard data={data} />),
   "sparky-playlist": from(parsePlaylist, (data) => <PlaylistCard data={data} />),
+  "sparky-action": from(parseDeviceAction, (data) => <DeviceActionCard data={data} />),
 };
 
 export function renderRich(lang: string, code: string): ReactNode {

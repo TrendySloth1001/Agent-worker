@@ -31,7 +31,10 @@ export function ConversationScreen({ id }: { id: string }) {
 
   if (!data) {
     return (
-      <div className="mx-auto flex max-w-[46rem] flex-col gap-xl px-lg py-xl" aria-busy>
+      <div
+        className="mx-auto flex max-w-[52rem] flex-col gap-xl px-lg py-xl 2xl:max-w-[60rem]"
+        aria-busy
+      >
         <Skeleton className="ml-auto h-12 w-2/3" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="ml-auto h-12 w-1/2" />

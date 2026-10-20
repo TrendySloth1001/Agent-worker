@@ -33,7 +33,7 @@ export function Notice({
 
 function PdfView({ file }: { file: FileInfo }) {
   const blob = useBlobUrl(file.url);
-  if (blob.status === "loading") return <Skeleton className="h-[60dvh] w-full" />;
+  if (blob.status === "loading") return <Skeleton className="h-[calc(60dvh/var(--ui-zoom,1))] w-full" />;
   if (blob.status === "failed")
     return (
       <Notice
@@ -46,7 +46,7 @@ function PdfView({ file }: { file: FileInfo }) {
     <iframe
       title={file.name}
       src={blob.url}
-      className="h-[60dvh] w-full rounded-md border border-border bg-surface"
+      className="h-[calc(60dvh/var(--ui-zoom,1))] w-full rounded-md border border-border bg-surface"
     />
   );
 }
@@ -59,7 +59,7 @@ function TextView({ file, hint }: { file: FileInfo; hint?: string }) {
   return (
     <div className="flex flex-col gap-sm">
       {hint && <p className="text-label text-text-tertiary">{hint}</p>}
-      <pre className="max-h-[60dvh] overflow-auto rounded-md border border-border bg-code-background p-md font-mono text-label leading-normal whitespace-pre-wrap">
+      <pre className="max-h-[calc(60dvh/var(--ui-zoom,1))] overflow-auto rounded-md border border-border bg-code-background p-md font-mono text-label leading-normal whitespace-pre-wrap">
         {text.data.text}
       </pre>
       {text.data.truncated && (
@@ -77,9 +77,9 @@ export function OriginalView({ file }: { file: FileInfo }) {
   switch (previewTypeOf(file)) {
     case "image":
       return (
-        <div className="flex max-h-[60dvh] items-center justify-center overflow-hidden rounded-md bg-image-backdrop">
+        <div className="flex max-h-[calc(60dvh/var(--ui-zoom,1))] items-center justify-center overflow-hidden rounded-md bg-image-backdrop">
           {/* eslint-disable-next-line @next/next/no-img-element -- signed backend URL */}
-          <img src={file.url} alt={file.name} className="max-h-[60dvh] max-w-full object-contain" />
+          <img src={file.url} alt={file.name} className="max-h-[calc(60dvh/var(--ui-zoom,1))] max-w-full object-contain" />
         </div>
       );
     case "video":
@@ -88,7 +88,7 @@ export function OriginalView({ file }: { file: FileInfo }) {
           src={file.url}
           controls
           preload="metadata"
-          className="max-h-[60dvh] w-full rounded-md bg-black"
+          className="max-h-[calc(60dvh/var(--ui-zoom,1))] w-full rounded-md bg-black"
         />
       );
     case "audio":

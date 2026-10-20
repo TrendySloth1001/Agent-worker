@@ -36,7 +36,7 @@ export function SheetContent({
       <Dialog.Overlay className="fixed inset-0 z-40 animate-fade bg-scrim" />
       <Dialog.Content
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] animate-sheet-up flex-col overflow-y-auto",
+          "fixed inset-x-0 bottom-0 z-50 flex max-h-[calc(90dvh/var(--ui-zoom,1))] animate-sheet-up flex-col overflow-y-auto",
           "rounded-t-sheet bg-surface pb-lg outline-none",
           "border border-border",
           POSITION[side],

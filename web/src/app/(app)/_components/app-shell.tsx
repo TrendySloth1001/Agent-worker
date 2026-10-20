@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   return (
-    <div className="flex h-dvh bg-background">
+    <div className="flex h-app bg-background">
       <aside className="hidden w-[18.5rem] shrink-0 border-r border-border bg-surface md:block">
         <SidebarBody />
       </aside>

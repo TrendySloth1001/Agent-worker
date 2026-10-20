@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
   return (
-    <DotBackdrop matrix className="min-h-dvh">
-      <main className="mx-auto flex min-h-dvh max-w-[36rem] flex-col items-center justify-center gap-xl px-lg text-center">
+    <DotBackdrop matrix className="min-h-app">
+      <main className="mx-auto flex min-h-app max-w-[36rem] flex-col items-center justify-center gap-xl px-lg text-center">
         <Mascot size={88} />
         <Wordmark className="text-display" />
         <p className="text-body text-text-secondary">The web app is on its way.</p>

@@ -91,3 +91,28 @@ describe("calculator expressions", () => {
     expect(evaluate("1; 2", {})).toBeNull();
   });
 });
+
+describe("parseDeviceAction", () => {
+  it("maps phone actions to web equivalents", async () => {
+    const { parseDeviceAction } = await import("../parsers/device-action");
+    const url = parseDeviceAction(
+      '{"type": "url", "url": "https://www.google.com/travel/flights", "app": "Chrome"}',
+    );
+    expect(url).toMatchObject({
+      kind: "link",
+      href: "https://www.google.com/travel/flights",
+      title: "Chrome",
+    });
+    expect(
+      parseDeviceAction('{"type":"navigate","destination":"Lonavala","travel":"drive"}'),
+    ).toMatchObject({
+      kind: "link",
+      href: "https://www.google.com/maps/dir/?api=1&destination=Lonavala&travelmode=driving",
+    });
+    expect(parseDeviceAction('{"type":"alarm","time":"07:00"}')).toMatchObject({
+      kind: "phone",
+      title: "07:00",
+    });
+    expect(parseDeviceAction('{"type":"url","url":"javascript:alert(1)"}')).toBeNull();
+  });
+});
