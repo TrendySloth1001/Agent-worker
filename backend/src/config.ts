@@ -38,6 +38,8 @@ const schema = z.object({
   NODE_ENV: str,
   /** Where this server is reachable from phones/browsers (OAuth callback URLs). */
   PUBLIC_BASE_URL: str,
+  /** Comma-separated origins of the web app (GitHub sign-in returns there); localhost:3000 is added outside production. */
+  WEB_APP_ORIGIN: str,
   GOOGLE_WEB_CLIENT_ID: str,
   GOOGLE_WEB_CLIENT_SECRET: str,
   /** Optional browser API key for the Google Picker (Drive "Pick files"). */
@@ -78,6 +80,11 @@ const schema = z.object({
   SHUTDOWN_GRACE_MS: num(60_000),
 });
 
+function webAppOrigins(raw: string | undefined, production: boolean): string[] {
+  const listed = (raw?.trim() || "https://app.sparky.cloudnsofts.com").split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
+  return production ? listed : [...listed, "http://localhost:3000"];
+}
+
 const env = schema.parse(process.env);
 
 export const config = {
@@ -111,6 +118,7 @@ export const config = {
   dataKeyPrevious: env.DATA_KEY_PREVIOUS,
   production: env.NODE_ENV === "production",
   /** Public origin, no trailing slash; GitHub's OAuth callback is `${publicBaseUrl}/auth/github/callback`. */
+  webAppOrigins: webAppOrigins(env.WEB_APP_ORIGIN, env.NODE_ENV === "production"),
   publicBaseUrl: (env.PUBLIC_BASE_URL?.trim() || "https://sparky.cloudnsofts.com").replace(/\/+$/, ""),
   /**
    * "Continue with Google": the app gets an ID token for this Web client id

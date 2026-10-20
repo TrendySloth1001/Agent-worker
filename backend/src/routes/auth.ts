@@ -154,12 +154,12 @@ authPublicRouter.post("/github/device/:flowId/poll", async (req, res) => {
 // start/redeem are public for sign-in; connect/link fall through (next()) to the
 // signed-in routes below, behind requireUser.
 
-const webStartBody = z.object({ mode: z.enum(WEB_MODES as [string, ...string[]]), device });
+const webStartBody = z.object({ mode: z.enum(WEB_MODES as [string, ...string[]]), device, returnOrigin: z.string().max(200).optional() });
 const ticketBody = z.object({ ticket: z.string().min(20).max(200) });
 const webStart = (req: Request) => {
   const parsed = webStartBody.safeParse(req.body ?? {});
   if (!parsed.success) throw new AppError(400, "bad_request", "Something about that request wasn't right — please try again.");
-  return parsed.data as { mode: "signin" | "connect" | "link"; device?: string };
+  return parsed.data as { mode: "signin" | "connect" | "link"; device?: string; returnOrigin?: string };
 };
 const ticketOf = (req: Request) => {
   const parsed = ticketBody.safeParse(req.body ?? {});
@@ -175,7 +175,7 @@ authPublicRouter.post("/github/web/start", async (req, res, next) => {
   const body = webStart(req);
   if (body.mode !== "signin") return next();
   res.setHeader("Cache-Control", "no-store");
-  res.json(await githubWeb.start({ mode: "signin", userId: null, device: deviceLabel(req, body) }));
+  res.json(await githubWeb.start({ mode: "signin", userId: null, device: deviceLabel(req, body), returnOrigin: body.returnOrigin }));
 });
 
 authPublicRouter.get("/github/callback", async (req, res) => {

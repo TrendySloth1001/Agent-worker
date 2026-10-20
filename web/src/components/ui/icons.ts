@@ -74,6 +74,12 @@ import {
   Video01Icon,
   VibrateIcon,
   Add01Icon,
+  GithubIcon,
+  Logout03Icon,
+  Mail01Icon,
+  SquareLock02Icon,
+  ViewIcon,
+  ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
 
 export const icons = {
@@ -154,6 +160,12 @@ export const icons = {
   themeLight: Sun03Icon,
   themeDark: Moon02Icon,
   notify: Notification01Icon,
+  email: Mail01Icon,
+  password: SquareLock02Icon,
+  show: ViewIcon,
+  hide: ViewOffSlashIcon,
+  logOut: Logout03Icon,
+  github: GithubIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 export type IconName = keyof typeof icons;

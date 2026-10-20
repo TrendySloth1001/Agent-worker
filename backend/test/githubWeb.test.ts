@@ -6,6 +6,7 @@ import { decryptSecret, encryptSecret } from "../src/connections/crypto.js";
 import { GITHUB_SSO_SCOPES } from "../src/auth/githubSso.js";
 import { GITHUB_SCOPES } from "../src/connections/deviceFlow.js";
 import {
+  WEB_RETURN_PATH,
   AUTHORIZE_URL,
   createGithubWeb,
   DEEP_LINK,
@@ -113,6 +114,7 @@ function harness(opts: { tokenAnswer?: object; secret?: string | undefined; reso
         tokens: { accessToken: "a", accessExpiresAt: "", refreshToken: "r", refreshExpiresAt: "", sessionId: "s" },
       };
     },
+    webOrigins: () => ["https://app.sparky.example"],
     connection: async (userId) => ({
       provider: "github",
       accountLogin: "octocat",
@@ -360,4 +362,34 @@ test("web start: sign-in asks only who you are; connect asks for repo access", a
   assert.equal(signin.searchParams.get("scope"), "read:user user:email");
   const connect = new URL((await h.web.start({ mode: "connect", userId: "u1", device: null })).authorizeUrl);
   assert.equal(connect.searchParams.get("scope"), GITHUB_SCOPES);
+});
+
+test("web return: an allow-listed origin gets the ticket on its own return path, never a deep link", async () => {
+  const h = harness();
+  const origin = "https://app.sparky.example";
+  const s = await h.web.start({ mode: "signin", userId: null, device: "Chrome", returnOrigin: origin });
+  const cb = await h.web.callback({ code: "c0de", state: s.state });
+  assert.equal(cb.ok, true);
+  const url = new URL(cb.link);
+  assert.equal(`${url.origin}${url.pathname}`, `${origin}${WEB_RETURN_PATH}`);
+  const ticket = url.searchParams.get("ticket")!;
+  assert.equal(url.searchParams.get("state"), s.state);
+  assert.equal((await h.web.redeem(ticket, null)).mode, "signin");
+});
+
+test("web return: failures also go back to the web origin", async () => {
+  const h = harness();
+  const s = await h.web.start({ mode: "signin", userId: null, device: null, returnOrigin: "https://app.sparky.example" });
+  const cb = await h.web.callback({ error: "access_denied", state: s.state });
+  assert.equal(cb.ok, false);
+  assert.ok(cb.link.startsWith(`https://app.sparky.example${WEB_RETURN_PATH}?`));
+});
+
+test("web return: origins outside the allow-list are refused, and a forged state falls back to the deep link", async () => {
+  const h = harness();
+  await assert.rejects(h.web.start({ mode: "signin", userId: null, device: null, returnOrigin: "https://evil.example" }), isApp(400, "bad_request"));
+  await assert.rejects(h.web.start({ mode: "connect", userId: "u1", device: null, returnOrigin: "https://app.sparky.example" }), isApp(400, "bad_request"));
+  const forged = `${Buffer.from("https://evil.example").toString("base64url")}.abc`;
+  const cb = await h.web.callback({ code: "c", state: forged });
+  assert.ok(cb.link.startsWith(`${DEEP_LINK}?`));
 });
