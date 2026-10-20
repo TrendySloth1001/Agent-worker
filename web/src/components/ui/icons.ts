@@ -76,6 +76,28 @@ import {
   Add01Icon,
 } from "@hugeicons/core-free-icons";
 
+import {
+  AiIdeaIcon,
+  Alert02Icon,
+  ArrowReloadHorizontalIcon,
+  Brain02Icon,
+  FlashIcon,
+  GithubIcon,
+  GoogleDriveIcon,
+  Library,
+  LockIcon,
+  Logout01Icon,
+  Megaphone01Icon,
+  Plug01Icon,
+  Rocket01Icon,
+  RulerIcon,
+  SecurityLockIcon,
+  SparklesIcon,
+  TextFontIcon,
+  ViewIcon,
+  ViewOffIcon,
+} from "@hugeicons/core-free-icons";
+
 export const icons = {
   back: ArrowLeft01Icon,
   close: Cancel01Icon,
@@ -154,6 +176,25 @@ export const icons = {
   themeLight: Sun03Icon,
   themeDark: Moon02Icon,
   notify: Notification01Icon,
+  memory: Brain02Icon,
+  apps: Plug01Icon,
+  privacy: SecurityLockIcon,
+  reset: ArrowReloadHorizontalIcon,
+  logout: Logout01Icon,
+  github: GithubIcon,
+  googleDrive: GoogleDriveIcon,
+  lock: LockIcon,
+  tone: Megaphone01Icon,
+  length: RulerIcon,
+  modelFast: FlashIcon,
+  modelAuto: Rocket01Icon,
+  modelSmart: AiIdeaIcon,
+  textSize: TextFontIcon,
+  whatsNew: SparklesIcon,
+  show: ViewIcon,
+  hide: ViewOffIcon,
+  warning: Alert02Icon,
+  library: Library,
 } as const satisfies Record<string, IconSvgElement>;
 
 export type IconName = keyof typeof icons;
