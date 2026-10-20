@@ -69,11 +69,7 @@ export function applyEvent(m: UiMessage, event: ChatEvent): UiMessage {
   }
 }
 
-const mapMessage = (
-  state: ChatState,
-  id: string,
-  fn: (m: UiMessage) => UiMessage,
-): ChatState => ({
+const mapMessage = (state: ChatState, id: string, fn: (m: UiMessage) => UiMessage): ChatState => ({
   messages: state.messages.map((m) => (m.id === id ? fn(m) : m)),
 });
 

@@ -10,7 +10,12 @@ export const SCENARIOS: readonly Scenario[] = ["empty", "conversation", "streami
 const DAY = 86_400_000;
 const at = (daysAgo: number): string => new Date(Date.now() - daysAgo * DAY).toISOString();
 
-const summary = (id: string, title: string, daysAgo: number, pinned = false): ConversationSummary => ({
+const summary = (
+  id: string,
+  title: string,
+  daysAgo: number,
+  pinned = false,
+): ConversationSummary => ({
   id,
   title,
   messageCount: 4,
@@ -37,7 +42,8 @@ export const FIXTURE_MODELS: AiModel[] = [
     name: "GPT OSS 120B",
     provider: "groq",
     maker: "OpenAI",
-    about: "A strong all-rounder for reasoning, writing and code. Thoughtful answers on harder questions.",
+    about:
+      "A strong all-rounder for reasoning, writing and code. Thoughtful answers on harder questions.",
     contextTokens: 128_000,
     speed: "balanced",
   },
@@ -85,12 +91,37 @@ export async function* readSse(body: ReadableStream<Uint8Array>) {
 > Stopping is just aborting the fetch; the server notices the closed socket.`;
 
 export const SOURCES = [
-  { id: "W1", kind: "web" as const, title: "Using server-sent events", url: "https://developer.mozilla.org/docs/Web/API/Server-sent_events/Using_server-sent_events", snippet: "", site: "developer.mozilla.org" },
-  { id: "W2", kind: "web" as const, title: "Server-sent events", url: "https://html.spec.whatwg.org/multipage/server-sent-events.html", snippet: "", site: "html.spec.whatwg.org" },
-  { id: "K1", kind: "kb" as const, title: "Streaming notes", url: "", snippet: "", site: "Streaming notes" },
+  {
+    id: "W1",
+    kind: "web" as const,
+    title: "Using server-sent events",
+    url: "https://developer.mozilla.org/docs/Web/API/Server-sent_events/Using_server-sent_events",
+    snippet: "",
+    site: "developer.mozilla.org",
+  },
+  {
+    id: "W2",
+    kind: "web" as const,
+    title: "Server-sent events",
+    url: "https://html.spec.whatwg.org/multipage/server-sent-events.html",
+    snippet: "",
+    site: "html.spec.whatwg.org",
+  },
+  {
+    id: "K1",
+    kind: "kb" as const,
+    title: "Streaming notes",
+    url: "",
+    snippet: "",
+    site: "Streaming notes",
+  },
 ];
 
-export const FOLLOW_UPS = ["How do I reconnect after a drop?", "Compare SSE with WebSockets", "Show a React hook for this"];
+export const FOLLOW_UPS = [
+  "How do I reconnect after a drop?",
+  "Compare SSE with WebSockets",
+  "Show a React hook for this",
+];
 
 export const STORED_CONVERSATION: StoredMessage[] = [
   {
@@ -131,7 +162,10 @@ const CHUNK = 14;
 
 export function fakeStream(hold: boolean) {
   return async function* (_request: unknown, signal: AbortSignal): AsyncGenerator<ChatEvent> {
-    yield { type: "start", data: { candidates: [MODEL_ID, "meta-llama/llama-4-scout-17b-16e-instruct"] } };
+    yield {
+      type: "start",
+      data: { candidates: [MODEL_ID, "meta-llama/llama-4-scout-17b-16e-instruct"] },
+    };
     await sleep(600, signal);
     yield { type: "status", data: { phase: "searching" } };
     await sleep(900, signal);

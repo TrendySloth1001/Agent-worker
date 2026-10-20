@@ -35,7 +35,8 @@ export function WaitStatusLine({ step, prompt }: WaitStatusLineProps) {
   }, [beat, step.kind, prompt]);
 
   const text = step.kind === "think" ? word : step.text;
-  const lit = step.kind === "picking" && step.modelIds.length > 0 ? beat % step.modelIds.length : -1;
+  const lit =
+    step.kind === "picking" && step.modelIds.length > 0 ? beat % step.modelIds.length : -1;
 
   return (
     <div role="status" aria-live="polite" className="flex animate-fade items-center gap-sm">
@@ -46,11 +47,17 @@ export function WaitStatusLine({ step, prompt }: WaitStatusLineProps) {
           <ModelMark
             key={id}
             modelId={id}
-            className={cn("duration-fast transition-opacity", lit >= 0 && i !== lit && "opacity-40")}
+            className={cn(
+              "duration-fast transition-opacity",
+              lit >= 0 && i !== lit && "opacity-40",
+            )}
           />
         ))
       )}
-      <span key={text} className="animate-fade font-mono text-caption tracking-[0.04em] text-text-secondary">
+      <span
+        key={text}
+        className="animate-fade font-mono text-caption tracking-[0.04em] text-text-secondary"
+      >
         {text}
       </span>
     </div>

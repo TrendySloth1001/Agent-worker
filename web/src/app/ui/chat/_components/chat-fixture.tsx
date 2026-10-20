@@ -40,14 +40,7 @@ function Fixture({ scenario }: { scenario: Scenario }) {
     if (scenario === "streaming" || scenario === "waiting") send(PROMPT);
   }, [scenario, send]);
 
-  return (
-    <ChatView
-      chat={chat}
-      models={FIXTURE_MODELS}
-      userName="Nikhil Kumawat"
-      onAttach={() => undefined}
-    />
-  );
+  return <ChatView chat={chat} models={FIXTURE_MODELS} userName="Nikhil Kumawat" />;
 }
 
 export function ChatFixture({ scenario }: { scenario: Scenario }) {

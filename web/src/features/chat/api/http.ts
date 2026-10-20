@@ -34,7 +34,8 @@ async function failure(res: Response): Promise<ApiError> {
   try {
     const body: unknown = await res.json();
     if (typeof body === "object" && body !== null && "error" in body) {
-      const err = (body as { error: { code?: unknown; message?: unknown; retryable?: unknown } }).error;
+      const err = (body as { error: { code?: unknown; message?: unknown; retryable?: unknown } })
+        .error;
       if (typeof err.code === "string") code = err.code;
       if (typeof err.message === "string" && err.message) message = err.message;
       if (typeof err.retryable === "boolean") retryable = err.retryable;

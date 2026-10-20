@@ -3,16 +3,131 @@ const ELLIPSIS = "…";
 const GENERAL = "general";
 
 const KEYWORDS: Record<string, string[]> = {
-  code: ["code", "bug", "function", "flutter", "dart", "python", "java", "script", "api", "error", "compile", "debug", "sql", "regex", "app", "class", "git", "html", "css", "react", "server"],
-  math: ["math", "calcul", "equation", "solve", "number", "sum", "percent", "algebra", "integral", "derivative", "probab", "statistic", "average", "formula", "geometry"],
-  travel: ["travel", "trip", "flight", "hotel", "visit", "itinerary", "tour", "vacation", "holiday", "train", "route", "city", "country", "beach"],
-  food: ["recipe", "cook", "food", "eat", "dinner", "lunch", "breakfast", "bake", "meal", "ingredient", "restaurant", "diet", "snack", "curry"],
-  writing: ["write", "essay", "email", "story", "poem", "letter", "draft", "summar", "rewrite", "blog", "caption", "article", "translate", "speech", "resume", "outline"],
+  code: [
+    "code",
+    "bug",
+    "function",
+    "flutter",
+    "dart",
+    "python",
+    "java",
+    "script",
+    "api",
+    "error",
+    "compile",
+    "debug",
+    "sql",
+    "regex",
+    "app",
+    "class",
+    "git",
+    "html",
+    "css",
+    "react",
+    "server",
+  ],
+  math: [
+    "math",
+    "calcul",
+    "equation",
+    "solve",
+    "number",
+    "sum",
+    "percent",
+    "algebra",
+    "integral",
+    "derivative",
+    "probab",
+    "statistic",
+    "average",
+    "formula",
+    "geometry",
+  ],
+  travel: [
+    "travel",
+    "trip",
+    "flight",
+    "hotel",
+    "visit",
+    "itinerary",
+    "tour",
+    "vacation",
+    "holiday",
+    "train",
+    "route",
+    "city",
+    "country",
+    "beach",
+  ],
+  food: [
+    "recipe",
+    "cook",
+    "food",
+    "eat",
+    "dinner",
+    "lunch",
+    "breakfast",
+    "bake",
+    "meal",
+    "ingredient",
+    "restaurant",
+    "diet",
+    "snack",
+    "curry",
+  ],
+  writing: [
+    "write",
+    "essay",
+    "email",
+    "story",
+    "poem",
+    "letter",
+    "draft",
+    "summar",
+    "rewrite",
+    "blog",
+    "caption",
+    "article",
+    "translate",
+    "speech",
+    "resume",
+    "outline",
+  ],
 };
 
 const STEMS: Record<string, string[]> = {
-  general: ["Ponder", "Untangl", "Mull", "Mus", "Weigh", "Connect", "Gather", "Sift", "Brew", "Chas", "Piec", "Hatch", "Simmer", "Ruminat", "Percolat", "Cogitat", "Daydream", "Wonder"],
-  code: ["Debugg", "Compil", "Pars", "Refactor", "Trac", "Stitch", "Lint", "Hack", "Unravel", "Patch"],
+  general: [
+    "Ponder",
+    "Untangl",
+    "Mull",
+    "Mus",
+    "Weigh",
+    "Connect",
+    "Gather",
+    "Sift",
+    "Brew",
+    "Chas",
+    "Piec",
+    "Hatch",
+    "Simmer",
+    "Ruminat",
+    "Percolat",
+    "Cogitat",
+    "Daydream",
+    "Wonder",
+  ],
+  code: [
+    "Debugg",
+    "Compil",
+    "Pars",
+    "Refactor",
+    "Trac",
+    "Stitch",
+    "Lint",
+    "Hack",
+    "Unravel",
+    "Patch",
+  ],
   math: ["Crunch", "Comput", "Add", "Factor", "Deriv", "Graph", "Solv", "Estimat", "Tally"],
   travel: ["Mapp", "Rout", "Wander", "Scout", "Pack", "Chart", "Explor", "Navigat"],
   food: ["Season", "Stirr", "Whisk", "Tast", "Marinat", "Sizzl", "Simmer"],
@@ -28,7 +143,16 @@ const OBJECTS: Record<string, string[]> = {
   writing: ["an outline", "some words", "a draft", "the tone"],
 };
 
-const ADVERBS = ["Gently", "Carefully", "Quietly", "Happily", "Slowly", "Briefly", "Warmly", "Keenly"];
+const ADVERBS = [
+  "Gently",
+  "Carefully",
+  "Quietly",
+  "Happily",
+  "Slowly",
+  "Briefly",
+  "Warmly",
+  "Keenly",
+];
 const FIXED = ["Thinking", "One moment", "On it", "Hmm"];
 
 export function seedOf(text: string): number {
@@ -81,7 +205,10 @@ export function pool(topic: string): string[] {
 
 const sessionUsed = new Set<string>();
 
-export function nextThinkingWord(prompt: string | undefined, used: Set<string> = sessionUsed): string {
+export function nextThinkingWord(
+  prompt: string | undefined,
+  used: Set<string> = sessionUsed,
+): string {
   const topic = topicOf(prompt);
   const stems = (STEMS[topic] ?? []).map((s) => s.toLowerCase());
   const topical = (line: string) =>

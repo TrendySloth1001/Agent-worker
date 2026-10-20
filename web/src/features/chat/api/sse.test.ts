@@ -38,12 +38,16 @@ describe("SseParser", () => {
 
   it("joins multi-line data with newlines", () => {
     const p = new SseParser();
-    expect(p.push("event: x\ndata: one\ndata: two\n\n")).toEqual([{ event: "x", data: "one\ntwo" }]);
+    expect(p.push("event: x\ndata: one\ndata: two\n\n")).toEqual([
+      { event: "x", data: "one\ntwo" },
+    ]);
   });
 
   it("ignores comments and pings, accepts CRLF", () => {
     const p = new SseParser();
-    expect(p.push(": ping\r\n\r\nevent: a\r\ndata: 1\r\n\r\n")).toEqual([{ event: "a", data: "1" }]);
+    expect(p.push(": ping\r\n\r\nevent: a\r\ndata: 1\r\n\r\n")).toEqual([
+      { event: "a", data: "1" },
+    ]);
   });
 
   it("defaults the event name and flushes an unterminated tail", () => {

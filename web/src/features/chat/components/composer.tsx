@@ -1,9 +1,22 @@
 "use client";
 
-import { useState, type KeyboardEvent, type Ref } from "react";
+import {
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type Ref,
+} from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  ACCEPT,
+  AttachmentChip,
+  type AttachmentsController,
+  type FileInfo,
+} from "@/features/files";
 import { cn } from "@/lib/cn";
 import type { WebMode } from "../api/chat-stream";
 import { CHAT_COPY } from "../lib/copy";
@@ -45,20 +58,50 @@ interface ComposerProps {
   streaming: boolean;
   options: ComposerOptions;
   onOptionsChange: (next: ComposerOptions) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, files: FileInfo[]) => void;
   onStop: () => void;
-  onAttach?: () => void;
+  attachments?: AttachmentsController;
+  onPreview?: (file: FileInfo) => void;
   inputRef?: Ref<HTMLTextAreaElement>;
 }
 
-export function Composer({ streaming, options, onOptionsChange, onSend, onStop, onAttach, inputRef }: ComposerProps) {
+const hasFiles = (e: DragEvent): boolean => Array.from(e.dataTransfer.types).includes("Files");
+
+export function Composer({
+  streaming,
+  options,
+  onOptionsChange,
+  onSend,
+  onStop,
+  attachments,
+  onPreview,
+  inputRef,
+}: ComposerProps) {
   const [text, setText] = useState("");
-  const canSend = text.trim() !== "";
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const files = attachments?.files ?? [];
+  const uploading = attachments?.uploading ?? false;
+  const canSend = (text.trim() !== "" || files.length > 0) && !uploading;
 
   const submit = () => {
     if (!canSend || streaming) return;
-    onSend(text);
+    onSend(text, files);
     setText("");
+    attachments?.clear();
+  };
+
+  const onDrop = (e: DragEvent) => {
+    if (!attachments || !hasFiles(e)) return;
+    e.preventDefault();
+    setDragging(false);
+    attachments.add(Array.from(e.dataTransfer.files));
+  };
+
+  const onPaste = (e: ClipboardEvent) => {
+    if (!attachments || e.clipboardData.files.length === 0) return;
+    e.preventDefault();
+    attachments.add(Array.from(e.clipboardData.files));
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -69,7 +112,36 @@ export function Composer({ streaming, options, onOptionsChange, onSend, onStop, 
   };
 
   return (
-    <div className="flex flex-col gap-sm rounded-card border border-border-strong bg-glass p-sm backdrop-blur-md">
+    <div
+      className={cn(
+        "relative flex flex-col gap-sm rounded-card border border-border-strong bg-glass p-sm backdrop-blur-md",
+        dragging && "border-accent",
+      )}
+      onDragOver={(e) => {
+        if (!attachments || !hasFiles(e)) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+      onPaste={onPaste}
+    >
+      {attachments && attachments.items.length > 0 && (
+        <ul className="flex flex-wrap gap-sm px-xs pt-xs" aria-label={CHAT_COPY.attachments}>
+          {attachments.items.map((item) => (
+            <li key={item.key} className="min-w-0">
+              <AttachmentChip
+                attachment={item}
+                onRemove={() => attachments.remove(item.key)}
+                onRetry={() => attachments.retry(item.key)}
+                onOpen={
+                  item.file && onPreview ? () => item.file && onPreview(item.file) : undefined
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      )}
       <Textarea
         ref={inputRef}
         value={text}
@@ -82,7 +154,28 @@ export function Composer({ streaming, options, onOptionsChange, onSend, onStop, 
       />
       <div className="flex items-center justify-between gap-sm">
         <div className="flex min-w-0 items-center gap-xs">
-          {onAttach && <IconButton icon="attach" label={CHAT_COPY.attach} variant="ghost" onClick={onAttach} />}
+          {attachments && (
+            <>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                accept={ACCEPT}
+                onChange={(e) => {
+                  attachments.add(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+              <IconButton
+                icon="attach"
+                label={CHAT_COPY.attach}
+                variant="ghost"
+                disabled={attachments.items.length >= attachments.max}
+                onClick={() => picker.current?.click()}
+              />
+            </>
+          )}
           <div className="flex items-center gap-xs overflow-x-auto">
             <ModeChip
               label={CHAT_COPY.web}

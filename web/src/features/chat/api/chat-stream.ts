@@ -23,7 +23,10 @@ export interface ChatRequest {
 
 export type ChatStreamFn = (request: ChatRequest, signal: AbortSignal) => AsyncIterable<ChatEvent>;
 
-export async function* streamChat(request: ChatRequest, signal: AbortSignal): AsyncGenerator<ChatEvent> {
+export async function* streamChat(
+  request: ChatRequest,
+  signal: AbortSignal,
+): AsyncGenerator<ChatEvent> {
   const res = await apiFetch("/chat", {
     ...jsonBody("POST", { ...request, smartSuggestions: true }),
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },

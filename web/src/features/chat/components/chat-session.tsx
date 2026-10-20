@@ -20,10 +20,9 @@ interface ChatSessionProps {
   conversationId?: string;
   initialMessages?: StoredMessage[];
   userName?: string;
-  onAttach?: () => void;
 }
 
-export function ChatSession({ conversationId, initialMessages, userName, onAttach }: ChatSessionProps) {
+export function ChatSession({ conversationId, initialMessages, userName }: ChatSessionProps) {
   const router = useRouter();
   const params = useSearchParams();
   const me = useMe();
@@ -64,7 +63,6 @@ export function ChatSession({ conversationId, initialMessages, userName, onAttac
       userName={userName ?? me.data?.user.name}
       starters={starters}
       onNewChat={newChat}
-      onAttach={onAttach}
     />
   );
 }

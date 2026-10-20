@@ -12,6 +12,7 @@ import { Markdown } from "../markdown/markdown";
 import type { UiMessage } from "../state/types";
 import { CopyButton } from "./copy-button";
 import { ModelInfoSheet } from "./model-info-sheet";
+import { AttachmentChip } from "@/features/files";
 import { ModelMark } from "./model-mark";
 import { SourceChips } from "./source-chips";
 import { SuggestionChips } from "./suggestion-chips";
@@ -19,20 +20,39 @@ import { WaitStatusLine } from "./wait-status-line";
 
 export function UserBubble({ message }: { message: UiMessage }) {
   return (
-    <div className="flex animate-fade justify-end">
-      <div className="max-w-[85%] rounded-lg bg-user-bubble px-lg py-md text-body break-words whitespace-pre-wrap text-user-bubble-text">
-        {message.content}
-      </div>
+    <div className="flex animate-fade flex-col items-end gap-sm">
+      {message.attachments.length > 0 && (
+        <ul className="flex max-w-[85%] flex-wrap justify-end gap-sm" aria-label="Attachments">
+          {message.attachments.map((a) => (
+            <li key={a.id}>
+              <AttachmentChip attachment={{ name: a.name, size: a.size, kind: a.kind }} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {message.content && (
+        <div className="max-w-[85%] rounded-lg bg-user-bubble px-lg py-md text-body break-words whitespace-pre-wrap text-user-bubble-text">
+          {message.content}
+        </div>
+      )}
     </div>
   );
 }
 
-function TextAction({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
+function TextAction({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-xs font-mono text-caption tracking-[0.08em] text-text-tertiary uppercase duration-fast transition-colors ease-standard hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="duration-fast inline-flex items-center gap-xs font-mono text-caption tracking-[0.08em] text-text-tertiary uppercase transition-colors ease-standard hover:text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <Icon name={icon} size="xs" />
       {label}
@@ -84,7 +104,10 @@ export function AssistantMessage({
           aria-label={canOpenInfo ? MODEL_INFO_COPY.openHint : undefined}
           className="flex w-fit max-w-full items-center gap-sm disabled:pointer-events-none"
         >
-          <ModelMark modelId={m.isError ? undefined : m.modelId} isError={m.isError && !m.interrupted} />
+          <ModelMark
+            modelId={m.isError ? undefined : m.modelId}
+            isError={m.isError && !m.interrupted}
+          />
           <span className="truncate font-mono text-caption tracking-[0.08em] text-text-secondary uppercase">
             {m.isError ? "sparky" : label || "sparky"}
           </span>
@@ -96,7 +119,9 @@ export function AssistantMessage({
       ) : m.isError ? (
         m.interrupted ? (
           <div className="flex flex-wrap items-center gap-md">
-            <span className="text-body-small text-text-secondary">{m.error || CHAT_COPY.interrupted}</span>
+            <span className="text-body-small text-text-secondary">
+              {m.error || CHAT_COPY.interrupted}
+            </span>
             <Button plain size="sm" variant="secondary" onClick={onRegenerate} disabled={disabled}>
               {CHAT_COPY.retry}
             </Button>
@@ -108,7 +133,9 @@ export function AssistantMessage({
         <Markdown content={m.content} citations={m.citations} used={m.usedIds} />
       )}
 
-      {m.streaming && m.content !== "" && <span aria-hidden className="size-2 animate-pulse-soft rounded-full bg-accent" />}
+      {m.streaming && m.content !== "" && (
+        <span aria-hidden className="size-2 animate-pulse-soft rounded-full bg-accent" />
+      )}
 
       {!m.isError && m.error && <p className="text-caption text-text-secondary">{m.error}</p>}
       {!m.isError && m.notice && <p className="text-caption text-text-secondary">{m.notice}</p>}

@@ -30,7 +30,8 @@ export const MODEL_INFO_COPY = {
   },
   memoryOf: (tokens: number): string => {
     const pages = Math.round((tokens * 0.75) / 300);
-    const text = pages >= 1000 ? `${(pages / 1000).toFixed(pages % 1000 === 0 ? 0 : 1)}k` : `${pages}`;
+    const text =
+      pages >= 1000 ? `${(pages / 1000).toFixed(pages % 1000 === 0 ? 0 : 1)}k` : `${pages}`;
     return `Remembers about ${text} pages of chat`;
   },
 } as const;
@@ -42,6 +43,7 @@ export const CHAT_COPY = {
   send: "Send",
   stop: "Stop",
   attach: "Attach",
+  attachments: "Attachments",
   web: "Web",
   kb: "KB",
   table: "Table",

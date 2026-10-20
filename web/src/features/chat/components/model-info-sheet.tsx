@@ -1,6 +1,12 @@
 "use client";
 
-import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tag } from "@/components/ui/tag";
 import { IconButton } from "@/components/ui/icon-button";
 import type { AiModel } from "../api/models";
@@ -20,13 +26,23 @@ interface ModelInfoSheetProps {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-xs">
-      <span className="font-mono text-caption tracking-[0.1em] text-text-tertiary uppercase">{label}</span>
+      <span className="font-mono text-caption tracking-[0.1em] text-text-tertiary uppercase">
+        {label}
+      </span>
       <span className="text-body-small text-text-primary">{children}</span>
     </div>
   );
 }
 
-export function ModelInfoSheet({ open, onOpenChange, modelId, name, model, latencyMs, tokens }: ModelInfoSheetProps) {
+export function ModelInfoSheet({
+  open,
+  onOpenChange,
+  modelId,
+  name,
+  model,
+  latencyMs,
+  tokens,
+}: ModelInfoSheetProps) {
   const hasInfo = Boolean(model?.maker || model?.about || model?.contextTokens || model?.speed);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -36,7 +52,9 @@ export function ModelInfoSheet({ open, onOpenChange, modelId, name, model, laten
             <div className="flex min-w-0 items-center gap-md">
               <ModelMark modelId={modelId} className="size-10 text-body" />
               <div className="min-w-0">
-                <p className="font-mono text-caption tracking-[0.1em] text-accent-text uppercase">{COPY.title}</p>
+                <p className="font-mono text-caption tracking-[0.1em] text-accent-text uppercase">
+                  {COPY.title}
+                </p>
                 <SheetTitle className="truncate text-title font-bold">{name}</SheetTitle>
               </div>
             </div>
@@ -49,7 +67,9 @@ export function ModelInfoSheet({ open, onOpenChange, modelId, name, model, laten
             <div className="flex flex-col gap-md">
               {model?.maker && <Row label={COPY.madeBy}>{model.maker}</Row>}
               {model?.about && <Row label={COPY.goodAt}>{model.about}</Row>}
-              {model?.contextTokens ? <Row label={COPY.memory}>{COPY.memoryOf(model.contextTokens)}</Row> : null}
+              {model?.contextTokens ? (
+                <Row label={COPY.memory}>{COPY.memoryOf(model.contextTokens)}</Row>
+              ) : null}
               {model?.speed && <Row label={COPY.feel}>{COPY.speeds[model.speed]}</Row>}
             </div>
           ) : (

@@ -9,7 +9,7 @@ import {
   type WebMode,
 } from "../api/chat-stream";
 import { saveConversation } from "../api/conversations";
-import type { StoredMessage } from "../schemas/message";
+import type { Attachment, StoredMessage } from "../schemas/message";
 import { emptyMessage, type UiMessage } from "./types";
 import {
   chatReducer,
@@ -25,7 +25,11 @@ export interface ComposerOptions {
   roundTable: boolean;
 }
 
-export const DEFAULT_OPTIONS: ComposerOptions = { webMode: "auto", knowledge: false, roundTable: false };
+export const DEFAULT_OPTIONS: ComposerOptions = {
+  webMode: "auto",
+  knowledge: false,
+  roundTable: false,
+};
 
 export type SaveFn = (id: string, messages: StoredMessage[]) => Promise<void>;
 
@@ -42,10 +46,17 @@ const newId = (): string => crypto.randomUUID();
 
 const toRequestMessages = (messages: UiMessage[]): ChatRequest["messages"] =>
   messages.flatMap((m): ChatRequest["messages"] => {
-    if (m.role === "context" || m.isError || (m.role === "assistant" && m.content === "")) return [];
+    if (m.role === "context" || m.isError || (m.role === "assistant" && m.content === ""))
+      return [];
     if (m.role === "user") {
       const attachments = m.attachments.map((a) => a.id);
-      return [{ role: "user" as const, content: m.content, ...(attachments.length ? { attachments } : {}) }];
+      return [
+        {
+          role: "user" as const,
+          content: m.content,
+          ...(attachments.length ? { attachments } : {}),
+        },
+      ];
     }
     return [{ role: "assistant" as const, content: m.content }];
   });
@@ -115,14 +126,14 @@ export function useChatStream({
   );
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, attachments: Attachment[] = []) => {
       const content = text.trim();
-      if (!content || abortRef.current) return;
+      if ((!content && attachments.length === 0) || abortRef.current) return;
       if (!idRef.current) {
         idRef.current = newId();
         setConversationId(idRef.current);
       }
-      const user = { ...emptyMessage(newId(), "user"), content };
+      const user = { ...emptyMessage(newId(), "user"), content, attachments };
       const assistant = pendingAssistant(newId());
       dispatch({ type: "send", user, assistant });
       void run([...messagesRef.current, user], assistant.id);

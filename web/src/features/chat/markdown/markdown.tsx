@@ -35,7 +35,13 @@ function CitationChip({ id }: { id: string }) {
   );
   if (source?.url.startsWith("http")) {
     return (
-      <a href={source.url} target="_blank" rel="noreferrer noopener" title={source.title} className={className}>
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noreferrer noopener"
+        title={source.title}
+        className={className}
+      >
         <span className="truncate">{label}</span>
       </a>
     );
@@ -45,7 +51,13 @@ function CitationChip({ id }: { id: string }) {
 
 const textOf = (node: ReactNode): string =>
   Children.toArray(node)
-    .map((c) => (typeof c === "string" || typeof c === "number" ? String(c) : isValidElement(c) ? textOf((c as ReactElement<{ children?: ReactNode }>).props.children) : ""))
+    .map((c) =>
+      typeof c === "string" || typeof c === "number"
+        ? String(c)
+        : isValidElement(c)
+          ? textOf((c as ReactElement<{ children?: ReactNode }>).props.children)
+          : "",
+    )
     .join("");
 
 function Pre({ children }: ComponentProps<"pre">) {
@@ -60,20 +72,31 @@ const HEADING = "mt-xl mb-sm font-bold tracking-[-0.01em] first:mt-0";
 
 const components: Components = {
   p: ({ children }) => <p className="my-sm first:mt-0 last:mb-0">{children}</p>,
-  h1: ({ children }) => <h2 className={cn(HEADING, "border-t border-border pt-lg text-title")}>{children}</h2>,
-  h2: ({ children }) => <h2 className={cn(HEADING, "border-t border-border pt-lg text-title")}>{children}</h2>,
+  h1: ({ children }) => (
+    <h2 className={cn(HEADING, "border-t border-border pt-lg text-title")}>{children}</h2>
+  ),
+  h2: ({ children }) => (
+    <h2 className={cn(HEADING, "border-t border-border pt-lg text-title")}>{children}</h2>
+  ),
   h3: ({ children }) => <h3 className={cn(HEADING, "text-[18px]")}>{children}</h3>,
   h4: ({ children }) => <h4 className={cn(HEADING, "text-body")}>{children}</h4>,
   h5: ({ children }) => <h4 className={cn(HEADING, "text-body")}>{children}</h4>,
   h6: ({ children }) => <h4 className={cn(HEADING, "text-body")}>{children}</h4>,
-  ul: ({ children }) => <ul className="my-sm list-disc space-y-xs pl-xl marker:text-text-tertiary">{children}</ul>,
+  ul: ({ children }) => (
+    <ul className="my-sm list-disc space-y-xs pl-xl marker:text-text-tertiary">{children}</ul>
+  ),
   ol: ({ children, start }) => (
-    <ol start={start ?? undefined} className="my-sm list-decimal space-y-xs pl-xl marker:font-mono marker:text-text-tertiary">
+    <ol
+      start={start ?? undefined}
+      className="my-sm list-decimal space-y-xs pl-xl marker:font-mono marker:text-text-tertiary"
+    >
       {children}
     </ol>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="my-md border-l-2 border-accent pl-md text-text-secondary">{children}</blockquote>
+    <blockquote className="my-md border-l-2 border-accent pl-md text-text-secondary">
+      {children}
+    </blockquote>
   ),
   hr: () => <hr className="my-lg border-border" />,
   strong: ({ children }) => <strong className="font-bold">{children}</strong>,
@@ -92,7 +115,12 @@ const components: Components = {
     ),
   pre: ({ children }) => <Pre>{children}</Pre>,
   code: ({ className, children }) => (
-    <code className={cn("rounded-sm bg-code-background px-[5px] py-[1px] font-mono text-[0.9em]", className)}>
+    <code
+      className={cn(
+        "rounded-sm bg-code-background px-[5px] py-[1px] font-mono text-[0.9em]",
+        className,
+      )}
+    >
       {children}
     </code>
   ),
@@ -106,10 +134,16 @@ const components: Components = {
       {children}
     </th>
   ),
-  td: ({ children }) => <td className="border-b border-border px-md py-sm align-top last:border-b-0">{children}</td>,
+  td: ({ children }) => (
+    <td className="border-b border-border px-md py-sm align-top last:border-b-0">{children}</td>
+  ),
   img: ({ alt, src }) => (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} className="my-md max-h-60 rounded-md" />
+    <img
+      src={typeof src === "string" ? src : undefined}
+      alt={alt ?? ""}
+      className="my-md max-h-60 rounded-md"
+    />
   ),
 };
 

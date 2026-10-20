@@ -20,7 +20,8 @@ export function distinctSources(
   for (const c of citations) {
     const host = hostOf(c.url);
     const page = c.url.split("#")[0] || c.title;
-    const key = c.kind === "web" && host && host !== "github.com" ? `web|${host}` : `${c.kind}|${page}`;
+    const key =
+      c.kind === "web" && host && host !== "github.com" ? `web|${host}` : `${c.kind}|${page}`;
     const hit = byKey.get(key);
     if (hit) hit.cited ||= used.has(c.id);
     else byKey.set(key, { citation: c, cited: used.has(c.id) });
@@ -53,7 +54,13 @@ export function SourceChips({ citations, used }: SourceChipsProps) {
         return (
           <li key={citation.id} className="shrink-0">
             {external ? (
-              <a href={citation.url} target="_blank" rel="noreferrer noopener" title={citation.title} className={className}>
+              <a
+                href={citation.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={citation.title}
+                className={className}
+              >
                 <Icon name="web" size="xs" />
                 {labelOf(citation)}
               </a>

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ChatEvent } from "../schemas/events";
-import { applyEvent, chatReducer, initialChatState, pendingAssistant, toStored } from "./stream-reducer";
+import {
+  applyEvent,
+  chatReducer,
+  initialChatState,
+  pendingAssistant,
+  toStored,
+} from "./stream-reducer";
 import { emptyMessage } from "./types";
 
 const delta = (text: string): ChatEvent => ({ type: "delta", data: { text } });
@@ -26,22 +32,32 @@ describe("applyEvent", () => {
   });
 
   it("finishes on done with the used sources and the final model", () => {
-    const m = applyEvent(
-      applyEvent(pendingAssistant("a"), delta("x")),
-      { type: "done", data: { model: "m", used: ["W1"], latencyMs: 12 } },
-    );
+    const m = applyEvent(applyEvent(pendingAssistant("a"), delta("x")), {
+      type: "done",
+      data: { model: "m", used: ["W1"], latencyMs: 12 },
+    });
     expect(m).toMatchObject({ streaming: false, modelId: "m", usedIds: ["W1"], latencyMs: 12 });
   });
 
   it("marks an error with no text as an error reply and keeps partial text otherwise", () => {
-    const err: ChatEvent = { type: "error", data: { error: { code: "x", message: "Nope", retryable: true } } };
-    expect(applyEvent(pendingAssistant("a"), err)).toMatchObject({ isError: true, error: "Nope", streaming: false });
+    const err: ChatEvent = {
+      type: "error",
+      data: { error: { code: "x", message: "Nope", retryable: true } },
+    };
+    expect(applyEvent(pendingAssistant("a"), err)).toMatchObject({
+      isError: true,
+      error: "Nope",
+      streaming: false,
+    });
     const partial = applyEvent(applyEvent(pendingAssistant("a"), delta("abc")), err);
     expect(partial).toMatchObject({ isError: false, content: "abc", error: "Nope" });
   });
 
   it("trims suggestions and drops blanks", () => {
-    const m = applyEvent(pendingAssistant("a"), { type: "suggestions", data: { items: [" one ", " "] } });
+    const m = applyEvent(pendingAssistant("a"), {
+      type: "suggestions",
+      data: { items: [" one ", " "] },
+    });
     expect(m.suggestions).toEqual(["one"]);
   });
 });
@@ -56,18 +72,30 @@ describe("chatReducer", () => {
   });
 
   it("stop keeps partial text and turns an empty reply into an interrupted one", () => {
-    const base = chatReducer(initialChatState, { type: "send", user, assistant: pendingAssistant("a") });
+    const base = chatReducer(initialChatState, {
+      type: "send",
+      user,
+      assistant: pendingAssistant("a"),
+    });
     const empty = chatReducer(base, { type: "stop", id: "a" });
     expect(empty.messages[1]).toMatchObject({ streaming: false, isError: true, interrupted: true });
     const partial = chatReducer(chatReducer(base, { type: "event", id: "a", event: delta("x") }), {
       type: "stop",
       id: "a",
     });
-    expect(partial.messages[1]).toMatchObject({ streaming: false, isError: false, interrupted: false });
+    expect(partial.messages[1]).toMatchObject({
+      streaming: false,
+      isError: false,
+      interrupted: false,
+    });
   });
 
   it("truncates for regenerate", () => {
-    const s = chatReducer(initialChatState, { type: "send", user, assistant: pendingAssistant("a") });
+    const s = chatReducer(initialChatState, {
+      type: "send",
+      user,
+      assistant: pendingAssistant("a"),
+    });
     expect(chatReducer(s, { type: "truncate", keep: 1 }).messages).toHaveLength(1);
   });
 });

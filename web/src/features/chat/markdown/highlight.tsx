@@ -6,8 +6,29 @@ const lowlight = createLowlight(common);
 
 export const MAX_HIGHLIGHT_CHARS = 20_000;
 
-const KEYWORD = ["keyword", "built_in", "literal", "type", "selector-tag", "tag", "name", "meta", "title", "function", "class"];
-const STRING = ["string", "regexp", "symbol", "attr", "attribute", "template-variable", "link", "addition"];
+const KEYWORD = [
+  "keyword",
+  "built_in",
+  "literal",
+  "type",
+  "selector-tag",
+  "tag",
+  "name",
+  "meta",
+  "title",
+  "function",
+  "class",
+];
+const STRING = [
+  "string",
+  "regexp",
+  "symbol",
+  "attr",
+  "attribute",
+  "template-variable",
+  "link",
+  "addition",
+];
 const NUMBER = ["number", "bullet", "variable", "params", "deletion"];
 const COMMENT = ["comment", "quote", "doctag"];
 
@@ -21,7 +42,12 @@ function tokenClass(node: Element): string | undefined {
   const classes = node.properties.className;
   if (!Array.isArray(classes)) return undefined;
   for (const c of classes) {
-    const hit = TOKEN_CLASS[String(c).replace(/^hljs-/, "").split(".")[0] ?? ""];
+    const hit =
+      TOKEN_CLASS[
+        String(c)
+          .replace(/^hljs-/, "")
+          .split(".")[0] ?? ""
+      ];
     if (hit) return hit;
   }
   return undefined;
