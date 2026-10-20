@@ -60,6 +60,13 @@ async function toOwner(r: AppRelease): Promise<OwnerRelease> {
 }
 
 /** GET /app/update body. Also records the caller's build for the adoption view. */
+/** A short-lived link to the newest live APK, for the public download page; null when nothing is live. */
+export async function latestApkUrl(ttlSeconds = 600): Promise<{ url: string; version: string; build: number } | null> {
+  const r = await db().appRelease.findFirst({ where: { status: "live" }, orderBy: { build: "desc" } });
+  if (!r) return null;
+  return { url: await presign(r.apkKey, ttlSeconds), version: r.version, build: r.build };
+}
+
 export async function checkForUpdate(current: number, userId: string | null, deviceId: string | null = null) {
   const rows = await db().appRelease.findMany({ where: { status: "live" }, orderBy: { build: "desc" } });
   const live: Array<LiveRelease & { row: AppRelease }> = rows.map((row) => ({ build: row.build, kind: row.kind as Kind, minSupportedBuild: row.minSupportedBuild, row }));
