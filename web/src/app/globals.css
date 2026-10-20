@@ -1,0 +1,134 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+@theme inline {
+  --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), ui-monospace, Menlo, monospace;
+  --animate-fade: fade-in var(--duration-normal) var(--ease-standard);
+  --animate-sheet-up: sheet-up var(--duration-slow) var(--ease-emphasized);
+  --animate-sheet-pop: sheet-pop var(--duration-normal) var(--ease-emphasized);
+  --animate-sheet-side: sheet-side var(--duration-slow) var(--ease-emphasized);
+  --animate-pop: pop var(--duration-fast) var(--ease-standard);
+  --animate-pulse-soft: pulse-soft 1.4s ease-in-out infinite;
+  --animate-dot-blink: dot-blink 900ms ease-in-out infinite;
+}
+
+:root {
+  --illustration-filter: none;
+}
+
+[data-theme="dark"] {
+  --illustration-filter: invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --illustration-filter: invert(1);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline-color: var(--accent);
+  }
+
+  button {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .dot-grid {
+    background-image: radial-gradient(circle, var(--dot-grid) 1px, transparent 1.4px);
+    background-size: 18px 18px;
+    background-position: 9px 9px;
+  }
+
+  .dot-aura {
+    background-image: radial-gradient(circle, var(--text-primary) 1.3px, transparent 1.7px);
+    background-size: 12px 12px;
+    mask-image: radial-gradient(circle, transparent 0 26%, #000 33%, transparent 70%);
+    -webkit-mask-image: radial-gradient(circle, transparent 0 26%, #000 33%, transparent 70%);
+    opacity: 0.55;
+  }
+
+  .illustration {
+    filter: var(--illustration-filter);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheet-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+}
+
+@keyframes sheet-side {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes pulse-soft {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes dot-blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

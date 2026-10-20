@@ -4,3 +4,8 @@
 client_secret*.json
 *.apps.googleusercontent.com.json
 google-services.json
+
+# web
+web/node_modules
+web/.next
+web/.shots
