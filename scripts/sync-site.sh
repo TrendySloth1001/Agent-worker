@@ -9,4 +9,7 @@ dst="$(cd "$(dirname "$0")/.." && pwd)/backend/site-public"
 rm -rf "$dst" && mkdir -p "$dst"
 cp "$src/index.html" "$dst/"
 cp -R "$src/css" "$src/js" "$src/assets" "$dst/"
+# Version-stamp CSS/JS links so browsers and Cloudflare fetch the new files after each sync.
+ver="$(cd "$src" && git rev-parse --short HEAD 2>/dev/null || date +%s)"
+sed -i.bak -E "s#(href|src)=\"(css|js)/([^\"?]+)\"#\1=\"\2/\3?v=$ver\"#g" "$dst/index.html" && rm -f "$dst/index.html.bak"
 echo "synced $(cd "$src" && git rev-parse --short HEAD 2>/dev/null || echo '?') -> backend/site-public ($(du -sh "$dst" | cut -f1))"
