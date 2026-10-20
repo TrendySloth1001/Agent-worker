@@ -56,7 +56,8 @@ export function AuthForm({ next, notice, githubEnabled }: AuthFormProps) {
   const pending = submit.isPending || submit.isSuccess;
 
   const update = (key: keyof AuthFields) => (event: FormEvent<HTMLInputElement>) => {
-    setFields((prev) => ({ ...prev, [key]: event.currentTarget.value }));
+    const { value } = event.currentTarget;
+    setFields((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 

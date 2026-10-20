@@ -64,9 +64,10 @@ export function CalcCard({ data }: { data: CalcData }) {
                 max={input.max}
                 step={(input.max - input.min) / 200 || 1}
                 value={Math.min(Math.max(value, input.min), input.max)}
-                onChange={(event) =>
-                  setValues((current) => ({ ...current, [input.id]: Number(event.target.value) }))
-                }
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setValues((current) => ({ ...current, [input.id]: next }));
+                }}
                 className="h-1 w-full cursor-pointer accent-accent"
               />
             </div>
