@@ -26,6 +26,7 @@ export const metadata: Metadata = {
   title: "sparky",
   description: "sparky, on the web.",
   icons: { icon: "/icon.svg" },
+  manifest: "/manifest.webmanifest",
 };
 
 export const viewport: Viewport = {

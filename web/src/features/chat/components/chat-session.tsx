@@ -1,10 +1,12 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect } from "react";
 import { toast } from "@/components/ui/toaster";
 import { CONVERSATIONS_KEY } from "@/features/history/api/use-conversations";
+import { QUICK_ASK_PARAM, takeQuickAsk } from "@/features/quick-ask";
+import { useMe } from "@/lib/api/use-me";
 import { fetchStarters } from "../api/conversations";
 import { useModels } from "../api/use-models";
 import { CHAT_COPY } from "../lib/copy";
@@ -23,6 +25,8 @@ interface ChatSessionProps {
 
 export function ChatSession({ conversationId, initialMessages, userName, onAttach }: ChatSessionProps) {
   const router = useRouter();
+  const params = useSearchParams();
+  const me = useMe();
   const queryClient = useQueryClient();
   const models = useModels();
   const { data: starters } = useQuery({
@@ -42,13 +46,22 @@ export function ChatSession({ conversationId, initialMessages, userName, onAttac
   const onSaveError = useCallback(() => toast(CHAT_COPY.saveFailed), []);
 
   const chat = useChatStream({ conversationId, initialMessages, onSaved, onSaveError });
+  const { send } = chat;
+  const quick = !conversationId && params.get(QUICK_ASK_PARAM) === "1";
+  useEffect(() => {
+    if (!quick) return;
+    const prompt = takeQuickAsk();
+    window.history.replaceState(null, "", "/chat");
+    if (prompt) send(prompt);
+  }, [quick, send]);
+
   const newChat = useCallback(() => router.push("/chat"), [router]);
 
   return (
     <ChatView
       chat={chat}
       models={models}
-      userName={userName}
+      userName={userName ?? me.data?.user.name}
       starters={starters}
       onNewChat={newChat}
       onAttach={onAttach}

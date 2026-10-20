@@ -8,6 +8,8 @@ import { Wordmark } from "@/components/brand/wordmark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Icon } from "@/components/ui/icon";
 import { IconButton } from "@/components/ui/icon-button";
+import { QuickAsk } from "@/features/quick-ask";
+import { ApplyPreferences } from "@/features/settings/preferences/use-preferences";
 import { HISTORY_COPY as COPY } from "@/features/history/grouping";
 import { HistorySidebar } from "@/features/history/components/history-sidebar";
 import { cn } from "@/lib/cn";
@@ -73,6 +75,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      <QuickAsk />
+      <ApplyPreferences />
     </div>
   );
 }
