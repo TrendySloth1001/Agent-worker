@@ -74,6 +74,17 @@ import {
   Video01Icon,
   VibrateIcon,
   Add01Icon,
+  Calendar03Icon,
+  Call02Icon,
+  Car01Icon,
+  ChartBarLineIcon,
+  Download01Icon,
+  Location01Icon,
+  Mail01Icon,
+  Share08Icon,
+  ShoppingCart01Icon,
+  ShuffleIcon,
+  Table01Icon,
 } from "@hugeicons/core-free-icons";
 
 export const icons = {
@@ -154,6 +165,17 @@ export const icons = {
   themeLight: Sun03Icon,
   themeDark: Moon02Icon,
   notify: Notification01Icon,
+  calendar: Calendar03Icon,
+  call: Call02Icon,
+  ride: Car01Icon,
+  chart: ChartBarLineIcon,
+  download: Download01Icon,
+  location: Location01Icon,
+  mail: Mail01Icon,
+  share: Share08Icon,
+  cart: ShoppingCart01Icon,
+  table: Table01Icon,
+  shuffle: ShuffleIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 export type IconName = keyof typeof icons;
