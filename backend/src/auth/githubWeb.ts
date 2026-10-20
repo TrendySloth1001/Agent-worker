@@ -37,6 +37,8 @@ export type WebStatus = "pending" | "exchanging" | "ready" | "redeemed" | "faile
 export const AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 export const DEEP_LINK = "sparky://auth/github";
 export const CALLBACK_PATH = "/auth/github/callback";
+/** Where a web app origin receives the ticket. */
+export const WEB_RETURN_PATH = "/api/auth/github/return";
 /** How long the user has to approve on GitHub. */
 export const FLOW_TTL_MS = 10 * 60_000;
 /** How long the app has to redeem the ticket after the callback. */
@@ -96,6 +98,8 @@ export type GithubWebDeps = {
   /** The session handed out when a sign-in ticket is redeemed. */
   session: (userId: string, device: string | null) => Promise<{ user: UserRow; tokens: Tokens }>;
   connection: (userId: string) => Promise<ConnectionSummary | null>;
+  /** Origins of the web app that may receive the ticket instead of the deep link. */
+  webOrigins?: () => readonly string[];
 };
 
 export type WebStart = { authorizeUrl: string; state: string; mode: WebMode; expiresIn: number };
@@ -105,7 +109,7 @@ export type WebRedeem =
   | { mode: "connect"; connection: ConnectionSummary | null }
   | { mode: "link"; identity: IdentitySummary; connection: ConnectionSummary | null };
 
-/** Where the callback sends the browser: always a sparky:// deep link. */
+/** Where the callback sends the browser: a sparky:// deep link, or the web app for an allow-listed web sign-in. */
 export type WebCallback = { ok: boolean; link: string; mode: WebMode | null; message: string };
 
 const b64url = (b: Buffer) => b.toString("base64url");
@@ -122,6 +126,12 @@ const deepLink = (params: Record<string, string | null | undefined>) => {
   return `${DEEP_LINK}?${q.toString()}`;
 };
 
+const webLink = (origin: string, params: Record<string, string | null | undefined>) => {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  return `${origin}${WEB_RETURN_PATH}?${q.toString()}`;
+};
+
 const MESSAGES: Record<string, string> = {
   access_denied: "Access was denied on GitHub.",
   expired: "This GitHub sign-in expired or was already used. Start again from sparky.",
@@ -133,7 +143,17 @@ const MESSAGES: Record<string, string> = {
 export function createGithubWeb(deps: GithubWebDeps) {
   const configured = () => !!deps.clientId() && !!deps.clientSecret();
 
-  async function start(input: { mode: WebMode; userId: string | null; device: string | null }): Promise<WebStart> {
+  const allowedOrigins = () => deps.webOrigins?.() ?? [];
+
+  /** The web origin carried in a state (`<b64url origin>.<random>`), only when it is allow-listed. */
+  function originOfState(state: string): string | null {
+    const [head, rest] = state.split(".");
+    if (!head || !rest) return null;
+    const origin = Buffer.from(head, "base64url").toString("utf8");
+    return allowedOrigins().includes(origin) ? origin : null;
+  }
+
+  async function start(input: { mode: WebMode; userId: string | null; device: string | null; returnOrigin?: string | null }): Promise<WebStart> {
     const clientId = deps.clientId();
     if (!clientId) throw notConfigured();
     if (!deps.clientSecret()) throw webNotConfigured();
@@ -142,7 +162,11 @@ export function createGithubWeb(deps: GithubWebDeps) {
     }
     const now = deps.now();
     await deps.store.purge(new Date(now - PURGE_AFTER_MS)).catch(() => undefined);
-    const state = b64url(randomBytes(32));
+    if (input.returnOrigin && (input.mode !== "signin" || !allowedOrigins().includes(input.returnOrigin))) {
+      throw new AppError(400, "bad_request", "Something about that request wasn't right — please try again.");
+    }
+    const random = b64url(randomBytes(32));
+    const state = input.returnOrigin ? `${b64url(Buffer.from(input.returnOrigin))}.${random}` : random;
     const verifier = b64url(randomBytes(48));
     await deps.store.create({
       stateHash: sha256(state),
@@ -217,9 +241,11 @@ export function createGithubWeb(deps: GithubWebDeps) {
   /** GET /auth/github/callback. Never throws: every outcome is a deep link. */
   async function callback(q: { code?: string; state?: string; error?: string }): Promise<WebCallback> {
     const state = q.state ?? "";
+    const origin = originOfState(state);
+    const target = (params: Record<string, string | null | undefined>) => (origin ? webLink(origin, params) : deepLink(params));
     const fail = (code: string, mode: WebMode | null, message?: string): WebCallback => {
       const msg = isUserSafe(message) ? message : (MESSAGES[code] ?? MESSAGES.failed);
-      return { ok: false, mode, message: msg, link: deepLink({ error: code, message: msg, mode, state }) };
+      return { ok: false, mode, message: msg, link: target({ error: code, message: msg, mode, state }) };
     };
     if (!state) return fail("bad_request", null);
     const flow = await deps.store.claim(sha256(state), new Date(deps.now())).catch(() => null);
@@ -234,7 +260,7 @@ export function createGithubWeb(deps: GithubWebDeps) {
       const result = await apply(flow, grant);
       const ticket = b64url(randomBytes(32));
       await deps.store.ready(flow.id, sha256(ticket), new Date(deps.now() + TICKET_TTL_MS), result);
-      return { ok: true, mode: flow.mode, message: "", link: deepLink({ ticket, mode: flow.mode, state }) };
+      return { ok: true, mode: flow.mode, message: "", link: target({ ticket, mode: flow.mode, state }) };
     } catch (e) {
       await deps.store.fail(flow.id).catch(() => undefined);
       if (e instanceof AppError) return fail(e.code, flow.mode, e.message);
@@ -350,4 +376,5 @@ export const githubWeb = createGithubWeb({
   saveConnection: saveGithubConnection,
   session: ssoSessionFor,
   connection: async (userId) => (await listConnections(userId)).find((c) => c.provider === "github") ?? null,
+  webOrigins: () => config.webAppOrigins,
 });
